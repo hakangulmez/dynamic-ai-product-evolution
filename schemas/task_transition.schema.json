@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$id": "task_transition.schema.json",
+  "required": [
+    "transition_id",
+    "company_id",
+    "predecessor_task_ids",
+    "successor_task_ids",
+    "transition_type",
+    "evidence",
+    "confidence"
+  ],
+  "properties": {
+    "transition_id": {
+      "type": "string"
+    },
+    "company_id": {
+      "type": "string"
+    },
+    "predecessor_task_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "successor_task_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "transition_type": {
+      "type": "string"
+    },
+    "transition_summary": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_id",
+          "passage_id",
+          "quote"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "passage_id": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "alternative_types": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ]
+    },
+    "schema_version": {
+      "type": "string"
+    }
+  }
+}

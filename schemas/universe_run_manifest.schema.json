@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_run_manifest.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "universe_version",
+    "baseline_cutoff",
+    "form_scope",
+    "candidate_frame_hash",
+    "taxonomy_version",
+    "sample_rules_version",
+    "schema_versions",
+    "run_timestamp",
+    "counts",
+    "hard_gate_status",
+    "output_hashes"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "universe_version": {
+      "type": "string"
+    },
+    "baseline_cutoff": {
+      "type": "string",
+      "format": "date"
+    },
+    "form_scope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "candidate_frame_hash": {
+      "type": "string"
+    },
+    "source_manifest_hash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "code_revision": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "packet_builder_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "screen_prompt_hash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "classification_prompt_hash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model_routes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "taxonomy_version": {
+      "type": "string"
+    },
+    "sample_rules_version": {
+      "type": "string"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "negative_audit_seed": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "eval_report_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "manual_review_complete": {
+      "type": "boolean"
+    },
+    "run_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "hard_gate_status": {
+      "enum": [
+        "pass",
+        "fail",
+        "not_run"
+      ]
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}

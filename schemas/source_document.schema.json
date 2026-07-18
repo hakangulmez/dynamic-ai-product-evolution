@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$id": "source_document.schema.json",
+  "required": [
+    "source_id",
+    "company_id",
+    "source_type",
+    "publication_date",
+    "retrieval_timestamp",
+    "content_hash",
+    "official_status"
+  ],
+  "properties": {
+    "source_id": {
+      "type": "string"
+    },
+    "company_id": {
+      "type": "string"
+    },
+    "source_type": {
+      "type": "string"
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "url": {
+      "type": "string"
+    },
+    "archive_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "publication_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "retrieval_timestamp": {
+      "type": "string"
+    },
+    "snapshot_timestamp": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "content_hash": {
+      "type": "string"
+    },
+    "mime_type": {
+      "type": "string"
+    },
+    "official_status": {
+      "enum": [
+        "official",
+        "official_archive",
+        "rejected",
+        "uncertain"
+      ]
+    },
+    "temporal_validity": {
+      "enum": [
+        "valid",
+        "invalid",
+        "uncertain"
+      ]
+    },
+    "access_status": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string"
+    }
+  }
+}

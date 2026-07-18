@@ -1,0 +1,17 @@
+project_name: dynamic-ai-product-evolution
+schema_version: 0.1.0
+observation_window:
+  start: 2022-01-01
+  end: 2026-12-31
+source_policy: official_only
+full_run_enabled: false
+universe:
+  baseline_cutoff: null
+  domestic_form_scope:
+  - 10-K
+  - 10-KT
+  foreign_private_issuer_extension_forms:
+  - 20-F
+  - 40-F
+  release_status: draft_pending_sentinel
+  full_edgar_run_enabled: false

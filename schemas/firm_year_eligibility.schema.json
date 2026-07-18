@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "firm_year_eligibility.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "firm_year_id",
+    "company_id",
+    "cik",
+    "observation_date",
+    "filing_form",
+    "operating_status",
+    "public_status",
+    "eligible_this_year",
+    "primary_incumbent",
+    "dynamic_entrant",
+    "schema_version"
+  ],
+  "properties": {
+    "firm_year_id": {
+      "type": "string"
+    },
+    "company_id": {
+      "type": "string"
+    },
+    "cik": {
+      "type": "string"
+    },
+    "observation_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "annual_accession": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "filing_form": {
+      "type": "string"
+    },
+    "universe_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "universe_class_at_date": {
+      "enum": [
+        "TIER_A_CORE",
+        "TIER_B_EXTENSION",
+        "TIER_C_BOUNDARY",
+        "EXCLUDED",
+        "UNCERTAIN",
+        null
+      ]
+    },
+    "operating_status": {
+      "enum": [
+        "operating",
+        "acquired",
+        "merged",
+        "bankrupt",
+        "liquidated",
+        "shell",
+        "unknown"
+      ]
+    },
+    "public_status": {
+      "enum": [
+        "listed",
+        "delisted",
+        "private_after_transaction",
+        "reporting_only",
+        "unknown"
+      ]
+    },
+    "entry_type": {
+      "enum": [
+        "baseline_incumbent",
+        "ipo",
+        "direct_listing",
+        "de_spac",
+        "spin_off",
+        "new_filer",
+        "none",
+        "unknown"
+      ]
+    },
+    "exit_type": {
+      "enum": [
+        "acquisition",
+        "merger",
+        "delisting",
+        "bankruptcy",
+        "liquidation",
+        "cessation_of_reporting",
+        "none",
+        "unknown"
+      ]
+    },
+    "eligible_this_year": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "primary_incumbent": {
+      "type": "boolean"
+    },
+    "dynamic_entrant": {
+      "type": "boolean"
+    },
+    "evidence_source_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "schema_version": {
+      "type": "string"
+    }
+  }
+}

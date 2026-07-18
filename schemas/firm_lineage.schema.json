@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "firm_lineage.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "lineage_id",
+    "company_id",
+    "related_company_id",
+    "relationship",
+    "effective_date",
+    "evidence_source_id",
+    "schema_version"
+  ],
+  "properties": {
+    "lineage_id": {
+      "type": "string"
+    },
+    "company_id": {
+      "type": "string"
+    },
+    "related_company_id": {
+      "type": "string"
+    },
+    "relationship": {
+      "enum": [
+        "predecessor",
+        "successor",
+        "acquirer",
+        "target",
+        "spin_off_parent",
+        "spin_off_child",
+        "name_change",
+        "ticker_change",
+        "share_class_same_issuer",
+        "other"
+      ]
+    },
+    "effective_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "end_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "evidence_source_id": {
+      "type": "string"
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "schema_version": {
+      "type": "string"
+    }
+  }
+}

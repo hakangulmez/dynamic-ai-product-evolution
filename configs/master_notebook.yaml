@@ -1,0 +1,7 @@
+execution_mode: status
+selected_stages: []
+run_preflight_tests: false
+stop_on_failure: true
+allow_stub_execution: false
+write_run_summary: true
+show_full_paths: false

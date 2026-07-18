@@ -1,0 +1,11 @@
+baselines:
+  - baseline_id: example-2023-03
+    eligible_from: 2023-03-14
+    system_name: Example frontier system
+    access_regime: public_api_or_product
+    capabilities:
+      text_generation: true
+      image_input: false
+      tool_use: false
+    limitations:
+      - Example only; replace with primary-source grounded registry entries.

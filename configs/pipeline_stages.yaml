@@ -1,0 +1,252 @@
+registry_version: 0.1.0
+description: Canonical stage registry used by the master notebook and workflow helpers.
+status_values:
+- stub
+- sentinel
+- ready
+- frozen
+stages:
+- id: '00'
+  name: Build company universe
+  phase: A — Universe and corpus
+  script: pipelines/00_build_company_universe.py
+  spec: specs/SPEC-001-company-universe.md
+  description: Create the dated firm universe and stable company identifiers used
+    by every downstream table.
+  inputs:
+  - configs/project.yaml
+  - data/registry/company_candidates.*
+  outputs:
+  - data/processed/company_universe_classifications.parquet
+  - data/processed/firm_year_eligibility.parquet
+  - data/processed/firm_lineage.parquet
+  - data/manifests/company_universe_manifest.json
+  gate: Company identifiers, observation window, and inclusion rules validated.
+  status: stub
+- id: '01'
+  name: Discover SEC sources
+  phase: A — Universe and corpus
+  script: pipelines/01_discover_sec_sources.py
+  spec: specs/SPEC-002-document-discovery.md
+  description: Discover eligible SEC filings and filing exhibits for each firm and
+    observation period.
+  inputs:
+  - data/registry/companies.parquet
+  - docs/source_playbooks/SEC_EDGAR.md
+  outputs:
+  - data/registry/sec_source_candidates.parquet
+  - data/manifests/sec_discovery_manifest.json
+  gate: Official source, form type, filing date, accession, and temporal eligibility
+    checks pass.
+  status: stub
+- id: '02'
+  name: Discover official web sources
+  phase: A — Universe and corpus
+  script: pipelines/02_discover_official_web_sources.py
+  spec: specs/SPEC-004-official-web-discovery.md
+  description: Discover dated official investor-relations, product, documentation,
+    pricing, release-note, and newsroom pages.
+  inputs:
+  - data/registry/companies.parquet
+  - configs/source_types.yaml
+  outputs:
+  - data/registry/official_web_candidates.parquet
+  - data/manifests/web_discovery_manifest.json
+  gate: Domain ownership, source type, publication/snapshot date, and temporal eligibility
+    validated.
+  status: stub
+- id: '03'
+  name: Snapshot sources
+  phase: A — Universe and corpus
+  script: pipelines/03_snapshot_sources.py
+  spec: specs/SPEC-005-web-snapshotting.md
+  description: Store immutable raw copies, retrieval metadata, content hashes, and
+    archive provenance.
+  inputs:
+  - data/registry/sec_source_candidates.parquet
+  - data/registry/official_web_candidates.parquet
+  outputs:
+  - data/snapshots/**
+  - data/manifests/snapshot_manifest.jsonl
+  gate: All snapshots are immutable, hashed, attributable, and reproducibly locatable.
+  status: stub
+- id: '04'
+  name: Normalize documents
+  phase: A — Universe and corpus
+  script: pipelines/04_normalize_documents.py
+  spec: specs/SPEC-006-document-normalization.md
+  description: Convert source snapshots into normalized text and evidence-addressable
+    passages without changing the raw source.
+  inputs:
+  - data/snapshots/**
+  - schemas/source_document.schema.json
+  - schemas/source_passage.schema.json
+  outputs:
+  - data/normalized/documents.parquet
+  - data/normalized/passages.parquet
+  gate: Passage IDs, source links, dates, hashes, and text offsets validate with no
+    raw-file mutation.
+  status: stub
+- id: '05'
+  name: Extract products
+  phase: B — Product–capability–task extraction
+  script: pipelines/05_extract_products.py
+  spec: specs/SPEC-008-product-extraction.md
+  description: Run high-recall product discovery followed by evidence-grounded product
+    consolidation.
+  inputs:
+  - data/normalized/passages.parquet
+  - prompts/extraction/product_discovery_recall.md
+  - prompts/extraction/product_consolidation_precision.md
+  outputs:
+  - data/interim/product_candidates.jsonl
+  - data/processed/product_observations.parquet
+  gate: Product precision/recall, temporal validity, evidence validity, and duplicate
+    thresholds pass.
+  status: stub
+- id: '06'
+  name: Extract capabilities
+  phase: B — Product–capability–task extraction
+  script: pipelines/06_extract_capabilities.py
+  spec: specs/SPEC-009-capability-extraction.md
+  description: Extract concrete customer-facing functions under validated products;
+    reject vague AI or strategy wording.
+  inputs:
+  - data/processed/product_observations.parquet
+  - data/normalized/passages.parquet
+  - prompts/extraction/capability_extraction.md
+  outputs:
+  - data/processed/capability_observations.parquet
+  gate: Concrete-action, hierarchy, source-evidence, and marketing-wording false-positive
+    checks pass.
+  status: stub
+- id: '07'
+  name: Extract tasks
+  phase: B — Product–capability–task extraction
+  script: pipelines/07_extract_tasks.py
+  spec: specs/SPEC-010-task-extraction.md
+  description: Extract economically meaningful customer-facing tasks, then consolidate
+    duplicates and repair granularity.
+  inputs:
+  - data/processed/capability_observations.parquet
+  - data/normalized/passages.parquet
+  - prompts/extraction/task_discovery_recall.md
+  - prompts/extraction/task_consolidation_precision.md
+  outputs:
+  - data/interim/task_candidates.jsonl
+  - data/processed/task_observations.parquet
+  gate: Task precision/recall, evidence support, customer-facing status, and granularity
+    thresholds pass.
+  status: stub
+- id: 08
+  name: Classify task roles
+  phase: B — Product–capability–task extraction
+  script: pipelines/08_classify_task_roles.py
+  spec: specs/SPEC-011-task-role-classification.md
+  description: Classify tasks as core, major supporting, or peripheral using explicit
+    commercial-role evidence.
+  inputs:
+  - data/processed/task_observations.parquet
+  - prompts/extraction/task_role_classification.md
+  outputs:
+  - data/processed/task_roles.parquet
+  gate: Role evidence, confidence, class agreement, and unresolved-case review gates
+    pass.
+  status: stub
+- id: 09
+  name: Match entities over time
+  phase: C — Longitudinal resolution
+  script: pipelines/09_match_entities_over_time.py
+  spec: specs/SPEC-012-yearly-entity-resolution.md
+  description: Resolve products, capabilities, and tasks across years while preserving
+    yearly observations.
+  inputs:
+  - data/processed/product_observations.parquet
+  - data/processed/capability_observations.parquet
+  - data/processed/task_observations.parquet
+  outputs:
+  - data/processed/entity_links.parquet
+  gate: Rename robustness, stable identity, false disappearance, and ambiguous-match
+    review checks pass.
+  status: stub
+- id: '10'
+  name: Classify task transitions
+  phase: C — Longitudinal resolution
+  script: pipelines/10_classify_task_transitions.py
+  spec: specs/SPEC-013-task-transition-matching.md
+  description: Label same, expanded, contracted, AI-assisted, workflow-integrated,
+    agentified, split, merged, new, replaced, and discontinued transitions.
+  inputs:
+  - data/processed/entity_links.parquet
+  - prompts/matching/task_transition_classification.md
+  outputs:
+  - data/processed/task_transitions.parquet
+  gate: Transition gold-set agreement, split/merge integrity, and evidence-link checks
+    pass.
+  status: stub
+- id: '11'
+  name: Build frontier registry
+  phase: D — Dated measurement
+  script: pipelines/11_build_frontier_registry.py
+  spec: specs/SPEC-014-frontier-baseline-registry.md
+  description: Create a dated, versioned registry of frontier model capabilities available
+    at each observation cutoff.
+  inputs:
+  - configs/frontier_registry.example.yaml
+  - docs/methodology/FRONTIER_BASELINE_POLICY.md
+  outputs:
+  - data/registry/frontier_baselines.parquet
+  - data/manifests/frontier_registry_manifest.json
+  gate: Release dates, availability, modality/tool access, evidence, and no-future-leakage
+    checks pass.
+  status: stub
+- id: '12'
+  name: Measure task-years
+  phase: D — Dated measurement
+  script: pipelines/12_measure_task_years.py
+  spec: specs/SPEC-015-frontier-replicability-measurement.md
+  description: Measure frontier replicability, AI transformation depth, deployment
+    scale, and task-specific defensibility separately.
+  inputs:
+  - data/processed/task_observations.parquet
+  - data/processed/task_transitions.parquet
+  - data/registry/frontier_baselines.parquet
+  outputs:
+  - data/processed/task_measurements.parquet
+  gate: Temporal baseline, evidence completeness, unknown handling, judge agreement,
+    and hard validation gates pass.
+  status: stub
+- id: '13'
+  name: Aggregate firm-years
+  phase: E — Aggregation and analysis
+  script: pipelines/13_aggregate_firm_years.py
+  spec: specs/SPEC-019-aggregation.md
+  description: Aggregate validated task measurements using declared role and product
+    weights while retaining decomposable task-level data.
+  inputs:
+  - data/processed/task_measurements.parquet
+  - data/processed/task_roles.parquet
+  outputs:
+  - data/processed/product_year_metrics.parquet
+  - data/processed/firm_year_metrics.parquet
+  gate: Weight sums, missingness, sensitivity variants, and task-entry/exit decomposition
+    checks pass.
+  status: stub
+- id: '14'
+  name: Run analysis
+  phase: E — Aggregation and analysis
+  script: pipelines/14_run_analysis.py
+  spec: specs/SPEC-021-analysis-outputs.md
+  description: Produce descriptive trajectories, firm archetypes, case-study packets,
+    robustness outputs, and later outcome analyses.
+  inputs:
+  - data/processed/firm_year_metrics.parquet
+  - data/processed/product_year_metrics.parquet
+  - data/processed/task_transitions.parquet
+  outputs:
+  - artifacts/tables/**
+  - artifacts/figures/**
+  - artifacts/reports/**
+  gate: Frozen inputs, declared analysis version, reproducible output manifest, and
+    no causal overclaiming.
+  status: stub

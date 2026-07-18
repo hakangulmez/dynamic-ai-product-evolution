@@ -1,0 +1,12 @@
+source_types:
+  - sec_10k
+  - sec_10q
+  - sec_8k
+  - sec_exhibit
+  - official_ir
+  - product_page
+  - pricing_page
+  - developer_docs
+  - release_notes
+  - newsroom
+  - archived_official_page

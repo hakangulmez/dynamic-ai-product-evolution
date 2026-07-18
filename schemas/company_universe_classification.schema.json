@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "company_universe_classification.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "classification_id",
+    "company_id",
+    "cik",
+    "baseline_filing_date",
+    "baseline_cutoff",
+    "customer_value_archetypes",
+    "software_centrality",
+    "complementary_dependencies",
+    "firm_structure",
+    "commercial_materiality",
+    "customer_facing_functional_product",
+    "economically_eligible",
+    "data_eligible",
+    "candidate_tier",
+    "evidence",
+    "confidence",
+    "review_status",
+    "taxonomy_version",
+    "schema_version"
+  ],
+  "properties": {
+    "classification_id": {
+      "type": "string"
+    },
+    "company_id": {
+      "type": "string"
+    },
+    "cik": {
+      "type": "string"
+    },
+    "baseline_accession": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "baseline_filing_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "baseline_cutoff": {
+      "type": "string",
+      "format": "date"
+    },
+    "customer_value_archetypes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "FUNCTIONAL_SOFTWARE",
+          "ADAPTIVE_DIGITAL_SERVICE",
+          "DATA_ANALYTICS_PRODUCT",
+          "TRANSACTION_INFRASTRUCTURE",
+          "MARKETPLACE_COORDINATION",
+          "CONTENT_CATALOG",
+          "ATTENTION_SOCIAL_PLATFORM",
+          "INTERACTIVE_ENTERTAINMENT",
+          "HARDWARE_SOFTWARE_SYSTEM",
+          "HUMAN_MANAGED_SERVICE",
+          "ECOMMERCE_RETAIL",
+          "PHYSICAL_SERVICE_NETWORK",
+          "OTHER"
+        ]
+      }
+    },
+    "software_centrality": {
+      "enum": [
+        "CORE",
+        "CO_ESSENTIAL",
+        "ENABLING",
+        "PERIPHERAL",
+        "UNKNOWN"
+      ]
+    },
+    "complementary_dependencies": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "NONE_OR_STANDARD_COMPUTE",
+          "CUSTOMER_DATA",
+          "FIRM_PROPRIETARY_DATA",
+          "LICENSED_DATA",
+          "LICENSED_CONTENT",
+          "NETWORK_OR_INSTALLED_BASE",
+          "REGULATED_TRANSACTION_RAIL",
+          "EXECUTION_PERMISSIONS",
+          "HARDWARE_OR_DEVICE",
+          "PHYSICAL_SUPPLY_NETWORK",
+          "LIVE_HUMAN_LABOR",
+          "SPECIALIZED_NON_LLM_ENGINE",
+          "OTHER"
+        ]
+      }
+    },
+    "firm_structure": {
+      "enum": [
+        "PURE_PLAY",
+        "SOFTWARE_DOMINANT",
+        "MIXED_SEPARABLE",
+        "MIXED_NONSEPARABLE",
+        "SOFTWARE_PERIPHERAL",
+        "UNKNOWN"
+      ]
+    },
+    "commercial_materiality": {
+      "enum": [
+        "DOMINANT",
+        "MATERIAL",
+        "MINOR",
+        "UNKNOWN"
+      ]
+    },
+    "customer_facing_functional_product": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "operating_company": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "economically_eligible": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "data_eligible": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "screen_status": {
+      "enum": [
+        "LIKELY_ELIGIBLE",
+        "LIKELY_INELIGIBLE",
+        "BOUNDARY_OR_UNCERTAIN",
+        null
+      ]
+    },
+    "candidate_tier": {
+      "enum": [
+        "TIER_A_CORE",
+        "TIER_B_EXTENSION",
+        "TIER_C_BOUNDARY",
+        "EXCLUDED",
+        "UNCERTAIN"
+      ]
+    },
+    "boundary_flags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "contradictions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim",
+          "source_id",
+          "passage_id",
+          "quote"
+        ],
+        "properties": {
+          "claim": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "passage_id": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "rule_trace": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "rule_id",
+          "result"
+        ],
+        "properties": {
+          "rule_id": {
+            "type": "string"
+          },
+          "result": {
+            "enum": [
+              "pass",
+              "fail",
+              "unknown",
+              "not_applicable"
+            ]
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "review_status": {
+      "enum": [
+        "unreviewed",
+        "approved",
+        "overridden",
+        "ambiguous",
+        "ontology_question"
+      ]
+    },
+    "taxonomy_version": {
+      "type": "string"
+    },
+    "sample_rules_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "schema_version": {
+      "type": "string"
+    }
+  }
+}

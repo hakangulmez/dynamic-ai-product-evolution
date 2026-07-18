@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$id": "company.schema.json",
+  "required": [
+    "company_id",
+    "company_name",
+    "cik",
+    "observation_start",
+    "observation_end"
+  ],
+  "properties": {
+    "company_id": {
+      "type": "string"
+    },
+    "ticker": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "company_name": {
+      "type": "string"
+    },
+    "cik": {
+      "type": "string"
+    },
+    "official_domains": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "observation_start": {
+      "type": "string",
+      "format": "date"
+    },
+    "observation_end": {
+      "type": "string",
+      "format": "date"
+    },
+    "inclusion_status": {
+      "enum": [
+        "included",
+        "excluded",
+        "pending"
+      ]
+    },
+    "inclusion_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "schema_version": {
+      "type": "string"
+    }
+  }
+}

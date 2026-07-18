@@ -1,0 +1,76 @@
+rules_version: 0.1.0
+status: provisional_pending_sentinel
+notes:
+  - The full classifier stores economic axes; these rules derive analytical samples.
+  - Changing a rule creates a new sample release but does not require rerunning classification.
+
+tier_a_core:
+  operating_company_required: true
+  baseline_annual_filing_required: true
+  customer_facing_functional_product_required: true
+  allowed_archetypes:
+    - FUNCTIONAL_SOFTWARE
+    - ADAPTIVE_DIGITAL_SERVICE
+    - DATA_ANALYTICS_PRODUCT
+  allowed_software_centrality:
+    - CORE
+    - CO_ESSENTIAL
+  allowed_firm_structure:
+    - PURE_PLAY
+    - SOFTWARE_DOMINANT
+  allowed_materiality:
+    - DOMINANT
+    - MATERIAL
+  data_eligibility_required_for_production_extraction: true
+  manual_review_if:
+    - software_centrality_is_CO_ESSENTIAL
+    - multiple_material_archetypes
+    - contradictory_materiality_evidence
+    - boundary_flag_present
+
+tier_b_extension:
+  candidate_archetypes:
+    - TRANSACTION_INFRASTRUCTURE
+    - DATA_ANALYTICS_PRODUCT
+    - HARDWARE_SOFTWARE_SYSTEM
+    - HUMAN_MANAGED_SERVICE
+    - FUNCTIONAL_SOFTWARE
+    - ADAPTIVE_DIGITAL_SERVICE
+  candidate_firm_structure:
+    - MIXED_SEPARABLE
+    - MIXED_NONSEPARABLE
+    - SOFTWARE_DOMINANT
+    - PURE_PLAY
+  outcome_analysis_requires_segment_mapping: true
+
+tier_c_boundary:
+  default_archetypes:
+    - MARKETPLACE_COORDINATION
+    - CONTENT_CATALOG
+    - ATTENTION_SOCIAL_PLATFORM
+    - INTERACTIVE_ENTERTAINMENT
+    - ECOMMERCE_RETAIL
+    - PHYSICAL_SERVICE_NETWORK
+  also_include_if:
+    - software_centrality_is_ENABLING
+    - software_centrality_is_PERIPHERAL
+    - firm_structure_is_SOFTWARE_PERIPHERAL
+    - mixed_nonseparable_without_clean_outcome_mapping
+
+excluded:
+  deterministic_reason_codes:
+    - FUND_OR_INVESTMENT_COMPANY
+    - ASSET_BACKED_ISSUER
+    - TRUST_WITHOUT_OPERATING_BUSINESS
+    - SHELL_OR_PRECOMBINATION_SPAC
+    - NO_ELIGIBLE_ANNUAL_OPERATING_FILING
+    - DUPLICATE_ISSUER_RECORD
+    - NO_CUSTOMER_FACING_DIGITAL_PRODUCT
+
+uncertain:
+  conditions:
+    - insufficient_baseline_evidence
+    - unresolved_operating_status
+    - contradictory_axis_classification
+    - unresolved_materiality
+    - unresolved_lineage

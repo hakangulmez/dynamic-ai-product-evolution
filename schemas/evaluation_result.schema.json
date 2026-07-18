@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$id": "evaluation_result.schema.json",
+  "required": [
+    "eval_run_id",
+    "stage",
+    "dataset_version",
+    "metrics",
+    "decision"
+  ],
+  "properties": {
+    "eval_run_id": {
+      "type": "string"
+    },
+    "stage": {
+      "type": "string"
+    },
+    "dataset_version": {
+      "type": "string"
+    },
+    "metrics": {
+      "type": "object"
+    },
+    "errors": {
+      "type": "array"
+    },
+    "decision": {
+      "enum": [
+        "pass",
+        "conditional_pass",
+        "fail"
+      ]
+    },
+    "reviewer_notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "created_at": {
+      "type": "string"
+    }
+  }
+}

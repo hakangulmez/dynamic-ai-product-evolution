@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$id": "source_passage.schema.json",
+  "required": [
+    "passage_id",
+    "source_id",
+    "text",
+    "text_hash"
+  ],
+  "properties": {
+    "passage_id": {
+      "type": "string"
+    },
+    "source_id": {
+      "type": "string"
+    },
+    "heading_path": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "text": {
+      "type": "string"
+    },
+    "text_hash": {
+      "type": "string"
+    },
+    "start_offset": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "end_offset": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "page": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "normalizer_version": {
+      "type": "string"
+    }
+  }
+}

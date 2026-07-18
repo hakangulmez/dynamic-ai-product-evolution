@@ -1,0 +1,9 @@
+routes:
+  source_classification: structured_low_cost_model
+  product_discovery: structured_capable_model
+  product_consolidation: high_capability_model
+  task_discovery: structured_capable_model
+  task_consolidation: high_capability_model
+  longitudinal_matching: high_capability_model
+  measurement: high_capability_model
+  adjudication: independent_high_capability_model

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$id": "frontier_baseline.schema.json",
+  "required": [
+    "baseline_id",
+    "eligible_from",
+    "system_name",
+    "capabilities",
+    "evidence"
+  ],
+  "properties": {
+    "baseline_id": {
+      "type": "string"
+    },
+    "eligible_from": {
+      "type": "string",
+      "format": "date"
+    },
+    "eligible_to": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "system_name": {
+      "type": "string"
+    },
+    "access_regime": {
+      "type": "string"
+    },
+    "modalities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "capabilities": {
+      "type": "object"
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_id",
+          "passage_id",
+          "quote"
+        ],
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "passage_id": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "schema_version": {
+      "type": "string"
+    }
+  }
+}

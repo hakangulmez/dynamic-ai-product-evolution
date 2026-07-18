@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$id": "extraction_run.schema.json",
+  "required": [
+    "run_id",
+    "stage",
+    "started_at",
+    "code_commit",
+    "spec_version",
+    "schema_hash",
+    "prompt_hash",
+    "source_manifest_hash"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "stage": {
+      "type": "string"
+    },
+    "started_at": {
+      "type": "string"
+    },
+    "completed_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "code_commit": {
+      "type": "string"
+    },
+    "spec_version": {
+      "type": "string"
+    },
+    "schema_hash": {
+      "type": "string"
+    },
+    "prompt_hash": {
+      "type": "string"
+    },
+    "source_manifest_hash": {
+      "type": "string"
+    },
+    "model_provider": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model_parameters": {
+      "type": "object"
+    },
+    "fallbacks": {
+      "type": "array"
+    },
+    "status": {
+      "type": "string"
+    },
+    "error_count": {
+      "type": "integer"
+    }
+  }
+}
