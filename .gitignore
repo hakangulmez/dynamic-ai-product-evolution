@@ -44,7 +44,5 @@ artifacts/**
 .vscode/
 .idea/
 
-# Obsidian local workspace state
-.obsidian/workspace.json
-.obsidian/workspaces.json
-.obsidian/cache
+# Obsidian local vault settings and workspace state
+.obsidian/
