@@ -1,0 +1,44 @@
+[
+  {
+    "adjudication_id": "adj-0001",
+    "case_id": "case-0001000003",
+    "decision": "CONFIRM_RULE_TIER",
+    "final_candidate_tier": "TIER_A_CORE",
+    "reason_codes": ["co_essential_data_input_not_passive_content"],
+    "evidence": [
+      {"claim": "Licensed data is an input to a software-performed decision task, not passive content.", "source_id": "fixture:mda-10k-2022", "passage_id": "mda-p1", "quote": "Customers query, combine, monitor, and analyze market data through our analytics workstation to support investment decisions."}
+    ],
+    "reviewer": "fixture-reviewer-1",
+    "review_comment": "CO_ESSENTIAL data/analytics case: the workstation performs the analytical task; Tier A stands per rule config.",
+    "confidence": "high",
+    "recorded_at": "2026-07-01T10:00:00+00:00"
+  },
+  {
+    "adjudication_id": "adj-0002",
+    "case_id": "case-0001000011",
+    "decision": "CONFIRM_RULE_TIER",
+    "final_candidate_tier": "TIER_B_EXTENSION",
+    "reason_codes": ["mixed_separable_segment_mapping_required"],
+    "evidence": [
+      {"claim": "The software segment is separately reported, so segment mapping is feasible.", "source_id": "fixture:ocr-10k-2022", "passage_id": "ocr-p3", "quote": "The retail segment generates the majority of consolidated revenue; the OmniCloud segment is material and reported separately."}
+    ],
+    "reviewer": "fixture-reviewer-1",
+    "review_comment": "Mixed separable firm: Tier B with a documented segment mapping requirement for outcome analysis.",
+    "confidence": "high",
+    "recorded_at": "2026-07-01T10:05:00+00:00"
+  },
+  {
+    "adjudication_id": "adj-0003",
+    "case_id": "case-0001000012",
+    "decision": "CONFIRM_RULE_TIER",
+    "final_candidate_tier": "TIER_C_BOUNDARY",
+    "reason_codes": ["mixed_nonseparable_without_clean_outcome_mapping"],
+    "evidence": [
+      {"claim": "Software activity cannot be separated from supplies and services in firm outcomes.", "source_id": "fixture:agt-10k-2022", "passage_id": "agt-p3", "quote": "Software, supplies, and services revenue are managed and reported as a single integrated segment."}
+    ],
+    "reviewer": "fixture-reviewer-2",
+    "review_comment": "Mixed nonseparable without an outcome mapping: Tier C boundary confirmed per ADR-009 (rules 0.2.0). The original rule trace and classifier output remain preserved.",
+    "confidence": "medium",
+    "recorded_at": "2026-07-01T10:10:00+00:00"
+  }
+]

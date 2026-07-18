@@ -1,0 +1,32 @@
+[
+  {
+    "lineage_id": "lin-0001",
+    "company_id": "CIK0001000017",
+    "related_company_id": "CIK0001000017",
+    "relationship": "name_change",
+    "effective_date": "2022-06-01",
+    "end_date": null,
+    "evidence_source_id": "fixture:rnc-10k-2022",
+    "notes": "Oldname Corp renamed to Renamed Corp; same operating entity and CIK."
+  },
+  {
+    "lineage_id": "lin-0002",
+    "company_id": "CIK0001000018",
+    "related_company_id": "CIK0001000001",
+    "relationship": "target",
+    "effective_date": "2023-06-30",
+    "end_date": null,
+    "evidence_source_id": "fixture:adi-merger-8k-2023",
+    "notes": "Acquired Delisted Inc acquired by Synthetic Workflow Systems after the baseline; baseline observations are retained."
+  },
+  {
+    "lineage_id": "lin-0003",
+    "company_id": "CIK0001000001",
+    "related_company_id": "CIK0001000001",
+    "relationship": "share_class_same_issuer",
+    "effective_date": "2022-09-15",
+    "end_date": null,
+    "evidence_source_id": "fixture:sws-10k-2022-classb",
+    "notes": "Class B record consolidated into the primary issuer record at the CIK level."
+  }
+]

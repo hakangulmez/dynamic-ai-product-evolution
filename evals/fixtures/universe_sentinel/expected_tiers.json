@@ -1,0 +1,62 @@
+{
+  "description": "Gold expectations for the sentinel fixture run (seed 42, mock provider). Final tiers are after append-only adjudication; raw rule-derived tiers noted where they differ.",
+  "expected_final_tiers": {
+    "0001000001": "TIER_A_CORE",
+    "0001000002": "TIER_A_CORE",
+    "0001000003": "TIER_A_CORE",
+    "0001000004": "TIER_B_EXTENSION",
+    "0001000005": "TIER_C_BOUNDARY",
+    "0001000006": "TIER_C_BOUNDARY",
+    "0001000007": "TIER_C_BOUNDARY",
+    "0001000008": "TIER_C_BOUNDARY",
+    "0001000009": "TIER_C_BOUNDARY",
+    "0001000010": "TIER_B_EXTENSION",
+    "0001000011": "TIER_B_EXTENSION",
+    "0001000012": "TIER_C_BOUNDARY",
+    "0001000013": "EXCLUDED",
+    "0001000014": "EXCLUDED",
+    "0001000015": "UNCERTAIN",
+    "0001000016": "UNCERTAIN",
+    "0001000017": "TIER_A_CORE",
+    "0001000018": "TIER_A_CORE",
+    "0001000020": "EXCLUDED",
+    "0001000021": "TIER_C_BOUNDARY",
+    "0001000022": "EXCLUDED",
+    "0001000023": "EXCLUDED",
+    "0001000024": "EXCLUDED"
+  },
+  "rule_derived_tier_before_adjudication": {
+    "0001000012": "TIER_C_BOUNDARY"
+  },
+  "expected_counts": {
+    "filer_records": 25,
+    "unique_firms": 24,
+    "duplicate_records": 1,
+    "baseline_firms": 23,
+    "post_baseline_entrants": 1,
+    "tier_a": 5,
+    "tier_b": 3,
+    "tier_c": 7,
+    "excluded": 6,
+    "excluded_deterministic": 2,
+    "excluded_screen_derived_provisional": 4,
+    "excluded_economic_classification": 0,
+    "uncertain": 2,
+    "review_cases": 3,
+    "review_cases_open": 0,
+    "packet_failures": 1,
+    "negative_audit_pool": 6,
+    "negative_audit_sampled": 6,
+    "negative_audit_completed": 6,
+    "negative_audit_pending": 0
+  },
+  "notes": {
+    "0001000001": "Clear Tier A core software; duplicate Class B record excluded at record level, firm retained.",
+    "0001000009": "Human-managed service with a real but peripheral client portal: customer_facing_functional_product=true, PERIPHERAL centrality, Tier C.",
+    "0001000012": "MIXED_NONSEPARABLE derives Tier C per ADR-009 (rules 0.2.0); adjudication confirms the rule tier (append-only).",
+    "0001000016": "Temporal-leakage attempt: post-cutoff passage blocks the packet; firm remains UNCERTAIN.",
+    "0001000019": "Post-baseline entrant; stored in the entrant cohort, outside the baseline tier denominator.",
+    "0001000018": "Acquired in 2023; baseline Tier A observation is retained (no survivorship deletion).",
+    "provenance": "Excluded = 2 deterministic (SPAC shell, fund) + 4 provisional screen-derived negatives, all audited via negative_audit_results.json."
+  }
+}

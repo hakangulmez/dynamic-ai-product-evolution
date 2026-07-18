@@ -1,0 +1,44 @@
+[
+  {
+    "cik": "0001000013",
+    "audit_status": "confirmed_ineligible",
+    "reviewer": "fixture-reviewer-1",
+    "comment": "Pre-combination blank-check shell; deterministic exclusion confirmed.",
+    "recorded_at": "2026-07-02T09:00:00+00:00"
+  },
+  {
+    "cik": "0001000014",
+    "audit_status": "confirmed_ineligible",
+    "reviewer": "fixture-reviewer-1",
+    "comment": "Registered investment company; fund report, no operating business.",
+    "recorded_at": "2026-07-02T09:05:00+00:00"
+  },
+  {
+    "cik": "0001000020",
+    "audit_status": "confirmed_ineligible",
+    "reviewer": "fixture-reviewer-2",
+    "comment": "Internal AI/software in manufacturing only; no customer-facing digital product in the baseline packet.",
+    "recorded_at": "2026-07-02T09:10:00+00:00"
+  },
+  {
+    "cik": "0001000022",
+    "audit_status": "confirmed_ineligible",
+    "reviewer": "fixture-reviewer-2",
+    "comment": "Physical steel products; no digital offering described.",
+    "recorded_at": "2026-07-02T09:15:00+00:00"
+  },
+  {
+    "cik": "0001000023",
+    "audit_status": "confirmed_ineligible",
+    "reviewer": "fixture-reviewer-1",
+    "comment": "Online banking portal is an access channel to deposit/lending services; software-enabled non-software control.",
+    "recorded_at": "2026-07-02T09:20:00+00:00"
+  },
+  {
+    "cik": "0001000024",
+    "audit_status": "confirmed_ineligible",
+    "reviewer": "fixture-reviewer-2",
+    "comment": "Contract drilling services; no digital offering described.",
+    "recorded_at": "2026-07-02T09:25:00+00:00"
+  }
+]

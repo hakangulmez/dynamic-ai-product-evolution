@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 — Phase 0 company-universe sentinel
+
+- Implemented the Stage 00 local sentinel under `src/dynamic_ai_products/universe/`: filer-frame models with CIK/accession normalization, deterministic issuer exclusions with reason codes, temporally validated baseline evidence packets, a mock-provider high-recall screen and multi-axis classification boundary, config-driven Tier A/B/C derivation with rule traces and config hashes, an append-only boundary-adjudication layer, seeded stratified negative-audit sampling, and hard-gated freeze manifests.
+- Rewrote `pipelines/00_build_company_universe.py` as a fixture-driven CLI (`--config/--input/--output-dir/--run-id/--seed/--provider mock/--dry-run`) with immutable run directories and non-zero exit codes on validation failure. No network access and no real model calls.
+- Added the synthetic `evals/fixtures/universe_sentinel/` bundle (24 firms covering all twelve adversarial boundary families plus issuer, lineage, entrant, insufficient-evidence, and temporal-leakage cases) with gold `expected_tiers.json`.
+- Added 58 tests across identifiers, issuer filters, packets, screening/classification validation, tier rules, review/audit, and end-to-end runner/CLI behavior; stage 00 registry status is now `sentinel`.
+- Documented commands, fixture format, remaining stubs, and pre-network hard gates in `docs/implementation/COMPANY_UNIVERSE_SENTINEL_V0.md`.
+- Review round: adopted ADR-009 (MIXED_NONSEPARABLE firms route to Tier C or manual review, never Tier B; sample rules 0.2.0) and ADR-010 (screen-derived exclusions are provisional with explicit provenance until the negative audit completes; audit completion is a freeze hard gate). Added exclusion-provenance fields, negative-audit result records, count-reconciliation identities, run-id path-traversal validation, and a fixture-bundle source hash in the run manifest. Aligned the package version with the changelog and extended `REPO_MANIFEST.md` with all Phase 0 files.
+
 ## 0.5.0 — Local Obsidian and Streamlit setup
 
 - Added an Obsidian-friendly `RESEARCH_HOME.md` that maps methodology, implementation, evaluation, and operations documents.

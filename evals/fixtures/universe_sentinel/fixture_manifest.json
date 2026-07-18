@@ -1,0 +1,6 @@
+{
+  "description": "Synthetic sentinel fixture bundle for Stage 00. All firms, filings, and passages are invented for methodological testing; no real company data. Cases cover the twelve adversarial boundary families in evals/adversarial/UNIVERSE_BOUNDARY_CASES.md plus fund, shell/SPAC, duplicate share class, acquired/delisted incumbent, name change, post-baseline entrant, insufficient evidence, and a temporal-leakage attempt.",
+  "baseline_cutoff": "2022-12-31",
+  "form_scope": ["10-K", "10-KT"],
+  "universe_version_on_freeze": "UNIVERSE_v0.0-sentinel-fixture"
+}

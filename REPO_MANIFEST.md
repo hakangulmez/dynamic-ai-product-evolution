@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **213**
+Total tracked/scaffold files listed: **247**
 
 - `.claude/settings.example.json`
 - `.env.example`
@@ -54,6 +54,7 @@ Total tracked/scaffold files listed: **213**
 - `docs/architecture/MODEL_ROUTING.md`
 - `docs/architecture/RESEARCH_CONSOLE_ARCHITECTURE.md`
 - `docs/architecture/SYSTEM_ARCHITECTURE.md`
+- `docs/implementation/COMPANY_UNIVERSE_SENTINEL_V0.md`
 - `docs/implementation/EVAL_HARNESS_BUILD_PLAN.md`
 - `docs/implementation/NON_DEVELOPER_LOCAL_WORKFLOW.md`
 - `docs/implementation/OBSIDIAN_AND_STREAMLIT_SETUP.md`
@@ -90,6 +91,16 @@ Total tracked/scaffold files listed: **213**
 - `evals/change_requests/README.md`
 - `evals/expected/.gitkeep`
 - `evals/fixtures/README.md`
+- `evals/fixtures/universe_sentinel/adjudications.json`
+- `evals/fixtures/universe_sentinel/classification_outputs.json`
+- `evals/fixtures/universe_sentinel/evidence_packets.json`
+- `evals/fixtures/universe_sentinel/expected_tiers.json`
+- `evals/fixtures/universe_sentinel/filer_frame.json`
+- `evals/fixtures/universe_sentinel/firm_year_events.json`
+- `evals/fixtures/universe_sentinel/fixture_manifest.json`
+- `evals/fixtures/universe_sentinel/lineage.json`
+- `evals/fixtures/universe_sentinel/negative_audit_results.json`
+- `evals/fixtures/universe_sentinel/screen_outputs.json`
 - `evals/gold/README.md`
 - `evals/regression/README.md`
 - `evals/reports/.gitkeep`
@@ -208,12 +219,35 @@ Total tracked/scaffold files listed: **213**
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/validation.py`
 - `src/dynamic_ai_products/workflow.py`
+- `src/dynamic_ai_products/universe/__init__.py`
+- `src/dynamic_ai_products/universe/audit.py`
+- `src/dynamic_ai_products/universe/classification.py`
+- `src/dynamic_ai_products/universe/freeze.py`
+- `src/dynamic_ai_products/universe/identifiers.py`
+- `src/dynamic_ai_products/universe/io_utils.py`
+- `src/dynamic_ai_products/universe/issuer_filters.py`
+- `src/dynamic_ai_products/universe/models.py`
+- `src/dynamic_ai_products/universe/packets.py`
+- `src/dynamic_ai_products/universe/review.py`
+- `src/dynamic_ai_products/universe/rules.py`
+- `src/dynamic_ai_products/universe/runner.py`
+- `src/dynamic_ai_products/universe/screening.py`
+- `src/dynamic_ai_products/universe/taxonomy.py`
 - `tests/README.md`
 - `tests/contamination/test_no_legacy_contamination.py`
 - `tests/notebook/test_master_notebook.py`
 - `tests/schema/test_schemas_are_valid.py`
 - `tests/temporal/test_temporal_rule.py`
 - `tests/ui/test_local_ui_scaffold.py`
+- `tests/universe/test_evidence_packets.py`
+- `tests/universe/test_identifiers.py`
+- `tests/universe/test_issuer_filters.py`
+- `tests/universe/test_repo_hygiene.py`
+- `tests/universe/test_review_and_audit.py`
+- `tests/universe/test_screening_and_classification.py`
+- `tests/universe/test_sentinel_runner.py`
+- `tests/universe/test_tier_rules.py`
+- `tests/universe/universe_test_helpers.py`
 - `tests/universe/test_universe_design.py`
 - `tests/workflow/test_pipeline_registry.py`
 - `REPO_MANIFEST.md`

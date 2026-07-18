@@ -1,8 +1,9 @@
-rules_version: 0.1.0
+rules_version: 0.2.0
 status: provisional_pending_sentinel
 notes:
   - The full classifier stores economic axes; these rules derive analytical samples.
   - Changing a rule creates a new sample release but does not require rerunning classification.
+  - 0.2.0 removes MIXED_NONSEPARABLE from Tier B candidates per ADR-009; such firms route to Tier C or manual review.
 
 tier_a_core:
   operating_company_required: true
@@ -38,7 +39,6 @@ tier_b_extension:
     - ADAPTIVE_DIGITAL_SERVICE
   candidate_firm_structure:
     - MIXED_SEPARABLE
-    - MIXED_NONSEPARABLE
     - SOFTWARE_DOMINANT
     - PURE_PLAY
   outcome_analysis_requires_segment_mapping: true

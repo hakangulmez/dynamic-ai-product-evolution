@@ -22,7 +22,7 @@ stages:
   - data/processed/firm_lineage.parquet
   - data/manifests/company_universe_manifest.json
   gate: Company identifiers, observation window, and inclusion rules validated.
-  status: stub
+  status: sentinel
 - id: '01'
   name: Discover SEC sources
   phase: A — Universe and corpus

@@ -1,0 +1,481 @@
+[
+  {
+    "cik": "1000001",
+    "canonical_name": "Synthetic Workflow Systems, Inc.",
+    "accession_number": "0001000001-22-000002",
+    "filing_date": "2022-09-15",
+    "fiscal_year_end": "2022-06-30",
+    "form": "10-K",
+    "sic": "7372",
+    "exchange": "NASDAQ",
+    "ticker": "SWS",
+    "source_ids": ["fixture:sws-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000001",
+    "canonical_name": "Synthetic Workflow Systems, Inc.",
+    "accession_number": "0001000001-22-000001",
+    "filing_date": "2022-09-15",
+    "fiscal_year_end": "2022-06-30",
+    "form": "10-K",
+    "sic": "7372",
+    "exchange": "NASDAQ",
+    "ticker": "SWS.B",
+    "source_ids": ["fixture:sws-10k-2022-classb"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    },
+    "notes": "Duplicate Class B share-class record for the same issuer."
+  },
+  {
+    "cik": "1000002",
+    "canonical_name": "Adaptive Learning Labs, Inc.",
+    "accession_number": "0001000002-22-000010",
+    "filing_date": "2022-08-20",
+    "fiscal_year_end": "2022-05-31",
+    "form": "10-K",
+    "sic": "7372",
+    "exchange": "NYSE",
+    "ticker": "ALL",
+    "source_ids": ["fixture:all-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000003",
+    "canonical_name": "MarketData Analytics Corp",
+    "accession_number": "0001000003-22-000015",
+    "filing_date": "2022-11-01",
+    "fiscal_year_end": "2022-08-31",
+    "form": "10-K",
+    "sic": "7375",
+    "exchange": "NYSE",
+    "ticker": "MDA",
+    "source_ids": ["fixture:mda-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000004",
+    "canonical_name": "PayRail Systems, Inc.",
+    "accession_number": "0001000004-22-000020",
+    "filing_date": "2022-10-05",
+    "fiscal_year_end": "2022-07-31",
+    "form": "10-K",
+    "sic": "7389",
+    "exchange": "NASDAQ",
+    "ticker": "PRS",
+    "source_ids": ["fixture:prs-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000005",
+    "canonical_name": "RideLink Networks, Inc.",
+    "accession_number": "0001000005-22-000025",
+    "filing_date": "2022-09-30",
+    "fiscal_year_end": "2022-06-30",
+    "form": "10-K",
+    "sic": "7389",
+    "exchange": "NYSE",
+    "ticker": "RLN",
+    "source_ids": ["fixture:rln-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000006",
+    "canonical_name": "StreamVault Media, Inc.",
+    "accession_number": "0001000006-22-000030",
+    "filing_date": "2022-08-10",
+    "fiscal_year_end": "2022-05-31",
+    "form": "10-K",
+    "sic": "7841",
+    "exchange": "NASDAQ",
+    "ticker": "SVM",
+    "source_ids": ["fixture:svm-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000007",
+    "canonical_name": "SocialSphere Holdings, Inc.",
+    "accession_number": "0001000007-22-000035",
+    "filing_date": "2022-07-25",
+    "fiscal_year_end": "2022-04-30",
+    "form": "10-K",
+    "sic": "7370",
+    "exchange": "NYSE",
+    "ticker": "SSH",
+    "source_ids": ["fixture:ssh-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000008",
+    "canonical_name": "PixelForge Interactive, Inc.",
+    "accession_number": "0001000008-22-000040",
+    "filing_date": "2022-09-01",
+    "fiscal_year_end": "2022-06-30",
+    "form": "10-K",
+    "sic": "7372",
+    "exchange": "NASDAQ",
+    "ticker": "PFI",
+    "source_ids": ["fixture:pfi-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000009",
+    "canonical_name": "ConsultPro Services Group, Inc.",
+    "accession_number": "0001000009-22-000045",
+    "filing_date": "2022-11-15",
+    "fiscal_year_end": "2022-08-31",
+    "form": "10-K",
+    "sic": "8742",
+    "exchange": "NYSE",
+    "ticker": "CPS",
+    "source_ids": ["fixture:cps-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000010",
+    "canonical_name": "MediSense Devices, Inc.",
+    "accession_number": "0001000010-22-000050",
+    "filing_date": "2022-10-20",
+    "fiscal_year_end": "2022-07-31",
+    "form": "10-K",
+    "sic": "3845",
+    "exchange": "NYSE",
+    "ticker": "MSD",
+    "source_ids": ["fixture:msd-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000011",
+    "canonical_name": "OmniCloud Retail Group, Inc.",
+    "accession_number": "0001000011-22-000055",
+    "filing_date": "2022-12-10",
+    "fiscal_year_end": "2022-09-30",
+    "form": "10-K",
+    "sic": "5961",
+    "exchange": "NASDAQ",
+    "ticker": "OCR",
+    "source_ids": ["fixture:ocr-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000012",
+    "canonical_name": "AgriTech Holdings Corp",
+    "accession_number": "0001000012-22-000060",
+    "filing_date": "2022-11-30",
+    "fiscal_year_end": "2022-08-31",
+    "form": "10-K",
+    "sic": "0700",
+    "exchange": "NYSE",
+    "ticker": "AGT",
+    "source_ids": ["fixture:agt-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000013",
+    "canonical_name": "Blank Check Acquisition Corp I",
+    "accession_number": "0001000013-22-000065",
+    "filing_date": "2022-06-15",
+    "fiscal_year_end": "2022-03-31",
+    "form": "10-K",
+    "sic": "6770",
+    "exchange": "NASDAQ",
+    "ticker": "BCA",
+    "source_ids": ["fixture:bca-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": true,
+      "blank_check_precombination": true
+    }
+  },
+  {
+    "cik": "1000014",
+    "canonical_name": "Global Index Fund Trust",
+    "accession_number": "0001000014-22-000070",
+    "filing_date": "2022-05-20",
+    "fiscal_year_end": "2022-02-28",
+    "form": "10-K",
+    "sic": "6722",
+    "exchange": "NYSE",
+    "ticker": "GIF",
+    "source_ids": ["fixture:gif-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": true,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000015",
+    "canonical_name": "Sparse Filing Corp",
+    "accession_number": "0001000015-22-000075",
+    "filing_date": "2022-10-01",
+    "fiscal_year_end": "2022-06-30",
+    "form": "10-K",
+    "sic": "7379",
+    "exchange": null,
+    "ticker": null,
+    "source_ids": ["fixture:sfc-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000016",
+    "canonical_name": "TemporalLeak Corp",
+    "accession_number": "0001000016-22-000080",
+    "filing_date": "2022-09-15",
+    "fiscal_year_end": "2022-06-30",
+    "form": "10-K",
+    "sic": "7372",
+    "exchange": "NASDAQ",
+    "ticker": "TLC",
+    "source_ids": ["fixture:tlc-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000017",
+    "canonical_name": "Renamed Corp",
+    "former_names": ["Oldname Corp"],
+    "accession_number": "0001000017-22-000085",
+    "filing_date": "2022-08-05",
+    "fiscal_year_end": "2022-05-31",
+    "form": "10-K",
+    "sic": "7372",
+    "exchange": "NASDAQ",
+    "ticker": "RNC",
+    "source_ids": ["fixture:rnc-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000018",
+    "canonical_name": "Acquired Delisted Inc",
+    "accession_number": "0001000018-22-000090",
+    "filing_date": "2022-07-15",
+    "fiscal_year_end": "2022-04-30",
+    "form": "10-K",
+    "sic": "7372",
+    "exchange": "NYSE",
+    "ticker": "ADI",
+    "source_ids": ["fixture:adi-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    },
+    "notes": "Baseline incumbent later acquired in 2023; must remain in the baseline universe."
+  },
+  {
+    "cik": "1000019",
+    "canonical_name": "PostBaseline Entrant Inc",
+    "accession_number": "0001000019-23-000095",
+    "filing_date": "2023-03-01",
+    "fiscal_year_end": "2022-12-31",
+    "form": "10-K",
+    "sic": "7372",
+    "exchange": "NASDAQ",
+    "ticker": "PBE",
+    "source_ids": ["fixture:pbe-10k-2023"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    },
+    "notes": "First eligible annual filing is after the baseline cutoff; entrant cohort."
+  },
+  {
+    "cik": "1000020",
+    "canonical_name": "NorthPlain Manufacturing Corp",
+    "accession_number": "0001000020-22-000100",
+    "filing_date": "2022-09-20",
+    "fiscal_year_end": "2022-06-30",
+    "form": "10-K",
+    "sic": "3561",
+    "exchange": "NYSE",
+    "ticker": "NPM",
+    "source_ids": ["fixture:npm-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000021",
+    "canonical_name": "ShopFast Retail, Inc.",
+    "accession_number": "0001000021-22-000105",
+    "filing_date": "2022-10-25",
+    "fiscal_year_end": "2022-07-31",
+    "form": "10-K",
+    "sic": "5961",
+    "exchange": "NASDAQ",
+    "ticker": "SHF",
+    "source_ids": ["fixture:shf-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000022",
+    "canonical_name": "SteelWorks Heavy Industries, Inc.",
+    "accession_number": "0001000022-22-000110",
+    "filing_date": "2022-08-30",
+    "fiscal_year_end": "2022-05-31",
+    "form": "10-K",
+    "sic": "3312",
+    "exchange": "NYSE",
+    "ticker": "SWH",
+    "source_ids": ["fixture:swh-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000023",
+    "canonical_name": "Community Bancorp Holdings",
+    "accession_number": "0001000023-22-000115",
+    "filing_date": "2022-12-01",
+    "fiscal_year_end": "2022-09-30",
+    "form": "10-K",
+    "sic": "6022",
+    "exchange": "NASDAQ",
+    "ticker": "CBH",
+    "source_ids": ["fixture:cbh-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  },
+  {
+    "cik": "1000024",
+    "canonical_name": "Petro Basin Drilling Co",
+    "accession_number": "0001000024-22-000120",
+    "filing_date": "2022-09-10",
+    "fiscal_year_end": "2022-06-30",
+    "form": "10-K",
+    "sic": "1381",
+    "exchange": "NYSE",
+    "ticker": "PBD",
+    "source_ids": ["fixture:pbd-10k-2022"],
+    "issuer_status_flags": {
+      "investment_company": false,
+      "asset_backed_issuer": false,
+      "non_operating_trust": false,
+      "shell_company": false,
+      "blank_check_precombination": false
+    }
+  }
+]
