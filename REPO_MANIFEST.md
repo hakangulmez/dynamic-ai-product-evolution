@@ -2,14 +2,39 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **247**
+Total tracked/scaffold files listed: **275**
 
 - `.claude/settings.example.json`
+- `.claude/skills/diagnosing-bugs/SKILL.md`
+- `.claude/skills/diagnosing-bugs/agents/openai.yaml`
+- `.claude/skills/diagnosing-bugs/scripts/hitl-loop.template.sh`
+- `.claude/skills/domain-modeling/ADR-FORMAT.md`
+- `.claude/skills/domain-modeling/CONTEXT-FORMAT.md`
+- `.claude/skills/domain-modeling/SKILL.md`
+- `.claude/skills/domain-modeling/agents/openai.yaml`
+- `.claude/skills/grill-with-docs/SKILL.md`
+- `.claude/skills/grill-with-docs/agents/openai.yaml`
+- `.claude/skills/grilling/SKILL.md`
+- `.claude/skills/grilling/agents/openai.yaml`
+- `.claude/skills/handoff/SKILL.md`
+- `.claude/skills/handoff/agents/openai.yaml`
+- `.claude/skills/setup-matt-pocock-skills/SKILL.md`
+- `.claude/skills/setup-matt-pocock-skills/agents/openai.yaml`
+- `.claude/skills/setup-matt-pocock-skills/domain.md`
+- `.claude/skills/setup-matt-pocock-skills/issue-tracker-github.md`
+- `.claude/skills/setup-matt-pocock-skills/issue-tracker-gitlab.md`
+- `.claude/skills/setup-matt-pocock-skills/issue-tracker-local.md`
+- `.claude/skills/setup-matt-pocock-skills/triage-labels.md`
+- `.claude/skills/tdd/SKILL.md`
+- `.claude/skills/tdd/agents/openai.yaml`
+- `.claude/skills/tdd/mocking.md`
+- `.claude/skills/tdd/tests.md`
 - `.env.example`
 - `.gitignore`
 - `.streamlit/config.toml`
 - `CHANGELOG.md`
 - `CLAUDE.md`
+- `CONTEXT.md`
 - `HANDOFF_CONTEXT.md`
 - `Makefile`
 - `NEW_CHAT_BOOTSTRAP.md`
@@ -46,6 +71,8 @@ Total tracked/scaffold files listed: **247**
 - `docs/SOURCE_POLICY.md`
 - `docs/TEMPORAL_POLICY.md`
 - `docs/THESIS_METHODOLOGY_AND_DATA.md`
+- `docs/agents/domain.md`
+- `docs/agents/issue-tracker.md`
 - `docs/architecture/COMPANY_UNIVERSE_PIPELINE.md`
 - `docs/architecture/CORPUS_ARCHITECTURE.md`
 - `docs/architecture/DATA_FLOW.md`
@@ -172,6 +199,7 @@ Total tracked/scaffold files listed: **247**
 - `schemas/universe_run_manifest.schema.json`
 - `scripts/run_research_console.sh`
 - `scripts/setup_local.sh`
+- `skills-lock.json`
 - `skills/README.md`
 - `skills/company-universe-builder/SKILL.md`
 - `skills/eval-case-curator/SKILL.md`

@@ -95,3 +95,37 @@ A live product page cannot establish a historical capability unless an archived 
 - Measurement: `docs/methodology/MEASUREMENT_DESIGN.md`
 - Evaluation: `evals/EVAL_HARNESS.md`
 - Implementation: relevant `specs/SPEC-XXX-*.md`
+
+## Agent skills
+
+### Installed workflow skills
+
+Project-local skills are stored under `.claude/skills/` and pinned by
+`skills-lock.json`. Third-party skill instructions never override this
+repository's canonical methodology, specifications, decision log, safety
+rules, or explicit user instructions.
+
+### Domain documentation
+
+- Glossary: `CONTEXT.md`
+- Methodology: `docs/methodology/`
+- Binding specifications: `specs/`
+- Decisions and ADRs: `docs/DECISION_LOG.md`
+- Agent-specific domain rules: `docs/agents/domain.md`
+
+Do not create a parallel `docs/adr/` tree. Do not write a new term or ADR
+without explicit approval.
+
+### Issue tracker
+
+GitHub Issues may be used only when explicitly requested. Existing
+specifications and implementation prompts must not be automatically converted
+into issues. See `docs/agents/issue-tracker.md`.
+
+### Skill execution boundaries
+
+- Grilling and documentation work do not imply implementation permission.
+- A planning/grilling request must not modify source code or begin the next phase.
+- Commit, push, issue creation, label changes, and external write actions require
+  explicit user approval.
+- Repository-local instructions override generic third-party skill defaults.

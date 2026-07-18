@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added a project-local Matt Pocock agent-skills workflow under `.claude/skills/` (setup, grill-with-docs, grilling, domain-modeling, tdd, diagnosing-bugs, handoff), pinned through `skills-lock.json`.
+- Added the repository glossary `CONTEXT.md`, derived from the canonical methodology and specs.
+- Added agent governance mappings under `docs/agents/` routing skill defaults to the existing canonical system: glossary at `CONTEXT.md`, ADRs in `docs/DECISION_LOG.md` (no `docs/adr/` tree), and GitHub issue writes gated behind explicit approval.
+- Added a minimal `## Agent skills` section to `CLAUDE.md` with skill execution boundaries.
+- No source-code or methodology behavior change.
+
 ## 0.6.0 — Phase 0 company-universe sentinel
 
 - Implemented the Stage 00 local sentinel under `src/dynamic_ai_products/universe/`: filer-frame models with CIK/accession normalization, deterministic issuer exclusions with reason codes, temporally validated baseline evidence packets, a mock-provider high-recall screen and multi-axis classification boundary, config-driven Tier A/B/C derivation with rule traces and config hashes, an append-only boundary-adjudication layer, seeded stratified negative-audit sampling, and hard-gated freeze manifests.
