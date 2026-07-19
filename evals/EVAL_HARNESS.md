@@ -13,12 +13,62 @@ Read together with:
 - `specs/SPEC-023-deterministic-validation.md`
 - `specs/SPEC-024-run-versioning-and-comparison.md`
 
-## Evaluation splits
+## Evaluation partitions and suites
 
-- `dev`: visible during prompt development.
-- `frozen_test`: protected generalization set.
-- `adversarial`: deliberately misleading and difficult cases.
-- `regression`: permanent cases for previously corrected failures.
+Case usage membership lives in the authoritative, versioned, append-only
+case-set manifest, not in case files or directory paths (ADR-014). Case files
+are split-agnostic; an immutable evaluation case does not own its split.
+
+- Partition (exactly one per case per case-set version): `dev`, visible
+  during prompt development; `frozen_test`, the protected generalization set.
+- Suites (zero or more; suites may overlap): `adversarial`, deliberately
+  misleading and difficult cases; `regression`, permanent cases for
+  previously corrected failures.
+
+Frozen case-set snapshots are immutable. Detailed case or gold exposure
+contaminates blind frozen use; a contaminated case moves to `dev` in a later
+case-set version (ADR-015). No silent approval and no silent frozen-set
+mutation is permitted. The concrete manifest layout and evaluation artifact
+root are deferred to implementation planning.
+
+## Assertions
+
+Assertions are the atomic scoring unit; every case contains one or more
+assertions. The assertion kinds are `expected_entity`, `forbidden_entity`,
+`field_value`, `evidence_provenance`, and `deterministic_validation`. Each
+assertion carries stable identity through an assertion semantic version, an
+assertion contract hash, or both; explicit, non-empty target references; and
+explicit, non-empty `scoring_gate_config_references`. Protected classes,
+severities, gate rules, and thresholds are referenced from the versioned
+scoring/gate configuration, never hardcoded in case records. Assertion
+outcomes are run artifacts, not immutable case-definition fields.
+
+## Execution status and gate verdict
+
+Evaluation execution status is `completed`, `invalid`, or `errored`. The gate
+verdict — for completed runs only — is `pass`, `fail`, or `indeterminate`. A
+completed run requires a gate verdict; an invalid or errored run has no gate
+verdict and is never treated as a regression or as a passing run.
+`conditional_pass` is not part of the Phase 1 verdict vocabulary, and the
+historical combined `decision` field is not the Phase 1 v2 verdict contract.
+
+Human review decisions (`accept_candidate`,
+`accept_with_documented_nonblocking_tradeoff`, `revise`, `reject`) and prompt
+lifecycle states (`draft`, `candidate`, `accepted`, `frozen`, `deprecated`)
+are separate vocabularies. No gate result automatically accepts or freezes an
+artifact; a blocking gate failure cannot be overridden into a passing
+evaluation; release exceptions remain separate records while the evaluation
+itself remains failed.
+
+## Evaluation runs and artifacts
+
+Evaluation cases are immutable inputs; evaluation runs are immutable
+artifacts; production prediction runs and evaluation runs are separate
+records. The authoritative linking direction is evaluation-run →
+prediction-run; `eval_report_ids` remains optional compatibility data in
+universe manifests, and no new reverse-link field is introduced. Evaluation
+artifacts are never written into extraction-output directories, and no ad hoc
+JSONL becomes the canonical evaluation store.
 
 ## Release gates
 
@@ -144,7 +194,7 @@ Candidate reports must show:
 - unchanged failures;
 - metric deltas;
 - hard-gate changes;
-- results by split, company, year, source type, and failure tag;
+- results by partition, suite, company, year, source type, and failure tag;
 - unknown-rate and evidence-coverage changes.
 
 ## Full-run gate

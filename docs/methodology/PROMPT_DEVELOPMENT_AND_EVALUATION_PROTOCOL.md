@@ -161,9 +161,7 @@ stage:
 stage_context:        # stage-specific typed context (e.g. company, dates)
 input_source_ids:
 input_passage_ids:
-expected_entities:
-forbidden_entities:
-expected_status:
+assertions:           # atomic scoring units; the sole scoring contract
 failure_tags:
 notes:
 created_by:
@@ -175,7 +173,18 @@ Partition and suite membership is not a case field; it lives in the
 versioned case-set manifest (ADR-014). Company and observation date are
 stage-specific typed context, not universal required fields (ADR-011).
 
-Where appropriate, an entity includes:
+Assertions are the atomic scoring units and the sole scoring contract
+(ADR-011): each assertion records a stable assertion ID; one of the kinds
+`expected_entity`, `forbidden_entity`, `field_value`, `evidence_provenance`,
+or `deterministic_validation`; an assertion semantic version, an assertion
+contract hash, or both; explicit target references; and explicit
+`scoring_gate_config_references` into the versioned scoring/gate
+configuration. Assertion outcomes are run artifacts, not case-definition
+fields. The machine-readable contract is
+`schemas/evaluation_case.schema.json`.
+
+Where appropriate, an entity referenced by an expected-entity or
+forbidden-entity assertion includes:
 
 - stable gold ID;
 - accepted aliases;

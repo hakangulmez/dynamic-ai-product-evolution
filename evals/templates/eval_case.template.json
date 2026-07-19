@@ -1,27 +1,21 @@
 {
-  "case_id": "STAGE-COMPANY-DATE-0001",
+  "case_id": "STAGE-EXAMPLE-0001",
   "stage": "task_extraction",
-  "split": "dev",
-  "company_id": "EXAMPLE",
-  "observation_date": "2024-12-31",
+  "stage_context": {},
   "input_source_ids": ["source-example-001"],
   "input_passage_ids": ["passage-example-001"],
-  "expected_entities": [
+  "assertions": [
     {
-      "gold_id": "EXAMPLE.PRODUCT.CAPABILITY.TASK",
-      "entity_type": "task",
-      "canonical_label": "Perform a customer-facing task",
-      "accepted_aliases": ["Complete the customer task"],
-      "parent_gold_id": "EXAMPLE.PRODUCT.CAPABILITY",
-      "availability_status": "active",
-      "evidence_passage_ids": ["passage-example-001"]
+      "assertion_id": "STAGE-EXAMPLE-0001-A1",
+      "kind": "expected_entity",
+      "semantic_version": "draft-v0.1",
+      "target_references": ["EXAMPLE.PRODUCT.CAPABILITY.TASK"],
+      "scoring_gate_config_references": ["scoring-gate-config-example"]
     }
   ],
-  "forbidden_entities": [],
-  "expected_status": "valid",
   "failure_tags": [],
   "notes": "Explain why this case matters.",
   "created_by": "researcher",
-  "created_at": "2026-07-18T00:00:00Z",
+  "created_at": "2026-07-19T00:00:00Z",
   "guideline_version": "draft-v0.1"
 }

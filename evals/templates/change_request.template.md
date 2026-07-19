@@ -58,7 +58,10 @@ List cases and disposition.
 
 ## Decision
 
-Accept | Reject | Revise | Methodology decision required
+accept_candidate | accept_with_documented_nonblocking_tradeoff | revise | reject
+
+A methodological issue discovered during review is not a decision value; it is
+routed to the separate change-control and decision-log (ADR) process.
 
 ## Approval
 
