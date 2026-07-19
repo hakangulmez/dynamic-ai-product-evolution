@@ -87,11 +87,18 @@ The harness is the binding control layer. It must answer:
 - Was the change tested on examples not used to design it?
 - Can the output be reproduced from archived inputs and versions?
 
-## Evaluation splits
+## Evaluation partitions and suites
 
-### Development set
+Case usage membership lives in the versioned case-set manifest, not in case
+files or directory paths (ADR-014). Each case holds exactly one evaluation
+partition per case-set version (`dev` or `frozen_test`) and zero or more
+evaluation suites (`adversarial`, `regression`, `smoke`, `boundary`,
+`schema_validation`). Membership changes are versioned events with recorded
+provenance; they never mutate an existing case-set snapshot.
 
-The development set is visible during prompt design. It should contain heterogeneous examples and known edge cases.
+### Development partition
+
+The development partition is visible during prompt design. It should contain heterogeneous examples and known edge cases.
 
 Recommended initial size:
 
@@ -99,21 +106,22 @@ Recommended initial size:
 - 20–40 firm-year source packets;
 - 100–200 product, capability, or task observations across stages.
 
-The development set may include familiar cases such as Adobe, Chegg, and ServiceNow, but it must not consist only of famous AI adopters.
+The development partition may include familiar cases such as Adobe, Chegg, and ServiceNow, but it must not consist only of famous AI adopters.
 
-### Frozen test set
+### Frozen test partition
 
-The frozen test set measures generalization. It should include firms, products, wording styles, and industries that were not central to prompt development.
+The frozen test partition measures generalization. It should include firms, products, wording styles, and industries that were not central to prompt development.
 
-Rules:
+Rules (ADR-015):
 
-- The prompt author must not repeatedly inspect individual frozen outputs while tuning.
-- Frozen cases may be opened only for a documented release review or to diagnose a serious regression after the aggregate results are known.
-- Once a frozen case becomes part of active prompt design, it must be moved to development and replaced with a new frozen case.
+- Frozen case-set snapshots are immutable; membership changes exist only as append-only events plus new case-set versions.
+- Frozen-test evaluation runs are restricted to predeclared purposes (release-candidate evaluation, baseline establishment, reproducibility check, approved regression diagnosis) and are always logged.
+- Any access to frozen-case information is a typed, logged exposure event; case-level detail requires a recorded purpose.
+- A case whose prediction or gold detail was inspected during tuning or diagnosis is marked ever-exposed, moves to the development partition in the next case-set version, and is replaced through a separate process; it can never again serve as a blind frozen case.
 
-### Adversarial set
+### Adversarial suite
 
-The adversarial set contains deliberately difficult or misleading passages. Required classes include:
+The adversarial suite contains deliberately difficult or misleading passages. Required classes include:
 
 - generic AI strategy language with no customer-facing action;
 - roadmap statements presented as future intentions;
@@ -128,9 +136,9 @@ The adversarial set contains deliberately difficult or misleading passages. Requ
 - one economic task delivered through multiple channels;
 - a broad value proposition that is not an executable task.
 
-### Regression set
+### Regression suite
 
-Every accepted correction must become a permanent regression case.
+Every accepted correction must become a permanent regression case. Adding a case to the regression suite is a versioned membership event; it does not change the case's partition and does not by itself verify the case (ADR-014). Gate-bearing regression cases must be verified (ADR-013).
 
 Examples:
 
@@ -141,7 +149,7 @@ Examples:
 - A broad mission statement was extracted as a core task.
 - A source quote did not occur in the cited passage.
 
-The regression set is the project’s accumulated memory of past errors. A failure that has been corrected once should not silently return.
+The regression suite is the project’s accumulated memory of past errors. A failure that has been corrected once should not silently return.
 
 ## Evaluation case anatomy
 
@@ -150,9 +158,7 @@ Each case must include, at minimum:
 ```yaml
 case_id:
 stage:
-split:
-company_id:
-observation_date:
+stage_context:        # stage-specific typed context (e.g. company, dates)
 input_source_ids:
 input_passage_ids:
 expected_entities:
@@ -164,6 +170,10 @@ created_by:
 created_at:
 guideline_version:
 ```
+
+Partition and suite membership is not a case field; it lives in the
+versioned case-set manifest (ADR-014). Company and observation date are
+stage-specific typed context, not universal required fields (ADR-011).
 
 Where appropriate, an entity includes:
 
@@ -273,6 +283,8 @@ The following are release blockers rather than soft quality metrics:
 
 A run that fails a hard gate cannot be promoted even if aggregate precision or recall improves.
 
+The unknown-to-confident gate targets wrong or unsupported confidence, not a lower unknown rate. A change that converts UNKNOWN into a confident label is classified as beneficial resolution only when the new label is verified correct; otherwise it is a false-confidence regression or unsupported confidence, and both are blocking (ADR-019).
+
 ## Provisional quality thresholds
 
 These thresholds are initial engineering targets and must be revisited after the sentinel gold set is complete:
@@ -369,10 +381,13 @@ data/runs/<run_id>/
   parsed_output.jsonl
   repair_records.jsonl
   deterministic_findings.jsonl
-  eval_report.json
-  eval_report.md
-  diff_vs_accepted.json
 ```
+
+Evaluation reports, assertion results, and candidate-versus-accepted diffs
+are not extraction-run artifacts. They belong to independent, immutable
+evaluation runs and comparison artifacts that reference the prediction run
+by ID and hash (ADR-012, ADR-020). The canonical evaluation-run root path
+is an open decision.
 
 Required run-manifest fields:
 
@@ -406,18 +421,28 @@ Prompts use the following lifecycle:
 - `candidate`: complete and under evaluation;
 - `accepted`: approved for the specified stage and corpus version;
 - `frozen`: used for a released dataset version;
-- `deprecated`: retained for provenance but not used;
-- `rejected`: failed evaluation or construct review.
+- `deprecated`: retained for provenance but not used.
 
-The accepted prompt registry must record:
+`reject` is a human review decision, not a lifecycle status. A rejected
+candidate retains its immutable artifact and review event but does not
+transition to any `rejected` lifecycle state (ADR-019).
 
+Acceptance is a qualification bound to prompt artifact × execution/routing contract × stage/output contract; it does not transfer across execution-affecting contract changes, and requalification scope follows the predeclared change-classification policy (ADR-021).
+
+The qualification registry must record at least:
+
+- qualification ID;
 - prompt path;
-- version;
-- hash;
+- prompt artifact version/hash;
+- execution/routing contract identity/hash;
+- stage/output contract identity/hash;
 - compatible schema;
 - governing spec;
-- accepted report;
-- acceptance date;
+- qualification scope;
+- supporting eval/comparison references;
+- qualification status;
+- decision timestamp;
+- supersedes/superseded-by references;
 - known limitations.
 
 ## Human review protocol
@@ -432,7 +457,7 @@ When the model output and gold record disagree, the reviewer chooses one of:
 - `ontology_decision_required`;
 - `insufficient_evidence`.
 
-Human edits are append-only. The original prediction and original gold record remain unchanged. Every review records:
+Human edits are append-only. The original prediction and original gold record remain unchanged. Human dispositions never modify validator findings and never enter gate arithmetic; resolution requires a new component version and a new evaluation run (ADR-018). Every review records:
 
 - reviewer;
 - timestamp;
@@ -481,7 +506,7 @@ A prompt candidate is accepted only when the release record answers:
 5. Which cases were fixed?
 6. Which regressions appeared?
 7. Were hard gates passed?
-8. Did frozen-set performance remain acceptable?
+8. Did frozen-test performance remain acceptable?
 9. Did the construct definition change?
 10. Who approved the release?
 
@@ -497,3 +522,7 @@ The evaluation harness does not prove that the ontology or measurement framework
 - released data can be reproduced and audited.
 
 That is the required foundation before scaling to hundreds of firms and thousands of task-year observations.
+
+## Revision history
+
+- 2026-07-19 — Revised per ADR-011..ADR-022: partition/suite membership model, logged frozen exposure, stage-typed case context, independent evaluation runs, unknown-to-confident refinement, contract-bound qualification and qualification registry, `rejected` removed from the prompt lifecycle.

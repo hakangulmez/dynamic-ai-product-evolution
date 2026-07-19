@@ -23,14 +23,14 @@ Use `evals/templates/change_request.template.md`.
 
 ```text
 Failure observed
-  → case added to dev/adversarial/regression split
+  → case added to the dev partition and tagged with the relevant suites
   → old version rerun and failure confirmed
   → change request opened
   → bounded prompt/spec change
-  → all relevant eval splits rerun
+  → all relevant eval partitions and suites rerun
   → report and diff generated
   → human decision recorded
-  → accepted prompt registry updated if approved
+  → qualification registry updated if approved
 ```
 
 ## Protected conditions
@@ -43,14 +43,38 @@ A candidate is rejected automatically if it introduces:
 - legacy contamination;
 - silent output overwrite;
 - schema incompatibility;
-- confident values where the rubric requires unknown.
+- wrong or unsupported confident values where the evidence requires unknown.
+
+These behavioral invariants are lexicographic: no metric improvement can
+compensate for them (ADR-019).
+
+## Evaluation validity precondition
+
+A review decision presupposes a completed, valid evaluation. Evaluations
+with execution status `invalid` or `errored` produce no verdict about the
+candidate; the only path forward is to repair the evaluation and produce a
+new immutable evaluation run (ADR-019).
 
 ## Review decisions
 
 - `accept_candidate`
-- `reject_candidate`
-- `revise_candidate`
-- `accept_with_documented_tradeoff`
-- `methodology_decision_required`
+- `accept_with_documented_nonblocking_tradeoff`
+- `revise`
+- `reject`
 
-A documented trade-off requires a rationale and explicit protected metrics.
+A documented non-blocking trade-off requires a rationale and an explicit
+record of the affected diagnostic metrics and slices. Protected
+regressions, critical findings, blocking gate failures, and indeterminate
+verdicts are not eligible for trade-off acceptance (ADR-019).
+
+A methodological issue discovered during review is not encoded as a
+candidate review decision; it is routed to the separate change-control and
+decision-log (ADR) process.
+
+## Release exceptions
+
+A release exception is a separate governance record (failed gate and
+finding IDs, scope, rationale, methodology-owner approval, expiry, and a
+decision-log reference). The evaluation verdict remains `fail`; the prompt
+lifecycle never auto-advances, and reports keep the failure visible
+(ADR-019).
