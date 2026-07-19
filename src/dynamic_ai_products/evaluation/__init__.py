@@ -17,7 +17,21 @@ from .contracts import (
     runtime_contract_provenance,
     verify_contract_hash,
 )
-from .models import ContractMetadata, EvaluationStrictModel
+from .models import (
+    AssertionOutcome,
+    AssertionSpec,
+    CaseMembership,
+    CaseSetManifest,
+    ContractMetadata,
+    EvaluationCase,
+    EvaluationResultV2,
+    EvaluationRunManifest,
+    EvaluationStrictModel,
+    FindingDisposition,
+    MembershipEvent,
+    PredictionEnvelope,
+    ValidatorFinding,
+)
 from .schemas import (
     EVALUATION_SCHEMA_CONTRACTS,
     ReadOnlyContractError,
@@ -32,11 +46,22 @@ from .schemas import (
 )
 
 __all__ = [
+    "AssertionOutcome",
+    "AssertionSpec",
+    "CaseMembership",
+    "CaseSetManifest",
     "ContractError",
     "ContractHashMismatchError",
     "ContractMetadata",
     "EVALUATION_SCHEMA_CONTRACTS",
+    "EvaluationCase",
+    "EvaluationResultV2",
+    "EvaluationRunManifest",
     "EvaluationStrictModel",
+    "FindingDisposition",
+    "MembershipEvent",
+    "PredictionEnvelope",
+    "ValidatorFinding",
     "InvalidContractIdentityError",
     "ReadOnlyContractError",
     "SchemaContract",
