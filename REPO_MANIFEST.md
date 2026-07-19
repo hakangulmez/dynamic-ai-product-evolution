@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **276**
+Total tracked/scaffold files listed: **279**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -184,7 +184,9 @@ Total tracked/scaffold files listed: **276**
 - `schemas/capability_observation.schema.json`
 - `schemas/company.schema.json`
 - `schemas/company_universe_classification.schema.json`
+- `schemas/evaluation_case.schema.json`
 - `schemas/evaluation_result.schema.json`
+- `schemas/evaluation_result.v2.schema.json`
 - `schemas/extraction_run.schema.json`
 - `schemas/firm_lineage.schema.json`
 - `schemas/firm_year_eligibility.schema.json`
@@ -197,6 +199,7 @@ Total tracked/scaffold files listed: **276**
 - `schemas/task_observation.schema.json`
 - `schemas/task_transition.schema.json`
 - `schemas/universe_run_manifest.schema.json`
+- `schemas/universe_run_manifest.v2.schema.json`
 - `scripts/run_research_console.sh`
 - `scripts/setup_local.sh`
 - `skills-lock.json`

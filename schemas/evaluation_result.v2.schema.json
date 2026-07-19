@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$id": "evaluation_result.v2.schema.json",
+  "description": "Contract version 0.2.0. Successor to evaluation_result.schema.json (contract version 0.1.0), which remains valid and readable for historical artifacts. Per ADR-019, the v1 combined `decision` vocabulary (including `conditional_pass`) is superseded by a required `execution_status` plus a conditional `gate_verdict`; an `invalid` or `errored` execution produces no candidate gate verdict.",
+  "required": [
+    "eval_run_id",
+    "stage",
+    "dataset_version",
+    "metrics",
+    "execution_status"
+  ],
+  "properties": {
+    "eval_run_id": {
+      "type": "string"
+    },
+    "stage": {
+      "type": "string"
+    },
+    "dataset_version": {
+      "type": "string"
+    },
+    "metrics": {
+      "type": "object"
+    },
+    "errors": {
+      "type": "array"
+    },
+    "execution_status": {
+      "enum": [
+        "completed",
+        "invalid",
+        "errored"
+      ]
+    },
+    "gate_verdict": {
+      "enum": [
+        "pass",
+        "fail",
+        "indeterminate"
+      ]
+    },
+    "reviewer_notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "created_at": {
+      "type": "string"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "execution_status": {
+            "const": "completed"
+          }
+        },
+        "required": [
+          "execution_status"
+        ]
+      },
+      "then": {
+        "required": [
+          "gate_verdict"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "gate_verdict"
+          ]
+        }
+      }
+    }
+  ]
+}
