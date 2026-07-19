@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **275**
+Total tracked/scaffold files listed: **276**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -240,6 +240,7 @@ Total tracked/scaffold files listed: **275**
 - `specs/SPEC-024-run-versioning-and-comparison.md`
 - `specs/SPEC-025-local-review-console.md`
 - `specs/SPEC-026-master-notebook-orchestration.md`
+- `specs/SPEC-027-adapter-qualification-and-enablement.md`
 - `src/README.md`
 - `src/dynamic_ai_products/__init__.py`
 - `src/dynamic_ai_products/cli.py`

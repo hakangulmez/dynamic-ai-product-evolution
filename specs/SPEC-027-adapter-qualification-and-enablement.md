@@ -1,4 +1,4 @@
-# SPEC-026 — Adapter Qualification, Enablement, and Run Authorization
+# SPEC-027 — Adapter Qualification, Enablement, and Run Authorization
 
 ## Status
 
@@ -29,7 +29,7 @@ No state grants a later state automatically.
 
 ## Adapter qualification record
 
-Adapter qualification is distinct from prompt qualification. SPEC-026 defines its own immutable `adapter_qualification_record`, binding at least:
+Adapter qualification is distinct from prompt qualification. SPEC-027 defines its own immutable `adapter_qualification_record`, binding at least:
 
 - adapter identity/version;
 - adapter family (source or model-execution);
@@ -41,7 +41,7 @@ Adapter qualification is distinct from prompt qualification. SPEC-026 defines it
 - qualification status and timestamps;
 - supersession references.
 
-Source adapters do not require a prompt qualification record. For model-execution adapters: adapter enablement references the SPEC-026 `adapter_qualification_record`; and when the authorized model route executes a prompt-bearing stage, it also references the applicable SPEC-024 prompt/execution/routing/stage-contract qualification record. SPEC-024 continues to own prompt qualification; SPEC-026 owns adapter qualification, enablement, and authorization.
+Source adapters do not require a prompt qualification record. For model-execution adapters: adapter enablement references the SPEC-027 `adapter_qualification_record`; and when the authorized model route executes a prompt-bearing stage, it also references the applicable SPEC-024 prompt/execution/routing/stage-contract qualification record. SPEC-024 continues to own prompt qualification; SPEC-027 owns adapter qualification, enablement, and authorization.
 
 ## Enablement record
 

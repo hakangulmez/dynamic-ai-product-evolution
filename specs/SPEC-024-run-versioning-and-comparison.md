@@ -89,7 +89,7 @@ Qualification binds prompt artifact × execution/routing contract × stage/outpu
 - supersedes/superseded-by references;
 - known limitations.
 
-Requalification scope is fixed by the versioned change-classification policy before candidate results are seen; the policy contents are an open decision. Adapter-level qualification, enablement, and run authorization are defined in SPEC-026, which consumes qualification references from this registry without redefining them.
+Requalification scope is fixed by the versioned change-classification policy before candidate results are seen; the policy contents are an open decision. Adapter-level qualification, enablement, and run authorization are defined in SPEC-027, which consumes qualification references from this registry without redefining them.
 
 ## Acceptance criteria
 

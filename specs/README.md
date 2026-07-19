@@ -17,4 +17,6 @@ A spec must define objective, inputs, outputs, rules, failure modes, tests, eval
 - `SPEC-008`–`SPEC-013`: product, capability, task, role, and longitudinal matching.
 - `SPEC-014`–`SPEC-019`: dated frontier baseline, measurements, and aggregation.
 - `SPEC-020`–`SPEC-021`: evaluation and analysis outputs.
-- `SPEC-022`–`SPEC-026`: evaluation data model, deterministic validation, immutable run comparison, local review console, and adapter qualification/enablement.
+- `SPEC-022`–`SPEC-025`: evaluation data model, deterministic validation, immutable run comparison, and local review console.
+- `SPEC-026`: master notebook orchestration.
+- `SPEC-027`: adapter qualification and enablement.
