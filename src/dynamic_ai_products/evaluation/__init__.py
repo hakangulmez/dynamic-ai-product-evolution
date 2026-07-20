@@ -1,13 +1,32 @@
-"""Phase 1 evaluation-harness package (Slices 1A, 1B, and 2).
+"""Phase 1 evaluation-harness package (Slices 1A, 1B, 2, and 3).
 
 Slice 1A provides the strict/frozen model foundation, deterministic
 canonical contract hashing, and the evaluation-only static-schema registry.
 Slice 1B adds the persisted-artifact data contracts. Slice 2 adds the
 explicit-root evaluation-case loader and its typed exception hierarchy.
-Importing this package performs no filesystem reads and no schema
-validation; all loading is explicit.
+Slice 3 adds case-set manifest and membership-event loading, snapshot
+hashing, succession verification, and append-only log-extension
+verification. Importing this package performs no filesystem reads and no
+schema validation; all loading is explicit.
 """
 
+from .case_sets import (
+    CaseSetArtifactNotAFileError,
+    CaseSetArtifactNotFoundError,
+    CaseSetConsistencyError,
+    CaseSetDecodeError,
+    CaseSetJsonError,
+    CaseSetLoadError,
+    CaseSetModelValidationError,
+    CaseSetPathEscapeError,
+    CaseSetReadError,
+    CaseSetTopLevelTypeError,
+    case_set_snapshot_hash,
+    load_case_set_manifest,
+    load_membership_events,
+    verify_case_set_succession,
+    verify_event_log_extension,
+)
 from .cases import (
     CaseArtifactNotAFileError,
     CaseArtifactNotFoundError,
@@ -75,7 +94,17 @@ __all__ = [
     "CasePathEscapeError",
     "CaseReadError",
     "CaseSchemaValidationError",
+    "CaseSetArtifactNotAFileError",
+    "CaseSetArtifactNotFoundError",
+    "CaseSetConsistencyError",
+    "CaseSetDecodeError",
+    "CaseSetJsonError",
+    "CaseSetLoadError",
     "CaseSetManifest",
+    "CaseSetModelValidationError",
+    "CaseSetPathEscapeError",
+    "CaseSetReadError",
+    "CaseSetTopLevelTypeError",
     "CaseTopLevelTypeError",
     "ContractError",
     "ContractHashMismatchError",
@@ -102,10 +131,15 @@ __all__ = [
     "UnknownContractError",
     "build_contract_envelope",
     "canonical_contract_bytes",
+    "case_set_snapshot_hash",
     "contract_hash",
     "load_case",
+    "load_case_set_manifest",
+    "load_membership_events",
     "load_schema",
     "model_contract_hash",
     "runtime_contract_provenance",
+    "verify_case_set_succession",
     "verify_contract_hash",
+    "verify_event_log_extension",
 ]

@@ -1,0 +1,31 @@
+{
+  "contract": {
+    "contract_id": "case_set_manifest",
+    "contract_version": "0.1.0",
+    "contract_hash": "0b464d786d5a8addb1305c21c2d93b01c834e8f398fd3b12be30d1fc49083bb5"
+  },
+  "case_set_version": "synth-case-set-v1",
+  "lifecycle": "draft",
+  "registry_snapshot_version": "synth-registry-v1",
+  "registry_snapshot_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "entries": [
+    {
+      "case_id": "SYNTH-CASE-0001",
+      "partition": "dev",
+      "suites": ["adversarial", "regression"],
+      "input_packet_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "case_id": "SYNTH-CASE-0002",
+      "partition": "frozen_test",
+      "suites": [],
+      "input_packet_hash": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "case_id": "SYNTH-CASE-0003",
+      "partition": "frozen_test",
+      "suites": ["smoke"],
+      "input_packet_hash": "3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  ]
+}
