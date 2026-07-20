@@ -1,0 +1,27 @@
+{
+  "case_id": "SYNTH-CASE-LEGACY-0003",
+  "stage": "task_extraction",
+  "stage_context": {},
+  "input_source_ids": ["synth-source-0004"],
+  "input_passage_ids": ["synth-passage-0005"],
+  "assertions": [
+    {
+      "assertion_id": "SYNTH-CASE-LEGACY-0003-A1",
+      "kind": "expected_entity",
+      "semantic_version": "0.1.0",
+      "target_references": ["SYNTH.PRODUCT.LEGACY.TASK"],
+      "scoring_gate_config_references": ["synth-scoring-gate-ref-0003"]
+    }
+  ],
+  "failure_tags": [],
+  "notes": "Synthetic case proving structured rejection of all six SPEC-022 prohibited legacy fields.",
+  "created_by": "synthetic-researcher",
+  "created_at": "2026-07-19T00:00:00Z",
+  "guideline_version": "draft-v0.1",
+  "split": "dev",
+  "company_id": "SYNTH-COMPANY-0001",
+  "observation_date": "2025-12-31",
+  "expected_status": "valid",
+  "expected_entities": ["SYNTH.PRODUCT.LEGACY.EXPECTED"],
+  "forbidden_entities": ["SYNTH.PRODUCT.LEGACY.FORBIDDEN"]
+}

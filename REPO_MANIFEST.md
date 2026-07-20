@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **286**
+Total tracked/scaffold files listed: **291**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -118,6 +118,9 @@ Total tracked/scaffold files listed: **286**
 - `evals/change_requests/README.md`
 - `evals/expected/.gitkeep`
 - `evals/fixtures/README.md`
+- `evals/fixtures/evaluation_harness/cases/prohibited_legacy_fields_case.json`
+- `evals/fixtures/evaluation_harness/cases/valid_full_case.json`
+- `evals/fixtures/evaluation_harness/cases/valid_minimal_case.json`
 - `evals/fixtures/universe_sentinel/adjudications.json`
 - `evals/fixtures/universe_sentinel/classification_outputs.json`
 - `evals/fixtures/universe_sentinel/evidence_packets.json`
@@ -252,6 +255,7 @@ Total tracked/scaffold files listed: **286**
 - `src/dynamic_ai_products/validation.py`
 - `src/dynamic_ai_products/workflow.py`
 - `src/dynamic_ai_products/evaluation/__init__.py`
+- `src/dynamic_ai_products/evaluation/cases.py`
 - `src/dynamic_ai_products/evaluation/contracts.py`
 - `src/dynamic_ai_products/evaluation/models.py`
 - `src/dynamic_ai_products/evaluation/schemas.py`
@@ -271,6 +275,7 @@ Total tracked/scaffold files listed: **286**
 - `src/dynamic_ai_products/universe/taxonomy.py`
 - `tests/README.md`
 - `tests/contamination/test_no_legacy_contamination.py`
+- `tests/evaluation/test_cases.py`
 - `tests/evaluation/test_contracts.py`
 - `tests/evaluation/test_models.py`
 - `tests/evaluation/test_schema_registry.py`

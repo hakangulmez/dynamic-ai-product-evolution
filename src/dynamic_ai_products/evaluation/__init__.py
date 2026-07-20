@@ -1,11 +1,28 @@
-"""Phase 1 evaluation-harness package (Slice 1A scaffold).
+"""Phase 1 evaluation-harness package (Slices 1A, 1B, and 2).
 
 Slice 1A provides the strict/frozen model foundation, deterministic
 canonical contract hashing, and the evaluation-only static-schema registry.
+Slice 1B adds the persisted-artifact data contracts. Slice 2 adds the
+explicit-root evaluation-case loader and its typed exception hierarchy.
 Importing this package performs no filesystem reads and no schema
 validation; all loading is explicit.
 """
 
+from .cases import (
+    CaseArtifactNotAFileError,
+    CaseArtifactNotFoundError,
+    CaseDecodeError,
+    CaseJsonError,
+    CaseLoadError,
+    CaseModelValidationError,
+    CasePathEscapeError,
+    CaseReadError,
+    CaseSchemaValidationError,
+    CaseTopLevelTypeError,
+    InvalidEvaluationRootError,
+    ProhibitedLegacyFieldError,
+    load_case,
+)
 from .contracts import (
     ContractError,
     ContractHashMismatchError,
@@ -48,8 +65,18 @@ from .schemas import (
 __all__ = [
     "AssertionOutcome",
     "AssertionSpec",
+    "CaseArtifactNotAFileError",
+    "CaseArtifactNotFoundError",
+    "CaseDecodeError",
+    "CaseJsonError",
+    "CaseLoadError",
     "CaseMembership",
+    "CaseModelValidationError",
+    "CasePathEscapeError",
+    "CaseReadError",
+    "CaseSchemaValidationError",
     "CaseSetManifest",
+    "CaseTopLevelTypeError",
     "ContractError",
     "ContractHashMismatchError",
     "ContractMetadata",
@@ -59,8 +86,10 @@ __all__ = [
     "EvaluationRunManifest",
     "EvaluationStrictModel",
     "FindingDisposition",
+    "InvalidEvaluationRootError",
     "MembershipEvent",
     "PredictionEnvelope",
+    "ProhibitedLegacyFieldError",
     "ValidatorFinding",
     "InvalidContractIdentityError",
     "ReadOnlyContractError",
@@ -74,6 +103,7 @@ __all__ = [
     "build_contract_envelope",
     "canonical_contract_bytes",
     "contract_hash",
+    "load_case",
     "load_schema",
     "model_contract_hash",
     "runtime_contract_provenance",
