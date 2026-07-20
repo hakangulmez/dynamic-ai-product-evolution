@@ -1,4 +1,4 @@
-"""Phase 1 evaluation-harness package (Slices 1A, 1B, 2, 3, and 4).
+"""Phase 1 evaluation-harness package (Slices 1A, 1B, 2, 3, 4, and 5).
 
 Slice 1A provides the strict/frozen model foundation, deterministic
 canonical contract hashing, and the evaluation-only static-schema registry.
@@ -8,8 +8,11 @@ Slice 3 adds case-set manifest and membership-event loading, snapshot
 hashing, succession verification, and append-only log-extension
 verification. Slice 4 adds target/gold reference registry and scoring/gate
 configuration loading, raw-byte binding material, and case-reference
-resolution. Importing this package performs no filesystem reads and no
-schema validation; all loading is explicit.
+resolution. Slice 5 adds immutable evaluation-run identity, refuse-to-
+overwrite run-directory persistence, deterministic run-manifest writing and
+loading, and exact-byte config-snapshot copying. Importing this package
+performs no filesystem reads and no schema validation; all loading is
+explicit.
 """
 
 from .case_sets import (
@@ -76,6 +79,33 @@ from .references import (
     TargetRegistryTopLevelTypeError,
     load_target_registry,
     resolve_case_references,
+)
+from .runs import (
+    InitializedEvaluationRun,
+    InvalidRunIdError,
+    LoadedEvaluationRunManifest,
+    RunArtifactNotAFileError,
+    RunArtifactNotFoundError,
+    RunDecodeError,
+    RunDestinationCollisionError,
+    RunDestinationHashMismatchError,
+    RunDirectoryExistsError,
+    RunJsonError,
+    RunManifestConsistencyError,
+    RunManifestModelValidationError,
+    RunManifestSerializationError,
+    RunPathEscapeError,
+    RunPersistenceError,
+    RunReadError,
+    RunTopLevelTypeError,
+    RunWriteError,
+    SnapshotHashMismatchError,
+    SnapshotReadError,
+    SnapshotSourceMissingError,
+    SnapshotSourceNotAFileError,
+    SnapshotSourcePathEscapeError,
+    initialize_evaluation_run,
+    load_evaluation_run_manifest,
 )
 from .scoring_config import (
     DiagnosticDefinition,
@@ -158,7 +188,10 @@ __all__ = [
     "EvaluationStrictModel",
     "FindingDisposition",
     "GateDefinition",
+    "InitializedEvaluationRun",
     "InvalidEvaluationRootError",
+    "InvalidRunIdError",
+    "LoadedEvaluationRunManifest",
     "LoadedScoringGateConfig",
     "LoadedTargetRegistry",
     "MembershipEvent",
@@ -169,6 +202,21 @@ __all__ = [
     "ResolvedAssertionReferences",
     "ResolvedScoringReference",
     "ResolvedTargetReference",
+    "RunArtifactNotAFileError",
+    "RunArtifactNotFoundError",
+    "RunDecodeError",
+    "RunDestinationCollisionError",
+    "RunDestinationHashMismatchError",
+    "RunDirectoryExistsError",
+    "RunJsonError",
+    "RunManifestConsistencyError",
+    "RunManifestModelValidationError",
+    "RunManifestSerializationError",
+    "RunPathEscapeError",
+    "RunPersistenceError",
+    "RunReadError",
+    "RunTopLevelTypeError",
+    "RunWriteError",
     "ScoringConfigArtifactNotAFileError",
     "ScoringConfigDecodeError",
     "ScoringConfigJsonError",
@@ -178,6 +226,11 @@ __all__ = [
     "ScoringConfigReadError",
     "ScoringConfigTopLevelTypeError",
     "ScoringGateConfig",
+    "SnapshotHashMismatchError",
+    "SnapshotReadError",
+    "SnapshotSourceMissingError",
+    "SnapshotSourceNotAFileError",
+    "SnapshotSourcePathEscapeError",
     "TargetReferenceDefinition",
     "TargetRegistry",
     "TargetRegistryArtifactNotAFileError",
@@ -202,8 +255,10 @@ __all__ = [
     "canonical_contract_bytes",
     "case_set_snapshot_hash",
     "contract_hash",
+    "initialize_evaluation_run",
     "load_case",
     "load_case_set_manifest",
+    "load_evaluation_run_manifest",
     "load_membership_events",
     "load_scoring_gate_config",
     "load_schema",
