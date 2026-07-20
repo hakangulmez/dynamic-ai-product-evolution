@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **311**
+Total tracked/scaffold files listed: **315**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -267,12 +267,14 @@ Total tracked/scaffold files listed: **311**
 - `src/dynamic_ai_products/evaluation/case_sets.py`
 - `src/dynamic_ai_products/evaluation/cases.py`
 - `src/dynamic_ai_products/evaluation/contracts.py`
+- `src/dynamic_ai_products/evaluation/dispositions.py`
 - `src/dynamic_ai_products/evaluation/envelopes.py`
 - `src/dynamic_ai_products/evaluation/models.py`
 - `src/dynamic_ai_products/evaluation/references.py`
 - `src/dynamic_ai_products/evaluation/runs.py`
 - `src/dynamic_ai_products/evaluation/schemas.py`
 - `src/dynamic_ai_products/evaluation/scoring_config.py`
+- `src/dynamic_ai_products/evaluation/validators.py`
 - `src/dynamic_ai_products/universe/__init__.py`
 - `src/dynamic_ai_products/universe/audit.py`
 - `src/dynamic_ai_products/universe/classification.py`
@@ -293,12 +295,14 @@ Total tracked/scaffold files listed: **311**
 - `tests/evaluation/test_case_sets.py`
 - `tests/evaluation/test_cases.py`
 - `tests/evaluation/test_contracts.py`
+- `tests/evaluation/test_dispositions.py`
 - `tests/evaluation/test_envelopes.py`
 - `tests/evaluation/test_models.py`
 - `tests/evaluation/test_references.py`
 - `tests/evaluation/test_runs.py`
 - `tests/evaluation/test_schema_registry.py`
 - `tests/evaluation/test_scoring_config.py`
+- `tests/evaluation/test_validators.py`
 - `tests/notebook/test_master_notebook.py`
 - `tests/schema/test_schemas_are_valid.py`
 - `tests/temporal/test_temporal_rule.py`
