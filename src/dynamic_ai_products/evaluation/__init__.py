@@ -1,4 +1,4 @@
-"""Phase 1 evaluation-harness package (Slices 1A, 1B, 2, and 3).
+"""Phase 1 evaluation-harness package (Slices 1A, 1B, 2, 3, and 4).
 
 Slice 1A provides the strict/frozen model foundation, deterministic
 canonical contract hashing, and the evaluation-only static-schema registry.
@@ -6,7 +6,9 @@ Slice 1B adds the persisted-artifact data contracts. Slice 2 adds the
 explicit-root evaluation-case loader and its typed exception hierarchy.
 Slice 3 adds case-set manifest and membership-event loading, snapshot
 hashing, succession verification, and append-only log-extension
-verification. Importing this package performs no filesystem reads and no
+verification. Slice 4 adds target/gold reference registry and scoring/gate
+configuration loading, raw-byte binding material, and case-reference
+resolution. Importing this package performs no filesystem reads and no
 schema validation; all loading is explicit.
 """
 
@@ -53,6 +55,43 @@ from .contracts import (
     runtime_contract_provenance,
     verify_contract_hash,
 )
+from .references import (
+    BlockingResolutionError,
+    CaseResolution,
+    LoadedTargetRegistry,
+    RegistryContractDefinition,
+    ResolutionFinding,
+    ResolvedAssertionReferences,
+    ResolvedScoringReference,
+    ResolvedTargetReference,
+    TargetReferenceDefinition,
+    TargetRegistry,
+    TargetRegistryArtifactNotAFileError,
+    TargetRegistryDecodeError,
+    TargetRegistryJsonError,
+    TargetRegistryLoadError,
+    TargetRegistryModelValidationError,
+    TargetRegistryPathEscapeError,
+    TargetRegistryReadError,
+    TargetRegistryTopLevelTypeError,
+    load_target_registry,
+    resolve_case_references,
+)
+from .scoring_config import (
+    DiagnosticDefinition,
+    GateDefinition,
+    LoadedScoringGateConfig,
+    ScoringConfigArtifactNotAFileError,
+    ScoringConfigDecodeError,
+    ScoringConfigJsonError,
+    ScoringConfigLoadError,
+    ScoringConfigModelValidationError,
+    ScoringConfigPathEscapeError,
+    ScoringConfigReadError,
+    ScoringConfigTopLevelTypeError,
+    ScoringGateConfig,
+    load_scoring_gate_config,
+)
 from .models import (
     AssertionOutcome,
     AssertionSpec,
@@ -84,6 +123,7 @@ from .schemas import (
 __all__ = [
     "AssertionOutcome",
     "AssertionSpec",
+    "BlockingResolutionError",
     "CaseArtifactNotAFileError",
     "CaseArtifactNotFoundError",
     "CaseDecodeError",
@@ -93,6 +133,7 @@ __all__ = [
     "CaseModelValidationError",
     "CasePathEscapeError",
     "CaseReadError",
+    "CaseResolution",
     "CaseSchemaValidationError",
     "CaseSetArtifactNotAFileError",
     "CaseSetArtifactNotFoundError",
@@ -109,16 +150,44 @@ __all__ = [
     "ContractError",
     "ContractHashMismatchError",
     "ContractMetadata",
+    "DiagnosticDefinition",
     "EVALUATION_SCHEMA_CONTRACTS",
     "EvaluationCase",
     "EvaluationResultV2",
     "EvaluationRunManifest",
     "EvaluationStrictModel",
     "FindingDisposition",
+    "GateDefinition",
     "InvalidEvaluationRootError",
+    "LoadedScoringGateConfig",
+    "LoadedTargetRegistry",
     "MembershipEvent",
     "PredictionEnvelope",
     "ProhibitedLegacyFieldError",
+    "RegistryContractDefinition",
+    "ResolutionFinding",
+    "ResolvedAssertionReferences",
+    "ResolvedScoringReference",
+    "ResolvedTargetReference",
+    "ScoringConfigArtifactNotAFileError",
+    "ScoringConfigDecodeError",
+    "ScoringConfigJsonError",
+    "ScoringConfigLoadError",
+    "ScoringConfigModelValidationError",
+    "ScoringConfigPathEscapeError",
+    "ScoringConfigReadError",
+    "ScoringConfigTopLevelTypeError",
+    "ScoringGateConfig",
+    "TargetReferenceDefinition",
+    "TargetRegistry",
+    "TargetRegistryArtifactNotAFileError",
+    "TargetRegistryDecodeError",
+    "TargetRegistryJsonError",
+    "TargetRegistryLoadError",
+    "TargetRegistryModelValidationError",
+    "TargetRegistryPathEscapeError",
+    "TargetRegistryReadError",
+    "TargetRegistryTopLevelTypeError",
     "ValidatorFinding",
     "InvalidContractIdentityError",
     "ReadOnlyContractError",
@@ -136,8 +205,11 @@ __all__ = [
     "load_case",
     "load_case_set_manifest",
     "load_membership_events",
+    "load_scoring_gate_config",
     "load_schema",
+    "load_target_registry",
     "model_contract_hash",
+    "resolve_case_references",
     "runtime_contract_provenance",
     "verify_case_set_succession",
     "verify_contract_hash",
