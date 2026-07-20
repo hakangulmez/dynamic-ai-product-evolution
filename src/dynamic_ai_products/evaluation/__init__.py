@@ -1,4 +1,4 @@
-"""Phase 1 evaluation-harness package (Slices 1A, 1B, 2, 3, 4, and 5).
+"""Phase 1 evaluation-harness package (Slices 1A, 1B, 2, 3, 4, 5, and 6).
 
 Slice 1A provides the strict/frozen model foundation, deterministic
 canonical contract hashing, and the evaluation-only static-schema registry.
@@ -10,9 +10,11 @@ verification. Slice 4 adds target/gold reference registry and scoring/gate
 configuration loading, raw-byte binding material, and case-reference
 resolution. Slice 5 adds immutable evaluation-run identity, refuse-to-
 overwrite run-directory persistence, deterministic run-manifest writing and
-loading, and exact-byte config-snapshot copying. Importing this package
-performs no filesystem reads and no schema validation; all loading is
-explicit.
+loading, and exact-byte config-snapshot copying. Slice 6 adds canonical
+prediction-envelope normalization from manifest-bearing prediction artifacts,
+explicit ad hoc input import, and normalized-envelope persistence and loading.
+Importing this package performs no filesystem reads and no schema validation;
+all loading is explicit.
 """
 
 from .case_sets import (
@@ -57,6 +59,35 @@ from .contracts import (
     model_contract_hash,
     runtime_contract_provenance,
     verify_contract_hash,
+)
+from .envelopes import (
+    EnvelopeArtifactMissingError,
+    EnvelopeArtifactNotAFileError,
+    EnvelopeArtifactReadError,
+    EnvelopeDecodeError,
+    EnvelopeDestinationHashMismatchError,
+    EnvelopeDuplicateRecordIdError,
+    EnvelopeError,
+    EnvelopeHashMismatchError,
+    EnvelopeJsonError,
+    EnvelopeModelValidationError,
+    EnvelopePathEscapeError,
+    EnvelopeRecordCountMismatchError,
+    EnvelopeReferenceBindingError,
+    EnvelopeTopLevelTypeError,
+    EnvelopeWriteError,
+    ImportedPredictionSnapshot,
+    InvalidSnapshotIdError,
+    LoadedPredictionEnvelopes,
+    NormalizedPredictionExistsError,
+    NormalizedPredictionRun,
+    PredictionArtifactManifest,
+    PredictionRunBindingError,
+    PredictionSnapshotExistsError,
+    PredictionSourceArtifact,
+    import_ad_hoc_prediction_file,
+    load_prediction_envelopes,
+    normalize_prediction_artifact,
 )
 from .references import (
     BlockingResolutionError,
@@ -182,20 +213,44 @@ __all__ = [
     "ContractMetadata",
     "DiagnosticDefinition",
     "EVALUATION_SCHEMA_CONTRACTS",
+    "EnvelopeArtifactMissingError",
+    "EnvelopeArtifactNotAFileError",
+    "EnvelopeArtifactReadError",
+    "EnvelopeDecodeError",
+    "EnvelopeDestinationHashMismatchError",
+    "EnvelopeDuplicateRecordIdError",
+    "EnvelopeError",
+    "EnvelopeHashMismatchError",
+    "EnvelopeJsonError",
+    "EnvelopeModelValidationError",
+    "EnvelopePathEscapeError",
+    "EnvelopeRecordCountMismatchError",
+    "EnvelopeReferenceBindingError",
+    "EnvelopeTopLevelTypeError",
+    "EnvelopeWriteError",
     "EvaluationCase",
     "EvaluationResultV2",
     "EvaluationRunManifest",
     "EvaluationStrictModel",
     "FindingDisposition",
     "GateDefinition",
+    "ImportedPredictionSnapshot",
     "InitializedEvaluationRun",
     "InvalidEvaluationRootError",
     "InvalidRunIdError",
+    "InvalidSnapshotIdError",
     "LoadedEvaluationRunManifest",
+    "LoadedPredictionEnvelopes",
     "LoadedScoringGateConfig",
     "LoadedTargetRegistry",
     "MembershipEvent",
+    "NormalizedPredictionExistsError",
+    "NormalizedPredictionRun",
+    "PredictionArtifactManifest",
     "PredictionEnvelope",
+    "PredictionRunBindingError",
+    "PredictionSnapshotExistsError",
+    "PredictionSourceArtifact",
     "ProhibitedLegacyFieldError",
     "RegistryContractDefinition",
     "ResolutionFinding",
@@ -255,15 +310,18 @@ __all__ = [
     "canonical_contract_bytes",
     "case_set_snapshot_hash",
     "contract_hash",
+    "import_ad_hoc_prediction_file",
     "initialize_evaluation_run",
     "load_case",
     "load_case_set_manifest",
     "load_evaluation_run_manifest",
     "load_membership_events",
+    "load_prediction_envelopes",
     "load_scoring_gate_config",
     "load_schema",
     "load_target_registry",
     "model_contract_hash",
+    "normalize_prediction_artifact",
     "resolve_case_references",
     "runtime_contract_provenance",
     "verify_case_set_succession",

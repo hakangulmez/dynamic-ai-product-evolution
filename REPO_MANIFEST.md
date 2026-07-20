@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **304**
+Total tracked/scaffold files listed: **309**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -126,6 +126,9 @@ Total tracked/scaffold files listed: **304**
 - `evals/fixtures/evaluation_harness/cases/valid_minimal_case.json`
 - `evals/fixtures/evaluation_harness/configs/valid_scoring_gate_config.json`
 - `evals/fixtures/evaluation_harness/configs/valid_target_registry.json`
+- `evals/fixtures/evaluation_harness/predictions/valid_manifest_bearing_prediction/envelopes.jsonl`
+- `evals/fixtures/evaluation_harness/predictions/valid_manifest_bearing_prediction/prediction_run_manifest.json`
+- `evals/fixtures/evaluation_harness/predictions/valid_manifest_bearing_prediction/sources/prediction_source.json`
 - `evals/fixtures/universe_sentinel/adjudications.json`
 - `evals/fixtures/universe_sentinel/classification_outputs.json`
 - `evals/fixtures/universe_sentinel/evidence_packets.json`
@@ -263,6 +266,7 @@ Total tracked/scaffold files listed: **304**
 - `src/dynamic_ai_products/evaluation/case_sets.py`
 - `src/dynamic_ai_products/evaluation/cases.py`
 - `src/dynamic_ai_products/evaluation/contracts.py`
+- `src/dynamic_ai_products/evaluation/envelopes.py`
 - `src/dynamic_ai_products/evaluation/models.py`
 - `src/dynamic_ai_products/evaluation/references.py`
 - `src/dynamic_ai_products/evaluation/runs.py`
@@ -287,6 +291,7 @@ Total tracked/scaffold files listed: **304**
 - `tests/evaluation/test_case_sets.py`
 - `tests/evaluation/test_cases.py`
 - `tests/evaluation/test_contracts.py`
+- `tests/evaluation/test_envelopes.py`
 - `tests/evaluation/test_models.py`
 - `tests/evaluation/test_references.py`
 - `tests/evaluation/test_runs.py`
