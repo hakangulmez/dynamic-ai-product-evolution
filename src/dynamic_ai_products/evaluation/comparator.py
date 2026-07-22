@@ -44,10 +44,12 @@ from pydantic import (
 )
 
 from .assertions import LoadedAssertionOutcomes
+from .case_sets import case_set_snapshot_hash
 from .contracts import canonical_contract_bytes, model_contract_hash
 from .gates import LoadedEvaluationResult
 from .models import (
     AssertionOutcomeValue,
+    CaseSetManifest,
     ContractMetadata,
     EvaluationRunManifest,
     ExecutionStatus,
@@ -59,7 +61,21 @@ from ..universe.io_utils import sha256_bytes
 
 # --- Constants ------------------------------------------------------------
 
+# Retained contract version for assertion_transition / case_ledger_entry /
+# assertion_comparison_metadata (unchanged by ADR-023).
 _COMPARISON_CONTRACT_VERSION = "0.1.0"
+# Current comparison_manifest contract version (ADR-023 advances it to 0.2.0;
+# only comparison_manifest moves).
+_COMPARISON_MANIFEST_CONTRACT_VERSION = "0.2.0"
+# Historical comparison_manifest version and its governed frozen contract hash.
+# This constant is the true historical model-contract hash recorded before
+# ADR-023; the renamed V1 shape model's own generated schema hash intentionally
+# differs (renaming changes JSON-Schema title and nested $defs/$ref names) and is
+# never used to validate legacy artifacts.
+_COMPARISON_MANIFEST_V1_VERSION = "0.1.0"
+_COMPARISON_MANIFEST_V1_CONTRACT_HASH = (
+    "ef1508e4e2ed06c1cbcaafaf3d30bb9cc6c88e72d1df0bf001c7315e5afb94f4"
+)
 _CASE_ASSERTION_MAPPING_VERSION = "0.1.0"
 _FAILURE_TAXONOMY_VERSION = "0.1.0"
 
@@ -161,10 +177,12 @@ def _validate_run_id_grammar(value: str, field_name: str) -> str:
 
 
 def _contract_stamp(contract_id: str, model: type) -> dict[str, str]:
+    version = (_COMPARISON_MANIFEST_CONTRACT_VERSION
+               if contract_id == _MANIFEST_CONTRACT_ID else _COMPARISON_CONTRACT_VERSION)
     return {
         "contract_id": contract_id,
-        "contract_version": _COMPARISON_CONTRACT_VERSION,
-        "contract_hash": model_contract_hash(model, contract_id, _COMPARISON_CONTRACT_VERSION),
+        "contract_version": version,
+        "contract_hash": model_contract_hash(model, contract_id, version),
     }
 
 
@@ -237,6 +255,63 @@ class AssertionComparisonMetadata(_ContractStamped):
         return {e.identity: e for e in self.entries}
 
 
+class ComparisonInputPacketEntry(_ComparisonStrictModel):
+    """One case's authoritative input-packet identity for a comparison side."""
+
+    case_id: str
+    input_packet_hash: str
+
+    @model_validator(mode="after")
+    def _entry_invariants(self) -> "ComparisonInputPacketEntry":
+        _require_non_blank(self.case_id, "case_id")
+        if not _is_lower_hex64(self.input_packet_hash):
+            raise ValueError("input_packet_hash must be a lowercase 64-hex digest")
+        return self
+
+
+def _input_packet_set_hash(entries: tuple[ComparisonInputPacketEntry, ...]) -> str:
+    payload = [
+        {"case_id": entry.case_id, "input_packet_hash": entry.input_packet_hash}
+        for entry in entries
+    ]
+    return sha256_bytes(canonical_contract_bytes(payload))
+
+
+class ComparisonInputPacketSnapshot(_ComparisonStrictModel):
+    """Immutable per-run authoritative input-packet identity set for a comparison side.
+
+    Carries no prediction values and no model/prompt/provider metadata; its
+    aggregate ``input_packet_set_hash`` is a deterministic function of the sorted
+    ``(case_id, input_packet_hash)`` entries only.
+    """
+
+    case_set_version: str
+    case_set_hash: str
+    registry_snapshot_hash: str
+    entries: tuple[ComparisonInputPacketEntry, ...]
+    input_packet_set_hash: str
+
+    @model_validator(mode="after")
+    def _snapshot_invariants(self) -> "ComparisonInputPacketSnapshot":
+        _require_non_blank(self.case_set_version, "case_set_version")
+        for name in ("case_set_hash", "registry_snapshot_hash", "input_packet_set_hash"):
+            if not _is_lower_hex64(getattr(self, name)):
+                raise ValueError(f"{name} must be a lowercase 64-hex digest")
+        case_ids = [entry.case_id for entry in self.entries]
+        if case_ids != sorted(case_ids):
+            raise ValueError("entries must be sorted by case_id")
+        if len(case_ids) != len(set(case_ids)):
+            raise ValueError("entries must not contain a duplicate case_id")
+        if _input_packet_set_hash(self.entries) != self.input_packet_set_hash:
+            raise ValueError("input_packet_set_hash does not match the canonical aggregate")
+        return self
+
+    @property
+    def by_case(self) -> dict[str, str]:
+        """A fresh ordinary mapping of case_id to input_packet_hash."""
+        return {entry.case_id: entry.input_packet_hash for entry in self.entries}
+
+
 class ComparisonRunReference(_ComparisonStrictModel):
     """One run's identity/hash material; may be partial for invalid/errored."""
 
@@ -250,13 +325,14 @@ class ComparisonRunReference(_ComparisonStrictModel):
     metadata_failure_taxonomy_version: str | None = None
     metadata_hash: str | None = None
     source_code_commit: str | None = None
+    input_packet_set_hash: str | None = None
     execution_status: ExecutionStatus | None = None
     gate_verdict: GateVerdict | None = None
     stage: str | None = None
 
     _HASH_FIELDS: ClassVar[tuple[str, ...]] = (
         "run_manifest_sha256", "result_sha256", "assertion_outcomes_sha256",
-        "scoring_config_sha256", "metadata_hash",
+        "scoring_config_sha256", "metadata_hash", "input_packet_set_hash",
     )
     _NONBLANK_FIELDS: ClassVar[tuple[str, ...]] = (
         "scoring_config_version", "metadata_mapping_version",
@@ -266,7 +342,7 @@ class ComparisonRunReference(_ComparisonStrictModel):
         "run_manifest_sha256", "result_sha256", "assertion_outcomes_sha256",
         "scoring_config_version", "scoring_config_sha256", "metadata_mapping_version",
         "metadata_failure_taxonomy_version", "metadata_hash", "source_code_commit",
-        "execution_status", "gate_verdict", "stage",
+        "input_packet_set_hash", "execution_status", "gate_verdict", "stage",
     )
 
     @model_validator(mode="after")
@@ -446,9 +522,10 @@ class ComparisonIssue(_ComparisonStrictModel):
 
 
 class ComparisonManifest(_ContractStamped):
-    """The comparison's own identity, source references, status and verdict."""
+    """The comparison's own identity, source references, status and verdict (v0.2)."""
 
     _contract_id: ClassVar[str] = _MANIFEST_CONTRACT_ID
+    _contract_version: ClassVar[str] = _COMPARISON_MANIFEST_CONTRACT_VERSION
 
     comparison_id: str
     baseline_role: BaselineRole
@@ -474,8 +551,10 @@ class ComparisonManifest(_ContractStamped):
         _require_non_blank(self.comparison_code_commit, "comparison_code_commit")
         if self.baseline.eval_run_id == self.candidate.eval_run_id:
             raise ValueError("baseline and candidate eval_run_id must differ")
-        if self.comparison_contract_version != _COMPARISON_CONTRACT_VERSION:
-            raise ValueError(f"comparison_contract_version must be {_COMPARISON_CONTRACT_VERSION!r}")
+        if self.comparison_contract_version != _COMPARISON_MANIFEST_CONTRACT_VERSION:
+            raise ValueError(
+                f"comparison_contract_version must be {_COMPARISON_MANIFEST_CONTRACT_VERSION!r}"
+            )
         if self.case_assertion_mapping_version != _CASE_ASSERTION_MAPPING_VERSION:
             raise ValueError(
                 f"case_assertion_mapping_version must be {_CASE_ASSERTION_MAPPING_VERSION!r}"
@@ -483,7 +562,7 @@ class ComparisonManifest(_ContractStamped):
         if self.failure_taxonomy_version != _FAILURE_TAXONOMY_VERSION:
             raise ValueError(f"failure_taxonomy_version must be {_FAILURE_TAXONOMY_VERSION!r}")
         expected_hash = model_contract_hash(
-            ComparisonManifest, _MANIFEST_CONTRACT_ID, _COMPARISON_CONTRACT_VERSION
+            ComparisonManifest, _MANIFEST_CONTRACT_ID, _COMPARISON_MANIFEST_CONTRACT_VERSION
         )
         if self.comparison_contract_hash != expected_hash:
             raise ValueError("comparison_contract_hash must be the canonical model contract hash")
@@ -563,13 +642,13 @@ class ComparisonArtifact(_ComparisonStrictModel):
             expected_verdict = _derive_verdict(self.transitions, self.case_ledger)
             if self.manifest.gate_verdict != expected_verdict:
                 raise ValueError("manifest gate_verdict does not match the recomputed verdict")
-            if _logical_output_hash(self.manifest, self.transitions, self.case_ledger) \
+            if _logical_output_hash_v2(self.manifest, self.transitions, self.case_ledger) \
                     != self.manifest.output_hash:
                 raise ValueError("manifest output_hash does not match the recomputed hash")
         else:
             if self.transitions or self.case_ledger:
                 raise ValueError("an invalid/errored artifact must have empty ledgers")
-            if _logical_output_hash(self.manifest, (), ()) != self.manifest.output_hash:
+            if _logical_output_hash_v2(self.manifest, (), ()) != self.manifest.output_hash:
                 raise ValueError("manifest output_hash does not match the recomputed hash")
         return self
 
@@ -596,6 +675,225 @@ class LoadedComparison(_ComparisonStrictModel):
 
     @model_validator(mode="after")
     def _loaded_invariants(self) -> "LoadedComparison":
+        _validate_persisted_reference(self.comparison_id, self.artifact_reference)
+        if self.comparison_id != self.artifact.manifest.comparison_id:
+            raise ValueError("wrapper comparison_id does not match the manifest")
+        return self
+
+
+# --- Historical v0.1 read-only shape models (Architecture D, ADR-023) ------
+# These are read-only structural copies of the pre-amendment (HEAD)
+# comparison_manifest@0.1.0 shape. Renaming a Pydantic model changes its
+# generated JSON-Schema title and nested $defs/$ref names and therefore its
+# model-contract hash, so these models' OWN generated hashes are NOT the
+# historical hash and are never used to validate legacy artifacts; the loader
+# validates the persisted contract hashes against the governed constant
+# ``_COMPARISON_MANIFEST_V1_CONTRACT_HASH``. There is no V1 persistence,
+# migration writer, or conversion API.
+
+
+class ComparisonRunReferenceV1(_ComparisonStrictModel):
+    """Frozen v0.1 run reference; structurally omits ``input_packet_set_hash``."""
+
+    eval_run_id: str
+    run_manifest_sha256: str | None = None
+    result_sha256: str | None = None
+    assertion_outcomes_sha256: str | None = None
+    scoring_config_version: str | None = None
+    scoring_config_sha256: str | None = None
+    metadata_mapping_version: str | None = None
+    metadata_failure_taxonomy_version: str | None = None
+    metadata_hash: str | None = None
+    source_code_commit: str | None = None
+    execution_status: ExecutionStatus | None = None
+    gate_verdict: GateVerdict | None = None
+    stage: str | None = None
+
+    _HASH_FIELDS: ClassVar[tuple[str, ...]] = (
+        "run_manifest_sha256", "result_sha256", "assertion_outcomes_sha256",
+        "scoring_config_sha256", "metadata_hash",
+    )
+    _NONBLANK_FIELDS: ClassVar[tuple[str, ...]] = (
+        "scoring_config_version", "metadata_mapping_version",
+        "metadata_failure_taxonomy_version", "source_code_commit", "stage",
+    )
+    _COMPLETED_FIELDS: ClassVar[tuple[str, ...]] = (
+        "run_manifest_sha256", "result_sha256", "assertion_outcomes_sha256",
+        "scoring_config_version", "scoring_config_sha256", "metadata_mapping_version",
+        "metadata_failure_taxonomy_version", "metadata_hash", "source_code_commit",
+        "execution_status", "gate_verdict", "stage",
+    )
+
+    @model_validator(mode="after")
+    def _reference_invariants(self) -> "ComparisonRunReferenceV1":
+        _validate_run_id_grammar(self.eval_run_id, "eval_run_id")
+        for name in self._HASH_FIELDS:
+            value = getattr(self, name)
+            if value is not None and not _is_lower_hex64(value):
+                raise ValueError(f"{name} must be a lowercase 64-hex digest when present")
+        for name in self._NONBLANK_FIELDS:
+            value = getattr(self, name)
+            if value is not None:
+                _require_non_blank(value, name)
+        if self.execution_status == "completed":
+            if self.gate_verdict is None:
+                raise ValueError("a completed source reference requires a gate_verdict")
+        elif self.execution_status in ("invalid", "errored"):
+            if self.gate_verdict is not None:
+                raise ValueError("an invalid/errored source reference must omit gate_verdict")
+        else:  # execution_status is None
+            if self.gate_verdict is not None:
+                raise ValueError("gate_verdict requires a non-null execution_status")
+        return self
+
+    @property
+    def is_complete(self) -> bool:
+        return all(getattr(self, name) is not None for name in self._COMPLETED_FIELDS)
+
+
+class ComparisonManifestV1(_ComparisonStrictModel):
+    """Frozen v0.1 comparison manifest; validated against the governed historical hash."""
+
+    contract: ContractMetadata
+    comparison_id: str
+    baseline_role: BaselineRole
+    comparison_code_commit: str
+    baseline: ComparisonRunReferenceV1
+    candidate: ComparisonRunReferenceV1
+    comparison_contract_version: str
+    comparison_contract_hash: str
+    case_assertion_mapping_version: str
+    failure_taxonomy_version: str
+    execution_status: ExecutionStatus
+    gate_verdict: GateVerdict | None = None
+    transition_ledger_sha256: str | None = None
+    case_ledger_sha256: str | None = None
+    transition_count: int | None = None
+    case_count: int | None = None
+    output_hash: str
+    errors: tuple[ComparisonIssue, ...] | None = None
+
+    @model_validator(mode="after")
+    def _manifest_invariants(self) -> "ComparisonManifestV1":
+        if self.contract.contract_id != _MANIFEST_CONTRACT_ID:
+            raise ValueError(f"contract.contract_id must be {_MANIFEST_CONTRACT_ID!r}")
+        if self.contract.contract_version != _COMPARISON_MANIFEST_V1_VERSION:
+            raise ValueError(
+                f"contract.contract_version must be {_COMPARISON_MANIFEST_V1_VERSION!r}")
+        if self.contract.contract_hash != _COMPARISON_MANIFEST_V1_CONTRACT_HASH:
+            raise ValueError("contract.contract_hash must equal the governed historical constant")
+        _validate_run_id_grammar(self.comparison_id, "comparison_id")
+        _require_non_blank(self.comparison_code_commit, "comparison_code_commit")
+        if self.baseline.eval_run_id == self.candidate.eval_run_id:
+            raise ValueError("baseline and candidate eval_run_id must differ")
+        if self.comparison_contract_version != _COMPARISON_MANIFEST_V1_VERSION:
+            raise ValueError(
+                f"comparison_contract_version must be {_COMPARISON_MANIFEST_V1_VERSION!r}")
+        if self.case_assertion_mapping_version != _CASE_ASSERTION_MAPPING_VERSION:
+            raise ValueError(
+                f"case_assertion_mapping_version must be {_CASE_ASSERTION_MAPPING_VERSION!r}")
+        if self.failure_taxonomy_version != _FAILURE_TAXONOMY_VERSION:
+            raise ValueError(f"failure_taxonomy_version must be {_FAILURE_TAXONOMY_VERSION!r}")
+        if self.comparison_contract_hash != _COMPARISON_MANIFEST_V1_CONTRACT_HASH:
+            raise ValueError(
+                "comparison_contract_hash must equal the governed historical constant")
+        for name in ("transition_ledger_sha256", "case_ledger_sha256"):
+            value = getattr(self, name)
+            if value is not None and not _is_lower_hex64(value):
+                raise ValueError(f"{name} must be a lowercase 64-hex digest when present")
+        for name in ("transition_count", "case_count"):
+            value = getattr(self, name)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int)
+                                      or value < 0):
+                raise ValueError(f"{name} must be a non-negative non-bool integer when present")
+        if not _is_lower_hex64(self.output_hash):
+            raise ValueError("output_hash must be a lowercase 64-hex digest")
+        if self.execution_status == "completed":
+            if not (self.baseline.is_complete and self.candidate.is_complete):
+                raise ValueError("a completed comparison requires complete source references")
+            if self.baseline.execution_status != "completed" \
+                    or self.candidate.execution_status != "completed":
+                raise ValueError("a completed comparison requires both sources completed")
+            if self.gate_verdict is None:
+                raise ValueError("a completed comparison requires a gate_verdict")
+            if self.transition_ledger_sha256 is None or self.case_ledger_sha256 is None \
+                    or self.transition_count is None or self.case_count is None:
+                raise ValueError("a completed comparison requires ledger hashes and counts")
+            if self.errors is not None:
+                raise ValueError("a completed comparison must omit errors")
+        else:
+            if self.gate_verdict is not None:
+                raise ValueError("an invalid/errored comparison must omit gate_verdict")
+            if self.transition_ledger_sha256 is not None or self.case_ledger_sha256 is not None \
+                    or self.transition_count is not None or self.case_count is not None:
+                raise ValueError("an invalid/errored comparison must omit ledger hashes and counts")
+            if not self.errors:
+                raise ValueError("an invalid/errored comparison requires issues")
+            allowed = (_INVALID_ISSUE_CODES if self.execution_status == "invalid"
+                       else _ERRORED_ISSUE_CODES)
+            if any(i.issue_code not in allowed for i in self.errors):
+                raise ValueError("an issue code is not permitted for this execution status")
+            ordered = _sorted_issues(self.errors)
+            if list(self.errors) != ordered:
+                raise ValueError("errors must be deterministically sorted")
+            identities = [i.identity for i in self.errors]
+            if len(identities) != len(set(identities)):
+                raise ValueError("errors must not contain a duplicate identity")
+        return self
+
+
+class ComparisonArtifactV1(_ComparisonStrictModel):
+    """Frozen v0.1 in-memory aggregate; validated under the v0.1 output-hash algorithm."""
+
+    manifest: ComparisonManifestV1
+    transitions: tuple[AssertionTransition, ...]
+    case_ledger: tuple[CaseLedgerEntry, ...]
+
+    @model_validator(mode="after")
+    def _artifact_invariants(self) -> "ComparisonArtifactV1":
+        if self.manifest.execution_status == "completed":
+            t_identities = [t.identity for t in self.transitions]
+            if t_identities != sorted(t_identities):
+                raise ValueError("transitions must be sorted by (case_id, assertion_id)")
+            if len(t_identities) != len(set(t_identities)):
+                raise ValueError("transitions must not contain a duplicate identity")
+            c_ids = [c.case_id for c in self.case_ledger]
+            if c_ids != sorted(c_ids):
+                raise ValueError("case_ledger must be sorted by case_id")
+            if len(c_ids) != len(set(c_ids)):
+                raise ValueError("case_ledger must not contain a duplicate case_id")
+            if len(self.transitions) != self.manifest.transition_count:
+                raise ValueError("transition count does not match the manifest")
+            if len(self.case_ledger) != self.manifest.case_count:
+                raise ValueError("case count does not match the manifest")
+            if _ledger_sha(self.transitions) != self.manifest.transition_ledger_sha256:
+                raise ValueError("transition ledger hash does not match the manifest")
+            if _ledger_sha(self.case_ledger) != self.manifest.case_ledger_sha256:
+                raise ValueError("case ledger hash does not match the manifest")
+            expected_verdict = _derive_verdict(self.transitions, self.case_ledger)
+            if self.manifest.gate_verdict != expected_verdict:
+                raise ValueError("manifest gate_verdict does not match the recomputed verdict")
+            if _logical_output_hash_v1(self.manifest, self.transitions, self.case_ledger) \
+                    != self.manifest.output_hash:
+                raise ValueError("manifest output_hash does not match the recomputed hash")
+        else:
+            if self.transitions or self.case_ledger:
+                raise ValueError("an invalid/errored artifact must have empty ledgers")
+            if _logical_output_hash_v1(self.manifest, (), ()) != self.manifest.output_hash:
+                raise ValueError("manifest output_hash does not match the recomputed hash")
+        return self
+
+
+class LoadedComparisonV1(_ComparisonStrictModel):
+    """Read-only loaded wrapper for a historical comparison_manifest@0.1.0 artifact."""
+
+    comparison_id: str
+    artifact_reference: str
+    sha256: str = Field(min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN)
+    artifact: ComparisonArtifactV1
+
+    @model_validator(mode="after")
+    def _loaded_invariants(self) -> "LoadedComparisonV1":
         _validate_persisted_reference(self.comparison_id, self.artifact_reference)
         if self.comparison_id != self.artifact.manifest.comparison_id:
             raise ValueError("wrapper comparison_id does not match the manifest")
@@ -740,7 +1038,8 @@ def _sorted_issues(issues: tuple[ComparisonIssue, ...]) -> list[ComparisonIssue]
     )
 
 
-def _reference_hash_payload(ref: ComparisonRunReference) -> dict[str, Any]:
+def _reference_hash_payload_v1(ref: Any) -> dict[str, Any]:
+    """The frozen v0.1 reference payload (13 keys; never emits a packet-set hash)."""
     return {
         "eval_run_id": ref.eval_run_id,
         "run_manifest_sha256": ref.run_manifest_sha256,
@@ -758,17 +1057,25 @@ def _reference_hash_payload(ref: ComparisonRunReference) -> dict[str, Any]:
     }
 
 
-def _logical_output_hash(
-    manifest: ComparisonManifest,
+def _reference_hash_payload_v2(ref: ComparisonRunReference) -> dict[str, Any]:
+    """The current v0.2 reference payload (v0.1 keys plus ``input_packet_set_hash``)."""
+    payload = _reference_hash_payload_v1(ref)
+    payload["input_packet_set_hash"] = ref.input_packet_set_hash
+    return payload
+
+
+def _output_hash_payload(
+    manifest: Any,
     transitions: tuple[AssertionTransition, ...],
     case_ledger: tuple[CaseLedgerEntry, ...],
-) -> str:
+    reference_payload: Any,
+) -> dict[str, Any]:
     completed = manifest.execution_status == "completed"
-    payload = {
+    return {
         "baseline_role": manifest.baseline_role,
         "comparison_code_commit": manifest.comparison_code_commit,
-        "baseline": _reference_hash_payload(manifest.baseline),
-        "candidate": _reference_hash_payload(manifest.candidate),
+        "baseline": reference_payload(manifest.baseline),
+        "candidate": reference_payload(manifest.candidate),
         "comparison_contract_version": manifest.comparison_contract_version,
         "comparison_contract_hash": manifest.comparison_contract_hash,
         "case_assertion_mapping_version": manifest.case_assertion_mapping_version,
@@ -785,11 +1092,144 @@ def _logical_output_hash(
             for i in _sorted_issues(manifest.errors or ())
         ],
     }
+
+
+def _logical_output_hash_v1(
+    manifest: Any,
+    transitions: tuple[AssertionTransition, ...],
+    case_ledger: tuple[CaseLedgerEntry, ...],
+) -> str:
+    payload = _output_hash_payload(manifest, transitions, case_ledger, _reference_hash_payload_v1)
+    return sha256_bytes(canonical_contract_bytes(payload))
+
+
+def _logical_output_hash_v2(
+    manifest: ComparisonManifest,
+    transitions: tuple[AssertionTransition, ...],
+    case_ledger: tuple[CaseLedgerEntry, ...],
+) -> str:
+    payload = _output_hash_payload(manifest, transitions, case_ledger, _reference_hash_payload_v2)
     return sha256_bytes(canonical_contract_bytes(payload))
 
 
 def _metadata_hash(metadata: AssertionComparisonMetadata) -> str:
     return sha256_bytes(canonical_contract_bytes(metadata.model_dump(mode="json", exclude_unset=True)))
+
+
+def _revalidate(obj: BaseModel) -> BaseModel:
+    """Reconstruct from a plain dump so ``model_copy(update=...)`` cannot bypass validators."""
+    return type(obj).model_validate(obj.model_dump(mode="python", exclude_unset=True))
+
+
+def _revalidate_typed(
+    obj: BaseModel, message: str, *,
+    comparison_id: str | None = None, eval_run_id: str | None = None,
+) -> BaseModel:
+    """Revalidate an already type-checked model, converting a raw Pydantic failure
+    into a sanitized typed ``ComparisonBindingError``.
+
+    The typed error is raised only after leaving the active exception handler and
+    without chaining, so ``__cause__`` and ``__context__`` are both ``None``; the
+    fixed message carries no raw validation text, locations, caller data, or
+    object repr. Performs no I/O.
+    """
+    revalidated: BaseModel | None = None
+    ok = False
+    try:
+        revalidated = _revalidate(obj)
+        ok = True
+    except PydanticValidationError:
+        ok = False
+    if not ok:
+        raise ComparisonBindingError(message, comparison_id=comparison_id, eval_run_id=eval_run_id)
+    return revalidated  # type: ignore[return-value]
+
+
+# --- Input-packet snapshot binding + builder ------------------------------
+
+
+def _bind_input_packets(
+    *, side: str, comparison_id: str, manifest: LoadedEvaluationRunManifest,
+    snapshot: ComparisonInputPacketSnapshot,
+) -> ComparisonInputPacketSnapshot:
+    """Revalidate a snapshot and bind it to its run manifest (case set + registry)."""
+    if not isinstance(manifest, LoadedEvaluationRunManifest):
+        raise TypeError(
+            f"{side}_manifest must be a LoadedEvaluationRunManifest, got {type(manifest).__name__}")
+    if not isinstance(snapshot, ComparisonInputPacketSnapshot):
+        raise TypeError(
+            f"{side}_input_packets must be a ComparisonInputPacketSnapshot, "
+            f"got {type(snapshot).__name__}")
+    m = manifest.manifest
+    run_id = m.eval_run_id
+    snapshot = _revalidate_typed(  # type: ignore[assignment]
+        snapshot, f"{side} input-packet snapshot failed revalidation",
+        comparison_id=comparison_id, eval_run_id=run_id)
+    if snapshot.case_set_version != m.case_set_version:
+        raise ComparisonBindingError(
+            f"{side} input-packet snapshot case_set_version does not bind the run manifest",
+            comparison_id=comparison_id, eval_run_id=run_id)
+    if snapshot.case_set_hash != m.case_set_hash:
+        raise ComparisonBindingError(
+            f"{side} input-packet snapshot case_set_hash does not bind the run manifest",
+            comparison_id=comparison_id, eval_run_id=run_id)
+    if snapshot.registry_snapshot_hash != m.registry_snapshot_hash:
+        raise ComparisonBindingError(
+            f"{side} input-packet snapshot registry_snapshot_hash does not bind the run manifest",
+            comparison_id=comparison_id, eval_run_id=run_id)
+    return snapshot
+
+
+def build_comparison_input_packet_snapshot(
+    *,
+    run_manifest: LoadedEvaluationRunManifest,
+    case_set_manifest: CaseSetManifest,
+) -> ComparisonInputPacketSnapshot:
+    """Derive one side's immutable input-packet snapshot from its case-set membership (pure).
+
+    Performs no filesystem, Git, clock, randomness, network, provider or model
+    access. Authoritative identity is exactly ``(case_id, input_packet_hash)``
+    over the complete ``CaseSetManifest`` membership.
+    """
+    if not isinstance(run_manifest, LoadedEvaluationRunManifest):
+        raise TypeError(
+            f"run_manifest must be a LoadedEvaluationRunManifest, got {type(run_manifest).__name__}")
+    if not isinstance(case_set_manifest, CaseSetManifest):
+        raise TypeError(
+            f"case_set_manifest must be a CaseSetManifest, got {type(case_set_manifest).__name__}")
+    run_manifest = _revalidate_typed(  # type: ignore[assignment]
+        run_manifest, "run manifest failed revalidation")
+    m = run_manifest.manifest
+    # Strict CaseSetManifest revalidation is the sole duplicate-case guard: the
+    # committed contract rejects duplicate memberships, so a model_copy-tampered
+    # manifest bearing duplicate case IDs surfaces here as the sanitized typed
+    # binding error (never a raw Pydantic error, never a post-loop check).
+    case_set_manifest = _revalidate_typed(  # type: ignore[assignment]
+        case_set_manifest, "case-set manifest failed revalidation", eval_run_id=m.eval_run_id)
+    if case_set_manifest.case_set_version != m.case_set_version:
+        raise ComparisonBindingError(
+            "case_set_manifest case_set_version does not bind the run manifest",
+            eval_run_id=m.eval_run_id)
+    if case_set_snapshot_hash(case_set_manifest) != m.case_set_hash:
+        raise ComparisonBindingError(
+            "case_set_manifest snapshot hash does not equal the run manifest case_set_hash",
+            eval_run_id=m.eval_run_id)
+    if case_set_manifest.registry_snapshot_hash != m.registry_snapshot_hash:
+        raise ComparisonBindingError(
+            "case_set_manifest registry_snapshot_hash does not bind the run manifest",
+            eval_run_id=m.eval_run_id)
+    entries = [
+        ComparisonInputPacketEntry(
+            case_id=membership.case_id, input_packet_hash=membership.input_packet_hash)
+        for membership in case_set_manifest.entries
+    ]
+    entries.sort(key=lambda e: e.case_id)
+    ordered = tuple(entries)
+    return ComparisonInputPacketSnapshot(
+        case_set_version=m.case_set_version, case_set_hash=m.case_set_hash,
+        registry_snapshot_hash=m.registry_snapshot_hash, entries=ordered,
+        input_packet_set_hash=_input_packet_set_hash(ordered),
+    )
 
 
 # --- Source binding -------------------------------------------------------
@@ -799,6 +1239,7 @@ def _bind_source(
     *, side: str, comparison_id: str, manifest: LoadedEvaluationRunManifest,
     result: LoadedEvaluationResult, outcomes: LoadedAssertionOutcomes,
     scoring_config: LoadedScoringGateConfig, metadata: AssertionComparisonMetadata,
+    input_packets: ComparisonInputPacketSnapshot,
 ) -> ComparisonRunReference:
     for name, obj, typ in (
         (f"{side}_manifest", manifest, LoadedEvaluationRunManifest),
@@ -888,6 +1329,7 @@ def _bind_source(
         scoring_config_sha256=scoring_config.sha256, metadata_mapping_version=metadata.mapping_version,
         metadata_failure_taxonomy_version=metadata.failure_taxonomy_version,
         metadata_hash=_metadata_hash(metadata), source_code_commit=m.code_commit,
+        input_packet_set_hash=input_packets.input_packet_set_hash,
         execution_status=r.execution_status, gate_verdict=r.gate_verdict, stage=r.stage,
     )
 
@@ -938,16 +1380,36 @@ def _run_level_class(
     bmeta: AssertionComparisonMetadata, cmeta: AssertionComparisonMetadata,
     b_entry: AssertionComparisonMetadataEntry, c_entry: AssertionComparisonMetadataEntry,
     b_out: Any, c_out: Any,
+    bs: ComparisonInputPacketSnapshot, cs: ComparisonInputPacketSnapshot, case_id: str,
 ) -> NoncomparabilityClass | None:
-    """First-applicable run/assertion-level noncomparability class, or None."""
-    if bm.case_set_version != cm.case_set_version or bm.case_set_hash != cm.case_set_hash:
+    """First-applicable run/assertion-level noncomparability class, or None (ADR-023).
+
+    Packet comparability derives from the authoritative per-case
+    ``(case_id, input_packet_hash)`` snapshots; ``prediction_run_manifest_hash``
+    is provenance only and never triggers noncomparability. Role-independent.
+    """
+    b_by, c_by = bs.by_case, cs.by_case
+    # 1. registry / gold snapshot.
+    if bs.registry_snapshot_hash != cs.registry_snapshot_hash:
         return "changed_gold"
-    if bm.prediction_run_manifest_hash != cm.prediction_run_manifest_hash:
+    # 2. changed case membership.
+    if set(b_by) != set(c_by):
+        return "changed_gold"
+    # 3. changed input packet for this otherwise-matching case.
+    if b_by[case_id] != c_by[case_id]:
         return "changed_input_packet"
+    # 4. residual case-set version/hash difference.
+    if bs.case_set_version != cs.case_set_version or bs.case_set_hash != cs.case_set_hash:
+        return "changed_gold"
+    # 5. changed validator bundle contract.
     if bm.validator_bundle_version != cm.validator_bundle_version \
             or bm.validator_bundle_hash != cm.validator_bundle_hash:
         return "changed_validator_contract"
-    # Assertion contract compatibility.
+    # 6. changed scoring-gate config contract.
+    if bm.scoring_gate_config_version != cm.scoring_gate_config_version \
+            or bm.scoring_gate_config_hash != cm.scoring_gate_config_hash:
+        return "changed_validator_contract"
+    # 7. assertion contract compatibility.
     b_axes = _axes(b_out.assertion_semantic_version, b_out.assertion_contract_hash)
     c_axes = _axes(c_out.assertion_semantic_version, c_out.assertion_contract_hash)
     shared = b_axes & c_axes
@@ -961,11 +1423,8 @@ def _run_level_class(
         return "noncomparable_contract"
     if b_entry.protected_regression_classes != c_entry.protected_regression_classes:
         return "changed_assertion_contract"
-    # Remaining run-level comparability axes.
-    if bm.registry_snapshot_hash != cm.registry_snapshot_hash \
-            or bm.scoring_gate_config_version != cm.scoring_gate_config_version \
-            or bm.scoring_gate_config_hash != cm.scoring_gate_config_hash \
-            or bm.code_commit != cm.code_commit \
+    # Remaining run-contract axes (registry and scoring handled above).
+    if bm.code_commit != cm.code_commit \
             or bm.pydantic_runtime_version != cm.pydantic_runtime_version \
             or bref.stage != cref.stage \
             or bmeta.mapping_version != cmeta.mapping_version \
@@ -1003,9 +1462,12 @@ def _build_transitions(
     bref: ComparisonRunReference, cref: ComparisonRunReference,
     b_outcomes: LoadedAssertionOutcomes, c_outcomes: LoadedAssertionOutcomes,
     bmeta: AssertionComparisonMetadata, cmeta: AssertionComparisonMetadata,
+    bs: ComparisonInputPacketSnapshot, cs: ComparisonInputPacketSnapshot,
+    comparison_id: str,
 ) -> tuple[AssertionTransition, ...]:
     b_by = {(o.case_id, o.assertion_id): o for o in b_outcomes.outcomes}
     c_by = {(o.case_id, o.assertion_id): o for o in c_outcomes.outcomes}
+    b_cases, c_cases = bs.by_case, cs.by_case
     b_meta = bmeta.by_identity
     c_meta = cmeta.by_identity
     stamp = _contract_stamp(_TRANSITION_CONTRACT_ID, AssertionTransition)
@@ -1014,6 +1476,10 @@ def _build_transitions(
         case_id, assertion_id = identity
         base = dict(contract=stamp, case_id=case_id, assertion_id=assertion_id)
         if identity in b_by and identity not in c_by:  # removed
+            if case_id not in b_cases:
+                raise ComparisonBindingError(
+                    f"baseline case {case_id!r} is not covered by its input-packet snapshot",
+                    comparison_id=comparison_id, eval_run_id=bm.eval_run_id)
             b_out = b_by[identity]
             transitions.append(AssertionTransition.model_validate({
                 **base, "baseline_outcome": b_out.outcome, "candidate_outcome": None,
@@ -1029,6 +1495,10 @@ def _build_transitions(
             }))
             continue
         if identity in c_by and identity not in b_by:  # added
+            if case_id not in c_cases:
+                raise ComparisonBindingError(
+                    f"candidate case {case_id!r} is not covered by its input-packet snapshot",
+                    comparison_id=comparison_id, eval_run_id=cm.eval_run_id)
             c_out = c_by[identity]
             new_failure = c_out.outcome == "unsatisfied"
             transitions.append(AssertionTransition.model_validate({
@@ -1045,9 +1515,14 @@ def _build_transitions(
             }))
             continue
         # Matched.
+        if case_id not in b_cases or case_id not in c_cases:
+            raise ComparisonBindingError(
+                f"matched case {case_id!r} is not covered by both input-packet snapshots",
+                comparison_id=comparison_id, eval_run_id=bm.eval_run_id)
         b_out, c_out = b_by[identity], c_by[identity]
         b_entry, c_entry = b_meta[identity], c_meta[identity]
-        nonc = _run_level_class(bm, cm, bref, cref, bmeta, cmeta, b_entry, c_entry, b_out, c_out)
+        nonc = _run_level_class(bm, cm, bref, cref, bmeta, cmeta, b_entry, c_entry, b_out, c_out,
+                                bs, cs, case_id)
         common = {
             **base, "baseline_outcome": b_out.outcome, "candidate_outcome": c_out.outcome,
             "baseline_assertion_semantic_version": b_out.assertion_semantic_version,
@@ -1217,6 +1692,8 @@ def assess_comparison(
     candidate_scoring_config: LoadedScoringGateConfig,
     baseline_metadata: AssertionComparisonMetadata,
     candidate_metadata: AssertionComparisonMetadata,
+    baseline_input_packets: ComparisonInputPacketSnapshot,
+    candidate_input_packets: ComparisonInputPacketSnapshot,
 ) -> ComparisonArtifact:
     """Assess a completed comparison. Pure; raises typed errors on invalid input."""
     cid = _require_comparison_id(comparison_id)
@@ -1227,18 +1704,25 @@ def assess_comparison(
         if baseline_manifest.manifest.eval_run_id == candidate_manifest.manifest.eval_run_id:
             raise ComparisonValidityError("baseline and candidate eval_run_id must differ",
                                           comparison_id=cid)
+    baseline_snapshot = _bind_input_packets(
+        side="baseline", comparison_id=cid, manifest=baseline_manifest,
+        snapshot=baseline_input_packets)
+    candidate_snapshot = _bind_input_packets(
+        side="candidate", comparison_id=cid, manifest=candidate_manifest,
+        snapshot=candidate_input_packets)
     bref = _bind_source(
         side="baseline", comparison_id=cid, manifest=baseline_manifest, result=baseline_result,
         outcomes=baseline_outcomes, scoring_config=baseline_scoring_config,
-        metadata=baseline_metadata)
+        metadata=baseline_metadata, input_packets=baseline_snapshot)
     cref = _bind_source(
         side="candidate", comparison_id=cid, manifest=candidate_manifest, result=candidate_result,
         outcomes=candidate_outcomes, scoring_config=candidate_scoring_config,
-        metadata=candidate_metadata)
+        metadata=candidate_metadata, input_packets=candidate_snapshot)
     transitions = _build_transitions(
         bm=baseline_manifest.manifest, cm=candidate_manifest.manifest, bref=bref, cref=cref,
         b_outcomes=baseline_outcomes, c_outcomes=candidate_outcomes,
-        bmeta=baseline_metadata, cmeta=candidate_metadata)
+        bmeta=baseline_metadata, cmeta=candidate_metadata,
+        bs=baseline_snapshot, cs=candidate_snapshot, comparison_id=cid)
     case_ledger = _build_case_ledger(
         transitions=transitions, b_outcomes=baseline_outcomes, c_outcomes=candidate_outcomes)
     verdict = _derive_verdict(transitions, case_ledger)
@@ -1330,7 +1814,8 @@ def _build_manifest(
     partial = {
         "contract": stamp, "comparison_id": cid, "baseline_role": baseline_role,
         "comparison_code_commit": comparison_code_commit, "baseline": baseline,
-        "candidate": candidate, "comparison_contract_version": _COMPARISON_CONTRACT_VERSION,
+        "candidate": candidate,
+        "comparison_contract_version": _COMPARISON_MANIFEST_CONTRACT_VERSION,
         "comparison_contract_hash": stamp["contract_hash"],
         "case_assertion_mapping_version": _CASE_ASSERTION_MAPPING_VERSION,
         "failure_taxonomy_version": _FAILURE_TAXONOMY_VERSION,
@@ -1355,8 +1840,8 @@ def _output_hash_from_parts(
     payload = {
         "baseline_role": partial["baseline_role"],
         "comparison_code_commit": partial["comparison_code_commit"],
-        "baseline": _reference_hash_payload(partial["baseline"]),
-        "candidate": _reference_hash_payload(partial["candidate"]),
+        "baseline": _reference_hash_payload_v2(partial["baseline"]),
+        "candidate": _reference_hash_payload_v2(partial["candidate"]),
         "comparison_contract_version": partial["comparison_contract_version"],
         "comparison_contract_hash": partial["comparison_contract_hash"],
         "case_assertion_mapping_version": partial["case_assertion_mapping_version"],
@@ -1435,14 +1920,14 @@ def _reverify_aggregate(artifact: ComparisonArtifact) -> None:
         if _derive_verdict(artifact.transitions, artifact.case_ledger) != m.gate_verdict:
             raise ComparisonBindingMismatchError("recomputed verdict disagrees with the manifest",
                                                  comparison_id=m.comparison_id)
-        if _logical_output_hash(m, artifact.transitions, artifact.case_ledger) != m.output_hash:
+        if _logical_output_hash_v2(m, artifact.transitions, artifact.case_ledger) != m.output_hash:
             raise ComparisonBindingMismatchError("recomputed output hash disagrees with the manifest",
                                                  comparison_id=m.comparison_id)
     else:
         if artifact.transitions or artifact.case_ledger:
             raise ComparisonBindingMismatchError(
                 "an invalid/errored artifact must have empty ledgers", comparison_id=m.comparison_id)
-        if _logical_output_hash(m, (), ()) != m.output_hash:
+        if _logical_output_hash_v2(m, (), ()) != m.output_hash:
             raise ComparisonBindingMismatchError("recomputed output hash disagrees with the manifest",
                                                  comparison_id=m.comparison_id)
 
@@ -1697,8 +2182,15 @@ def _error_locations(exc: PydanticValidationError) -> tuple[str, ...]:
     return tuple(sorted("/".join(str(p) for p in e["loc"]) for e in exc.errors()))
 
 
-def load_comparison(comparison_id: str, *, eval_root: str | Path) -> LoadedComparison:
-    """Load a comparison artifact from its fixed comparison-scoped directory."""
+def load_comparison(
+    comparison_id: str, *, eval_root: str | Path,
+) -> LoadedComparisonV1 | LoadedComparison:
+    """Load a comparison artifact, dispatching on the explicit persisted contract version.
+
+    ``comparison_manifest@0.1.0`` artifacts are read into read-only ``…V1`` shape
+    models (validated against the governed historical hash, never migrated or
+    rewritten); ``comparison_manifest@0.2.0`` artifacts into the current models.
+    """
     cid = _require_comparison_id(comparison_id)
     resolved_root = _validate_root(eval_root)
     parent = resolved_root / _COMPARISONS_DIR
@@ -1720,8 +2212,21 @@ def load_comparison(comparison_id: str, *, eval_root: str | Path) -> LoadedCompa
     raw = _read_regular_file(manifest_path, comparison_id=cid, reference=reference)
     manifest_sha = sha256_bytes(raw)
     payload = _parse_json_object(raw, comparison_id=cid, reference=reference)
+    version = payload.get("comparison_contract_version")
+    if version == _COMPARISON_MANIFEST_V1_VERSION:
+        manifest_cls: type = ComparisonManifestV1
+        artifact_cls: type = ComparisonArtifactV1
+        wrapper_cls: type = LoadedComparisonV1
+    elif version == _COMPARISON_MANIFEST_CONTRACT_VERSION:
+        manifest_cls = ComparisonManifest
+        artifact_cls = ComparisonArtifact
+        wrapper_cls = LoadedComparison
+    else:
+        raise ComparisonModelValidationError(
+            "comparison manifest has a missing or unknown comparison_contract_version",
+            comparison_id=cid, artifact_reference=reference)
     try:
-        manifest = ComparisonManifest.model_validate(payload)
+        manifest = manifest_cls.model_validate(payload)
     except PydanticValidationError as exc:
         raise ComparisonModelValidationError(
             f"comparison manifest {reference!r} failed model validation", comparison_id=cid,
@@ -1745,11 +2250,11 @@ def load_comparison(comparison_id: str, *, eval_root: str | Path) -> LoadedCompa
                     artifact_reference=f"{_COMPARISONS_DIR}/{cid}/{extra_name}")
         transitions, case_ledger = (), ()
     try:
-        artifact = ComparisonArtifact(manifest=manifest, transitions=transitions,
-                                      case_ledger=case_ledger)
+        artifact = artifact_cls(manifest=manifest, transitions=transitions,
+                                case_ledger=case_ledger)
     except PydanticValidationError as exc:
         raise ComparisonBindingMismatchError(
             f"comparison artifact {reference!r} failed aggregate validation", comparison_id=cid,
             artifact_reference=reference, ) from exc
-    return LoadedComparison(comparison_id=cid, artifact_reference=reference, sha256=manifest_sha,
-                            artifact=artifact)
+    return wrapper_cls(comparison_id=cid, artifact_reference=reference, sha256=manifest_sha,
+                       artifact=artifact)

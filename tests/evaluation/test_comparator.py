@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError as PydanticValidationError
 
 import dynamic_ai_products.evaluation as evaluation_pkg
 from dynamic_ai_products.evaluation import comparator as comp
@@ -23,30 +24,39 @@ from dynamic_ai_products.evaluation.comparator import (
     ComparisonArtifact,
     ComparisonArtifactMissingError,
     ComparisonArtifactNotAFileError,
+    ComparisonArtifactV1,
     ComparisonBindingError,
     ComparisonBindingMismatchError,
     ComparisonDecodeError,
     ComparisonExistsError,
+    ComparisonInputPacketEntry,
+    ComparisonInputPacketSnapshot,
     ComparisonIssue,
     ComparisonJsonError,
+    ComparisonManifestV1,
     ComparisonMetadataError,
     ComparisonModelValidationError,
     ComparisonRunReference,
+    ComparisonRunReferenceV1,
     ComparisonTopLevelTypeError,
     ComparisonValidityError,
     ComparisonWriteError,
     LoadedComparison,
+    LoadedComparisonV1,
     PersistedComparison,
     assess_comparison,
+    build_comparison_input_packet_snapshot,
     build_errored_comparison,
     build_invalid_comparison,
     load_comparison,
     persist_comparison,
 )
+from dynamic_ai_products.evaluation.case_sets import case_set_snapshot_hash
 from dynamic_ai_products.evaluation.contracts import canonical_contract_bytes, model_contract_hash
 from dynamic_ai_products.evaluation.gates import LoadedEvaluationResult
 from dynamic_ai_products.evaluation.models import (
     AssertionOutcome,
+    CaseSetManifest,
     EvaluationRunManifest,
     EvaluationResultV2,
 )
@@ -69,6 +79,21 @@ META_STAMP = {"contract_id": "assertion_comparison_metadata", "contract_version"
               "contract_hash": model_contract_hash(AssertionComparisonMetadata,
                                                    "assertion_comparison_metadata", "0.1.0")}
 H1, H2, H3, H4, H5, H6 = ("1" * 64, "2" * 64, "3" * 64, "4" * 64, "5" * 64, "6" * 64)
+PKT = "a" * 64  # default per-case input_packet_hash (equal packets → comparable)
+
+
+def input_snapshot(m, cases):
+    """Build a ComparisonInputPacketSnapshot bound to manifest ``m`` over ``cases``.
+
+    ``cases`` maps case_id -> input_packet_hash.
+    """
+    entries = tuple(
+        ComparisonInputPacketEntry(case_id=c, input_packet_hash=h)
+        for c, h in sorted(cases.items()))
+    return ComparisonInputPacketSnapshot(
+        case_set_version=m.case_set_version, case_set_hash=m.case_set_hash,
+        registry_snapshot_hash=m.registry_snapshot_hash, entries=entries,
+        input_packet_set_hash=comp._input_packet_set_hash(entries))
 
 
 # --- Builders (no filesystem) ---------------------------------------------
@@ -149,9 +174,15 @@ def metadata(run_id, *entries, mapping="0.1.0", taxonomy="0.1.0"):
 
 def assess(*, cid="cmp-1", role="previous_candidate", commit="cc-1", b_manifest=None,
            c_manifest=None, b_result=None, c_result=None, b_outcomes, c_outcomes,
-           b_scoring=None, c_scoring=None, b_metadata, c_metadata):
+           b_scoring=None, c_scoring=None, b_metadata, c_metadata,
+           b_input=None, c_input=None, b_packets=None, c_packets=None):
     bm = b_manifest or loaded_manifest("run-base")
     cm = c_manifest or loaded_manifest("run-cand")
+    all_cases = ({o.case_id for o in b_outcomes.outcomes}
+                 | {o.case_id for o in c_outcomes.outcomes})
+    default_packets = {c: PKT for c in all_cases}
+    b_snap = b_input or input_snapshot(bm.manifest, b_packets or default_packets)
+    c_snap = c_input or input_snapshot(cm.manifest, c_packets or default_packets)
     return assess_comparison(
         comparison_id=cid, baseline_role=role, comparison_code_commit=commit,
         baseline_manifest=bm, candidate_manifest=cm,
@@ -160,7 +191,8 @@ def assess(*, cid="cmp-1", role="previous_candidate", commit="cc-1", b_manifest=
         baseline_outcomes=b_outcomes, candidate_outcomes=c_outcomes,
         baseline_scoring_config=b_scoring or loaded_scoring(bm.manifest),
         candidate_scoring_config=c_scoring or loaded_scoring(cm.manifest),
-        baseline_metadata=b_metadata, candidate_metadata=c_metadata)
+        baseline_metadata=b_metadata, candidate_metadata=c_metadata,
+        baseline_input_packets=b_snap, candidate_input_packets=c_snap)
 
 
 def one_assertion(b_value, c_value, *, protected=(), b_semver="1.0.0", c_semver="1.0.0",
@@ -566,9 +598,19 @@ def test_changed_gold_outranks_contract():
 
 
 def test_changed_input_packet():
+    # ADR-023: a per-case input_packet_hash difference (from the snapshot) is the
+    # sole trigger for changed_input_packet; the prediction-run manifest hash is not.
+    art = one_assertion("satisfied", "unsatisfied", c_packets={CID: "e" * 64})
+    assert t0(art).noncomparability_class == "changed_input_packet"
+    assert art.manifest.gate_verdict == "indeterminate"
+
+
+def test_prediction_manifest_hash_alone_is_comparable():
+    # ADR-023: a differing prediction_run_manifest_hash alone must not break comparability.
     art = one_assertion("satisfied", "unsatisfied",
                         c_manifest=loaded_manifest("run-cand", prediction_run_manifest_hash="a" * 64))
-    assert t0(art).noncomparability_class == "changed_input_packet"
+    assert t0(art).noncomparability_class is None
+    assert t0(art).transition_class == "regression"
 
 
 def test_changed_validator_contract():
@@ -603,10 +645,12 @@ def test_extra_axis_noncomparable():
     assert t0(art).noncomparability_class == "noncomparable_contract"
 
 
-def test_registry_mismatch_noncomparable():
+def test_registry_mismatch_changed_gold():
+    # ADR-023: a differing registry snapshot is gold noncomparability (highest precedence).
     art = one_assertion("satisfied", "unsatisfied",
                         c_manifest=loaded_manifest("run-cand", registry_snapshot_hash="a" * 64))
-    assert t0(art).noncomparability_class == "noncomparable_contract"
+    assert t0(art).noncomparability_class == "changed_gold"
+    assert art.manifest.gate_verdict == "indeterminate"
 
 
 def test_stage_mismatch_noncomparable():
@@ -1216,3 +1260,509 @@ def test_package_import_no_io_or_hash():
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT)
     assert result.returncode == 0 and "OK" in result.stdout, result.stderr
+
+
+# --- ADR-023 scenario matrix (A–J) via the real comparator ----------------
+
+
+def _regress():  # satisfied -> unsatisfied, protected on both sides
+    return dict(protected=(PROT,))
+
+
+def test_scenario_A_diff_predictions_equal_packets_comparable():
+    art = one_assertion("satisfied", "unsatisfied", **_regress(),
+                        c_manifest=loaded_manifest("run-cand", prediction_run_id="P2",
+                                                   prediction_run_manifest_hash="a" * 64))
+    assert t0(art).noncomparability_class is None
+    assert t0(art).transition_class == "regression"
+
+
+def test_scenario_B_changed_packet_same_membership():
+    art = one_assertion("satisfied", "unsatisfied", **_regress(), c_packets={CID: "e" * 64})
+    assert t0(art).noncomparability_class == "changed_input_packet"
+    assert art.manifest.gate_verdict == "indeterminate"
+
+
+def test_scenario_C_changed_membership_changed_gold():
+    bm = loaded_manifest("run-base")
+    cm = loaded_manifest("run-cand")
+    b_in = input_snapshot(bm.manifest, {CID: PKT})
+    c_in = input_snapshot(cm.manifest, {CID: PKT, "OTHER": PKT})  # extra case → membership differs
+    art = one_assertion("satisfied", "unsatisfied", **_regress(),
+                        b_manifest=bm, c_manifest=cm, b_input=b_in, c_input=c_in)
+    assert t0(art).noncomparability_class == "changed_gold"
+    assert art.manifest.gate_verdict == "indeterminate"
+
+
+def test_scenario_D_changed_registry_changed_gold():
+    art = one_assertion("satisfied", "unsatisfied", **_regress(),
+                        c_manifest=loaded_manifest("run-cand", registry_snapshot_hash="a" * 64))
+    assert t0(art).noncomparability_class == "changed_gold"
+    assert art.manifest.gate_verdict == "indeterminate"
+
+
+def test_scenario_E_changed_validator_contract():
+    art = one_assertion("satisfied", "unsatisfied", **_regress(),
+                        c_manifest=loaded_manifest("run-cand", validator_bundle_version="vb2"))
+    assert t0(art).noncomparability_class == "changed_validator_contract"
+    assert art.manifest.gate_verdict == "indeterminate"
+
+
+def test_scenario_F_changed_scoring_contract():
+    bm = loaded_manifest("run-base")
+    cm = loaded_manifest("run-cand", scoring_gate_config_hash="a" * 64)
+    art = assess(
+        b_manifest=bm, c_manifest=cm,
+        b_scoring=loaded_scoring(bm.manifest), c_scoring=loaded_scoring(cm.manifest),
+        b_outcomes=loaded_outcomes("run-base", outcome("run-base", CID, "A1", "satisfied")),
+        c_outcomes=loaded_outcomes("run-cand", outcome("run-cand", CID, "A1", "unsatisfied")),
+        b_metadata=metadata("run-base", meta_entry(CID, "A1", protected=(PROT,))),
+        c_metadata=metadata("run-cand", meta_entry(CID, "A1", protected=(PROT,))))
+    assert t0(art).noncomparability_class == "changed_validator_contract"
+    assert art.manifest.gate_verdict == "indeterminate"
+
+
+def test_scenario_G_same_prediction_hash_changed_packet():
+    # both sides share a prediction manifest hash; only the packet mapping differs.
+    art = one_assertion("satisfied", "unsatisfied", **_regress(),
+                        b_manifest=loaded_manifest("run-base", prediction_run_manifest_hash=H1),
+                        c_manifest=loaded_manifest("run-cand", prediction_run_manifest_hash=H1),
+                        c_packets={CID: "e" * 64})
+    assert t0(art).noncomparability_class == "changed_input_packet"
+
+
+def test_scenario_H_diff_prediction_hash_equal_packets_comparable():
+    art = one_assertion("satisfied", "unsatisfied", **_regress(),
+                        c_manifest=loaded_manifest("run-cand", prediction_run_manifest_hash="a" * 64))
+    assert t0(art).noncomparability_class is None
+    assert t0(art).transition_class == "regression"
+
+
+def test_scenario_I_registry_and_packet_both_differ_changed_gold():
+    art = one_assertion("satisfied", "unsatisfied", **_regress(),
+                        c_manifest=loaded_manifest("run-cand", registry_snapshot_hash="a" * 64),
+                        c_packets={CID: "e" * 64})
+    assert t0(art).noncomparability_class == "changed_gold"  # registry precedence
+
+
+def test_scenario_J_membership_and_packet_both_differ_changed_gold():
+    bm = loaded_manifest("run-base")
+    cm = loaded_manifest("run-cand")
+    b_in = input_snapshot(bm.manifest, {CID: PKT})
+    c_in = input_snapshot(cm.manifest, {CID: "e" * 64, "OTHER": PKT})  # membership + packet differ
+    art = one_assertion("satisfied", "unsatisfied", **_regress(),
+                        b_manifest=bm, c_manifest=cm, b_input=b_in, c_input=c_in)
+    assert t0(art).noncomparability_class == "changed_gold"  # membership precedence
+
+
+def test_classification_is_role_independent():
+    classes = set()
+    for role in ("model_upgrade_baseline", "validator_bridge_baseline", "reproducibility_baseline"):
+        art = one_assertion("satisfied", "unsatisfied", **_regress(), role=role, c_packets={CID: "e" * 64})
+        classes.add(t0(art).noncomparability_class)
+    assert classes == {"changed_input_packet"}
+
+
+def test_assess_comparison_requires_fifteen_kwargs():
+    import inspect
+    params = inspect.signature(assess_comparison).parameters
+    assert len(params) == 15
+    assert all(p.kind is inspect.Parameter.KEYWORD_ONLY for p in params.values())
+    assert "baseline_input_packets" in params and "candidate_input_packets" in params
+
+
+# --- Input-packet snapshot models + builder -------------------------------
+
+
+def test_snapshot_sorted_unique_and_aggregate():
+    entries = (ComparisonInputPacketEntry(case_id="A", input_packet_hash="a" * 64),
+               ComparisonInputPacketEntry(case_id="B", input_packet_hash="b" * 64))
+    snap = ComparisonInputPacketSnapshot(
+        case_set_version="cs", case_set_hash="c" * 64, registry_snapshot_hash="d" * 64,
+        entries=entries, input_packet_set_hash=comp._input_packet_set_hash(entries))
+    assert snap.by_case == {"A": "a" * 64, "B": "b" * 64}
+
+
+def test_snapshot_rejects_unsorted_duplicate_and_bad_aggregate():
+    e = (ComparisonInputPacketEntry(case_id="B", input_packet_hash="b" * 64),
+         ComparisonInputPacketEntry(case_id="A", input_packet_hash="a" * 64))
+    with pytest.raises(PydanticValidationError):  # unsorted
+        ComparisonInputPacketSnapshot(case_set_version="cs", case_set_hash="c" * 64,
+            registry_snapshot_hash="d" * 64, entries=e,
+            input_packet_set_hash=comp._input_packet_set_hash(e))
+    dup = (ComparisonInputPacketEntry(case_id="A", input_packet_hash="a" * 64),
+           ComparisonInputPacketEntry(case_id="A", input_packet_hash="a" * 64))
+    with pytest.raises(PydanticValidationError):
+        ComparisonInputPacketSnapshot(case_set_version="cs", case_set_hash="c" * 64,
+            registry_snapshot_hash="d" * 64, entries=dup,
+            input_packet_set_hash=comp._input_packet_set_hash(dup))
+    ok = (ComparisonInputPacketEntry(case_id="A", input_packet_hash="a" * 64),)
+    with pytest.raises(PydanticValidationError):  # aggregate mismatch
+        ComparisonInputPacketSnapshot(case_set_version="cs", case_set_hash="c" * 64,
+            registry_snapshot_hash="d" * 64, entries=ok, input_packet_set_hash="0" * 64)
+
+
+def test_snapshot_by_case_mutation_isolated():
+    entries = (ComparisonInputPacketEntry(case_id="A", input_packet_hash="a" * 64),)
+    snap = ComparisonInputPacketSnapshot(case_set_version="cs", case_set_hash="c" * 64,
+        registry_snapshot_hash="d" * 64, entries=entries,
+        input_packet_set_hash=comp._input_packet_set_hash(entries))
+    m = snap.by_case
+    m["A"] = "HACK"
+    m["NEW"] = "x"
+    assert snap.by_case == {"A": "a" * 64}
+
+
+def test_snapshot_entry_requires_lower_hex64():
+    with pytest.raises(PydanticValidationError):
+        ComparisonInputPacketEntry(case_id="A", input_packet_hash="short")
+    with pytest.raises(PydanticValidationError):
+        ComparisonInputPacketEntry(case_id="", input_packet_hash="a" * 64)
+
+
+def _case_set_manifest(cases, *, version="cs-v1", registry=H3):
+    cs_meta = {"contract_id": "case_set_manifest", "contract_version": "0.1.0",
+               "contract_hash": model_contract_hash(CaseSetManifest, "case_set_manifest", "0.1.0")}
+    entries = [{"case_id": c, "partition": "frozen_test", "suites": ["regression"],
+                "input_packet_hash": h} for c, h in sorted(cases.items())]
+    return CaseSetManifest.model_validate({
+        "contract": cs_meta, "case_set_version": version, "lifecycle": "frozen",
+        "registry_snapshot_version": "rv", "registry_snapshot_hash": registry, "entries": entries})
+
+
+def test_builder_derives_from_membership_and_binds():
+    csm = _case_set_manifest({CID: "7" * 64, "C2": "8" * 64})
+    cs_hash = case_set_snapshot_hash(csm)
+    lm = loaded_manifest("run-base", case_set_hash=cs_hash)
+    snap = build_comparison_input_packet_snapshot(run_manifest=lm, case_set_manifest=csm)
+    assert snap.by_case == {CID: "7" * 64, "C2": "8" * 64}
+    assert snap.case_set_version == "cs-v1" and snap.case_set_hash == cs_hash
+    assert snap.registry_snapshot_hash == H3
+    # Independent expected aggregate from the governed public primitives only
+    # (does NOT call the production helper _input_packet_set_hash).
+    payload = [{"case_id": e.case_id, "input_packet_hash": e.input_packet_hash}
+               for e in snap.entries]
+    expected = sha256_bytes(canonical_contract_bytes(payload))
+    assert snap.input_packet_set_hash == expected
+
+
+def test_input_packet_set_hash_order_independent():
+    # Membership supplied in reverse order must yield the same aggregate as sorted order.
+    forward = _case_set_manifest({"A1": "1" * 64, "B2": "2" * 64})
+    cs_hash = case_set_snapshot_hash(forward)
+    lm = loaded_manifest("run-base", case_set_hash=cs_hash)
+    snap = build_comparison_input_packet_snapshot(run_manifest=lm, case_set_manifest=forward)
+    # entries are always sorted by case_id; independently compute the expected sorted aggregate
+    payload = [{"case_id": c, "input_packet_hash": h}
+               for c, h in sorted({"B2": "2" * 64, "A1": "1" * 64}.items())]
+    expected = sha256_bytes(canonical_contract_bytes(payload))
+    assert [e.case_id for e in snap.entries] == ["A1", "B2"]
+    assert snap.input_packet_set_hash == expected
+
+
+def test_builder_rejects_case_set_hash_mismatch():
+    csm = _case_set_manifest({CID: "7" * 64})
+    lm = loaded_manifest("run-base", case_set_hash=H2)  # not case_set_snapshot_hash(csm)
+    with pytest.raises(ComparisonBindingError):
+        build_comparison_input_packet_snapshot(run_manifest=lm, case_set_manifest=csm)
+
+
+def test_builder_rejects_registry_and_version_mismatch():
+    csm = _case_set_manifest({CID: "7" * 64}, registry="9" * 64)
+    cs_hash = case_set_snapshot_hash(csm)
+    lm = loaded_manifest("run-base", case_set_hash=cs_hash, registry_snapshot_hash=H3)
+    with pytest.raises(ComparisonBindingError):
+        build_comparison_input_packet_snapshot(run_manifest=lm, case_set_manifest=csm)
+    csm2 = _case_set_manifest({CID: "7" * 64}, version="other")
+    lm2 = loaded_manifest("run-base", case_set_hash=case_set_snapshot_hash(csm2))
+    with pytest.raises(ComparisonBindingError):
+        build_comparison_input_packet_snapshot(run_manifest=lm2, case_set_manifest=csm2)
+
+
+def test_builder_and_assess_no_io(monkeypatch):
+    calls = []
+    monkeypatch.setattr(os, "open", lambda *a, **k: calls.append("o"))
+    monkeypatch.setattr(Path, "mkdir", lambda self, *a, **k: calls.append("m"))
+    monkeypatch.setattr(Path, "read_bytes", lambda self, *a, **k: calls.append("r"))
+    csm = _case_set_manifest({CID: "7" * 64})
+    cs_hash = case_set_snapshot_hash(csm)
+    lm = loaded_manifest("run-base", case_set_hash=cs_hash)
+    build_comparison_input_packet_snapshot(run_manifest=lm, case_set_manifest=csm)
+    one_assertion("satisfied", "unsatisfied", **_regress())
+    assert calls == []
+
+
+# --- Typed revalidation boundary (no raw Pydantic leakage) ----------------
+
+
+def _assert_sanitized_binding(exc, *, expect_eval_run_id=None, expect_comparison_id=None):
+    assert isinstance(exc, ComparisonBindingError)
+    assert exc.__cause__ is None
+    assert exc.__context__ is None
+    msg = exc.args[0]
+    for banned in ("ValidationError", "input_value", "pydantic", "0" * 8, "\n", "loc"):
+        assert banned not in msg, f"raw detail {banned!r} leaked in {msg!r}"
+    if expect_eval_run_id is not None:
+        assert exc.eval_run_id == expect_eval_run_id
+    if expect_comparison_id is not None:
+        assert exc.comparison_id == expect_comparison_id
+
+
+def test_builder_tampered_run_manifest_typed_error():
+    csm = _case_set_manifest({CID: "7" * 64})
+    lm = loaded_manifest("run-base", case_set_hash=case_set_snapshot_hash(csm))
+    tampered = lm.model_copy(update={
+        "manifest": lm.manifest.model_copy(update={"case_set_hash": "short"})})
+    with pytest.raises(ComparisonBindingError) as ei:
+        build_comparison_input_packet_snapshot(run_manifest=tampered, case_set_manifest=csm)
+    _assert_sanitized_binding(ei.value)
+    assert ei.value.args[0] == "run manifest failed revalidation"
+
+
+def test_builder_tampered_case_set_manifest_typed_error():
+    csm = _case_set_manifest({CID: "7" * 64})
+    lm = loaded_manifest("run-base", case_set_hash=case_set_snapshot_hash(csm))
+    tampered = csm.model_copy(update={"registry_snapshot_hash": "short"})
+    with pytest.raises(ComparisonBindingError) as ei:
+        build_comparison_input_packet_snapshot(run_manifest=lm, case_set_manifest=tampered)
+    _assert_sanitized_binding(ei.value, expect_eval_run_id="run-base")
+    assert ei.value.args[0] == "case-set manifest failed revalidation"
+
+
+def test_builder_duplicate_case_manifest_typed_error():
+    csm = _case_set_manifest({CID: "7" * 64})
+    lm = loaded_manifest("run-base", case_set_hash=case_set_snapshot_hash(csm))
+    dup = csm.model_copy(update={"entries": (csm.entries[0], csm.entries[0])})  # duplicate case_id
+    with pytest.raises(ComparisonBindingError) as ei:
+        build_comparison_input_packet_snapshot(run_manifest=lm, case_set_manifest=dup)
+    _assert_sanitized_binding(ei.value, expect_eval_run_id="run-base")
+    assert ei.value.args[0] == "case-set manifest failed revalidation"
+
+
+def test_builder_no_raw_pydantic_escapes():
+    csm = _case_set_manifest({CID: "7" * 64})
+    lm = loaded_manifest("run-base", case_set_hash=case_set_snapshot_hash(csm))
+    dup = csm.model_copy(update={"entries": (csm.entries[0], csm.entries[0])})
+    with pytest.raises(ComparisonBindingError):  # never a raw PydanticValidationError
+        build_comparison_input_packet_snapshot(run_manifest=lm, case_set_manifest=dup)
+
+
+def test_assess_tampered_baseline_snapshot_typed_error():
+    bm = loaded_manifest("run-base")
+    good = input_snapshot(bm.manifest, {CID: PKT})
+    tampered = good.model_copy(update={"input_packet_set_hash": "0" * 64})
+    with pytest.raises(ComparisonBindingError) as ei:
+        one_assertion("satisfied", "unsatisfied", **_regress(), b_manifest=bm, b_input=tampered)
+    _assert_sanitized_binding(ei.value, expect_eval_run_id="run-base", expect_comparison_id="cmp-1")
+    assert ei.value.args[0] == "baseline input-packet snapshot failed revalidation"
+
+
+def test_assess_tampered_candidate_snapshot_typed_error():
+    cm = loaded_manifest("run-cand")
+    good = input_snapshot(cm.manifest, {CID: PKT})
+    tampered = good.model_copy(update={"input_packet_set_hash": "0" * 64})
+    with pytest.raises(ComparisonBindingError) as ei:
+        one_assertion("satisfied", "unsatisfied", **_regress(), c_manifest=cm, c_input=tampered)
+    _assert_sanitized_binding(ei.value, expect_eval_run_id="run-cand", expect_comparison_id="cmp-1")
+    assert ei.value.args[0] == "candidate input-packet snapshot failed revalidation"
+
+
+def test_assess_tampered_snapshot_covers_malformed_dup_unsorted():
+    bm = loaded_manifest("run-base")
+    good = input_snapshot(bm.manifest, {CID: PKT, "C2": PKT})
+    # malformed aggregate
+    for update in (
+        {"input_packet_set_hash": "0" * 64},                       # malformed/mismatched aggregate
+        {"entries": (good.entries[0], good.entries[0])},           # duplicate entries
+        {"entries": tuple(reversed(good.entries))},                # unsorted entries
+    ):
+        tampered = good.model_copy(update=update)
+        with pytest.raises(ComparisonBindingError) as ei:
+            one_assertion("satisfied", "unsatisfied", **_regress(), b_manifest=bm, b_input=tampered)
+        _assert_sanitized_binding(ei.value, expect_eval_run_id="run-base")
+
+
+# --- V2 persistence -------------------------------------------------------
+
+
+def test_completed_v2_reference_requires_packet_hash():
+    # a completed comparison whose reference omits input_packet_set_hash is rejected
+    art = one_assertion("satisfied", "unsatisfied", **_regress())
+    tampered = art.manifest.baseline.model_copy(update={"input_packet_set_hash": None})
+    with pytest.raises(PydanticValidationError):
+        art.manifest.model_copy(update={"baseline": tampered}).__class__.model_validate(
+            {**art.manifest.model_dump(mode="python"), "baseline": tampered.model_dump()})
+
+
+def test_persist_v2_contains_both_packet_hashes(tmp_path):
+    art = one_assertion("satisfied", "unsatisfied", **_regress())
+    persist_comparison(art, eval_root=tmp_path)
+    import json as _json
+    doc = _json.loads((tmp_path / "comparisons" / "cmp-1" / "comparison_manifest.json").read_bytes())
+    assert doc["comparison_contract_version"] == "0.2.0"
+    assert doc["baseline"]["input_packet_set_hash"] == art.manifest.baseline.input_packet_set_hash
+    assert doc["candidate"]["input_packet_set_hash"] == art.manifest.candidate.input_packet_set_hash
+
+
+def test_output_hash_changes_with_packet_hash():
+    a = one_assertion("satisfied", "unsatisfied", **_regress())
+    b = one_assertion("satisfied", "unsatisfied", **_regress(),
+                      b_packets={CID: PKT}, c_packets={CID: PKT})  # equal → comparable, same as a
+    # now change candidate packet only in c (still same case, different hash on both sides equally
+    # would change nothing); change ONE side's packet-set hash:
+    c = one_assertion("satisfied", "unsatisfied", **_regress(),
+                      b_packets={CID: "d" * 64}, c_packets={CID: "d" * 64})
+    assert a.manifest.output_hash == b.manifest.output_hash
+    assert a.manifest.output_hash != c.manifest.output_hash
+
+
+def test_v2_round_trip(tmp_path):
+    art = one_assertion("satisfied", "unsatisfied", **_regress())
+    persist_comparison(art, eval_root=tmp_path)
+    loaded = load_comparison("cmp-1", eval_root=tmp_path)
+    assert isinstance(loaded, LoadedComparison)
+    assert loaded.artifact.manifest.output_hash == art.manifest.output_hash
+    assert loaded.artifact.manifest.gate_verdict == art.manifest.gate_verdict
+
+
+def test_persist_rejects_v1_artifact(tmp_path):
+    lv1 = _legacy_v1_artifact()
+    with pytest.raises(TypeError):
+        persist_comparison(lv1, eval_root=tmp_path)
+
+
+def test_no_migration_api():
+    for name in dir(comp):
+        low = name.lower()
+        assert "migrate" not in low and "migration" not in low
+
+
+# --- Legacy V1 compatibility ----------------------------------------------
+
+V1_HASH = "ef1508e4e2ed06c1cbcaafaf3d30bb9cc6c88e72d1df0bf001c7315e5afb94f4"
+
+
+def _legacy_v1_artifact():
+    """Build a real v0.1 ComparisonArtifactV1 (frozen shape, governed hash)."""
+    art = one_assertion("satisfied", "unsatisfied", **_regress())  # a v0.2 result for ledgers/refs
+    transitions, case_ledger = art.transitions, art.case_ledger
+    v1_stamp = {"contract_id": "comparison_manifest", "contract_version": "0.1.0",
+                "contract_hash": V1_HASH}
+
+    def ref_v1(ref):
+        return ComparisonRunReferenceV1(
+            eval_run_id=ref.eval_run_id, run_manifest_sha256=ref.run_manifest_sha256,
+            result_sha256=ref.result_sha256, assertion_outcomes_sha256=ref.assertion_outcomes_sha256,
+            scoring_config_version=ref.scoring_config_version,
+            scoring_config_sha256=ref.scoring_config_sha256,
+            metadata_mapping_version=ref.metadata_mapping_version,
+            metadata_failure_taxonomy_version=ref.metadata_failure_taxonomy_version,
+            metadata_hash=ref.metadata_hash, source_code_commit=ref.source_code_commit,
+            execution_status=ref.execution_status, gate_verdict=ref.gate_verdict, stage=ref.stage)
+
+    fields = dict(
+        contract=v1_stamp, comparison_id=art.manifest.comparison_id,
+        baseline_role=art.manifest.baseline_role,
+        comparison_code_commit=art.manifest.comparison_code_commit,
+        baseline=ref_v1(art.manifest.baseline), candidate=ref_v1(art.manifest.candidate),
+        comparison_contract_version="0.1.0", comparison_contract_hash=V1_HASH,
+        case_assertion_mapping_version="0.1.0", failure_taxonomy_version="0.1.0",
+        execution_status="completed", gate_verdict=art.manifest.gate_verdict,
+        transition_ledger_sha256=comp._ledger_sha(transitions),
+        case_ledger_sha256=comp._ledger_sha(case_ledger),
+        transition_count=len(transitions), case_count=len(case_ledger))
+    placeholder = ComparisonManifestV1(output_hash="0" * 64, **fields)
+    real = comp._logical_output_hash_v1(placeholder, transitions, case_ledger)
+    manifest = ComparisonManifestV1(output_hash=real, **fields)
+    return ComparisonArtifactV1(manifest=manifest, transitions=transitions, case_ledger=case_ledger)
+
+
+def _write_legacy_v1(eval_root, cid="cmp-1"):
+    lv1 = _legacy_v1_artifact()
+    d = eval_root / "comparisons" / cid
+    d.mkdir(parents=True)
+    manifest_bytes = canonical_contract_bytes(
+        lv1.manifest.model_dump(mode="json", exclude_unset=True)) + b"\n"
+    (d / "comparison_manifest.json").write_bytes(manifest_bytes)
+    (d / "assertion_transitions.jsonl").write_bytes(comp._ledger_bytes(lv1.transitions))
+    (d / "case_ledger.jsonl").write_bytes(comp._ledger_bytes(lv1.case_ledger))
+    return lv1, d / "comparison_manifest.json"
+
+
+def test_legacy_v1_load_returns_v1_types(tmp_path):
+    lv1, _ = _write_legacy_v1(tmp_path)
+    loaded = load_comparison("cmp-1", eval_root=tmp_path)
+    assert isinstance(loaded, LoadedComparisonV1)
+    assert isinstance(loaded.artifact, ComparisonArtifactV1)
+    assert isinstance(loaded.artifact.manifest, ComparisonManifestV1)
+    assert isinstance(loaded.artifact.manifest.baseline, ComparisonRunReferenceV1)
+    assert not hasattr(loaded.artifact.manifest.baseline, "input_packet_set_hash")
+    assert "input_packet_set_hash" not in loaded.artifact.manifest.baseline.model_dump()
+
+
+def test_legacy_v1_governed_constant_and_generated_hash_unused():
+    assert comp._COMPARISON_MANIFEST_V1_CONTRACT_HASH == V1_HASH
+    # the renamed V1 model's OWN generated schema hash differs from the historical hash
+    assert model_contract_hash(ComparisonManifestV1, "comparison_manifest", "0.1.0") != V1_HASH
+
+
+def test_legacy_v1_preserves_verdict_and_ledgers(tmp_path):
+    lv1, _ = _write_legacy_v1(tmp_path)
+    loaded = load_comparison("cmp-1", eval_root=tmp_path)
+    assert loaded.artifact.manifest.gate_verdict == lv1.manifest.gate_verdict
+    assert loaded.artifact.manifest.output_hash == lv1.manifest.output_hash
+    assert loaded.artifact.transitions == lv1.transitions
+    assert loaded.artifact.case_ledger == lv1.case_ledger
+    assert loaded.artifact.manifest.comparison_contract_hash == V1_HASH
+
+
+def test_legacy_v1_load_performs_no_write(tmp_path, monkeypatch):
+    _write_legacy_v1(tmp_path)
+    calls = []
+    monkeypatch.setattr(os, "open", lambda *a, **k: calls.append("o"))
+    monkeypatch.setattr(Path, "mkdir", lambda self, *a, **k: calls.append("m"))
+    monkeypatch.setattr(Path, "write_bytes", lambda self, *a, **k: calls.append("w"))
+    load_comparison("cmp-1", eval_root=tmp_path)
+    assert calls == []
+
+
+def test_missing_and_unknown_version_rejected(tmp_path):
+    lv1, path = _write_legacy_v1(tmp_path / "a")
+    import json as _json
+    doc = _json.loads(path.read_bytes())
+    # unknown version
+    d2 = tmp_path / "b" / "comparisons" / "cmp-1"
+    d2.mkdir(parents=True)
+    bad = dict(doc)
+    bad["comparison_contract_version"] = "9.9.9"
+    (d2 / "comparison_manifest.json").write_bytes(
+        canonical_contract_bytes(bad) + b"\n")
+    with pytest.raises(ComparisonModelValidationError):
+        load_comparison("cmp-1", eval_root=tmp_path / "b")
+    # missing version
+    d3 = tmp_path / "c" / "comparisons" / "cmp-1"
+    d3.mkdir(parents=True)
+    missing = {k: v for k, v in doc.items() if k != "comparison_contract_version"}
+    (d3 / "comparison_manifest.json").write_bytes(canonical_contract_bytes(missing) + b"\n")
+    with pytest.raises(ComparisonModelValidationError):
+        load_comparison("cmp-1", eval_root=tmp_path / "c")
+
+
+def test_v1_bytes_never_parse_as_v2_and_vice_versa(tmp_path):
+    lv1, path = _write_legacy_v1(tmp_path)
+    import json as _json
+    v1_doc = _json.loads(path.read_bytes())
+    with pytest.raises(PydanticValidationError):
+        comp.ComparisonManifest.model_validate(v1_doc)  # v0.1 bytes rejected by v0.2 model
+    art = one_assertion("satisfied", "unsatisfied", **_regress())
+    v2_doc = art.manifest.model_dump(mode="json", exclude_unset=True)
+    with pytest.raises(PydanticValidationError):
+        ComparisonManifestV1.model_validate(v2_doc)  # v0.2 bytes rejected by v0.1 model
+
+
+def test_amendment_exports_present():
+    for name in ("ComparisonInputPacketEntry", "ComparisonInputPacketSnapshot",
+                 "ComparisonRunReferenceV1", "ComparisonManifestV1", "ComparisonArtifactV1",
+                 "LoadedComparisonV1", "build_comparison_input_packet_snapshot"):
+        assert name in evaluation_pkg.__all__
+        assert getattr(evaluation_pkg, name) is getattr(comp, name)

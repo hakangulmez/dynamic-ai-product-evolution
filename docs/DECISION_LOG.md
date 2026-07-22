@@ -126,6 +126,34 @@
 
 **Rationale:** This is the adapter counterpart of "no premature scale": one global switch would open unready stages alongside ready ones, and ad-hoc transitions would break manifest discipline on day one. Paid, non-idempotent external calls need budget, provenance, and authorization decided before execution, not after.
 
+## ADR-023 — Per-case input-packet comparability and comparison manifest v0.2
+
+**Decision:** The `changed_input_packet` noncomparability class binds to the authoritative per-case input-packet identity `(case_id, input_packet_hash)` from the evaluation run's `CaseSetManifest` membership, not to `prediction_run_manifest_hash`. The prediction-run manifest hash conflates prediction-run identity, prompt/model metadata, prediction outputs, and packet hashes; it remains provenance identity only and is not a comparability axis.
+
+A comparison receives explicit immutable baseline and candidate comparison-scoped input-packet snapshots. Each snapshot contains the case-set version and hash, registry snapshot hash, sorted unique `(case_id, input_packet_hash)` entries, and a deterministic aggregate input-packet-set hash, and each snapshot is independently bound to its corresponding `EvaluationRunManifest`.
+
+Run-level classification precedence is:
+
+1. differing registry snapshot → `changed_gold`;
+2. differing case-ID membership → `changed_gold`;
+3. equal membership with any differing per-case `input_packet_hash` → `changed_input_packet`;
+4. residual case-set version or hash difference → `changed_gold`;
+5. changed validator or scoring contract → `changed_validator_contract`;
+6. assertion-contract and remaining contract incompatibilities → `noncomparable_contract`;
+7. otherwise ordinary transition classification.
+
+A differing `prediction_run_manifest_hash` alone produces no noncomparability. The `validator_bridge_baseline` role provides no role-based comparability bypass.
+
+`comparison_manifest` advances from `0.1.0` to `0.2.0`. Its `ComparisonRunReference` gains an `input_packet_set_hash` that is required for completed run references, persisted for both sides, and included in the deterministic comparison output hash. `assertion_transition`, `case_ledger_entry`, and `assertion_comparison_metadata` remain at `0.1.0`. `evaluation_run_manifest@0.1.0` is unchanged.
+
+Existing `comparison_manifest@0.1.0` artifacts remain readable without migration. `load_comparison` dispatches on the explicit persisted comparison-contract version to retained read-only V1 shape models. Renaming a Pydantic model changes its generated JSON Schema title and nested `$defs`/`$ref` names and therefore does not reproduce the historical model-contract hash. Accordingly, the V1 models are used for strict historical shape validation, while the loader validates the persisted `contract.contract_hash` and `comparison_contract_hash` against the governed historical constant `ef1508e4e2ed06c1cbcaafaf3d30bb9cc6c88e72d1df0bf001c7315e5afb94f4`. V1 artifacts retain their original verdicts, transition ledgers, case ledgers, and output hashes under the V1 hash algorithm and are never rewritten or implicitly migrated.
+
+New comparisons are always `comparison_manifest@0.2.0` and require explicit input-packet snapshots. The correction is implemented as a dedicated Slice 11 corrective amendment before Slice 12 is staged.
+
+This decision amends ADR-020 and SPEC-024.
+
+**Rejected alternatives:** Continuing to use `prediction_run_manifest_hash` as packet identity was rejected because it conflates model, prompt, output, and input identity and makes valid model or bridge comparisons falsely noncomparable. A `validator_bridge_baseline` role-based bypass was rejected because a caller-declared role cannot prove packet equality and would conceal genuine changed inputs. Requiring identical prediction manifests was rejected because it contradicts comparison of distinct prediction sets. Collapsing packet changes into `changed_gold` was rejected because it removes the governed distinction between changed gold and changed input packets. Passing an unpersisted comparison-only input hash was rejected because it prevents independent later auditability. Claiming that renamed V1 Pydantic models regenerate the historical contract hash was rejected because direct schema and hash probes disproved it.
+
 ## Open decisions
 
 - Exact baseline cutoff, first-release form scope, and final Tier A/Tier B thresholds after the universe sentinel.
