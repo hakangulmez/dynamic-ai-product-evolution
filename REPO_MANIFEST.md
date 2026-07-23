@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **326**
+Total tracked/scaffold files listed: **327**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -309,6 +309,7 @@ Total tracked/scaffold files listed: **326**
 - `tests/evaluation/test_metrics.py`
 - `tests/evaluation/test_models.py`
 - `tests/evaluation/test_references.py`
+- `tests/evaluation/test_run_manifest_v2.py`
 - `tests/evaluation/test_runs.py`
 - `tests/evaluation/test_schema_registry.py`
 - `tests/evaluation/test_scoring_config.py`

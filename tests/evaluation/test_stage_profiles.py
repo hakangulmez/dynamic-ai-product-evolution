@@ -765,20 +765,27 @@ def test_no_eleventh_slice_12a_api():
         assert not name.startswith("_")
 
 
-def test_package_reexports_ten_and_parity():
+def test_package_reexports_ten_and_all_sorted_unique():
+    # The ten Slice 12A exports must remain present and correctly re-exported,
+    # and package __all__ must stay sorted and unique. This test deliberately
+    # does not pin the package's global export count: later slices legitimately
+    # add exports, and a frozen historical total must not make this stale.
     for name in TEN_EXPORTS:
         assert name in evaluation_pkg.__all__
         assert getattr(evaluation_pkg, name) is getattr(sp_mod, name)
     al = list(evaluation_pkg.__all__)
-    assert len(al) == 430 and al == sorted(al) and len(al) == len(set(al))
+    assert al == sorted(al) and len(al) == len(set(al))
 
 
 # --- 17/18/19. manifest, no static schema, protected identities ------------
 
 
-def test_repo_manifest_lists_three_new_paths_once_total_326():
+def test_repo_manifest_lists_three_slice_12a_paths_once():
+    # The three Slice 12A paths must each appear exactly once. This test does
+    # not pin the manifest's global total (a frozen literal would go stale as
+    # later slices add manifest entries); manifest-total parity is asserted by
+    # the repository-hygiene suite and the current slice's own manifest test.
     text = (ROOT / "REPO_MANIFEST.md").read_text(encoding="utf-8")
-    assert "Total tracked/scaffold files listed: **326**" in text
     for p in (
         "src/dynamic_ai_products/evaluation/stage_profiles.py",
         "tests/evaluation/test_stage_profiles.py",

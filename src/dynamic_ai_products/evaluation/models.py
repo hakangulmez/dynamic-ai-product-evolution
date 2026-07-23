@@ -16,6 +16,8 @@ plus fresh validation in the owning behavior slices.
 
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
@@ -98,6 +100,43 @@ def _require_non_blank(value: str, field_name: str) -> None:
             f"{field_name} must be a non-empty string without leading or "
             "trailing whitespace"
         )
+
+
+# Strict RFC3339 date-time in extended format: full-date, `T`/`t`, HH:MM:SS with
+# required seconds, optional fractional seconds, and a `Z`/`z` or exact ±HH:MM
+# offset (no offset seconds). This lexical gate rejects the basic ISO format,
+# ISO week/ordinal dates, reduced-precision times, and offsets carrying seconds
+# or fractions — none of which ``datetime.fromisoformat`` rejects on its own.
+_RFC3339_LEXICAL = re.compile(
+    r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})"
+)
+
+
+def _require_rfc3339_offset(value: str, field_name: str) -> str:
+    """Strict RFC3339 date-time with seconds and an explicit offset.
+
+    Slice 12B-local mirror of the protected ``validators._require_rfc3339``
+    intent (that private helper is neither imported nor modified). A private
+    lexical check fixes the accepted shape; ``datetime.fromisoformat`` then does
+    value-range validation (calendar/time). The caller's exact accepted
+    representation is returned verbatim: a trailing ``Z``/``z`` is expanded only
+    to *parse* the offset and is never normalized to ``+00:00``, no offset is
+    rewritten, no clock is read, and nothing is inferred from any other source.
+    """
+    _require_non_blank(value, field_name)
+    if _RFC3339_LEXICAL.fullmatch(value) is None:
+        raise ValueError(
+            f"{field_name} must be an RFC3339 extended date-time with seconds and "
+            "an explicit Z or ±HH:MM offset"
+        )
+    candidate = value
+    if candidate.endswith(("z", "Z")):
+        candidate = f"{candidate[:-1]}+00:00"
+    try:
+        datetime.fromisoformat(candidate)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be a valid RFC3339 timestamp") from exc
+    return value
 
 
 class EvaluationStrictModel(BaseModel):
@@ -274,6 +313,119 @@ class EvaluationRunManifest(ContractStampedModel):
     )
     code_commit: str
     pydantic_runtime_version: str
+
+
+class EvaluationRunManifestV2(ContractStampedModel):
+    """Immutable evaluation-run manifest v0.2 (ADR-025).
+
+    A strict superset of :class:`EvaluationRunManifest`: the twelve v0.1 fields
+    are retained unchanged (``registry_snapshot_hash`` remains the distinct,
+    non-overloaded target-registry snapshot hash) and the governed Phase-1
+    semantic-substrate identities are added. The applicable stage-evidence pin
+    is paired and omitted for extraction stages (never serialized as null).
+    ``evaluation_created_at`` is caller-supplied, validated as RFC3339 with an
+    explicit offset, and preserved verbatim. Every hash is a lowercase 64-hex
+    SHA-256; every identity/version string is non-blank and unnormalized.
+    """
+
+    _contract_id: ClassVar[str] = "evaluation_run_manifest"
+    _contract_version: ClassVar[str] = "0.2.0"
+
+    # Retained v0.1 fields (identical names, types, and order).
+    eval_run_id: str
+    prediction_run_id: str
+    prediction_run_manifest_hash: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+    case_set_version: str
+    case_set_hash: str = Field(min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN)
+    registry_snapshot_hash: str = Field(min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN)
+    validator_bundle_version: str
+    validator_bundle_hash: str = Field(min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN)
+    scoring_gate_config_version: str
+    scoring_gate_config_hash: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+    code_commit: str
+    pydantic_runtime_version: str
+    # New v0.2 required semantic pins (ADR-025).
+    evaluation_created_at: str
+    stage_profile_registry_version: str
+    stage_profile_registry_hash: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+    selected_stage_profile_entry_hash: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+    semantic_adapter_registry_version: str
+    semantic_adapter_registry_hash: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+    selected_semantic_adapter_entry_hash: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+    source_passage_snapshot_version: str
+    source_passage_snapshot_hash: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+    gold_assertion_set_version: str
+    gold_assertion_set_hash: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+    axis_taxonomy_version: str
+    axis_taxonomy_hash: str = Field(min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN)
+    validator_rule_parameters_version: str
+    validator_rule_parameters_hash: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+    # New v0.2 paired optional applicable-stage-evidence pin. Present together
+    # for Universe stages, omitted together for extraction stages; explicit null
+    # is rejected and absent properties never serialize.
+    stage_metric_evidence_set_version: str | None = None
+    stage_metric_evidence_set_hash: str | None = Field(
+        default=None, min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_explicit_null_stage_evidence(cls, data: Any) -> Any:
+        return _reject_explicit_null(
+            data,
+            ("stage_metric_evidence_set_version", "stage_metric_evidence_set_hash"),
+            "EvaluationRunManifestV2",
+        )
+
+    @model_validator(mode="after")
+    def _v2_invariants(self) -> "EvaluationRunManifestV2":
+        for field_name in (
+            "eval_run_id",
+            "prediction_run_id",
+            "case_set_version",
+            "validator_bundle_version",
+            "scoring_gate_config_version",
+            "code_commit",
+            "pydantic_runtime_version",
+            "stage_profile_registry_version",
+            "semantic_adapter_registry_version",
+            "source_passage_snapshot_version",
+            "gold_assertion_set_version",
+            "axis_taxonomy_version",
+            "validator_rule_parameters_version",
+        ):
+            _require_non_blank(getattr(self, field_name), field_name)
+        _require_rfc3339_offset(self.evaluation_created_at, "evaluation_created_at")
+        version_present = "stage_metric_evidence_set_version" in self.model_fields_set
+        hash_present = "stage_metric_evidence_set_hash" in self.model_fields_set
+        if version_present != hash_present:
+            raise ValueError(
+                "stage_metric_evidence_set_version and stage_metric_evidence_set_hash "
+                "must be supplied together or omitted together"
+            )
+        if version_present:
+            _require_non_blank(
+                self.stage_metric_evidence_set_version, "stage_metric_evidence_set_version"
+            )
+        return self
 
 
 class PredictionEnvelope(ContractStampedModel):

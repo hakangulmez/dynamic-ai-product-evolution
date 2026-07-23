@@ -26,7 +26,10 @@ from dynamic_ai_products.evaluation.contracts import (
     model_contract_hash,
     runtime_contract_provenance,
 )
-from dynamic_ai_products.evaluation.models import EvaluationRunManifest
+from dynamic_ai_products.evaluation.models import (
+    EvaluationRunManifest,
+    EvaluationRunManifestV2,
+)
 from dynamic_ai_products.evaluation.references import load_target_registry
 from dynamic_ai_products.evaluation.runs import (
     InitializedEvaluationRun,
@@ -41,6 +44,7 @@ from dynamic_ai_products.evaluation.runs import (
     RunManifestConsistencyError,
     RunManifestModelValidationError,
     RunManifestSerializationError,
+    RunManifestUnsupportedVersionError,
     RunPersistenceError,
     RunTopLevelTypeError,
     RunWriteError,
@@ -50,7 +54,9 @@ from dynamic_ai_products.evaluation.runs import (
     SnapshotSourceNotAFileError,
     SnapshotSourcePathEscapeError,
     initialize_evaluation_run,
+    initialize_evaluation_run_v2,
     load_evaluation_run_manifest,
+    load_evaluation_run_manifest_v2,
 )
 from dynamic_ai_products.evaluation.scoring_config import load_scoring_gate_config
 from dynamic_ai_products.universe.io_utils import sha256_bytes
@@ -715,6 +721,55 @@ def test_slice_2_3_4_unchanged() -> None:
     # Slice 3 hashing and Slice 4 loading remain callable and unchanged.
     assert len(case_set_snapshot_hash(CASE_SET)) == 64
     assert REGISTRY.version == "synth-target-registry-v1"
+
+
+# --- Slice 12B: historical v0.1 preservation and shared-wrapper behavior --
+
+
+def test_v1_generated_hash_matches_governed_constant() -> None:
+    assert RUN_MANIFEST_CONTRACT_HASH == runs_module._EVALUATION_RUN_MANIFEST_V1_CONTRACT_HASH
+    assert RUN_MANIFEST_CONTRACT_HASH == (
+        "7f8909d8e7059952c933c8e30f43044178b3f8a21d4baaa77bfb5c786b38d6ee"
+    )
+
+
+def test_v1_loader_rejects_v2_document(tmp_path: Path) -> None:
+    d = _valid_manifest_dict()
+    d["contract"]["contract_version"] = "0.2.0"
+    _write_manifest(tmp_path, d)
+    with pytest.raises(RunManifestUnsupportedVersionError) as excinfo:
+        load_evaluation_run_manifest("synth-run-0001", eval_root=tmp_path)
+    assert excinfo.value.observed_version == "0.2.0"
+    assert excinfo.value.expected_version == "0.1.0"
+    assert isinstance(excinfo.value, RunManifestModelValidationError)
+
+
+def test_v1_document_rejected_by_v2_loader(tmp_path: Path) -> None:
+    init(tmp_path)
+    with pytest.raises(RunManifestUnsupportedVersionError) as excinfo:
+        load_evaluation_run_manifest_v2("synth-run-0001", eval_root=tmp_path)
+    assert excinfo.value.observed_version == "0.1.0"
+    assert excinfo.value.expected_version == "0.2.0"
+
+
+def test_v1_initialized_and_loaded_wrappers_preserve_concrete_v1_class(tmp_path: Path) -> None:
+    r = init(tmp_path)
+    assert type(r.manifest) is EvaluationRunManifest
+    loaded = load_evaluation_run_manifest("synth-run-0001", eval_root=tmp_path)
+    assert type(loaded.manifest) is EvaluationRunManifest
+
+
+def test_new_v2_symbols_exported() -> None:
+    for name, obj in (
+        ("EvaluationRunManifestV2", EvaluationRunManifestV2),
+        ("initialize_evaluation_run_v2", initialize_evaluation_run_v2),
+        ("load_evaluation_run_manifest_v2", load_evaluation_run_manifest_v2),
+    ):
+        assert name in evaluation_pkg.__all__
+        assert getattr(evaluation_pkg, name) is obj
+    # the private version error stays out of the package surface
+    assert "RunManifestUnsupportedVersionError" not in evaluation_pkg.__all__
+    assert RunManifestUnsupportedVersionError is not None
 
 
 # --- Exports and import behavior ------------------------------------------
