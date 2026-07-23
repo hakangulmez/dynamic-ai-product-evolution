@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **327**
+Total tracked/scaffold files listed: **339**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -39,6 +39,7 @@ Total tracked/scaffold files listed: **327**
 - `Makefile`
 - `NEW_CHAT_BOOTSTRAP.md`
 - `README.md`
+- `REPO_MANIFEST.md`
 - `RESEARCH_HOME.md`
 - `apps/research_console/README.md`
 - `apps/research_console/app.py`
@@ -126,9 +127,15 @@ Total tracked/scaffold files listed: **327**
 - `evals/fixtures/evaluation_harness/cases/valid_minimal_case.json`
 - `evals/fixtures/evaluation_harness/configs/valid_scoring_gate_config.json`
 - `evals/fixtures/evaluation_harness/configs/valid_target_registry.json`
+- `evals/fixtures/evaluation_harness/parsed_content/capability_extraction_raw.json`
+- `evals/fixtures/evaluation_harness/parsed_content/task_extraction_cutoff_probe.json`
 - `evals/fixtures/evaluation_harness/predictions/valid_manifest_bearing_prediction/envelopes.jsonl`
 - `evals/fixtures/evaluation_harness/predictions/valid_manifest_bearing_prediction/prediction_run_manifest.json`
 - `evals/fixtures/evaluation_harness/predictions/valid_manifest_bearing_prediction/sources/prediction_source.json`
+- `evals/fixtures/evaluation_harness/semantic_adapters/semantic_adapter_registry.json`
+- `evals/fixtures/evaluation_harness/source_snapshots/source_documents.jsonl`
+- `evals/fixtures/evaluation_harness/source_snapshots/source_passage_snapshot_manifest.json`
+- `evals/fixtures/evaluation_harness/source_snapshots/source_passages.jsonl`
 - `evals/fixtures/evaluation_harness/stage_profiles/stage_profile_registry.json`
 - `evals/fixtures/universe_sentinel/adjudications.json`
 - `evals/fixtures/universe_sentinel/classification_outputs.json`
@@ -260,9 +267,6 @@ Total tracked/scaffold files listed: **327**
 - `src/dynamic_ai_products/__init__.py`
 - `src/dynamic_ai_products/cli.py`
 - `src/dynamic_ai_products/config.py`
-- `src/dynamic_ai_products/provenance.py`
-- `src/dynamic_ai_products/validation.py`
-- `src/dynamic_ai_products/workflow.py`
 - `src/dynamic_ai_products/evaluation/__init__.py`
 - `src/dynamic_ai_products/evaluation/assertions.py`
 - `src/dynamic_ai_products/evaluation/case_sets.py`
@@ -275,12 +279,16 @@ Total tracked/scaffold files listed: **327**
 - `src/dynamic_ai_products/evaluation/gates.py`
 - `src/dynamic_ai_products/evaluation/metrics.py`
 - `src/dynamic_ai_products/evaluation/models.py`
+- `src/dynamic_ai_products/evaluation/prediction_content.py`
 - `src/dynamic_ai_products/evaluation/references.py`
 - `src/dynamic_ai_products/evaluation/runs.py`
 - `src/dynamic_ai_products/evaluation/schemas.py`
 - `src/dynamic_ai_products/evaluation/scoring_config.py`
+- `src/dynamic_ai_products/evaluation/semantic_adapters.py`
+- `src/dynamic_ai_products/evaluation/source_snapshot.py`
 - `src/dynamic_ai_products/evaluation/stage_profiles.py`
 - `src/dynamic_ai_products/evaluation/validators.py`
+- `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/universe/__init__.py`
 - `src/dynamic_ai_products/universe/audit.py`
 - `src/dynamic_ai_products/universe/classification.py`
@@ -295,6 +303,8 @@ Total tracked/scaffold files listed: **327**
 - `src/dynamic_ai_products/universe/runner.py`
 - `src/dynamic_ai_products/universe/screening.py`
 - `src/dynamic_ai_products/universe/taxonomy.py`
+- `src/dynamic_ai_products/validation.py`
+- `src/dynamic_ai_products/workflow.py`
 - `tests/README.md`
 - `tests/contamination/test_no_legacy_contamination.py`
 - `tests/evaluation/test_assertions.py`
@@ -308,11 +318,14 @@ Total tracked/scaffold files listed: **327**
 - `tests/evaluation/test_gates.py`
 - `tests/evaluation/test_metrics.py`
 - `tests/evaluation/test_models.py`
+- `tests/evaluation/test_prediction_content.py`
 - `tests/evaluation/test_references.py`
 - `tests/evaluation/test_run_manifest_v2.py`
 - `tests/evaluation/test_runs.py`
 - `tests/evaluation/test_schema_registry.py`
 - `tests/evaluation/test_scoring_config.py`
+- `tests/evaluation/test_semantic_adapters.py`
+- `tests/evaluation/test_source_snapshot.py`
 - `tests/evaluation/test_stage_profiles.py`
 - `tests/evaluation/test_validators.py`
 - `tests/notebook/test_master_notebook.py`
@@ -327,7 +340,6 @@ Total tracked/scaffold files listed: **327**
 - `tests/universe/test_screening_and_classification.py`
 - `tests/universe/test_sentinel_runner.py`
 - `tests/universe/test_tier_rules.py`
-- `tests/universe/universe_test_helpers.py`
 - `tests/universe/test_universe_design.py`
+- `tests/universe/universe_test_helpers.py`
 - `tests/workflow/test_pipeline_registry.py`
-- `REPO_MANIFEST.md`
