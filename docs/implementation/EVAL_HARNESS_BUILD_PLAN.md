@@ -263,10 +263,32 @@ readiness remain separate; no live network call is introduced in this phase.
 
 ## Dependency-ordered implementation slices
 
-Dependency chain: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 →
-14, where Slice 4 (references/config) must be completed and validity-checked
-before run pinning (5), assertion dispatch (7), and any metric, gate, or
-comparison execution (9–11), and Slice 12 (compat/bridge) depends on 10–11.
+Dependency chain (Slices 1–12 are linear): 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 →
+10 → 11 → 12, where Slice 4 (references/config) must be completed and
+validity-checked before run pinning (5), assertion dispatch (7), and any metric,
+gate, or comparison execution (9–11), and Slice 12 (compat/bridge) depends on
+10–11. Prerequisite Slices 12A–12M (ADR-024, ADR-025) implement the
+semantic-evaluation substrate — the producers that turn governed references and
+raw predictions into `ResolvedAssertionEvaluation`, `ValidationArtifactSnapshot`,
+and `MetricInputSnapshot` values — before Slice 13, and form a directed acyclic
+graph rather than a single chain:
+
+- 12 → 12A → 12B;
+- 12B → {12C, 12D, 12E};
+- 12D → 12F;
+- 12F → 12G;
+- {12D, 12E, 12G} → 12H;
+- {12A, 12E, 12G, 12H} → 12I;
+- 12I → 12J → 12K;
+- {12B, 12I, 12J, 12K} → 12L;
+- {12A, 12B, 12D, 12E, 12F, 12G, 12H, 12I, 12J, 12K, 12L} → 12M;
+- {12C, 12M} → 13 → 14.
+
+Deterministic validation (validator-rule parameters, the validator-bundle
+artifact, `ValidatorRuleCoverage`, and the validation-artifact snapshot set) is
+produced before semantic assertion evaluation, which consumes it. Slice 13
+(canonical runner) is a thin orchestrator that invokes these producers; it
+defines no semantic evaluator.
 Metric reports and comparison artifacts exist only for `completed` runs;
 blocking resolution failures short-circuit to `execution_status = invalid`.
 
@@ -501,6 +523,119 @@ manifest untouched.
 - Stop point: `eval_report_ids` read as optional deprecated data; no
   reverse-link field anywhere; round-trip tests over v1- and v2-shaped
   documents pass.
+
+## Prerequisite semantic-substrate slices (ADR-024, ADR-025)
+
+Slices 12A–12M implement the semantic-evaluation substrate that the committed
+Slices 1–12 deferred to the caller. They are ordinary reviewable slices inserted
+before Slice 13; Slices 1–12 are not renumbered and Slice 14 remains the final
+Phase-1 slice.
+
+**Protection rule (authoritative for every prerequisite slice):** every path
+tracked at the slice's baseline HEAD that is not listed in that slice's exact
+`Modified paths` set remains byte-identical; new paths are limited to that
+slice's exact `New paths` set. Stage/payload implementation models are
+module-private and add no package exports. Cumulative totals from baseline
+exports 420 / manifest 323 are locked: 12A 430/326; 12B 433/327; 12C 433/327;
+12D 459/339; 12E 476/345; 12F 494/351; 12G 502/354; 12H 505/356; 12I 520/361;
+12J 524/362; 12K 525/362; 12L 531/364; 12M 531/381; and Slice 13's three new
+tracked paths bring the manifest to 384. Preserved committed contract hashes:
+`evaluation_run_manifest@0.1.0` `7f8909d8e7059952c933c8e30f43044178b3f8a21d4baaa77bfb5c786b38d6ee`,
+`metric_report@0.1.0` `d9e3f6d7399af628b38754758a7cb580e57955ad695ee7d92fb56c67c4ceac39`,
+`validator_finding@0.1.0` `96f63fee300d363a662f4f956bacccdca596acfb0f22bf7039aa1335b6d61292`,
+`comparison_manifest@0.2.0` `6a1253b72664bff73e872d1230fb3d52772a438f55915406010e105b4f5d29a5`.
+
+### Slice 12A — Stage-profile registry
+- Objective: hash-bound `evaluation_stage_profile_registry@0.1.0` mapping each supported evaluation stage to its applicable metric families and required stage-evidence kind; loader + run snapshot.
+- Governing: SPEC-020, ADR-024. Depends on Slice 12.
+- New paths: `src/dynamic_ai_products/evaluation/stage_profiles.py`; `tests/evaluation/test_stage_profiles.py`; `evals/fixtures/evaluation_harness/stage_profiles/stage_profile_registry.json`.
+- Modified paths: `src/dynamic_ai_products/evaluation/__init__.py`; `REPO_MANIFEST.md`. Exports 430, manifest 326.
+- Stop point: registry loads, hashes, and snapshots deterministically; unsupported/duplicate stage rejected.
+
+### Slice 12B — Evaluation-run manifest v0.2
+- Objective: `evaluation_run_manifest@0.2.0` pinning the semantic inputs (ADR-025); frozen v0.1 historical model + governed constant + historical reader.
+- Governing: SPEC-024, ADR-025. Depends on 12A.
+- New paths: `tests/evaluation/test_run_manifest_v2.py`.
+- Modified paths: `src/dynamic_ai_products/evaluation/models.py`; `src/dynamic_ai_products/evaluation/runs.py`; `tests/evaluation/test_runs.py`; `src/dynamic_ai_products/evaluation/__init__.py`; `REPO_MANIFEST.md`. Exports 433, manifest 327.
+- Stop point: v0.1 hash `7f8909d8…` preserved; `evaluation_created_at` round-trips; v0.2 pins present.
+
+### Slice 12C — Comparator v0.2 binding
+- Objective: comparator reads the v0.2 semantic-input hashes and maps them to the existing noncomparability vocabulary with no new class — a changed selected stage-profile entry identity/hash or a changed selected semantic-adapter entry identity/hash is `noncomparable_contract`; a changed gold/taxonomy/applicable-stage-evidence hash is `changed_gold`; a changed validator-bundle or validator-rule-parameters hash is `changed_validator_contract`; a changed stage-profile registry version/hash or semantic-adapter registry version/hash whose selected entry identity/hash is identical, and a global source/passage snapshot difference with identical consumed per-case packets, are provenance-only for pairwise comparison (not a change-control exemption); v0.1↔v0.2 is `noncomparable_contract`.
+- Governing: SPEC-024, ADR-025. Depends on 12B.
+- New paths: none.
+- Modified paths: `src/dynamic_ai_products/evaluation/comparator.py`; `tests/evaluation/test_comparator.py`. Exports 433, manifest 327.
+- Stop point: registry-pin classification exercised (selected-entry change vs registry-version-only change); no new `NoncomparabilityClass` value; `comparison_manifest@0.2.0` model hash `6a1253b7…` unchanged; v0.1↔v0.2 noncomparable.
+
+### Slice 12D — Source/passage access, parsed prediction content, semantic-adapter registry
+- Objective: `source_passage_snapshot_manifest@0.1.0` (reusing Phase-0 source/passage schema meanings), `parsed_prediction_content@0.1.0` with collection-completeness and validator-provenance fields, `evaluation_semantic_adapter_registry@0.1.0` with selected-entry identity; per-stage adapters; per-case observation-cutoff extraction from governed `stage_context`.
+- Governing: SPEC-022, SPEC-023, ADR-024, ADR-025. Depends on 12B.
+- New paths: `src/dynamic_ai_products/evaluation/source_snapshot.py`; `src/dynamic_ai_products/evaluation/prediction_content.py`; `src/dynamic_ai_products/evaluation/semantic_adapters.py`; `tests/evaluation/test_source_snapshot.py`; `tests/evaluation/test_prediction_content.py`; `tests/evaluation/test_semantic_adapters.py`; `evals/fixtures/evaluation_harness/source_snapshots/source_documents.jsonl`; `evals/fixtures/evaluation_harness/source_snapshots/source_passages.jsonl`; `evals/fixtures/evaluation_harness/source_snapshots/source_passage_snapshot_manifest.json`; `evals/fixtures/evaluation_harness/parsed_content/capability_extraction_raw.json`; `evals/fixtures/evaluation_harness/parsed_content/task_extraction_cutoff_probe.json`; `evals/fixtures/evaluation_harness/semantic_adapters/semantic_adapter_registry.json`.
+- Modified paths: `src/dynamic_ai_products/evaluation/__init__.py`; `REPO_MANIFEST.md`. Exports 459, manifest 339.
+- Stop point: collection-completeness invariants; cutoff pointer `/stage_context/observation_window/end` proven; symlink/path rejection; selected-adapter-entry pin.
+
+### Slice 12E — Gold assertion set and axis taxonomy
+- Objective: `gold_assertion_set@0.1.0` (assertion-owned, kind-discriminated payloads, SPEC-022 gold provenance, registry-alias precedence, no parallel channel) and `axis_taxonomy@0.1.0`.
+- Governing: SPEC-022, ADR-024. Depends on 12B.
+- New paths: `src/dynamic_ai_products/evaluation/gold.py`; `src/dynamic_ai_products/evaluation/taxonomy.py`; `tests/evaluation/test_gold.py`; `tests/evaluation/test_taxonomy.py`; `evals/fixtures/evaluation_harness/gold/gold_assertion_set.json`; `evals/fixtures/evaluation_harness/taxonomy/axis_taxonomy.json`.
+- Modified paths: `src/dynamic_ai_products/evaluation/__init__.py`; `REPO_MANIFEST.md`. Exports 476, manifest 345.
+- Stop point: gold operator/value-shape rejection; alias precedence; `target_registry` byte-identical.
+
+### Slice 12F — Validator-rule parameters, validator-bundle artifact, coverage successor
+- Objective: `validator_rule_parameters@0.1.0` (one entry per rule, four canonical stage-parameter entries, typed private payloads, complete per-rule hash) and `validator_bundle_artifact@0.1.0` generated as a reconciled pair; reopen `validators.py` to add the `ValidatorRuleCoverage` mixed-coverage ledger and the Rule 12 raw-output/repair fields. Deterministic validation is produced here, before semantic assertion evaluation.
+- Governing: SPEC-023, ADR-024. Depends on 12D.
+- New paths: `src/dynamic_ai_products/evaluation/validator_parameters.py`; `src/dynamic_ai_products/evaluation/validator_bundle_artifact.py`; `tests/evaluation/test_validator_parameters.py`; `tests/evaluation/test_validator_bundle_artifact.py`; `evals/fixtures/evaluation_harness/validator_parameters/validator_rule_parameters.json`; `evals/fixtures/evaluation_harness/validator_bundle/validator_bundle_artifact.json`.
+- Modified paths: `src/dynamic_ai_products/evaluation/validators.py`; `tests/evaluation/test_validators.py`; `src/dynamic_ai_products/evaluation/__init__.py`; `REPO_MANIFEST.md`. Exports 494, manifest 351.
+- Stop point: complete per-rule hash equals `ValidatorRuleConfig.rule_params_hash`; mixed coverage; no dummy observation; `validator_finding@0.1.0` `96f63fee…` preserved.
+
+### Slice 12G — Validation-artifact snapshot set
+- Objective: contract-stamped `validation_artifact_snapshot_set@0.1.0` wrapping the committed per-artifact `ValidationArtifactSnapshot` primitives (twelve-rule coverage, per-record `artifact_sha256` binding); persistence.
+- Governing: SPEC-023, ADR-024. Depends on 12F.
+- New paths: `src/dynamic_ai_products/evaluation/validation_snapshot.py`; `tests/evaluation/test_validation_snapshot.py`; `evals/fixtures/evaluation_harness/validation/validation_artifact_snapshot_set.json`.
+- Modified paths: `src/dynamic_ai_products/evaluation/__init__.py`; `REPO_MANIFEST.md`. Exports 502, manifest 354.
+- Stop point: twelve-rule coverage per element; per-record parsed-content hash binding.
+
+### Slice 12H — Semantic assertion evaluators
+- Objective: `build_resolved_assertion_evaluations` producing `ResolvedAssertionEvaluation` per kind from parsed content, gold, and source/passage access; feeds the committed `assertions.py` dispatcher (unchanged). Persisted audit artifact is the committed `AssertionOutcome`; `ResolvedAssertionEvaluation` is transient. `deterministic_validation` assertions consume the validator findings and coverage produced by Slice 12F and the validation-artifact snapshot set produced by Slice 12G.
+- Governing: SPEC-020, SPEC-022, SPEC-023, ADR-024. Depends on 12D, 12E, 12G.
+- New paths: `src/dynamic_ai_products/evaluation/semantic_assertions.py`; `tests/evaluation/test_semantic_assertions.py`.
+- Modified paths: `src/dynamic_ai_products/evaluation/__init__.py`; `REPO_MANIFEST.md`. Exports 505, manifest 356.
+- Stop point: outcome semantics per ADR-024 Phases B and C for all five kinds, reachable only after deterministic validator findings/coverage (12F) and the validation snapshot (12G) are available; `assertions.py` unchanged.
+
+### Slice 12I — Stage metric evidence set and active metric-input snapshot
+- Objective: `stage_metric_evidence_set@0.1.0` (discriminated Universe evidence kinds; extraction stages carry none) and the first persisted, contract-stamped `metric_input_snapshot@0.1.0` (the public `MetricInputSnapshot` becomes the stamped model; screen/audit/tier behind the optional stage-evidence binding; applicability bindings); `compute_metric_report` stage-dispatch.
+- Governing: SPEC-020, ADR-024. Depends on 12A, 12E, 12G, 12H.
+- New paths: `src/dynamic_ai_products/evaluation/stage_evidence.py`; `src/dynamic_ai_products/evaluation/metric_inputs.py`; `tests/evaluation/test_stage_evidence.py`; `tests/evaluation/test_metric_inputs.py`; `evals/fixtures/evaluation_harness/stage_evidence/universe_stage_metric_evidence_set.json`.
+- Modified paths: `src/dynamic_ai_products/evaluation/metrics.py`; `tests/evaluation/test_metrics.py`; `src/dynamic_ai_products/evaluation/__init__.py`; `REPO_MANIFEST.md`. Exports 520, manifest 361.
+- Stop point: stage-evidence discrimination; single stamped `MetricInputSnapshot`; extraction stages create no stage-evidence artifact.
+
+### Slice 12J — Metric report v0.2
+- Objective: `metric_report@0.2.0` with the top-level metric-family applicability ledger; frozen v0.1 historical model + reader.
+- Governing: SPEC-020, ADR-024. Depends on 12I.
+- New paths: `tests/evaluation/test_metric_report_v2.py`.
+- Modified paths: `src/dynamic_ai_products/evaluation/metrics.py`; `tests/evaluation/test_metrics.py`; `src/dynamic_ai_products/evaluation/__init__.py`; `REPO_MANIFEST.md`. Exports 524, manifest 362.
+- Stop point: v0.1 hash `d9e3f6d7…` preserved; inapplicable family carries a ledger entry and no `MetricDatum`.
+
+### Slice 12K — Gate applicability
+- Objective: `GateApplicabilityBindingError` in `gates.py`; a gate targeting an inapplicable metric family is a binding error before datum selection.
+- Governing: SPEC-020, ADR-024. Depends on 12J.
+- New paths: none.
+- Modified paths: `src/dynamic_ai_products/evaluation/gates.py`; `tests/evaluation/test_gates.py`; `src/dynamic_ai_products/evaluation/__init__.py`. Exports 525, manifest 362.
+- Stop point: inapplicable-family gate raises before selection; never pass/fail/zero/indeterminate.
+
+### Slice 12L — Evaluation output manifest
+- Objective: `evaluation_output_manifest@0.1.0` binding read-back persisted-byte hashes of every derived artifact; inapplicable hashes omitted (never explicit null).
+- Governing: SPEC-022, SPEC-024, ADR-024, ADR-025. Depends on 12B, 12I, 12J, 12K.
+- New paths: `src/dynamic_ai_products/evaluation/output_manifest.py`; `tests/evaluation/test_output_manifest.py`.
+- Modified paths: `src/dynamic_ai_products/evaluation/__init__.py`; `REPO_MANIFEST.md`. Exports 531, manifest 364.
+- Stop point: manifest binds only persisted read-back hashes; omission semantics honored.
+
+### Slice 12M — Semantic-substrate integration proof (pre-runner)
+- Objective: a pre-runner integration test that drives a dedicated coherent `capability_extraction` fixture bundle through public production APIs to construct, persist, reload, and hash-verify parsed content, resolved assertion evaluations/outcomes, validation snapshot set, validator findings + coverage, metric-input snapshot, metric report, and evaluation-output manifest. No prebuilt-internal-snapshot shortcut, no dummy/blanket observation, no inferred gold, no provider call, and no runner orchestration. Must not create or modify `runner.py`, `report.py`, or `test_runner.py`.
+- Governing: SPEC-020, SPEC-022, SPEC-023, ADR-024, ADR-025. Depends on 12A, 12B, 12D, 12E, 12F, 12G, 12H, 12I, 12J, 12K, 12L.
+- New paths: `tests/evaluation/test_semantic_substrate_integration.py`; `evals/fixtures/evaluation_harness/substrate_integration/capability_case.json`; `evals/fixtures/evaluation_harness/substrate_integration/case_set_manifest.json`; `evals/fixtures/evaluation_harness/substrate_integration/target_registry.json`; `evals/fixtures/evaluation_harness/substrate_integration/scoring_gate_config.json`; `evals/fixtures/evaluation_harness/substrate_integration/prediction_run_manifest.json`; `evals/fixtures/evaluation_harness/substrate_integration/prediction_envelopes.jsonl`; `evals/fixtures/evaluation_harness/substrate_integration/prediction_source.json`; `evals/fixtures/evaluation_harness/substrate_integration/source_documents.jsonl`; `evals/fixtures/evaluation_harness/substrate_integration/source_passages.jsonl`; `evals/fixtures/evaluation_harness/substrate_integration/source_passage_snapshot_manifest.json`; `evals/fixtures/evaluation_harness/substrate_integration/gold_assertion_set.json`; `evals/fixtures/evaluation_harness/substrate_integration/axis_taxonomy.json`; `evals/fixtures/evaluation_harness/substrate_integration/stage_profile_registry.json`; `evals/fixtures/evaluation_harness/substrate_integration/semantic_adapter_registry.json`; `evals/fixtures/evaluation_harness/substrate_integration/validator_rule_parameters.json`; `evals/fixtures/evaluation_harness/substrate_integration/validator_bundle_artifact.json`.
+- Modified paths: `REPO_MANIFEST.md`. Exports 531, manifest 381.
+- Reconciliation invariants: loaded target-registry SHA equals the run-manifest registry hash and the integration case-set's registry snapshot hash; case-set snapshot hash equals the run-manifest case-set hash; membership input-packet hash equals the prediction-envelope input-packet hash; parsed raw-artifact hash equals the prediction-source byte hash; source/passage aggregate hash equals the run-manifest source/passage hash; each complete per-rule parameter hash equals its bundle rule hash and the aggregate/bundle hashes equal their run-manifest pins; extraction-stage stage-evidence fields are absent; output-manifest hashes are read-back persisted byte hashes.
+- Stop point: the full producer chain yields a real `MetricReport` and `EvaluationOutputManifest` over the coherent bundle through public APIs only; unrelated committed fixtures remain byte-identical.
 
 ### Slice 13 — Canonical runner / CLI orchestration
 

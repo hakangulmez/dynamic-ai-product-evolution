@@ -78,3 +78,45 @@ finding IDs, scope, rationale, methodology-owner approval, expiry, and a
 decision-log reference). The evaluation verdict remains `fail`; the prompt
 lifecycle never auto-advances, and reports keep the failure visible
 (ADR-019).
+
+## Semantic-substrate change classification (ADR-024, ADR-025)
+
+Changes to the Phase-1 semantic substrate are versioned contract changes under
+change control; a changed contract never inherits prior qualification or
+enablement. The following are contract changes requiring a version increment,
+a decision-log reference, and re-evaluation of every affected run:
+
+- stage-profile registry entries, metric-family applicability, or supported
+  stages;
+- semantic-adapter registry entries, adapter output contracts, or selected
+  adapter identity;
+- gold assertion sets and axis-taxonomy definitions (a changed gold or taxonomy
+  hash is a `changed_gold` comparability signal);
+- validator-rule parameters and the validator-bundle artifact (a changed
+  parameter-set or bundle hash is a `changed_validator_contract` signal); the
+  complete per-rule parameter hash must equal `ValidatorRuleConfig.rule_params_hash`;
+- the semantic producers (parsed prediction content, semantic assertion
+  evaluators, validation-artifact snapshot set, metric-input snapshot);
+- the evaluation-run-manifest version (v0.1 remains read-only; v0.1↔v0.2 is
+  `noncomparable_contract`) and the evaluation-output manifest;
+- metric applicability and the `metric_report@0.2.0` applicability ledger.
+
+Pairwise run-comparison classification is distinct from change control. A
+changed selected stage-profile entry identity/hash (which alters metric-family
+applicability and/or required stage evidence) and a changed selected
+semantic-adapter entry identity/hash are `noncomparable_contract`; a changed
+gold, axis-taxonomy, or applicable stage-evidence hash is `changed_gold`; and a
+changed validator-bundle or validator-rule-parameters hash is
+`changed_validator_contract`. A changed stage-profile registry version/hash whose
+selected entry identity/hash is identical, a changed semantic-adapter registry
+version/hash whose selected adapter entry identity/hash is identical, and a
+source-document/source-passage snapshot change that leaves every consumed
+per-case input-packet hash identical are provenance-only for pairwise comparison.
+Provenance-only describes only that pairwise-comparison classification and is not
+a change-control exemption: every registry, adapter, gold, taxonomy, parameter,
+bundle, and snapshot edit still requires a normal governed version/hash update
+and review, and no new `NoncomparabilityClass` value is introduced. Committed
+contract hashes preserved by this governance (`evaluation_run_manifest@0.1.0`,
+`metric_report@0.1.0`, `validator_finding@0.1.0`, `comparison_manifest@0.2.0`)
+must not change; any deviation is a defect requiring a new decision-log entry
+rather than a silent rewrite (ADR-024, ADR-025).

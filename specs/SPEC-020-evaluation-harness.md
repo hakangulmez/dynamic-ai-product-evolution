@@ -130,6 +130,15 @@ Every run records code commit, governing spec path/identity, immutable spec cont
 
 Numeric thresholds, tolerances, and adjudicator agreement targets live in the versioned scoring/gate configuration and are finalized during the sentinel pilot; open decisions are tracked in `docs/DECISION_LOG.md`.
 
+## Semantic-evaluation substrate and runner boundary (ADR-024)
+
+The harness is stage-general. The semantic-evaluation substrate — parsed prediction content, semantic assertion evaluators, validator observation and coverage producers, gold and axis-taxonomy loaders, stage-profile registry, stage metric evidence, and the metric-input assembler — is owned by prerequisite Slices 12A–12M, not by the canonical runner. The runner receives governed artifact references and invokes these producers; it defines no semantic evaluator, and prebuilt `ResolvedAssertionEvaluation`, `ValidationArtifactSnapshot`, and `MetricInputSnapshot` objects are never public runner inputs.
+
+Metric-family applicability is derived deterministically from the hash-bound stage-profile registry. An inapplicable family produces no `MetricDatum` and instead carries an explicit applicability-ledger entry in `metric_report@0.2.0`, distinct from computed zero, low-support `indeterminate`, pass, and fail; a gate targeting an inapplicable family is a binding error before datum selection, never a verdict.
+
+Semantic-outcome determination is a three-phase process: **Phase A** — an aggregate input-validity gate that collects every applicable sanitized issue and, if any exists, sets `execution_status = invalid`, leaves affected assertions not evaluated, produces no completed assertion-outcomes artifact, metric report, or gate verdict, and persists every issue in deterministic order; **Phase B** — per-assertion semantics (governed applicability → `not_applicable`; incomplete required collection → `indeterminate`; then expected/forbidden-entity, field-value-operator, and evidence-provenance semantics, where source-resolution, passage-resolution, and quote-containment defects accumulate and any such defect makes the assertion `unsatisfied`); **Phase C** — deterministic-validation mapping from validator coverage and relevant findings. Deterministic validation runs before semantic assertion evaluation. A pre-runner integration proof (Slice 12M) exercises the complete producer chain to a real `MetricReport` over a coherent fixture bundle using public APIs only.
+
 ## Revision history
 
 - 2026-07-19 — Revised per ADR-011, ADR-013, ADR-016, ADR-017, ADR-018, ADR-019, ADR-021: assertion grain, execution-status and verdict vocabularies, verified-gold gating, stage-specific error-cost profiles, scoring/gate configuration ownership, disposition and exception boundaries.
+- 2026-07-23 — Revised per ADR-024, ADR-025: Phase-1 semantic-evaluation substrate ownership (Slices 12A–12M), runner boundary, stage-general metric applicability and the applicability ledger, the three-phase semantic-outcome process, validators-before-semantics ordering, and the pre-runner integration proof.
