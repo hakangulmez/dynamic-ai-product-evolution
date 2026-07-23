@@ -1,0 +1,61 @@
+{
+  "contract": {
+    "contract_id": "axis_taxonomy",
+    "contract_version": "0.1.0",
+    "contract_hash": "d6072c16fe82b9e7e7f1f52db2d5f57fdc079ef473c3e8803b0fde2c3e356df3"
+  },
+  "taxonomy_version": "synth-axis-taxonomy-v1",
+  "axes": [
+    {
+      "axis_id": "axis_abstention",
+      "axis_role": "task",
+      "metric_type": "abstention_allowed",
+      "base_metric_type": "nominal_single_label",
+      "labels": [
+        "ABSTAIN_A",
+        "ABSTAIN_B"
+      ]
+    },
+    {
+      "axis_id": "axis_multi",
+      "axis_role": "task",
+      "metric_type": "multi_label",
+      "labels": [
+        "ML_A",
+        "ML_B"
+      ]
+    },
+    {
+      "axis_id": "axis_nominal",
+      "axis_role": "capability",
+      "metric_type": "nominal_single_label",
+      "labels": [
+        "NOM_A",
+        "NOM_B"
+      ]
+    },
+    {
+      "axis_id": "axis_ordinal",
+      "axis_role": "task",
+      "metric_type": "ordinal_single_label",
+      "labels": [
+        "ORD_LOW",
+        "ORD_HIGH"
+      ],
+      "ordinal_order": [
+        "ORD_LOW",
+        "ORD_HIGH"
+      ],
+      "ordinal_weighting": "linear"
+    },
+    {
+      "axis_id": "axis_structured",
+      "axis_role": "product",
+      "metric_type": "structured_set",
+      "labels": [
+        "SS_A",
+        "SS_B"
+      ]
+    }
+  ]
+}

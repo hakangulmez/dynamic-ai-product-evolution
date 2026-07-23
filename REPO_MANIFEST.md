@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **339**
+Total tracked/scaffold files listed: **345**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -127,6 +127,7 @@ Total tracked/scaffold files listed: **339**
 - `evals/fixtures/evaluation_harness/cases/valid_minimal_case.json`
 - `evals/fixtures/evaluation_harness/configs/valid_scoring_gate_config.json`
 - `evals/fixtures/evaluation_harness/configs/valid_target_registry.json`
+- `evals/fixtures/evaluation_harness/gold/gold_assertion_set.json`
 - `evals/fixtures/evaluation_harness/parsed_content/capability_extraction_raw.json`
 - `evals/fixtures/evaluation_harness/parsed_content/task_extraction_cutoff_probe.json`
 - `evals/fixtures/evaluation_harness/predictions/valid_manifest_bearing_prediction/envelopes.jsonl`
@@ -137,6 +138,7 @@ Total tracked/scaffold files listed: **339**
 - `evals/fixtures/evaluation_harness/source_snapshots/source_passage_snapshot_manifest.json`
 - `evals/fixtures/evaluation_harness/source_snapshots/source_passages.jsonl`
 - `evals/fixtures/evaluation_harness/stage_profiles/stage_profile_registry.json`
+- `evals/fixtures/evaluation_harness/taxonomy/axis_taxonomy.json`
 - `evals/fixtures/universe_sentinel/adjudications.json`
 - `evals/fixtures/universe_sentinel/classification_outputs.json`
 - `evals/fixtures/universe_sentinel/evidence_packets.json`
@@ -277,6 +279,7 @@ Total tracked/scaffold files listed: **339**
 - `src/dynamic_ai_products/evaluation/dispositions.py`
 - `src/dynamic_ai_products/evaluation/envelopes.py`
 - `src/dynamic_ai_products/evaluation/gates.py`
+- `src/dynamic_ai_products/evaluation/gold.py`
 - `src/dynamic_ai_products/evaluation/metrics.py`
 - `src/dynamic_ai_products/evaluation/models.py`
 - `src/dynamic_ai_products/evaluation/prediction_content.py`
@@ -287,6 +290,7 @@ Total tracked/scaffold files listed: **339**
 - `src/dynamic_ai_products/evaluation/semantic_adapters.py`
 - `src/dynamic_ai_products/evaluation/source_snapshot.py`
 - `src/dynamic_ai_products/evaluation/stage_profiles.py`
+- `src/dynamic_ai_products/evaluation/taxonomy.py`
 - `src/dynamic_ai_products/evaluation/validators.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/universe/__init__.py`
@@ -316,6 +320,7 @@ Total tracked/scaffold files listed: **339**
 - `tests/evaluation/test_dispositions.py`
 - `tests/evaluation/test_envelopes.py`
 - `tests/evaluation/test_gates.py`
+- `tests/evaluation/test_gold.py`
 - `tests/evaluation/test_metrics.py`
 - `tests/evaluation/test_models.py`
 - `tests/evaluation/test_prediction_content.py`
@@ -327,6 +332,7 @@ Total tracked/scaffold files listed: **339**
 - `tests/evaluation/test_semantic_adapters.py`
 - `tests/evaluation/test_source_snapshot.py`
 - `tests/evaluation/test_stage_profiles.py`
+- `tests/evaluation/test_taxonomy.py`
 - `tests/evaluation/test_validators.py`
 - `tests/notebook/test_master_notebook.py`
 - `tests/schema/test_schemas_are_valid.py`
