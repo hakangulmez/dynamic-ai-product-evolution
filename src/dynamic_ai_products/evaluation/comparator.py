@@ -52,6 +52,7 @@ from .models import (
     CaseSetManifest,
     ContractMetadata,
     EvaluationRunManifest,
+    EvaluationRunManifestV2,
     ExecutionStatus,
     GateVerdict,
 )
@@ -1375,41 +1376,67 @@ def _axes(semver: str | None, chash: str | None) -> frozenset[str]:
 
 
 def _run_level_class(
-    bm: EvaluationRunManifest, cm: EvaluationRunManifest,
+    bm: EvaluationRunManifest | EvaluationRunManifestV2,
+    cm: EvaluationRunManifest | EvaluationRunManifestV2,
     bref: ComparisonRunReference, cref: ComparisonRunReference,
     bmeta: AssertionComparisonMetadata, cmeta: AssertionComparisonMetadata,
     b_entry: AssertionComparisonMetadataEntry, c_entry: AssertionComparisonMetadataEntry,
     b_out: Any, c_out: Any,
     bs: ComparisonInputPacketSnapshot, cs: ComparisonInputPacketSnapshot, case_id: str,
 ) -> NoncomparabilityClass | None:
-    """First-applicable run/assertion-level noncomparability class, or None (ADR-023).
+    """First-applicable run/assertion-level noncomparability class, or None.
 
-    Packet comparability derives from the authoritative per-case
-    ``(case_id, input_packet_hash)`` snapshots; ``prediction_run_manifest_hash``
-    is provenance only and never triggers noncomparability. Role-independent.
+    ADR-023 for the common axes, extended by ADR-025 for the v0.2 semantic
+    inputs. Manifest-version discrimination is exact isinstance (no upgrade,
+    retrofit, coercion, or fallback): a mixed v0.1/v0.2 pair is
+    ``noncomparable_contract`` and precedes every common-field classification;
+    all other v0.2 axes are interleaved at their governed precedence and read
+    only when both sides are v0.2. Packet comparability derives from the
+    authoritative per-case ``(case_id, input_packet_hash)`` snapshots;
+    ``prediction_run_manifest_hash`` and ``evaluation_created_at`` are
+    provenance only. Hash-authoritative: for the v0.2 axes a ``*_version``-only
+    difference with an identical corresponding hash never triggers
+    noncomparability. Role-independent.
     """
+    b_is_v2 = isinstance(bm, EvaluationRunManifestV2)
+    c_is_v2 = isinstance(cm, EvaluationRunManifestV2)
+    # P0. Mixed manifest versions — the only new class that precedes ADR-023.
+    if b_is_v2 != c_is_v2:
+        return "noncomparable_contract"
+    both_v2 = b_is_v2 and c_is_v2
     b_by, c_by = bs.by_case, cs.by_case
-    # 1. registry / gold snapshot.
+    # P1. registry / gold snapshot.
     if bs.registry_snapshot_hash != cs.registry_snapshot_hash:
         return "changed_gold"
-    # 2. changed case membership.
+    # P2. changed case membership.
     if set(b_by) != set(c_by):
         return "changed_gold"
-    # 3. changed input packet for this otherwise-matching case.
+    # P3. changed input packet for this otherwise-matching case.
     if b_by[case_id] != c_by[case_id]:
         return "changed_input_packet"
-    # 4. residual case-set version/hash difference.
+    # P4. residual case-set version/hash difference.
     if bs.case_set_version != cs.case_set_version or bs.case_set_hash != cs.case_set_hash:
         return "changed_gold"
-    # 5. changed validator bundle contract.
+    # P4b. v0.2 gold-semantic hashes (hash-authoritative; None-aware for the
+    # paired optional stage-evidence pin, where absent-vs-present is a change).
+    if both_v2 and (
+        bm.gold_assertion_set_hash != cm.gold_assertion_set_hash
+        or bm.axis_taxonomy_hash != cm.axis_taxonomy_hash
+        or bm.stage_metric_evidence_set_hash != cm.stage_metric_evidence_set_hash
+    ):
+        return "changed_gold"
+    # P5. changed validator bundle contract (historical version-or-hash rule).
     if bm.validator_bundle_version != cm.validator_bundle_version \
             or bm.validator_bundle_hash != cm.validator_bundle_hash:
         return "changed_validator_contract"
-    # 6. changed scoring-gate config contract.
+    # P6. changed scoring-gate config contract (historical version-or-hash rule).
     if bm.scoring_gate_config_version != cm.scoring_gate_config_version \
             or bm.scoring_gate_config_hash != cm.scoring_gate_config_hash:
         return "changed_validator_contract"
-    # 7. assertion contract compatibility.
+    # P6b. v0.2 validator-rule parameters (hash-authoritative).
+    if both_v2 and bm.validator_rule_parameters_hash != cm.validator_rule_parameters_hash:
+        return "changed_validator_contract"
+    # P7. assertion contract compatibility.
     b_axes = _axes(b_out.assertion_semantic_version, b_out.assertion_contract_hash)
     c_axes = _axes(c_out.assertion_semantic_version, c_out.assertion_contract_hash)
     shared = b_axes & c_axes
@@ -1423,7 +1450,14 @@ def _run_level_class(
         return "noncomparable_contract"
     if b_entry.protected_regression_classes != c_entry.protected_regression_classes:
         return "changed_assertion_contract"
-    # Remaining run-contract axes (registry and scoring handled above).
+    # P8. v0.2 selected-entry identities (authoritative selected-entry hash),
+    # only after every P1–P7 axis is equal/compatible.
+    if both_v2 and (
+        bm.selected_stage_profile_entry_hash != cm.selected_stage_profile_entry_hash
+        or bm.selected_semantic_adapter_entry_hash != cm.selected_semantic_adapter_entry_hash
+    ):
+        return "noncomparable_contract"
+    # P9. Remaining run-contract axes (registry and scoring handled above).
     if bm.code_commit != cm.code_commit \
             or bm.pydantic_runtime_version != cm.pydantic_runtime_version \
             or bref.stage != cref.stage \
@@ -1458,7 +1492,8 @@ def _classify_outcomes(
 
 
 def _build_transitions(
-    *, bm: EvaluationRunManifest, cm: EvaluationRunManifest,
+    *, bm: EvaluationRunManifest | EvaluationRunManifestV2,
+    cm: EvaluationRunManifest | EvaluationRunManifestV2,
     bref: ComparisonRunReference, cref: ComparisonRunReference,
     b_outcomes: LoadedAssertionOutcomes, c_outcomes: LoadedAssertionOutcomes,
     bmeta: AssertionComparisonMetadata, cmeta: AssertionComparisonMetadata,

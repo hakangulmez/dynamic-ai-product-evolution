@@ -1766,3 +1766,500 @@ def test_amendment_exports_present():
                  "LoadedComparisonV1", "build_comparison_input_packet_snapshot"):
         assert name in evaluation_pkg.__all__
         assert getattr(evaluation_pkg, name) is getattr(comp, name)
+
+
+# ==========================================================================
+# Slice 12C — comparator v0.2 binding (ADR-025)
+# ==========================================================================
+#
+# In-memory v0.2 helpers only: no fixtures, no import from test_run_manifest_v2,
+# and no filesystem/network/provider/clock/randomness/UUID/Git access. The
+# LoadedEvaluationRunManifest wrapper already owns the closed v0.1|v0.2 union, so
+# these reuse every existing binding helper (input_snapshot/loaded_result/
+# loaded_scoring/assess) which read only the common field subset.
+
+from dynamic_ai_products.evaluation.models import EvaluationRunManifestV2  # noqa: E402
+
+RM_STAMP_V2 = {
+    "contract_id": "evaluation_run_manifest", "contract_version": "0.2.0",
+    "contract_hash": model_contract_hash(
+        EvaluationRunManifestV2, "evaluation_run_manifest", "0.2.0"),
+}
+# Distinct deterministic lowercase 64-hex pins for the v0.2 semantic inputs.
+SPR_H, SPE_H, SAR_H, SAE_H = ("a0" * 32, "a1" * 32, "a2" * 32, "a3" * 32)
+SPS_H, GOLD_H, AX_H, VRP_H, SME_H = ("a4" * 32, "a5" * 32, "a6" * 32, "a7" * 32, "a8" * 32)
+OTHER_H = "f0" * 32   # a differing hash for single-axis change scenarios
+OTHER_PKT = "e" * 64  # a differing per-case input packet
+
+
+def manifest_v2(run_id, *, evidence=False, **ov):
+    """A concrete EvaluationRunManifestV2 sharing the v0.1 helper's common-field
+    defaults (so only the exercised axis differs), with all v0.2 pins.
+
+    ``evidence`` toggles the paired-optional applicable-stage-evidence pin; the
+    pair is always supplied or omitted together to preserve the model invariant.
+    """
+    base = {
+        "contract": RM_STAMP_V2, "eval_run_id": run_id, "prediction_run_id": "P",
+        "prediction_run_manifest_hash": H1, "case_set_version": "cs-v1", "case_set_hash": H2,
+        "registry_snapshot_hash": H3, "validator_bundle_version": "vb", "validator_bundle_hash": H4,
+        "scoring_gate_config_version": "cfg-v1", "scoring_gate_config_hash": H5,
+        "code_commit": "commit-1", "pydantic_runtime_version": "2.9",
+        "evaluation_created_at": "2026-07-23T12:00:00Z",
+        "stage_profile_registry_version": "spr-v1", "stage_profile_registry_hash": SPR_H,
+        "selected_stage_profile_entry_hash": SPE_H,
+        "semantic_adapter_registry_version": "sar-v1", "semantic_adapter_registry_hash": SAR_H,
+        "selected_semantic_adapter_entry_hash": SAE_H,
+        "source_passage_snapshot_version": "sps-v1", "source_passage_snapshot_hash": SPS_H,
+        "gold_assertion_set_version": "gold-v1", "gold_assertion_set_hash": GOLD_H,
+        "axis_taxonomy_version": "ax-v1", "axis_taxonomy_hash": AX_H,
+        "validator_rule_parameters_version": "vrp-v1", "validator_rule_parameters_hash": VRP_H,
+    }
+    if evidence:
+        base["stage_metric_evidence_set_version"] = "sme-v1"
+        base["stage_metric_evidence_set_hash"] = SME_H
+    base.update(ov)
+    return EvaluationRunManifestV2.model_validate(base)
+
+
+def loaded_manifest_v2(run_id, *, sha=H6, evidence=False, **ov):
+    return LoadedEvaluationRunManifest(
+        manifest=manifest_v2(run_id, evidence=evidence, **ov), sha256=sha,
+        artifact_reference=f"{run_id}/evaluation_run_manifest.json")
+
+
+def nonc(art):
+    return t0(art).noncomparability_class
+
+
+# --- Historical v1/v1 regression + mixed versions -------------------------
+
+
+def test_v2_v1v1_unchanged_regression():
+    art = one_assertion("satisfied", "satisfied")
+    assert nonc(art) is None and t0(art).transition_class == "unchanged"
+
+
+def test_v2_mixed_v1_baseline_v2_candidate_matched_is_noncomparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand"))
+    assert nonc(art) == "noncomparable_contract"
+
+
+def test_v2_mixed_v2_baseline_v1_candidate_matched_is_noncomparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest("run-cand"))
+    assert nonc(art) == "noncomparable_contract"
+
+
+def test_v2_mixed_version_plus_registry_change_still_noncomparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", registry_snapshot_hash=OTHER_H))
+    assert nonc(art) == "noncomparable_contract"
+
+
+def test_v2_mixed_version_plus_validator_and_selected_entry_still_noncomparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest("run-base"),
+                        c_manifest=loaded_manifest_v2(
+                            "run-cand", validator_bundle_hash=OTHER_H,
+                            selected_stage_profile_entry_hash=OTHER_H))
+    assert nonc(art) == "noncomparable_contract"
+
+
+def _outcomes_meta(run_id, ids):
+    outs = [outcome(run_id, c, a, v) for (c, a, v) in ids]
+    metas = [meta_entry(c, a) for (c, a, _) in ids]
+    return loaded_outcomes(run_id, *outs), metadata(run_id, *metas)
+
+
+def test_v2_mixed_version_added_assertion_stays_added():
+    b_out, b_meta = _outcomes_meta("run-base", [(CID, "A1", "satisfied")])
+    c_out, c_meta = _outcomes_meta("run-cand", [(CID, "A1", "satisfied"), (CID, "A2", "satisfied")])
+    art = assess(b_manifest=loaded_manifest("run-base"), c_manifest=loaded_manifest_v2("run-cand"),
+                 b_outcomes=b_out, c_outcomes=c_out, b_metadata=b_meta, c_metadata=c_meta)
+    by = {tr.assertion_id: tr for tr in art.transitions}
+    assert by["A2"].noncomparability_class == "added_assertion"
+    assert by["A1"].noncomparability_class == "noncomparable_contract"
+
+
+def test_v2_mixed_version_removed_assertion_stays_removed():
+    b_out, b_meta = _outcomes_meta("run-base", [(CID, "A1", "satisfied"), (CID, "A2", "satisfied")])
+    c_out, c_meta = _outcomes_meta("run-cand", [(CID, "A1", "satisfied")])
+    art = assess(b_manifest=loaded_manifest_v2("run-base"), c_manifest=loaded_manifest("run-cand"),
+                 b_outcomes=b_out, c_outcomes=c_out, b_metadata=b_meta, c_metadata=c_meta)
+    by = {tr.assertion_id: tr for tr in art.transitions}
+    assert by["A2"].noncomparability_class == "removed_assertion"
+    assert by["A1"].noncomparability_class == "noncomparable_contract"
+
+
+# --- v2/v2 ordinary comparability -----------------------------------------
+
+
+def test_v2_identical_pins_ordinarily_comparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand"))
+    assert nonc(art) is None and t0(art).transition_class == "unchanged"
+
+
+def test_v2_identical_pins_regression_classifies_normally():
+    art = one_assertion("satisfied", "unsatisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand"))
+    assert nonc(art) is None and t0(art).transition_class == "regression"
+
+
+def test_v2_evaluation_created_at_only_is_comparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2(
+                            "run-cand", evaluation_created_at="2027-01-01T00:00:00Z"))
+    assert nonc(art) is None and t0(art).transition_class == "unchanged"
+
+
+def test_v2_prediction_run_manifest_hash_only_is_comparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", prediction_run_manifest_hash=OTHER_H))
+    assert nonc(art) is None and t0(art).transition_class == "unchanged"
+
+
+# --- selected-entry behavior ----------------------------------------------
+
+
+def test_v2_selected_stage_profile_entry_change_is_noncomparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", selected_stage_profile_entry_hash=OTHER_H))
+    assert nonc(art) == "noncomparable_contract"
+
+
+def test_v2_selected_semantic_adapter_entry_change_is_noncomparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", selected_semantic_adapter_entry_hash=OTHER_H))
+    assert nonc(art) == "noncomparable_contract"
+
+
+# --- registry provenance (selected entry unchanged) -----------------------
+
+
+def test_v2_stage_profile_registry_version_only_is_comparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", stage_profile_registry_version="spr-v2"))
+    assert nonc(art) is None and t0(art).transition_class == "unchanged"
+
+
+def test_v2_stage_profile_registry_hash_only_is_comparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", stage_profile_registry_hash=OTHER_H))
+    assert nonc(art) is None and t0(art).transition_class == "unchanged"
+
+
+def test_v2_semantic_adapter_registry_version_only_is_comparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", semantic_adapter_registry_version="sar-v2"))
+    assert nonc(art) is None and t0(art).transition_class == "unchanged"
+
+
+def test_v2_semantic_adapter_registry_hash_only_is_comparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", semantic_adapter_registry_hash=OTHER_H))
+    assert nonc(art) is None and t0(art).transition_class == "unchanged"
+
+
+# --- changed_gold behavior ------------------------------------------------
+
+
+def test_v2_target_registry_change_is_changed_gold():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", registry_snapshot_hash=OTHER_H))
+    assert nonc(art) == "changed_gold"
+
+
+def test_v2_gold_assertion_set_hash_change_is_changed_gold():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", gold_assertion_set_hash=OTHER_H))
+    assert nonc(art) == "changed_gold"
+
+
+def test_v2_axis_taxonomy_hash_change_is_changed_gold():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", axis_taxonomy_hash=OTHER_H))
+    assert nonc(art) == "changed_gold"
+
+
+def test_v2_stage_evidence_hash_change_is_changed_gold():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base", evidence=True),
+                        c_manifest=loaded_manifest_v2("run-cand", evidence=True,
+                                                      stage_metric_evidence_set_hash=OTHER_H))
+    assert nonc(art) == "changed_gold"
+
+
+def test_v2_stage_evidence_presence_absence_mismatch_is_changed_gold():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base", evidence=True),
+                        c_manifest=loaded_manifest_v2("run-cand", evidence=False))
+    assert nonc(art) == "changed_gold"
+
+
+# --- changed_validator behavior -------------------------------------------
+
+
+def test_v2_validator_bundle_hash_change_is_changed_validator():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", validator_bundle_hash=OTHER_H))
+    assert nonc(art) == "changed_validator_contract"
+
+
+def test_v2_validator_bundle_version_only_preserves_historical_behavior():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", validator_bundle_version="vb2"))
+    assert nonc(art) == "changed_validator_contract"
+
+
+def test_v2_validator_rule_parameters_hash_change_is_changed_validator():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", validator_rule_parameters_hash=OTHER_H))
+    assert nonc(art) == "changed_validator_contract"
+
+
+def test_v2_validator_rule_parameters_version_only_is_provenance():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", validator_rule_parameters_version="vrp-v2"))
+    assert nonc(art) is None and t0(art).transition_class == "unchanged"
+
+
+def test_v2_scoring_config_hash_change_is_changed_validator():
+    cand = loaded_manifest_v2("run-cand", scoring_gate_config_hash=OTHER_H)
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=cand, c_scoring=loaded_scoring(cand.manifest))
+    assert nonc(art) == "changed_validator_contract"
+
+
+# --- source/input provenance ----------------------------------------------
+
+
+def test_v2_source_snapshot_change_identical_packets_is_comparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", source_passage_snapshot_version="sps-v2",
+                                                      source_passage_snapshot_hash=OTHER_H))
+    assert nonc(art) is None and t0(art).transition_class == "unchanged"
+
+
+def test_v2_source_snapshot_change_plus_packet_change_is_changed_input_packet():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", source_passage_snapshot_hash=OTHER_H),
+                        c_packets={CID: OTHER_PKT})
+    assert nonc(art) == "changed_input_packet"
+
+
+# --- version-only provenance ----------------------------------------------
+
+
+def test_v2_gold_version_only_identical_hash_is_comparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", gold_assertion_set_version="gold-v2"))
+    assert nonc(art) is None and t0(art).transition_class == "unchanged"
+
+
+def test_v2_taxonomy_version_only_identical_hash_is_comparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", axis_taxonomy_version="ax-v2"))
+    assert nonc(art) is None and t0(art).transition_class == "unchanged"
+
+
+def test_v2_stage_evidence_version_only_identical_hash_is_comparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base", evidence=True),
+                        c_manifest=loaded_manifest_v2("run-cand", evidence=True,
+                                                      stage_metric_evidence_set_version="sme-v2"))
+    assert nonc(art) is None and t0(art).transition_class == "unchanged"
+
+
+# --- precedence combinations (section 7) ----------------------------------
+
+
+def test_v2_registry_plus_selected_entry_is_changed_gold():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", registry_snapshot_hash=OTHER_H,
+                                                      selected_stage_profile_entry_hash=OTHER_H))
+    assert nonc(art) == "changed_gold"
+
+
+def test_v2_membership_plus_selected_entry_is_changed_gold():
+    # Candidate snapshot covers an extra case (CID2) beyond the matched CID, so
+    # the packet-snapshot case-ID sets differ while CID stays matched.
+    b_out, b_meta = _outcomes_meta("run-base", [(CID, "A1", "satisfied")])
+    c_out, c_meta = _outcomes_meta("run-cand", [(CID, "A1", "satisfied")])
+    art = assess(b_manifest=loaded_manifest_v2("run-base"),
+                 c_manifest=loaded_manifest_v2("run-cand", selected_stage_profile_entry_hash=OTHER_H),
+                 b_outcomes=b_out, c_outcomes=c_out, b_metadata=b_meta, c_metadata=c_meta,
+                 b_packets={CID: PKT}, c_packets={CID: PKT, "SYNTH-CASE-0002": PKT})
+    assert nonc(art) == "changed_gold"
+
+
+def test_v2_packet_plus_selected_entry_is_changed_input_packet():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", selected_stage_profile_entry_hash=OTHER_H),
+                        c_packets={CID: OTHER_PKT})
+    assert nonc(art) == "changed_input_packet"
+
+
+def test_v2_packet_plus_source_snapshot_is_changed_input_packet():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", source_passage_snapshot_hash=OTHER_H),
+                        c_packets={CID: OTHER_PKT})
+    assert nonc(art) == "changed_input_packet"
+
+
+def test_v2_residual_case_set_plus_selected_entry_is_changed_gold():
+    cand = loaded_manifest_v2("run-cand", case_set_version="cs-v2",
+                              selected_stage_profile_entry_hash=OTHER_H)
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=cand, c_result=loaded_result(cand.manifest))
+    assert nonc(art) == "changed_gold"
+
+
+def test_v2_gold_hash_plus_selected_entry_is_changed_gold():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", gold_assertion_set_hash=OTHER_H,
+                                                      selected_stage_profile_entry_hash=OTHER_H))
+    assert nonc(art) == "changed_gold"
+
+
+def test_v2_validator_bundle_plus_selected_entry_is_changed_validator():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", validator_bundle_hash=OTHER_H,
+                                                      selected_stage_profile_entry_hash=OTHER_H))
+    assert nonc(art) == "changed_validator_contract"
+
+
+def test_v2_validator_rule_params_plus_selected_entry_is_changed_validator():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", validator_rule_parameters_hash=OTHER_H,
+                                                      selected_stage_profile_entry_hash=OTHER_H))
+    assert nonc(art) == "changed_validator_contract"
+
+
+def test_v2_assertion_semver_incompat_plus_selected_entry_is_changed_assertion():
+    art = one_assertion("satisfied", "satisfied", b_semver="1.0.0", c_semver="2.0.0",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", selected_stage_profile_entry_hash=OTHER_H))
+    assert nonc(art) == "changed_assertion_contract"
+
+
+def test_v2_assertion_axis_presence_mismatch_plus_selected_entry_is_noncomparable():
+    art = one_assertion("satisfied", "satisfied", b_semver="1.0.0", b_chash=None,
+                        c_semver=None, c_chash=H1,
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", selected_stage_profile_entry_hash=OTHER_H))
+    assert nonc(art) == "noncomparable_contract"
+
+
+def test_v2_selected_entry_alone_is_noncomparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", selected_semantic_adapter_entry_hash=OTHER_H))
+    assert nonc(art) == "noncomparable_contract"
+
+
+# --- locked invariants (protected identities; not stale global counts) ----
+
+
+def test_v2_locked_contract_identities_unchanged():
+    assert model_contract_hash(comp.ComparisonManifest, "comparison_manifest", "0.2.0") == (
+        "6a1253b72664bff73e872d1230fb3d52772a438f55915406010e105b4f5d29a5")
+    assert model_contract_hash(EvaluationRunManifest, "evaluation_run_manifest", "0.1.0") == (
+        "7f8909d8e7059952c933c8e30f43044178b3f8a21d4baaa77bfb5c786b38d6ee")
+    assert model_contract_hash(EvaluationRunManifestV2, "evaluation_run_manifest", "0.2.0") == (
+        "6918e96c0f9d2066e89eaf6a699c00b36e1e52e5b5c74ec0e926533eacaf84d6")
+    import typing
+    assert set(typing.get_args(comp.NoncomparabilityClass)) == {
+        "changed_assertion_contract", "changed_gold", "changed_input_packet",
+        "changed_validator_contract", "added_assertion", "removed_assertion",
+        "noncomparable_contract"}
+
+
+# --- Slice 12C correction: missing precedence proofs ----------------------
+#
+# Each drives assess_comparison → ComparisonArtifact → AssertionTransition and
+# names both competing axes plus the winning class. No _run_level_class call.
+
+
+def test_v2_mixed_version_plus_packet_change_p0_beats_p3_noncomparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand"),
+                        c_packets={CID: OTHER_PKT})
+    assert nonc(art) == "noncomparable_contract"
+
+
+def test_v2_mixed_version_plus_remaining_contract_change_p0_beats_p9_noncomparable():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", code_commit="commit-2",
+                                                      pydantic_runtime_version="2.10"))
+    assert nonc(art) == "noncomparable_contract"
+
+
+def test_v2_taxonomy_hash_plus_selected_entry_p4b_beats_p8_changed_gold():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", axis_taxonomy_hash=OTHER_H,
+                                                      selected_semantic_adapter_entry_hash=OTHER_H))
+    assert nonc(art) == "changed_gold"
+
+
+def test_v2_stage_evidence_hash_plus_selected_entry_p4b_beats_p8_changed_gold():
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base", evidence=True),
+                        c_manifest=loaded_manifest_v2("run-cand", evidence=True,
+                                                      stage_metric_evidence_set_hash=OTHER_H,
+                                                      selected_stage_profile_entry_hash=OTHER_H))
+    assert nonc(art) == "changed_gold"
+
+
+def test_v2_scoring_config_hash_plus_selected_entry_p6_beats_p8_changed_validator():
+    cand = loaded_manifest_v2("run-cand", scoring_gate_config_hash=OTHER_H,
+                              selected_stage_profile_entry_hash=OTHER_H)
+    art = one_assertion("satisfied", "satisfied",
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=cand, c_scoring=loaded_scoring(cand.manifest))
+    assert nonc(art) == "changed_validator_contract"
+
+
+def test_v2_shared_assertion_contract_hash_plus_selected_entry_p7_beats_p8_changed_assertion():
+    art = one_assertion("satisfied", "satisfied",
+                        b_semver=None, b_chash=H1, c_semver=None, c_chash=H2,
+                        b_manifest=loaded_manifest_v2("run-base"),
+                        c_manifest=loaded_manifest_v2("run-cand", selected_stage_profile_entry_hash=OTHER_H))
+    assert nonc(art) == "changed_assertion_contract"
