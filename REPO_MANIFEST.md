@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **323**
+Total tracked/scaffold files listed: **326**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -129,6 +129,7 @@ Total tracked/scaffold files listed: **323**
 - `evals/fixtures/evaluation_harness/predictions/valid_manifest_bearing_prediction/envelopes.jsonl`
 - `evals/fixtures/evaluation_harness/predictions/valid_manifest_bearing_prediction/prediction_run_manifest.json`
 - `evals/fixtures/evaluation_harness/predictions/valid_manifest_bearing_prediction/sources/prediction_source.json`
+- `evals/fixtures/evaluation_harness/stage_profiles/stage_profile_registry.json`
 - `evals/fixtures/universe_sentinel/adjudications.json`
 - `evals/fixtures/universe_sentinel/classification_outputs.json`
 - `evals/fixtures/universe_sentinel/evidence_packets.json`
@@ -278,6 +279,7 @@ Total tracked/scaffold files listed: **323**
 - `src/dynamic_ai_products/evaluation/runs.py`
 - `src/dynamic_ai_products/evaluation/schemas.py`
 - `src/dynamic_ai_products/evaluation/scoring_config.py`
+- `src/dynamic_ai_products/evaluation/stage_profiles.py`
 - `src/dynamic_ai_products/evaluation/validators.py`
 - `src/dynamic_ai_products/universe/__init__.py`
 - `src/dynamic_ai_products/universe/audit.py`
@@ -310,6 +312,7 @@ Total tracked/scaffold files listed: **323**
 - `tests/evaluation/test_runs.py`
 - `tests/evaluation/test_schema_registry.py`
 - `tests/evaluation/test_scoring_config.py`
+- `tests/evaluation/test_stage_profiles.py`
 - `tests/evaluation/test_validators.py`
 - `tests/notebook/test_master_notebook.py`
 - `tests/schema/test_schemas_are_valid.py`
