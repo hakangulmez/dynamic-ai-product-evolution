@@ -1,0 +1,498 @@
+{
+  "contract": {
+    "contract_id": "validation_artifact_snapshot_set",
+    "contract_version": "0.1.0",
+    "contract_hash": "51643160bcc7a98b7dd7279c6109d51292d1cd7d3022420271010e3275e6d1a1"
+  },
+  "snapshot_set_version": "synth-validation-snapshot-set-v1",
+  "eval_run_id": "synth-eval-run-12g",
+  "evaluation_stage": "capability_extraction",
+  "snapshots": [
+    {
+      "eval_run_id": "synth-eval-run-12g",
+      "artifact_id": "art-0001",
+      "stage": "capability_extraction",
+      "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "parsed_prediction_content_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "created_at": "2026-07-24T00:00:00+00:00",
+      "case_id": "SYNTH-CASE-0001",
+      "observations": [
+        {
+          "observation_id": "o1",
+          "entity_id": null,
+          "rule_id": "output_json_schema_validity",
+          "parse_succeeded": true,
+          "schema_valid": true,
+          "schema_reference": "s.json",
+          "validation_errors": []
+        },
+        {
+          "observation_id": "o2",
+          "entity_id": null,
+          "rule_id": "required_field_presence",
+          "required_fields": [
+            "a",
+            "b"
+          ],
+          "present_fields": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        {
+          "observation_id": "o3",
+          "entity_id": null,
+          "rule_id": "source_id_resolution",
+          "referenced_source_ids": [
+            "s1"
+          ],
+          "available_source_ids": [
+            "s1",
+            "s2"
+          ]
+        },
+        {
+          "observation_id": "o4",
+          "entity_id": null,
+          "rule_id": "passage_id_resolution",
+          "referenced_passage_ids": [
+            "p1"
+          ],
+          "available_passage_ids": [
+            "p1"
+          ]
+        },
+        {
+          "observation_id": "o5",
+          "entity_id": null,
+          "rule_id": "evidence_quote_containment",
+          "quote": "alpha",
+          "passage_text": "the alpha beta",
+          "passage_id": "p1"
+        },
+        {
+          "observation_id": "o6",
+          "entity_id": null,
+          "rule_id": "publication_date_cutoff",
+          "publication_date": "2020-01-01",
+          "observation_cutoff_date": "2020-06-01",
+          "source_id": "s1"
+        },
+        {
+          "observation_id": "o7",
+          "entity_id": null,
+          "rule_id": "product_capability_task_parent_resolution",
+          "child_id": "c1",
+          "parent_id": "pp",
+          "available_parent_ids": [
+            "pp",
+            "qq"
+          ]
+        },
+        {
+          "observation_id": "o8",
+          "entity_id": null,
+          "rule_id": "unique_ids_within_scope",
+          "scope_id": "sc",
+          "record_ids": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        {
+          "observation_id": "o9",
+          "entity_id": null,
+          "rule_id": "prohibited_legacy_fields_absent",
+          "present_field_names": [
+            "x",
+            "y"
+          ],
+          "prohibited_field_names": [
+            "legacy"
+          ]
+        },
+        {
+          "observation_id": "o10",
+          "entity_id": null,
+          "rule_id": "active_record_non_roadmap_evidence",
+          "active": true,
+          "evidence": [
+            {
+              "evidence_id": "e1",
+              "is_future_roadmap": true
+            },
+            {
+              "evidence_id": "e2",
+              "is_future_roadmap": false
+            }
+          ]
+        },
+        {
+          "observation_id": "o11",
+          "entity_id": null,
+          "rule_id": "customer_task_outcome_and_evidence",
+          "is_customer_facing_task": true,
+          "customer_outcome": "did the thing",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        {
+          "observation_id": "o12",
+          "entity_id": null,
+          "rule_id": "raw_output_and_repair_preservation",
+          "raw_output_reference": "raw.json",
+          "raw_artifact_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "raw_output_preserved": true,
+          "repair_applied": false,
+          "repair_record_references": [],
+          "repair_record_hashes": [],
+          "parsed_content_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "coverage": [
+        {
+          "rule_id": "output_json_schema_validity",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "required_field_presence",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "source_id_resolution",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "passage_id_resolution",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "evidence_quote_containment",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "publication_date_cutoff",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "product_capability_task_parent_resolution",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "unique_ids_within_scope",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "prohibited_legacy_fields_absent",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "active_record_non_roadmap_evidence",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "customer_task_outcome_and_evidence",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "raw_output_and_repair_preservation",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        }
+      ]
+    },
+    {
+      "eval_run_id": "synth-eval-run-12g",
+      "artifact_id": "art-0002",
+      "stage": "capability_extraction",
+      "artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "parsed_prediction_content_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "created_at": "2026-07-24T00:00:00+00:00",
+      "case_id": "SYNTH-CASE-0001",
+      "observations": [
+        {
+          "observation_id": "o1",
+          "entity_id": null,
+          "rule_id": "output_json_schema_validity",
+          "parse_succeeded": true,
+          "schema_valid": true,
+          "schema_reference": "s.json",
+          "validation_errors": []
+        },
+        {
+          "observation_id": "o2",
+          "entity_id": null,
+          "rule_id": "required_field_presence",
+          "required_fields": [
+            "a",
+            "b"
+          ],
+          "present_fields": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        {
+          "observation_id": "o3",
+          "entity_id": null,
+          "rule_id": "source_id_resolution",
+          "referenced_source_ids": [
+            "s1"
+          ],
+          "available_source_ids": [
+            "s1",
+            "s2"
+          ]
+        },
+        {
+          "observation_id": "o4",
+          "entity_id": null,
+          "rule_id": "passage_id_resolution",
+          "referenced_passage_ids": [
+            "p1"
+          ],
+          "available_passage_ids": [
+            "p1"
+          ]
+        },
+        {
+          "observation_id": "o5",
+          "entity_id": null,
+          "rule_id": "evidence_quote_containment",
+          "quote": "alpha",
+          "passage_text": "the alpha beta",
+          "passage_id": "p1"
+        },
+        {
+          "observation_id": "o6",
+          "entity_id": null,
+          "rule_id": "publication_date_cutoff",
+          "publication_date": "2020-01-01",
+          "observation_cutoff_date": "2020-06-01",
+          "source_id": "s1"
+        },
+        {
+          "observation_id": "o7",
+          "entity_id": null,
+          "rule_id": "product_capability_task_parent_resolution",
+          "child_id": "c1",
+          "parent_id": "pp",
+          "available_parent_ids": [
+            "pp",
+            "qq"
+          ]
+        },
+        {
+          "observation_id": "o8",
+          "entity_id": null,
+          "rule_id": "unique_ids_within_scope",
+          "scope_id": "sc",
+          "record_ids": [
+            "a",
+            "b",
+            "c"
+          ]
+        },
+        {
+          "observation_id": "o9",
+          "entity_id": null,
+          "rule_id": "prohibited_legacy_fields_absent",
+          "present_field_names": [
+            "x",
+            "y"
+          ],
+          "prohibited_field_names": [
+            "legacy"
+          ]
+        },
+        {
+          "observation_id": "o10",
+          "entity_id": null,
+          "rule_id": "active_record_non_roadmap_evidence",
+          "active": true,
+          "evidence": [
+            {
+              "evidence_id": "e1",
+              "is_future_roadmap": true
+            },
+            {
+              "evidence_id": "e2",
+              "is_future_roadmap": false
+            }
+          ]
+        },
+        {
+          "observation_id": "o11",
+          "entity_id": null,
+          "rule_id": "customer_task_outcome_and_evidence",
+          "is_customer_facing_task": true,
+          "customer_outcome": "did the thing",
+          "evidence_ids": [
+            "e1"
+          ]
+        },
+        {
+          "observation_id": "o12",
+          "entity_id": null,
+          "rule_id": "raw_output_and_repair_preservation",
+          "raw_output_reference": "raw.json",
+          "raw_artifact_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "raw_output_preserved": true,
+          "repair_applied": false,
+          "repair_record_references": [],
+          "repair_record_hashes": [],
+          "parsed_content_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        }
+      ],
+      "coverage": [
+        {
+          "rule_id": "output_json_schema_validity",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "required_field_presence",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "source_id_resolution",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "passage_id_resolution",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "evidence_quote_containment",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "publication_date_cutoff",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "product_capability_task_parent_resolution",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "unique_ids_within_scope",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "prohibited_legacy_fields_absent",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "active_record_non_roadmap_evidence",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "customer_task_outcome_and_evidence",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        },
+        {
+          "rule_id": "raw_output_and_repair_preservation",
+          "coverage_state": "fully_evaluated",
+          "candidate_count": 1,
+          "evaluated_observation_count": 1,
+          "blocked_candidate_count": 0,
+          "reason_counts": []
+        }
+      ]
+    }
+  ]
+}
