@@ -48,12 +48,27 @@ from dynamic_ai_products.evaluation.gates import (
     load_evaluation_result,
     persist_evaluation_result,
 )
-from dynamic_ai_products.evaluation.models import AssertionOutcome, ValidatorFinding
+from dynamic_ai_products.evaluation.metric_inputs import build_metric_input_snapshot
+from dynamic_ai_products.evaluation.models import (
+    AssertionOutcome,
+    EvaluationRunManifestV2,
+    ValidatorFinding,
+)
 from dynamic_ai_products.evaluation.references import load_target_registry
 from dynamic_ai_products.evaluation.runs import (
     RunArtifactNotAFileError,
     initialize_evaluation_run,
     load_evaluation_run_manifest,
+)
+from dynamic_ai_products.evaluation.stage_evidence import (
+    LoadedStageMetricEvidenceSet,
+    build_stage_metric_evidence_set,
+    stage_metric_evidence_set_hash,
+)
+from dynamic_ai_products.evaluation.stage_profiles import (
+    load_stage_profile_registry,
+    resolve_metric_applicability,
+    stage_profile_registry_hash,
 )
 from dynamic_ai_products.evaluation.scoring_config import (
     DiagnosticDefinition,
@@ -70,8 +85,49 @@ FX = ROOT / "evals" / "fixtures" / "evaluation_harness"
 CASE_SET = load_case_set_manifest("valid_base_case_set_manifest.json", eval_root=FX / "case_sets")
 REGISTRY = load_target_registry("valid_target_registry.json", eval_root=FX / "configs")
 SCORING = load_scoring_gate_config("valid_scoring_gate_config.json", eval_root=FX / "configs")
+SP_REG = load_stage_profile_registry("stage_profiles/stage_profile_registry.json", eval_root=FX)
+SP_REG_HASH = stage_profile_registry_hash(SP_REG.registry)
+RM_V2_HASH = model_contract_hash(EvaluationRunManifestV2, "evaluation_run_manifest", "0.2.0")
+CREATED = "2026-07-24T00:00:00+00:00"
 CID = "SYNTH-CASE-0001"
 HEX = "a" * 64
+
+
+def _v2_rm(*, eval_run_id, case_set_version, case_set_hash, scoring_version, scoring_hash,
+           stage, entry_hash, ev_ver=None, ev_hash=None):
+    payload = {
+        "contract": {"contract_id": "evaluation_run_manifest", "contract_version": "0.2.0",
+                     "contract_hash": RM_V2_HASH},
+        "eval_run_id": eval_run_id, "prediction_run_id": "P", "prediction_run_manifest_hash": HEX,
+        "case_set_version": case_set_version, "case_set_hash": case_set_hash,
+        "registry_snapshot_hash": HEX, "validator_bundle_version": "vb",
+        "validator_bundle_hash": "b" * 64,
+        "scoring_gate_config_version": scoring_version, "scoring_gate_config_hash": scoring_hash,
+        "code_commit": "c", "pydantic_runtime_version": "2", "evaluation_created_at": CREATED,
+        "stage_profile_registry_version": SP_REG.version,
+        "stage_profile_registry_hash": SP_REG_HASH,
+        "selected_stage_profile_entry_hash": entry_hash,
+        "semantic_adapter_registry_version": "sa-v1", "semantic_adapter_registry_hash": HEX,
+        "selected_semantic_adapter_entry_hash": HEX,
+        "source_passage_snapshot_version": "sp-v1", "source_passage_snapshot_hash": HEX,
+        "gold_assertion_set_version": "g-v1", "gold_assertion_set_hash": HEX,
+        "axis_taxonomy_version": "ax-v1", "axis_taxonomy_hash": HEX,
+        "validator_rule_parameters_version": "vp-v1", "validator_rule_parameters_hash": HEX,
+    }
+    if ev_ver is not None:
+        payload["stage_metric_evidence_set_version"] = ev_ver
+        payload["stage_metric_evidence_set_hash"] = ev_hash
+    return EvaluationRunManifestV2.model_validate(payload)
+
+
+def _rm_from_snapshot(snap):
+    b = snap.applicability_binding
+    return _v2_rm(
+        eval_run_id=snap.eval_run_id, case_set_version=snap.case_set_version,
+        case_set_hash=snap.case_set_hash, scoring_version=snap.scoring_gate_config_version,
+        scoring_hash=snap.scoring_gate_config_hash, stage=b.evaluation_stage,
+        entry_hash=b.selected_stage_profile_entry_hash,
+        ev_ver=b.stage_metric_evidence_set_version, ev_hash=b.stage_metric_evidence_set_hash)
 AO_META = {"contract_id": "assertion_outcome", "contract_version": "0.1.0",
            "contract_hash": model_contract_hash(AssertionOutcome, "assertion_outcome", "0.1.0")}
 VF_META = {"contract_id": "validator_finding", "contract_version": "0.1.0",
@@ -113,33 +169,74 @@ def vf(finding_id="f1", severity="error", run_id="run1"):
         "created_at": "2026-07-20T00:00:00Z"})
 
 
-def build_report(root, rm, *, axis_min=0, unsafe_min=1, audited_missed=(False,), pop=100):
+def _stage_evidence(stage, *, unsafe_min, audited_missed, pop):
+    """Build the stage-appropriate evidence set (screen/classification), or None."""
+    entry = resolve_metric_applicability(SP_REG.registry, stage)
+    kinds = entry.required_stage_evidence_kinds
+    if not kinds:
+        return None
+    variants = []
+    if "universe_classification_tier" in kinds:
+        tier = met.TierContractObservation(
+            record_id="t1", verification_status="verified", tier_rule_version="v",
+            expected_tier="T", observed_tier="T", expected_reason_codes=("r",),
+            observed_reason_codes=("r",), expected_rule_trace_hash="c" * 64,
+            observed_rule_trace_hash="c" * 64, repeatability_output_hashes=("d" * 64, "d" * 64))
+        variants.append({"kind": "universe_classification_tier",
+                         "tier_contract_observations": [tier.model_dump(mode="json")]})
+    if "universe_screen_operational" in kinds:
+        ops = met.ScreenOperationalSummary(total_screened=10, screen_negative=4, screen_nonnegative=5,
+                                           unresolved=1, downstream_review_count=3)
+        variants.append({"kind": "universe_screen_operational",
+                         "screen_operational_summary": ops.model_dump(mode="json")})
+    if "universe_unsafe_exclusion_audit" in kinds:
+        labels = tuple(met.UnsafeAuditLabel(record_id=f"a{i}", verification_status="verified",
+                                            actually_eligible_or_boundary_relevant=v)
+                       for i, v in enumerate(audited_missed))
+        aud = met.UnsafeExclusionAuditSnapshot(
+            audit_snapshot_hash="b" * 64, seed=1, sampling_design_id="d",
+            strata=(met.UnsafeAuditStratum(stratum_id="s1", screen_negative_population_count=pop,
+                                           audited_labels=labels),))
+        variants.append({"kind": "universe_unsafe_exclusion_audit",
+                         "unsafe_exclusion_audit": aud.model_dump(mode="json")})
+    variants.sort(key=lambda v: v["kind"])
+    evset = build_stage_metric_evidence_set(evaluation_stage=stage, set_version="se-v1",
+                                            variants=tuple(variants))
+    return LoadedStageMetricEvidenceSet(model=evset, version="se-v1", sha256="d" * 64,
+                                        artifact_reference="stage_evidence/e.json")
+
+
+def build_report(root, rm, *, stage="universe_classification", axis_min=0, unsafe_min=1,
+                 audited_missed=(False,), pop=100):
+    """Compute an in-memory stage-aware ``LoadedMetricReport`` (v0.2 metric path).
+
+    ``rm`` (a v0.1 gate manifest) supplies the case-set / scoring / run identity;
+    the v0.2 metric contract is built internally. Not persisted — the gate engine
+    consumes the returned ``LoadedMetricReport`` directly. ``universe_classification``
+    provides axis + tier families; ``universe_screen`` provides screen-operational
+    + unsafe-exclusion.
+    """
+    entry = resolve_metric_applicability(SP_REG.registry, stage)
+    ev = _stage_evidence(stage, unsafe_min=unsafe_min, audited_missed=audited_missed, pop=pop)
+    ev_ver = ev.model.set_version if ev is not None else None
+    ev_hash = stage_metric_evidence_set_hash(ev.model) if ev is not None else None
+    local_rm = _v2_rm(
+        eval_run_id="run1", case_set_version=rm.case_set_version, case_set_hash=rm.case_set_hash,
+        scoring_version=rm.scoring_gate_config_version, scoring_hash=rm.scoring_gate_config_hash,
+        stage=stage, entry_hash=entry.entry_hash, ev_ver=ev_ver, ev_hash=ev_hash)
     axis = met.AxisDefinition(axis_id="axis-1", axis_role="product", metric_type="abstention_allowed",
                               base_metric_type="multi_label", labels=("a", "b"))
     ex = (met.ValidatorRuleEvaluationRecord(artifact_id="art1", rule_id="source_id_resolution",
                                             evaluated_observation_count=5, failed_observation_count=1),)
-    labels = tuple(met.UnsafeAuditLabel(record_id=f"a{i}", verification_status="verified",
-                                        actually_eligible_or_boundary_relevant=v)
-                   for i, v in enumerate(audited_missed))
-    aud = met.UnsafeExclusionAuditSnapshot(audit_snapshot_hash="b" * 64, seed=1, sampling_design_id="d",
-        strata=(met.UnsafeAuditStratum(stratum_id="s1", screen_negative_population_count=pop,
-                                       audited_labels=labels),))
-    ops = met.ScreenOperationalSummary(total_screened=10, screen_negative=4, screen_nonnegative=5,
-                                       unresolved=1, downstream_review_count=3)
-    tier = (met.TierContractObservation(record_id="t1", verification_status="verified",
-        tier_rule_version="v", expected_tier="T", observed_tier="T", expected_reason_codes=("r",),
-        observed_reason_codes=("r",), expected_rule_trace_hash="c" * 64, observed_rule_trace_hash="c" * 64,
-        repeatability_output_hashes=("d" * 64, "d" * 64)),)
-    snap = met.MetricInputSnapshot(eval_run_id="run1", case_set_version=rm.case_set_version,
-        case_set_hash=rm.case_set_hash, scoring_gate_config_version=rm.scoring_gate_config_version,
-        scoring_gate_config_hash=rm.scoring_gate_config_hash, axis_definitions=(axis,),
+    snap = build_metric_input_snapshot(
+        evaluation_stage=stage, stage_profile_registry=SP_REG, run_manifest=local_rm,
+        axis_definitions=(axis,),
         axis_records=(met.AxisEvaluationRecord(record_id="r1", case_id=CID, axis_id="axis-1",
-            metric_scope="conditional", verification_status="verified", evidence_resolvability="resolvable",
-            predicted_values=("a",), gold_values=("a",)),),
+            metric_scope="conditional", verification_status="verified",
+            evidence_resolvability="resolvable", predicted_values=("a",), gold_values=("a",)),),
         assertion_bindings=(met.AssertionMetricBinding(case_id=CID, assertion_id="A1",
             assertion_kind="expected_entity", partition="dev", suites=("adversarial", "regression")),),
-        validator_rule_evaluations=ex, tier_contract_observations=tier, unsafe_exclusion_audit=aud,
-        screen_operational_summary=ops)
+        validator_rule_evaluations=ex, stage_evidence=ev)
     scfg = ScoringGateConfig(config_version=rm.scoring_gate_config_version,
         blocking_severities=("synth-critical",), protected_regression_classes=(),
         gates=(_s9gate(met.METRIC_TIER_CONTRACT, "overall"),
@@ -151,13 +248,14 @@ def build_report(root, rm, *, axis_min=0, unsafe_min=1, audited_missed=(False,),
                      _diag(met.METRIC_VALIDATOR_SUMMARIES, "overall"),
                      _diag(met.METRIC_SCREEN_OPERATIONAL, "overall"),
                      _diag(met.METRIC_AXIS_ABSTENTION, "axis-1")))
-    lc = LoadedScoringGateConfig(config=scfg, version=rm.scoring_gate_config_version,
-                                 sha256=rm.scoring_gate_config_hash, artifact_reference="x")
-    vfind = vf()
-    rep = met.compute_metric_report(snap, assertion_outcomes=(ao(),), validator_findings=(vfind,),
-                                    run_manifest=rm, case_set_manifest=CASE_SET, scoring_config=lc)
-    met.persist_metric_report(rep, eval_root=root, eval_run_id="run1")
-    return met.load_metric_report("run1", eval_root=root)
+    run_rm = _rm_from_snapshot(snap)
+    lc = LoadedScoringGateConfig(config=scfg, version=run_rm.scoring_gate_config_version,
+                                 sha256=run_rm.scoring_gate_config_hash, artifact_reference="x")
+    rep = met.compute_metric_report(snap, assertion_outcomes=(ao(),), validator_findings=(vf(),),
+                                    run_manifest=run_rm, case_set_manifest=CASE_SET, scoring_config=lc)
+    return met.LoadedMetricReport(
+        eval_run_id="run1", artifact_reference="run1/metrics/metric_report.json",
+        sha256=sha256_bytes(met._canonical_report_bytes(rep)), report=rep)
 
 
 def exec_gate(mid, sl, *, operator, value, sel, support, ci=None, confidence_level=None,
@@ -204,6 +302,13 @@ def assess(ctx, *, gates, findings=None, stage="task_extraction", report=None):
         findings=findings if findings is not None else loaded_findings(vf()))
 
 
+def screen_report(ctx, *, unsafe_min=1, audited_missed=(False,), pop=100):
+    """A screen-stage metric report (screen-operational + unsafe-exclusion families)."""
+    tmp_path, rm, _ = ctx
+    return build_report(tmp_path, rm, stage="universe_screen", unsafe_min=unsafe_min,
+                        audited_missed=audited_missed, pop=pop)
+
+
 # --- Completed status and verdict -----------------------------------------
 
 
@@ -235,33 +340,28 @@ def test_completed_fail_critical_finding(ctx):
     assert r.metrics["critical_finding_ids"] == ["f1"]
 
 
-def test_fail_outranks_indeterminate(tmp_path):
-    initialize_evaluation_run(eval_root=tmp_path, eval_run_id="run1", prediction_run_id="P",
-        prediction_run_manifest_hash="a" * 64, case_set=CASE_SET, registry=REGISTRY,
-        validator_bundle_version="vb", validator_bundle_hash="b" * 64, scoring_config=SCORING,
-        code_commit="c", config_snapshot_source_root=FX / "configs")
-    rm = load_evaluation_run_manifest("run1", eval_root=tmp_path).manifest
-    # unsafe with min_audited=5 but 1 audited -> indeterminate; axis LE 0.5 -> fail
-    report = build_report(tmp_path, rm, unsafe_min=5, audited_missed=(False,))
-    r = assess_completed_evaluation(stage="s", run_manifest=rm, case_set_manifest=CASE_SET,
+def test_fail_outranks_indeterminate(ctx):
+    tmp_path, rm, _ = ctx
+    # screen report: unsafe with min_audited=5 but 1 audited -> indeterminate gate;
+    # a critical finding forces fail -> fail outranks indeterminate.
+    report = build_report(tmp_path, rm, stage="universe_screen", unsafe_min=5,
+                          audited_missed=(False,))
+    r = assess_completed_evaluation(stage="universe_screen", run_manifest=rm,
+        case_set_manifest=CASE_SET,
         scoring_config=exec_config(rm, [
-            exec_gate(met.METRIC_AXIS_MULTI_LABEL, "axis-1", operator="less_than_or_equal",
-                      value=0.5, sel=AXIS_SEL, support={"minimum_verified_support": 0}),
             exec_gate(met.METRIC_UNSAFE_EXCLUSION, "overall", operator="less_than_or_equal",
                       value=0.99, sel=UNSAFE_SEL, support={"minimum_audited_per_stratum": 5},
                       confidence_level=0.95, ci="wilson_one_sided_stratified")]),
-        metric_report=report, findings=loaded_findings(vf()))
-    assert r.gate_verdict == "fail"  # one fail + one indeterminate -> fail
+        metric_report=report, findings=loaded_findings(vf(severity="critical")))
+    assert r.gate_verdict == "fail"  # critical fail + indeterminate gate -> fail
 
 
-def test_completed_indeterminate_low_support(tmp_path):
-    initialize_evaluation_run(eval_root=tmp_path, eval_run_id="run1", prediction_run_id="P",
-        prediction_run_manifest_hash="a" * 64, case_set=CASE_SET, registry=REGISTRY,
-        validator_bundle_version="vb", validator_bundle_hash="b" * 64, scoring_config=SCORING,
-        code_commit="c", config_snapshot_source_root=FX / "configs")
-    rm = load_evaluation_run_manifest("run1", eval_root=tmp_path).manifest
-    report = build_report(tmp_path, rm, unsafe_min=5, audited_missed=(False,))
-    r = assess_completed_evaluation(stage="s", run_manifest=rm, case_set_manifest=CASE_SET,
+def test_completed_indeterminate_low_support(ctx):
+    tmp_path, rm, _ = ctx
+    report = build_report(tmp_path, rm, stage="universe_screen", unsafe_min=5,
+                          audited_missed=(False,))
+    r = assess_completed_evaluation(stage="universe_screen", run_manifest=rm,
+        case_set_manifest=CASE_SET,
         scoring_config=exec_config(rm, [
             exec_gate(met.METRIC_UNSAFE_EXCLUSION, "overall", operator="less_than_or_equal",
                       value=0.99, sel=UNSAFE_SEL, support={"minimum_audited_per_stratum": 5},
@@ -376,8 +476,8 @@ def test_provisional_selection_rejected(ctx):
 
 def test_no_verification_dimension_selection(ctx):
     # unsafe upper-bound datum has no verification dimension -> selector omits it
-    r = assess(ctx, gates=[exec_gate(met.METRIC_UNSAFE_EXCLUSION, "overall",
-        operator="less_than_or_equal", value=0.99, sel=UNSAFE_SEL,
+    r = assess(ctx, report=screen_report(ctx), gates=[exec_gate(met.METRIC_UNSAFE_EXCLUSION,
+        "overall", operator="less_than_or_equal", value=0.99, sel=UNSAFE_SEL,
         support={"minimum_audited_per_stratum": 1}, confidence_level=0.95,
         ci="wilson_one_sided_stratified")])
     assert r.gate_verdict == "pass"
@@ -433,8 +533,8 @@ def test_ge_equality_passes(ctx):
 
 
 def test_unsafe_computed_pass_value_equals_ci_upper(ctx):
-    r = assess(ctx, gates=[exec_gate(met.METRIC_UNSAFE_EXCLUSION, "overall",
-        operator="less_than_or_equal", value=0.99, sel=UNSAFE_SEL,
+    r = assess(ctx, report=screen_report(ctx), gates=[exec_gate(met.METRIC_UNSAFE_EXCLUSION,
+        "overall", operator="less_than_or_equal", value=0.99, sel=UNSAFE_SEL,
         support={"minimum_audited_per_stratum": 1}, confidence_level=0.95,
         ci="wilson_one_sided_stratified")])
     o = r.metrics["gate_outcomes"][0]
@@ -442,8 +542,8 @@ def test_unsafe_computed_pass_value_equals_ci_upper(ctx):
 
 
 def test_unsafe_fail(ctx):
-    r = assess(ctx, gates=[exec_gate(met.METRIC_UNSAFE_EXCLUSION, "overall",
-        operator="less_than_or_equal", value=0.1, sel=UNSAFE_SEL,
+    r = assess(ctx, report=screen_report(ctx), gates=[exec_gate(met.METRIC_UNSAFE_EXCLUSION,
+        "overall", operator="less_than_or_equal", value=0.1, sel=UNSAFE_SEL,
         support={"minimum_audited_per_stratum": 1}, confidence_level=0.95,
         ci="wilson_one_sided_stratified")])
     assert r.gate_verdict == "fail"

@@ -52,19 +52,46 @@ from pydantic import (
 from .case_sets import case_set_snapshot_hash
 from .cases import InvalidEvaluationRootError
 from .contracts import canonical_contract_bytes, model_contract_hash
+# Re-homed member models, vocabularies, and reserved values are imported here
+# for backward-compatible re-export (``import X as X`` marks the intentional
+# re-export so linters do not treat unused-internally names as dead imports).
+from .metric_inputs import (
+    AssertionMetricBinding as AssertionMetricBinding,
+    AxisBaseMetricType as AxisBaseMetricType,
+    AxisDefinition as AxisDefinition,
+    AxisEvaluationRecord as AxisEvaluationRecord,
+    AxisMetricType as AxisMetricType,
+    AxisRole as AxisRole,
+    EvidenceResolvability as EvidenceResolvability,
+    MetricApplicabilityBinding as MetricApplicabilityBinding,
+    MetricInputSnapshot as MetricInputSnapshot,
+    MetricScope as MetricScope,
+    NOT_APPLICABLE as NOT_APPLICABLE,
+    NOT_CLASSIFIED_DUE_TO_SCREEN_EXCLUSION as NOT_CLASSIFIED_DUE_TO_SCREEN_EXCLUSION,
+    OTHER as OTHER,
+    UNKNOWN as UNKNOWN,
+    ValidatorRuleEvaluationRecord as ValidatorRuleEvaluationRecord,
+    metric_input_snapshot_hash as metric_input_snapshot_hash,
+)
 from .models import (
-    AssertionKind,
     AssertionOutcome,
     CaseMembership,
     CaseSetManifest,
     ContractMetadata,
     EvaluationRunManifest,
-    PartitionName,
-    SuiteName,
+    EvaluationRunManifestV2,
     ValidatorFinding,
 )
-from .runs import load_evaluation_run_manifest
+from .runs import load_evaluation_run_manifest_v2
 from .scoring_config import LoadedScoringGateConfig, ScoringGateConfig
+from .stage_evidence import (
+    GoldVerificationStatus as GoldVerificationStatus,
+    ScreenOperationalSummary as ScreenOperationalSummary,
+    TierContractObservation as TierContractObservation,
+    UnsafeAuditLabel as UnsafeAuditLabel,
+    UnsafeAuditStratum as UnsafeAuditStratum,
+    UnsafeExclusionAuditSnapshot as UnsafeExclusionAuditSnapshot,
+)
 from .validators import VALIDATOR_RULE_ORDER, ValidatorRuleId
 from ..universe.io_utils import sha256_bytes
 
@@ -77,27 +104,13 @@ _UNSAFE_CI_METHOD = "wilson_one_sided_stratified"
 
 # --- Governed vocabularies and constants ----------------------------------
 
-GoldVerificationStatus = Literal["provisional", "verified"]
-EvidenceResolvability = Literal["resolvable", "insufficient_evidence"]
-AxisRole = Literal["product", "capability", "task", "other"]
-AxisBaseMetricType = Literal[
-    "multi_label", "nominal_single_label", "ordinal_single_label", "structured_set"
-]
-AxisMetricType = Literal[
-    "multi_label",
-    "nominal_single_label",
-    "ordinal_single_label",
-    "structured_set",
-    "abstention_allowed",
-]
-MetricScope = Literal["conditional", "end_to_end"]
+# Governed metric-input vocabularies (GoldVerificationStatus, EvidenceResolvability,
+# AxisRole, AxisBaseMetricType, AxisMetricType, MetricScope) and the reserved axis
+# values (UNKNOWN, OTHER, NOT_APPLICABLE, NOT_CLASSIFIED_DUE_TO_SCREEN_EXCLUSION)
+# are owned by ``metric_inputs``/``stage_evidence`` (Slice 12I re-homing) and
+# imported above; ``metrics.py`` re-exports them for backward compatibility.
 MetricComputationStatus = Literal["computed", "indeterminate"]
 MetricConfigurationRole = Literal["gate_input", "diagnostic"]
-
-UNKNOWN = "UNKNOWN"
-OTHER = "OTHER"
-NOT_APPLICABLE = "NOT_APPLICABLE"
-NOT_CLASSIFIED_DUE_TO_SCREEN_EXCLUSION = "NOT_CLASSIFIED_DUE_TO_SCREEN_EXCLUSION"
 
 # Governed metric-family identifiers (config metric_id must match one of these
 # per (metric_id, population_slice_id) slice; the family selects the formula).
@@ -133,366 +146,6 @@ def _require_non_blank(value: str, field_name: str) -> str:
 def _require_unique(values: tuple[str, ...], field_name: str) -> None:
     if len(set(values)) != len(values):
         raise ValueError(f"{field_name} must not contain duplicate values")
-
-
-# --- Axis definitions -----------------------------------------------------
-
-
-class AxisDefinition(_Slice9StrictModel):
-    """One classification axis and the metric family it is scored with."""
-
-    axis_id: str
-    axis_role: AxisRole
-    metric_type: AxisMetricType
-    base_metric_type: AxisBaseMetricType | None = None
-    labels: tuple[str, ...]
-    ordinal_order: tuple[str, ...] = ()
-    ordinal_weighting: Literal["linear", "quadratic"] | None = None
-
-    @model_validator(mode="after")
-    def _axis_invariants(self) -> "AxisDefinition":
-        _require_non_blank(self.axis_id, "axis_id")
-        if not self.labels:
-            raise ValueError("axis must declare at least one label")
-        for label in self.labels:
-            _require_non_blank(label, "label")
-        _require_unique(self.labels, "labels")
-        for reserved in (UNKNOWN, NOT_CLASSIFIED_DUE_TO_SCREEN_EXCLUSION):
-            if reserved in self.labels:
-                raise ValueError(f"label {reserved!r} is reserved and may not appear in labels")
-        effective = self.metric_type
-        if self.metric_type == "abstention_allowed":
-            if self.base_metric_type is None:
-                raise ValueError("abstention_allowed axis requires a base_metric_type")
-            effective = self.base_metric_type
-        elif self.base_metric_type is not None:
-            raise ValueError("non-abstention metric types require base_metric_type to be None")
-        if effective == "ordinal_single_label":
-            if not self.ordinal_order:
-                raise ValueError("ordinal axis requires a non-empty ordinal_order")
-            for value in self.ordinal_order:
-                _require_non_blank(value, "ordinal_order value")
-            _require_unique(self.ordinal_order, "ordinal_order")
-            if set(self.ordinal_order) != set(self.labels):
-                raise ValueError("ordinal_order must have exact identity with the label set")
-            if self.ordinal_weighting is None:
-                raise ValueError("ordinal axis requires linear or quadratic ordinal_weighting")
-        else:
-            if self.ordinal_order:
-                raise ValueError("non-ordinal axis must not declare ordinal_order")
-            if self.ordinal_weighting is not None:
-                raise ValueError("non-ordinal axis must not declare ordinal_weighting")
-        return self
-
-    @property
-    def effective_metric_type(self) -> str:
-        if self.metric_type == "abstention_allowed":
-            assert self.base_metric_type is not None
-            return self.base_metric_type
-        return self.metric_type
-
-    @property
-    def abstention_allowed(self) -> bool:
-        return self.metric_type == "abstention_allowed"
-
-
-# --- Axis evaluation records ----------------------------------------------
-
-
-class AxisEvaluationRecord(_Slice9StrictModel):
-    """One predicted vs gold observation for one axis."""
-
-    record_id: str
-    case_id: str
-    axis_id: str
-    metric_scope: MetricScope
-    verification_status: GoldVerificationStatus
-    evidence_resolvability: EvidenceResolvability
-    predicted_values: tuple[str, ...]
-    gold_values: tuple[str, ...]
-
-    @model_validator(mode="after")
-    def _record_invariants(self) -> "AxisEvaluationRecord":
-        _require_non_blank(self.record_id, "record_id")
-        _require_non_blank(self.case_id, "case_id")
-        _require_non_blank(self.axis_id, "axis_id")
-        for value in self.predicted_values:
-            _require_non_blank(value, "predicted value")
-        for value in self.gold_values:
-            _require_non_blank(value, "gold value")
-        _require_unique(self.predicted_values, "predicted_values")
-        _require_unique(self.gold_values, "gold_values")
-        for forbidden in (UNKNOWN, NOT_CLASSIFIED_DUE_TO_SCREEN_EXCLUSION):
-            if forbidden in self.gold_values:
-                raise ValueError(f"gold_values must never contain {forbidden!r}")
-        if self.evidence_resolvability == "resolvable" and not self.gold_values:
-            raise ValueError("a resolvable record requires at least one gold value")
-        return self
-
-    @property
-    def is_unknown(self) -> bool:
-        return self.predicted_values == (UNKNOWN,)
-
-    @property
-    def is_screen_excluded(self) -> bool:
-        return self.predicted_values == (NOT_CLASSIFIED_DUE_TO_SCREEN_EXCLUSION,)
-
-
-# --- Assertion diagnostics binding ----------------------------------------
-
-
-class AssertionMetricBinding(_Slice9StrictModel):
-    """Binds one assertion outcome identity to its case grouping context."""
-
-    case_id: str
-    assertion_id: str
-    assertion_kind: AssertionKind
-    partition: PartitionName
-    suites: tuple[SuiteName, ...]
-
-    @model_validator(mode="after")
-    def _binding_invariants(self) -> "AssertionMetricBinding":
-        _require_non_blank(self.case_id, "case_id")
-        _require_non_blank(self.assertion_id, "assertion_id")
-        _require_unique(self.suites, "suites")
-        return self
-
-
-# --- Validator execution records ------------------------------------------
-
-
-class ValidatorRuleEvaluationRecord(_Slice9StrictModel):
-    """Per-artifact, per-rule evaluated/failed observation counts."""
-
-    artifact_id: str
-    rule_id: ValidatorRuleId
-    evaluated_observation_count: int
-    failed_observation_count: int
-
-    @model_validator(mode="after")
-    def _execution_invariants(self) -> "ValidatorRuleEvaluationRecord":
-        _require_non_blank(self.artifact_id, "artifact_id")
-        if self.evaluated_observation_count < 0 or self.failed_observation_count < 0:
-            raise ValueError("observation counts must be non-negative")
-        if self.failed_observation_count > self.evaluated_observation_count:
-            raise ValueError("failed observations cannot exceed evaluated observations")
-        return self
-
-
-# --- Tier-contract observations -------------------------------------------
-
-
-class TierContractObservation(_Slice9StrictModel):
-    """One deterministic tier-contract observation (expected vs observed)."""
-
-    record_id: str
-    verification_status: GoldVerificationStatus
-    tier_rule_version: str
-    expected_tier: str
-    observed_tier: str
-    expected_reason_codes: tuple[str, ...]
-    observed_reason_codes: tuple[str, ...]
-    expected_rule_trace_hash: str = Field(min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN)
-    observed_rule_trace_hash: str = Field(min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN)
-    repeatability_output_hashes: tuple[str, ...]
-
-    @model_validator(mode="after")
-    def _tier_invariants(self) -> "TierContractObservation":
-        _require_non_blank(self.record_id, "record_id")
-        _require_non_blank(self.tier_rule_version, "tier_rule_version")
-        _require_non_blank(self.expected_tier, "expected_tier")
-        _require_non_blank(self.observed_tier, "observed_tier")
-        for code in (*self.expected_reason_codes, *self.observed_reason_codes):
-            _require_non_blank(code, "reason code")
-        _require_unique(self.expected_reason_codes, "expected_reason_codes")
-        _require_unique(self.observed_reason_codes, "observed_reason_codes")
-        if len(self.repeatability_output_hashes) < 2:
-            raise ValueError("at least two repeatability output hashes are required")
-        for h in self.repeatability_output_hashes:
-            if len(h) != 64 or any(c not in "0123456789abcdef" for c in h):
-                raise ValueError("repeatability output hashes must be lowercase 64-hex")
-        return self
-
-    @property
-    def repeatability_ok(self) -> bool:
-        return len(set(self.repeatability_output_hashes)) == 1
-
-    @property
-    def exact_contract_ok(self) -> bool:
-        return (
-            self.expected_tier == self.observed_tier
-            and self.expected_reason_codes == self.observed_reason_codes
-            and self.expected_rule_trace_hash == self.observed_rule_trace_hash
-            and self.repeatability_ok
-        )
-
-
-# --- Unsafe-exclusion audit -----------------------------------------------
-
-
-class UnsafeAuditLabel(_Slice9StrictModel):
-    record_id: str
-    verification_status: Literal["verified"]
-    actually_eligible_or_boundary_relevant: bool
-
-    @model_validator(mode="after")
-    def _label_invariants(self) -> "UnsafeAuditLabel":
-        _require_non_blank(self.record_id, "record_id")
-        return self
-
-
-class UnsafeAuditStratum(_Slice9StrictModel):
-    stratum_id: str
-    screen_negative_population_count: int
-    audited_labels: tuple[UnsafeAuditLabel, ...]
-
-    @model_validator(mode="after")
-    def _stratum_invariants(self) -> "UnsafeAuditStratum":
-        _require_non_blank(self.stratum_id, "stratum_id")
-        if self.screen_negative_population_count <= 0:
-            raise ValueError("screen_negative_population_count must be positive")
-        if len(self.audited_labels) > self.screen_negative_population_count:
-            raise ValueError("audited count cannot exceed the stratum population")
-        return self
-
-
-class UnsafeExclusionAuditSnapshot(_Slice9StrictModel):
-    audit_snapshot_hash: str = Field(min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN)
-    seed: int
-    sampling_design_id: str
-    strata: tuple[UnsafeAuditStratum, ...]
-
-    @model_validator(mode="after")
-    def _audit_invariants(self) -> "UnsafeExclusionAuditSnapshot":
-        _require_non_blank(self.sampling_design_id, "sampling_design_id")
-        if not self.strata:
-            raise ValueError("audit snapshot requires at least one stratum")
-        stratum_ids = tuple(s.stratum_id for s in self.strata)
-        _require_unique(stratum_ids, "stratum_id")
-        record_ids: list[str] = []
-        for stratum in self.strata:
-            for label in stratum.audited_labels:
-                record_ids.append(label.record_id)
-        _require_unique(tuple(record_ids), "audit record_id")
-        return self
-
-
-# --- Operational screen summary -------------------------------------------
-
-
-class ScreenOperationalSummary(_Slice9StrictModel):
-    total_screened: int
-    screen_negative: int
-    screen_nonnegative: int
-    unresolved: int
-    downstream_review_count: int
-
-    @model_validator(mode="after")
-    def _operational_invariants(self) -> "ScreenOperationalSummary":
-        for name in (
-            "total_screened", "screen_negative", "screen_nonnegative",
-            "unresolved", "downstream_review_count",
-        ):
-            if getattr(self, name) < 0:
-                raise ValueError(f"{name} must be non-negative")
-        if self.screen_negative + self.screen_nonnegative + self.unresolved != self.total_screened:
-            raise ValueError(
-                "screen_negative + screen_nonnegative + unresolved must equal total_screened"
-            )
-        return self
-
-
-# --- Metric input snapshot ------------------------------------------------
-
-
-class MetricInputSnapshot(_Slice9StrictModel):
-    eval_run_id: str
-    case_set_version: str
-    case_set_hash: str = Field(min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN)
-    scoring_gate_config_version: str
-    scoring_gate_config_hash: str = Field(
-        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
-    )
-    axis_definitions: tuple[AxisDefinition, ...]
-    axis_records: tuple[AxisEvaluationRecord, ...]
-    assertion_bindings: tuple[AssertionMetricBinding, ...]
-    validator_rule_evaluations: tuple[ValidatorRuleEvaluationRecord, ...]
-    tier_contract_observations: tuple[TierContractObservation, ...]
-    unsafe_exclusion_audit: UnsafeExclusionAuditSnapshot
-    screen_operational_summary: ScreenOperationalSummary
-
-    @model_validator(mode="after")
-    def _snapshot_invariants(self) -> "MetricInputSnapshot":
-        _require_non_blank(self.eval_run_id, "eval_run_id")
-        _require_non_blank(self.case_set_version, "case_set_version")
-        _require_non_blank(self.scoring_gate_config_version, "scoring_gate_config_version")
-        axis_ids = tuple(a.axis_id for a in self.axis_definitions)
-        _require_unique(axis_ids, "axis_id")
-        known_axes = set(axis_ids)
-        rec_ids = tuple(r.record_id for r in self.axis_records)
-        _require_unique(rec_ids, "axis record_id")
-        by_axis = {a.axis_id: a for a in self.axis_definitions}
-        for record in self.axis_records:
-            if record.axis_id not in known_axes:
-                raise ValueError(f"axis record binds unknown axis {record.axis_id!r}")
-            _validate_record_against_axis(record, by_axis[record.axis_id])
-        binding_ids = tuple((b.case_id, b.assertion_id) for b in self.assertion_bindings)
-        if len(set(binding_ids)) != len(binding_ids):
-            raise ValueError("assertion bindings must have unique (case_id, assertion_id)")
-        exec_ids = tuple(
-            (e.artifact_id, e.rule_id) for e in self.validator_rule_evaluations
-        )
-        if len(set(exec_ids)) != len(exec_ids):
-            raise ValueError("validator executions must have unique (artifact_id, rule_id)")
-        tier_ids = tuple(t.record_id for t in self.tier_contract_observations)
-        _require_unique(tier_ids, "tier observation record_id")
-        return self
-
-
-def _validate_record_against_axis(record: AxisEvaluationRecord, axis: AxisDefinition) -> None:
-    label_set = set(axis.labels)
-    if OTHER in axis.labels:
-        label_set.add(OTHER)
-    if NOT_APPLICABLE in axis.labels:
-        label_set.add(NOT_APPLICABLE)
-    # Screen-exclusion sentinel handling.
-    if record.metric_scope == "conditional" and record.is_screen_excluded:
-        raise ValueError("conditional records reject the screen-exclusion sentinel")
-    if NOT_CLASSIFIED_DUE_TO_SCREEN_EXCLUSION in record.predicted_values:
-        if not record.is_screen_excluded:
-            raise ValueError(
-                "the screen-exclusion sentinel may only appear as the sole prediction"
-            )
-    # UNKNOWN handling.
-    if UNKNOWN in record.predicted_values:
-        if not record.is_unknown:
-            raise ValueError("UNKNOWN may only appear as the sole prediction")
-        if not axis.abstention_allowed:
-            raise ValueError(f"axis {axis.axis_id!r} does not permit UNKNOWN predictions")
-    effective = axis.effective_metric_type
-    special = {UNKNOWN, NOT_CLASSIFIED_DUE_TO_SCREEN_EXCLUSION}
-    is_single = effective in ("nominal_single_label", "ordinal_single_label")
-    if is_single and not (record.is_unknown or record.is_screen_excluded):
-        if len(record.predicted_values) != 1:
-            raise ValueError("single-label axis requires exactly one predicted value")
-    for value in record.predicted_values:
-        if value in special:
-            continue
-        if value not in label_set:
-            raise ValueError(f"predicted value {value!r} is outside the axis vocabulary")
-    for value in record.gold_values:
-        if value not in label_set:
-            raise ValueError(f"gold value {value!r} is outside the axis vocabulary")
-
-
-def metric_input_snapshot_hash(snapshot: MetricInputSnapshot) -> str:
-    """Deterministic SHA-256 over the snapshot's canonical JSON."""
-    if not isinstance(snapshot, MetricInputSnapshot):
-        raise TypeError(
-            f"metric_input_snapshot_hash requires a MetricInputSnapshot, "
-            f"got {type(snapshot).__name__}"
-        )
-    return sha256_bytes(canonical_contract_bytes(snapshot.model_dump(mode="json")))
 
 
 # --- Metric output models -------------------------------------------------
@@ -1440,10 +1093,9 @@ def _compute_validator_summaries(
 
 
 def _compute_tier_metrics(
-    snapshot: MetricInputSnapshot, config: ScoringGateConfig, out: list[MetricDatum]
+    obs: tuple[TierContractObservation, ...], config: ScoringGateConfig, out: list[MetricDatum]
 ) -> None:
     role, minimum = _resolve_slice_policy(config, METRIC_TIER_CONTRACT, "overall")
-    obs = snapshot.tier_contract_observations
     for view in ("verified", "provisional"):
         pop = tuple(o for o in obs if o.verification_status == view)
         n = len(pop)
@@ -1477,11 +1129,10 @@ def _compute_tier_metrics(
 
 
 def _compute_unsafe_exclusion(
-    snapshot: MetricInputSnapshot, config: ScoringGateConfig, out: list[MetricDatum]
+    audit: UnsafeExclusionAuditSnapshot, config: ScoringGateConfig, out: list[MetricDatum]
 ) -> None:
     minimum, level = _resolve_unsafe_policy(config, "overall")
     z = statistics.NormalDist().inv_cdf(level)
-    audit = snapshot.unsafe_exclusion_audit
     total_pop = sum(s.screen_negative_population_count for s in audit.strata)
     support = _support(sum(len(s.audited_labels) for s in audit.strata), 0, total_pop, minimum)
     any_insufficient = False
@@ -1566,10 +1217,9 @@ def _compute_unsafe_exclusion(
 
 
 def _compute_operational(
-    snapshot: MetricInputSnapshot, config: ScoringGateConfig, out: list[MetricDatum]
+    s: ScreenOperationalSummary, config: ScoringGateConfig, out: list[MetricDatum]
 ) -> None:
     role, minimum = _resolve_slice_policy(config, METRIC_SCREEN_OPERATIONAL, "overall")
-    s = snapshot.screen_operational_summary
     # Deterministic, fully-observed denominator: verified_support = total screened.
     support = _support(s.total_screened, 0, s.total_screened, minimum)
 
@@ -1605,12 +1255,48 @@ def _report_contract_metadata() -> dict[str, str]:
     }
 
 
+_AXIS_FAMILY_BY_TYPE = {
+    "multi_label": METRIC_AXIS_MULTI_LABEL,
+    "structured_set": METRIC_AXIS_STRUCTURED_SET,
+    "nominal_single_label": METRIC_AXIS_NOMINAL,
+    "ordinal_single_label": METRIC_AXIS_ORDINAL,
+}
+
+
+def _axis_metric_id(axis: AxisDefinition) -> str:
+    """The governed metric-family id an axis is scored under."""
+    return _AXIS_FAMILY_BY_TYPE[axis.effective_metric_type]
+
+
+def _extract_stage_evidence(
+    binding: MetricApplicabilityBinding,
+) -> tuple[
+    tuple[TierContractObservation, ...] | None,
+    UnsafeExclusionAuditSnapshot | None,
+    ScreenOperationalSummary | None,
+]:
+    """Extract the tier/unsafe/screen payloads from the embedded evidence set."""
+    tier_obs: tuple[TierContractObservation, ...] | None = None
+    unsafe_audit: UnsafeExclusionAuditSnapshot | None = None
+    screen_summary: ScreenOperationalSummary | None = None
+    evidence = binding.stage_metric_evidence_set
+    if evidence is not None:
+        for variant in evidence.variants:
+            if variant.kind == "universe_classification_tier":
+                tier_obs = variant.tier_contract_observations
+            elif variant.kind == "universe_unsafe_exclusion_audit":
+                unsafe_audit = variant.unsafe_exclusion_audit
+            elif variant.kind == "universe_screen_operational":
+                screen_summary = variant.screen_operational_summary
+    return tier_obs, unsafe_audit, screen_summary
+
+
 def compute_metric_report(
     snapshot: MetricInputSnapshot,
     *,
     assertion_outcomes: tuple[AssertionOutcome, ...],
     validator_findings: tuple[ValidatorFinding, ...],
-    run_manifest: EvaluationRunManifest,
+    run_manifest: EvaluationRunManifestV2,
     case_set_manifest: CaseSetManifest,
     scoring_config: LoadedScoringGateConfig,
 ) -> MetricReport:
@@ -1622,14 +1308,25 @@ def compute_metric_report(
     hash the run manifest itself records). Both are already in memory, so this
     function performs no filesystem access.
     """
-    for name, obj, typ in (
-        ("snapshot", snapshot, MetricInputSnapshot),
-        ("run_manifest", run_manifest, EvaluationRunManifest),
-        ("case_set_manifest", case_set_manifest, CaseSetManifest),
-        ("scoring_config", scoring_config, LoadedScoringGateConfig),
+    if not isinstance(snapshot, MetricInputSnapshot):
+        raise TypeError(f"snapshot must be a MetricInputSnapshot, got {type(snapshot).__name__}")
+    # The active metric path is evaluation_run_manifest v0.2; v0.1 is rejected as
+    # a binding error (its stage-evidence and applicability pins do not exist).
+    if isinstance(run_manifest, EvaluationRunManifest) and not isinstance(
+        run_manifest, EvaluationRunManifestV2
     ):
-        if not isinstance(obj, typ):
-            raise TypeError(f"{name} must be a {typ.__name__}, got {type(obj).__name__}")
+        raise SnapshotBindingError(
+            "compute_metric_report requires an evaluation_run_manifest v0.2",
+            binding_kind="run_manifest_version", eval_run_id=run_manifest.eval_run_id)
+    if not isinstance(run_manifest, EvaluationRunManifestV2):
+        raise TypeError(
+            f"run_manifest must be an EvaluationRunManifestV2, got {type(run_manifest).__name__}")
+    if not isinstance(case_set_manifest, CaseSetManifest):
+        raise TypeError(
+            f"case_set_manifest must be a CaseSetManifest, got {type(case_set_manifest).__name__}")
+    if not isinstance(scoring_config, LoadedScoringGateConfig):
+        raise TypeError(
+            f"scoring_config must be a LoadedScoringGateConfig, got {type(scoring_config).__name__}")
 
     m = run_manifest
     config = scoring_config.config
@@ -1666,6 +1363,32 @@ def compute_metric_report(
         raise SnapshotBindingError("scoring config artifact hash does not match the manifest",
                                    binding_kind="scoring_config_hash", eval_run_id=m.eval_run_id)
 
+    # Re-verify the snapshot's applicability binding against the v0.2 manifest
+    # pins (stage-profile registry identity, selected-entry identity, and the
+    # paired stage-evidence identity). The embedded evidence's own stage/version/
+    # content-hash/kinds were bound to these pins when the snapshot was built.
+    app_binding = snapshot.applicability_binding
+    if app_binding.stage_profile_registry_version != m.stage_profile_registry_version:
+        raise SnapshotBindingError(
+            "snapshot stage-profile registry version does not match the manifest",
+            binding_kind="stage_profile_registry_version", eval_run_id=m.eval_run_id)
+    if app_binding.stage_profile_registry_hash != m.stage_profile_registry_hash:
+        raise SnapshotBindingError(
+            "snapshot stage-profile registry hash does not match the manifest",
+            binding_kind="stage_profile_registry_hash", eval_run_id=m.eval_run_id)
+    if app_binding.selected_stage_profile_entry_hash != m.selected_stage_profile_entry_hash:
+        raise SnapshotBindingError(
+            "snapshot selected stage-profile entry hash does not match the manifest",
+            binding_kind="selected_stage_profile_entry_hash", eval_run_id=m.eval_run_id)
+    if app_binding.stage_metric_evidence_set_version != m.stage_metric_evidence_set_version:
+        raise SnapshotBindingError(
+            "snapshot stage-evidence version does not match the manifest",
+            binding_kind="stage_metric_evidence_set_version", eval_run_id=m.eval_run_id)
+    if app_binding.stage_metric_evidence_set_hash != m.stage_metric_evidence_set_hash:
+        raise SnapshotBindingError(
+            "snapshot stage-evidence hash does not match the manifest",
+            binding_kind="stage_metric_evidence_set_hash", eval_run_id=m.eval_run_id)
+
     # Run and case-set binding for every supplied record (§9).
     for outcome in assertion_outcomes:
         if outcome.eval_run_id != m.eval_run_id:
@@ -1698,21 +1421,36 @@ def compute_metric_report(
                 "authoritative case membership",
                 binding_kind="suites_mismatch", case_id=binding.case_id)
 
+    # Stage dispatch: compute only families the resolved stage profile marks
+    # applicable (ADR-024). Universe payloads are read only from the embedded
+    # stage-evidence set; extraction stages carry none.
+    applicable = set(app_binding.applicable_metric_families)
+    tier_obs, unsafe_audit, screen_summary = _extract_stage_evidence(app_binding)
+
     out: list[MetricDatum] = []
     by_axis: dict[str, list[AxisEvaluationRecord]] = {a.axis_id: [] for a in snapshot.axis_definitions}
     for record in snapshot.axis_records:
         by_axis[record.axis_id].append(record)
     for axis in snapshot.axis_definitions:
         records = tuple(by_axis[axis.axis_id])
-        _compute_axis_metrics(axis, records, config, out)
-        # Coverage and abstention-quality metrics are computed for every axis.
-        _compute_abstention_metrics(axis, records, config, out)
-    _compute_assertion_diagnostics(snapshot, assertion_outcomes, config, out)
-    _compute_validator_metrics(snapshot, validator_findings, config, out)
-    _compute_tier_metrics(snapshot, config, out)
-    _compute_unsafe_exclusion(snapshot, config, out)
-    _compute_operational(snapshot, config, out)
+        if _axis_metric_id(axis) in applicable:
+            _compute_axis_metrics(axis, records, config, out)
+        if METRIC_AXIS_ABSTENTION in applicable:
+            _compute_abstention_metrics(axis, records, config, out)
+    if METRIC_ASSERTION_OUTCOMES in applicable:
+        _compute_assertion_diagnostics(snapshot, assertion_outcomes, config, out)
+    if METRIC_VALIDATOR_RULES in applicable or METRIC_VALIDATOR_SUMMARIES in applicable:
+        _compute_validator_metrics(snapshot, validator_findings, config, out)
+    if METRIC_TIER_CONTRACT in applicable and tier_obs is not None:
+        _compute_tier_metrics(tier_obs, config, out)
+    if METRIC_UNSAFE_EXCLUSION in applicable and unsafe_audit is not None:
+        _compute_unsafe_exclusion(unsafe_audit, config, out)
+    if METRIC_SCREEN_OPERATIONAL in applicable and screen_summary is not None:
+        _compute_operational(screen_summary, config, out)
 
+    # Strict guarantee: no MetricDatum for an inapplicable metric family, whatever
+    # the per-family emitter granularity.
+    out = [d for d in out if d.metric_id in applicable]
     out.sort(key=_sort_key)
     return MetricReport.model_validate({
         "contract": _report_contract_metadata(),
@@ -1759,7 +1497,7 @@ def persist_metric_report(
     if not isinstance(report, MetricReport):
         raise TypeError(f"report must be a MetricReport, got {type(report).__name__}")
     resolved_root = _validate_root(eval_root)
-    loaded = load_evaluation_run_manifest(eval_run_id, eval_root=resolved_root)
+    loaded = load_evaluation_run_manifest_v2(eval_run_id, eval_root=resolved_root)
     m = loaded.manifest
     if report.eval_run_id != m.eval_run_id:
         raise MetricReportBindingError("report eval_run_id does not match the run manifest",
@@ -1853,7 +1591,7 @@ def _first_non_finite(payload: Any) -> str | None:
 def load_metric_report(eval_run_id: str, *, eval_root: str | Path) -> LoadedMetricReport:
     """Load a metric report from the fixed run-directory path."""
     resolved_root = _validate_root(eval_root)
-    loaded_run = load_evaluation_run_manifest(eval_run_id, eval_root=resolved_root)
+    loaded_run = load_evaluation_run_manifest_v2(eval_run_id, eval_root=resolved_root)
     m = loaded_run.manifest
     run_dir = resolved_root / eval_run_id
     metrics_dir = run_dir / _METRICS_DIR

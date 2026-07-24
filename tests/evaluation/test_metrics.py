@@ -38,7 +38,6 @@ from dynamic_ai_products.evaluation.metrics import (
     METRIC_UNSAFE_EXCLUSION,
     METRIC_VALIDATOR_RULES,
     METRIC_VALIDATOR_SUMMARIES,
-    MetricInputSnapshot,
     MetricReport,
     PersistedMetricReport,
     ScreenOperationalSummary,
@@ -69,12 +68,29 @@ from dynamic_ai_products.evaluation.metrics import (
     metric_input_snapshot_hash,
     persist_metric_report,
 )
-from dynamic_ai_products.evaluation.models import AssertionOutcome, ValidatorFinding
+from dynamic_ai_products.evaluation.metric_inputs import (
+    MetricInputSnapshotError,
+    build_metric_input_snapshot,
+)
+from dynamic_ai_products.evaluation.models import (
+    AssertionOutcome,
+    EvaluationRunManifestV2,
+    ValidatorFinding,
+)
 from dynamic_ai_products.evaluation.references import load_target_registry
 from dynamic_ai_products.evaluation.runs import (
     RunArtifactNotAFileError,
-    initialize_evaluation_run,
-    load_evaluation_run_manifest,
+    initialize_evaluation_run_v2,
+)
+from dynamic_ai_products.evaluation.stage_evidence import (
+    LoadedStageMetricEvidenceSet,
+    build_stage_metric_evidence_set,
+    stage_metric_evidence_set_hash,
+)
+from dynamic_ai_products.evaluation.stage_profiles import (
+    load_stage_profile_registry,
+    resolve_metric_applicability,
+    stage_profile_registry_hash,
 )
 from dynamic_ai_products.evaluation.scoring_config import (
     DiagnosticDefinition,
@@ -91,6 +107,11 @@ FX = ROOT / "evals" / "fixtures" / "evaluation_harness"
 CASE_SET = load_case_set_manifest("valid_base_case_set_manifest.json", eval_root=FX / "case_sets")
 REGISTRY = load_target_registry("valid_target_registry.json", eval_root=FX / "configs")
 SCORING_LOADED = load_scoring_gate_config("valid_scoring_gate_config.json", eval_root=FX / "configs")
+SP_REG = load_stage_profile_registry(
+    "stage_profiles/stage_profile_registry.json", eval_root=FX)
+SP_REG_HASH = stage_profile_registry_hash(SP_REG.registry)
+RM_V2_HASH = model_contract_hash(EvaluationRunManifestV2, "evaluation_run_manifest", "0.2.0")
+CREATED = "2026-07-24T00:00:00+00:00"
 HEX = "a" * 64
 AX = "axis-1"
 # The authoritative case-set fixture's first membership; records and bindings
@@ -159,13 +180,87 @@ def loaded(config, rm):
 
 
 def init_run(eval_root, run_id="run1"):
-    initialize_evaluation_run(
+    # A v0.2 extraction run (no stage evidence); used only for its case-set /
+    # scoring identity and to provide a persisted run directory.
+    return initialize_evaluation_run_v2(
         eval_root=eval_root, eval_run_id=run_id, prediction_run_id="P",
         prediction_run_manifest_hash="a" * 64, case_set=CASE_SET, registry=REGISTRY,
         validator_bundle_version="vb", validator_bundle_hash="b" * 64,
         scoring_config=SCORING_LOADED, code_commit="c", config_snapshot_source_root=FX / "configs",
-    )
-    return load_evaluation_run_manifest(run_id, eval_root=eval_root).manifest
+        evaluation_created_at=CREATED, evaluation_stage="capability_extraction",
+        stage_profile_registry=SP_REG,
+        semantic_adapter_registry_version="sa-v1", semantic_adapter_registry_hash=HEX,
+        selected_semantic_adapter_entry_hash=HEX,
+        source_passage_snapshot_version="sp-v1", source_passage_snapshot_hash=HEX,
+        gold_assertion_set_version="g-v1", gold_assertion_set_hash=HEX,
+        axis_taxonomy_version="ax-v1", axis_taxonomy_hash=HEX,
+        validator_rule_parameters_version="vp-v1", validator_rule_parameters_hash=HEX,
+    ).manifest
+
+
+def _v2_rm(*, eval_run_id, case_set_version, case_set_hash, scoring_version, scoring_hash,
+           stage, entry_hash, ev_ver=None, ev_hash=None):
+    """A minimal valid v0.2 manifest carrying the stage/applicability pins that
+    ``compute_metric_report`` checks; unchecked fields are placeholders."""
+    payload = {
+        "contract": {"contract_id": "evaluation_run_manifest", "contract_version": "0.2.0",
+                     "contract_hash": RM_V2_HASH},
+        "eval_run_id": eval_run_id, "prediction_run_id": "P",
+        "prediction_run_manifest_hash": HEX,
+        "case_set_version": case_set_version, "case_set_hash": case_set_hash,
+        "registry_snapshot_hash": HEX, "validator_bundle_version": "vb",
+        "validator_bundle_hash": "b" * 64,
+        "scoring_gate_config_version": scoring_version, "scoring_gate_config_hash": scoring_hash,
+        "code_commit": "c", "pydantic_runtime_version": "2", "evaluation_created_at": CREATED,
+        "stage_profile_registry_version": SP_REG.version,
+        "stage_profile_registry_hash": SP_REG_HASH,
+        "selected_stage_profile_entry_hash": entry_hash,
+        "semantic_adapter_registry_version": "sa-v1", "semantic_adapter_registry_hash": HEX,
+        "selected_semantic_adapter_entry_hash": HEX,
+        "source_passage_snapshot_version": "sp-v1", "source_passage_snapshot_hash": HEX,
+        "gold_assertion_set_version": "g-v1", "gold_assertion_set_hash": HEX,
+        "axis_taxonomy_version": "ax-v1", "axis_taxonomy_hash": HEX,
+        "validator_rule_parameters_version": "vp-v1", "validator_rule_parameters_hash": HEX,
+    }
+    if ev_ver is not None:
+        payload["stage_metric_evidence_set_version"] = ev_ver
+        payload["stage_metric_evidence_set_hash"] = ev_hash
+    return EvaluationRunManifestV2.model_validate(payload)
+
+
+def _build_evidence(stage, tiers, aud, ops):
+    entry = resolve_metric_applicability(SP_REG.registry, stage)
+    kinds = entry.required_stage_evidence_kinds
+    if not kinds:
+        return None
+    variants = []
+    if "universe_classification_tier" in kinds:
+        obs = tiers if tiers is not None else (tier_obs(),)
+        variants.append({"kind": "universe_classification_tier",
+                         "tier_contract_observations": [o.model_dump(mode="json") for o in obs]})
+    if "universe_screen_operational" in kinds:
+        s = ops if ops is not None else op_summary()
+        variants.append({"kind": "universe_screen_operational",
+                         "screen_operational_summary": s.model_dump(mode="json")})
+    if "universe_unsafe_exclusion_audit" in kinds:
+        a = aud if aud is not None else audit_snapshot()
+        variants.append({"kind": "universe_unsafe_exclusion_audit",
+                         "unsafe_exclusion_audit": a.model_dump(mode="json")})
+    variants.sort(key=lambda v: v["kind"])
+    evset = build_stage_metric_evidence_set(
+        evaluation_stage=stage, set_version="se-v1", variants=tuple(variants))
+    return LoadedStageMetricEvidenceSet(
+        model=evset, version="se-v1", sha256="d" * 64, artifact_reference="stage_evidence/e.json")
+
+
+def _rm_from_snapshot(snap):
+    b = snap.applicability_binding
+    return _v2_rm(
+        eval_run_id=snap.eval_run_id, case_set_version=snap.case_set_version,
+        case_set_hash=snap.case_set_hash, scoring_version=snap.scoring_gate_config_version,
+        scoring_hash=snap.scoring_gate_config_hash, stage=b.evaluation_stage,
+        entry_hash=b.selected_stage_profile_entry_hash,
+        ev_ver=b.stage_metric_evidence_set_version, ev_hash=b.stage_metric_evidence_set_hash)
 
 
 def ao(case_id=CID, assertion_id="A1", outcome="satisfied"):
@@ -236,12 +331,28 @@ def rec(rid, pred, gold, *, ver="verified", res="resolvable", scope="conditional
                                 predicted_values=pred, gold_values=gold)
 
 
-def make_snapshot(rm, *, axes=None, records=(), bindings=None, execs=None, tiers=None,
-                  aud=None, ops=None):
-    return MetricInputSnapshot(
-        eval_run_id="run1", case_set_version=rm.case_set_version, case_set_hash=rm.case_set_hash,
-        scoring_gate_config_version=rm.scoring_gate_config_version,
-        scoring_gate_config_hash=rm.scoring_gate_config_hash,
+def make_snapshot(rm, *, stage=None, axes=None, records=(), bindings=None,
+                  execs=None, tiers=None, aud=None, ops=None):
+    """Build a stamped, stage-aware ``metric_input_snapshot@0.1.0`` (v0.2 path).
+
+    When ``stage`` is unspecified it is inferred: supplying ``aud`` or ``ops``
+    selects ``universe_screen`` (screen-operational + unsafe-exclusion families);
+    otherwise ``universe_classification`` (axis + tier families).
+    """
+    if stage is None:
+        stage = "universe_screen" if (aud is not None or ops is not None) \
+            else "universe_classification"
+    entry = resolve_metric_applicability(SP_REG.registry, stage)
+    ev = _build_evidence(stage, tiers, aud, ops)
+    ev_ver = ev.model.set_version if ev is not None else None
+    ev_hash = stage_metric_evidence_set_hash(ev.model) if ev is not None else None
+    local_rm = _v2_rm(
+        eval_run_id=rm.eval_run_id, case_set_version=rm.case_set_version,
+        case_set_hash=rm.case_set_hash, scoring_version=rm.scoring_gate_config_version,
+        scoring_hash=rm.scoring_gate_config_hash, stage=stage, entry_hash=entry.entry_hash,
+        ev_ver=ev_ver, ev_hash=ev_hash)
+    return build_metric_input_snapshot(
+        evaluation_stage=stage, stage_profile_registry=SP_REG, run_manifest=local_rm,
         axis_definitions=axes if axes is not None else (make_axis(),),
         axis_records=tuple(records),
         assertion_bindings=bindings if bindings is not None else (
@@ -250,9 +361,7 @@ def make_snapshot(rm, *, axes=None, records=(), bindings=None, execs=None, tiers
         validator_rule_evaluations=execs if execs is not None else (
             ValidatorRuleEvaluationRecord(artifact_id="art1", rule_id="source_id_resolution",
                                           evaluated_observation_count=5, failed_observation_count=1),),
-        tier_contract_observations=tiers if tiers is not None else (tier_obs(),),
-        unsafe_exclusion_audit=aud if aud is not None else audit_snapshot(),
-        screen_operational_summary=ops if ops is not None else op_summary(),
+        stage_evidence=ev,
     )
 
 
@@ -266,12 +375,13 @@ def ctx(tmp_path):
 def compute(ctx, *, snapshot=None, outcomes=None, findings=None, config=None):
     tmp_path, rm, cfg = ctx
     snap = snapshot if snapshot is not None else make_snapshot(rm)
+    run_rm = _rm_from_snapshot(snap)
     return compute_metric_report(
         snap,
         assertion_outcomes=outcomes if outcomes is not None else (ao(),),
         validator_findings=findings if findings is not None else (vf(),),
-        run_manifest=rm, case_set_manifest=CASE_SET,
-        scoring_config=loaded(config if config is not None else cfg, rm),
+        run_manifest=run_rm, case_set_manifest=CASE_SET,
+        scoring_config=loaded(config if config is not None else cfg, run_rm),
     )
 
 
@@ -346,14 +456,14 @@ def test_non_ordinal_rejects_ordinal_fields():
 def test_record_single_label_cardinality(ctx):
     _, rm, _ = ctx
     axis = make_axis(metric_type="nominal_single_label", base=None, labels=("a", "b"), role="other")
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, MetricInputSnapshotError)):
         make_snapshot(rm, axes=(axis,), records=(rec("r", ("a", "b"), ("a",)),))
 
 
 def test_record_unknown_rejected_on_non_abstention(ctx):
     _, rm, _ = ctx
     axis = make_axis(metric_type="multi_label", base=None, labels=("a", "b"))
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, MetricInputSnapshotError)):
         make_snapshot(rm, axes=(axis,), records=(rec("r", (UNKNOWN,), ("a",)),))
 
 
@@ -373,20 +483,20 @@ def test_resolvable_requires_gold(ctx):
 
 def test_conditional_rejects_screen_sentinel(ctx):
     _, rm, _ = ctx
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, MetricInputSnapshotError)):
         make_snapshot(rm, records=(rec("r", (NOT_CLASSIFIED_DUE_TO_SCREEN_EXCLUSION,), ("a",),
                                         scope="conditional"),))
 
 
 def test_duplicate_record_id_rejected(ctx):
     _, rm, _ = ctx
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, MetricInputSnapshotError)):
         make_snapshot(rm, records=(rec("r", ("a",), ("a",)), rec("r", ("b",), ("b",))))
 
 
 def test_value_outside_vocabulary_rejected(ctx):
     _, rm, _ = ctx
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, MetricInputSnapshotError)):
         make_snapshot(rm, records=(rec("r", ("z",), ("a",)),))
 
 
@@ -809,14 +919,14 @@ def test_unsafe_missing_ci_policy_rejected(ctx):
         "gates": tuple(g for g in config.gates if g.metric_id != METRIC_UNSAFE_EXCLUSION)
     })
     with pytest.raises(UnsafeAuditPolicyError):
-        compute(ctx, config=config)
+        compute(ctx, snapshot=make_snapshot(rm, stage="universe_screen"), config=config)
 
 
 def test_unsafe_bad_confidence_level_rejected(ctx):
     _, rm, _ = ctx
     config = build_config(rm.scoring_gate_config_version, confidence=0.4)
     with pytest.raises(UnsafeAuditPolicyError):
-        compute(ctx, config=config)
+        compute(ctx, snapshot=make_snapshot(rm, stage="universe_screen"), config=config)
 
 
 def test_unsafe_audit_labels_must_be_verified():
@@ -840,7 +950,7 @@ def test_unsafe_audited_cannot_exceed_population():
 
 def test_operational_diagnostics(ctx):
     _, rm, _ = ctx
-    rep = compute(ctx)
+    rep = compute(ctx, snapshot=make_snapshot(rm, stage="universe_screen"))
     pt = one(rep, METRIC_SCREEN_OPERATIONAL, measure="pass_through_rate")
     assert pt.value == 0.5  # 5 / 10
     ur = one(rep, METRIC_SCREEN_OPERATIONAL, measure="unresolved_share")
@@ -851,6 +961,37 @@ def test_operational_count_conservation_enforced():
     with pytest.raises(ValueError):
         ScreenOperationalSummary(total_screened=10, screen_negative=4, screen_nonnegative=4,
                                  unresolved=1, downstream_review_count=0)
+
+
+# --- Stage-aware family dispatch (Slice 12I) ------------------------------
+
+
+def test_dispatch_extraction_only_axis_assertion_validator(ctx):
+    _, rm, _ = ctx
+    rep = compute(ctx, snapshot=make_snapshot(rm, stage="capability_extraction"))
+    fams = {d.metric_id for d in rep.metrics}
+    assert METRIC_TIER_CONTRACT not in fams
+    assert METRIC_UNSAFE_EXCLUSION not in fams
+    assert METRIC_SCREEN_OPERATIONAL not in fams
+    assert METRIC_AXIS_MULTI_LABEL in fams  # axis applicable
+    assert METRIC_ASSERTION_OUTCOMES in fams and METRIC_VALIDATOR_RULES in fams
+
+
+def test_dispatch_classification_adds_tier(ctx):
+    _, rm, _ = ctx
+    rep = compute(ctx, snapshot=make_snapshot(rm, stage="universe_classification"))
+    fams = {d.metric_id for d in rep.metrics}
+    assert METRIC_TIER_CONTRACT in fams and METRIC_AXIS_MULTI_LABEL in fams
+    assert METRIC_UNSAFE_EXCLUSION not in fams and METRIC_SCREEN_OPERATIONAL not in fams
+
+
+def test_dispatch_screen_has_screen_and_unsafe_no_axis(ctx):
+    _, rm, _ = ctx
+    rep = compute(ctx, snapshot=make_snapshot(rm, stage="universe_screen"))
+    fams = {d.metric_id for d in rep.metrics}
+    assert METRIC_SCREEN_OPERATIONAL in fams and METRIC_UNSAFE_EXCLUSION in fams
+    assert METRIC_TIER_CONTRACT not in fams
+    assert not any(f.startswith("axis_") for f in fams)
 
 
 # --- Snapshot hash and binding --------------------------------------------
@@ -1247,7 +1388,7 @@ def test_low_support_assertion_proportion(ctx):
 def test_low_support_operational_rate(ctx):
     _, rm, _ = ctx
     config = build_config(rm.scoring_gate_config_version, operational_minimum=100)
-    rep = compute(ctx, config=config)
+    rep = compute(ctx, snapshot=make_snapshot(rm, stage="universe_screen"), config=config)
     pt = one(rep, METRIC_SCREEN_OPERATIONAL, measure="pass_through_rate")
     assert pt.status == "indeterminate" and pt.reason_code == "insufficient_evaluation_evidence"
 
@@ -1493,8 +1634,9 @@ def test_scoring_config_artifact_reference_harmless(ctx):
     unusual = LoadedScoringGateConfig(
         config=cfg, version=rm.scoring_gate_config_version, sha256=rm.scoring_gate_config_hash,
         artifact_reference="../unusual/but harmless reference #!.json")
-    weird = compute_metric_report(make_snapshot(rm), assertion_outcomes=(ao(),),
-                                  validator_findings=(vf(),), run_manifest=rm,
+    snap = make_snapshot(rm)
+    weird = compute_metric_report(snap, assertion_outcomes=(ao(),),
+                                  validator_findings=(vf(),), run_manifest=_rm_from_snapshot(snap),
                                   case_set_manifest=CASE_SET, scoring_config=unusual)
     # The artifact_reference does not participate in computation: identical report.
     assert weird.model_dump() == ordinary.model_dump()

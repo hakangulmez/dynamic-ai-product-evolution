@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **356**
+Total tracked/scaffold files listed: **361**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -137,6 +137,7 @@ Total tracked/scaffold files listed: **356**
 - `evals/fixtures/evaluation_harness/source_snapshots/source_documents.jsonl`
 - `evals/fixtures/evaluation_harness/source_snapshots/source_passage_snapshot_manifest.json`
 - `evals/fixtures/evaluation_harness/source_snapshots/source_passages.jsonl`
+- `evals/fixtures/evaluation_harness/stage_evidence/universe_stage_metric_evidence_set.json`
 - `evals/fixtures/evaluation_harness/stage_profiles/stage_profile_registry.json`
 - `evals/fixtures/evaluation_harness/taxonomy/axis_taxonomy.json`
 - `evals/fixtures/evaluation_harness/validation/validation_artifact_snapshot_set.json`
@@ -283,6 +284,7 @@ Total tracked/scaffold files listed: **356**
 - `src/dynamic_ai_products/evaluation/envelopes.py`
 - `src/dynamic_ai_products/evaluation/gates.py`
 - `src/dynamic_ai_products/evaluation/gold.py`
+- `src/dynamic_ai_products/evaluation/metric_inputs.py`
 - `src/dynamic_ai_products/evaluation/metrics.py`
 - `src/dynamic_ai_products/evaluation/models.py`
 - `src/dynamic_ai_products/evaluation/prediction_content.py`
@@ -293,6 +295,7 @@ Total tracked/scaffold files listed: **356**
 - `src/dynamic_ai_products/evaluation/semantic_adapters.py`
 - `src/dynamic_ai_products/evaluation/semantic_assertions.py`
 - `src/dynamic_ai_products/evaluation/source_snapshot.py`
+- `src/dynamic_ai_products/evaluation/stage_evidence.py`
 - `src/dynamic_ai_products/evaluation/stage_profiles.py`
 - `src/dynamic_ai_products/evaluation/taxonomy.py`
 - `src/dynamic_ai_products/evaluation/validation_snapshot.py`
@@ -328,6 +331,7 @@ Total tracked/scaffold files listed: **356**
 - `tests/evaluation/test_envelopes.py`
 - `tests/evaluation/test_gates.py`
 - `tests/evaluation/test_gold.py`
+- `tests/evaluation/test_metric_inputs.py`
 - `tests/evaluation/test_metrics.py`
 - `tests/evaluation/test_models.py`
 - `tests/evaluation/test_prediction_content.py`
@@ -339,6 +343,7 @@ Total tracked/scaffold files listed: **356**
 - `tests/evaluation/test_semantic_adapters.py`
 - `tests/evaluation/test_semantic_assertions.py`
 - `tests/evaluation/test_source_snapshot.py`
+- `tests/evaluation/test_stage_evidence.py`
 - `tests/evaluation/test_stage_profiles.py`
 - `tests/evaluation/test_taxonomy.py`
 - `tests/evaluation/test_validation_snapshot.py`
