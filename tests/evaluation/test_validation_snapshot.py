@@ -424,7 +424,8 @@ def test_target_registry_byte_identity():
 
 
 def test_package_export_parity():
-    assert len(evaluation_pkg.__all__) == 502
+    # Durable: sorted + unique + every validation_snapshot export present (no
+    # frozen package-wide count that later slices would have to churn).
     assert evaluation_pkg.__all__ == sorted(evaluation_pkg.__all__)
     assert len(set(evaluation_pkg.__all__)) == len(evaluation_pkg.__all__)
     for name in vs_mod.__all__:
@@ -434,9 +435,11 @@ def test_package_export_parity():
 def test_manifest_parity():
     import re
     lines = (ROOT / "REPO_MANIFEST.md").read_text().splitlines()
+    declared = int(re.search(r"listed:\s*\*\*(\d+)\*\*", "\n".join(lines)).group(1))
     paths = [re.match(r"- `([^`]+)`", ln).group(1) for ln in lines if re.match(r"- `[^`]+`\s*$", ln)]
-    assert len(paths) == 354
+    # Durable: the declared total equals the actual unique listed-path count.
     assert len(set(paths)) == len(paths)
+    assert declared == len(paths)
     section = [p for p in paths if p.startswith(("evals/fixtures/evaluation_harness/",
                                                  "src/dynamic_ai_products/evaluation/",
                                                  "tests/evaluation/"))]

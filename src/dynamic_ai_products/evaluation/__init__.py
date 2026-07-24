@@ -575,6 +575,11 @@ from .validation_snapshot import (
     persist_validation_artifact_snapshot_set,
     validation_artifact_snapshot_set_hash,
 )
+from .semantic_assertions import (
+    SemanticAssertionEvaluationError,
+    SemanticAssertionEvaluationResult,
+    build_resolved_assertion_evaluations,
+)
 __all__ = [
     "ActiveRecordNonRoadmapEvidenceObservation",
     "AppendedFindingDispositions",
@@ -917,6 +922,8 @@ __all__ = [
     "ScreenOperationalSummary",
     "SemanticAdapterError",
     "SemanticAdapterRegistryEntry",
+    "SemanticAssertionEvaluationError",
+    "SemanticAssertionEvaluationResult",
     "SnapshotBindingError",
     "SnapshotHashMismatchError",
     "SnapshotReadError",
@@ -1002,6 +1009,7 @@ __all__ = [
     "build_errored_evaluation",
     "build_invalid_comparison",
     "build_invalid_evaluation",
+    "build_resolved_assertion_evaluations",
     "build_validation_artifact_snapshot",
     "build_validation_artifact_snapshot_set",
     "build_validator_bundle_artifact",
