@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import math
 import os
+from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -51,6 +52,7 @@ from .models import (
     FindingSeverity,
     ValidatorFinding,
 )
+from .prediction_content import EvaluationStage, LoadedParsedPredictionContent
 from .runs import load_evaluation_run_manifest
 from ..universe.io_utils import sha256_bytes
 
@@ -271,11 +273,61 @@ class CustomerTaskOutcomeAndEvidenceObservation(_ObservationBase):
     evidence_ids: tuple[str, ...]
 
 
+def _is_lower_sha256_hex(value: str) -> bool:
+    return len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+
+def _is_safe_reference(value: object) -> bool:
+    """Local mirror of the governed safe-relative-reference policy.
+
+    Mirrors ``prediction_content``'s parsed-content reference policy without
+    importing or re-exporting a private parser helper: a reference must be a
+    non-blank, edge-whitespace-free, relative POSIX path with no backslash, NUL,
+    empty, ``.`` or ``..`` segment.
+    """
+    if not isinstance(value, str) or not value or value != value.strip():
+        return False
+    if "\\" in value or "\x00" in value:
+        return False
+    if Path(value).is_absolute():
+        return False
+    return all(part not in ("", ".", "..") for part in value.split("/"))
+
+
 class RawOutputAndRepairPreservationObservation(_ObservationBase):
     rule_id: Literal["raw_output_and_repair_preservation"]
     raw_output_reference: str | None = None
+    raw_artifact_sha256: str | None = None
+    raw_output_preserved: bool
     repair_applied: bool
     repair_record_references: tuple[str, ...]
+    repair_record_hashes: tuple[str, ...] = ()
+    parsed_content_sha256: str | None = None
+
+    @model_validator(mode="after")
+    def _hash_provenance(self) -> "RawOutputAndRepairPreservationObservation":
+        if self.raw_artifact_sha256 is not None and not _is_lower_sha256_hex(
+            self.raw_artifact_sha256
+        ):
+            raise ValueError("raw_artifact_sha256 must be a lowercase 64-hex SHA-256")
+        for digest in self.repair_record_hashes:
+            if not isinstance(digest, str) or not _is_lower_sha256_hex(digest):
+                raise ValueError("repair_record_hashes entries must be lowercase 64-hex SHA-256")
+        # Provenance references must satisfy the governed safe-relative policy
+        # (valid hashes alone are not sufficient) and repair references must be
+        # deterministic and unique.
+        if self.raw_output_reference is not None and not _is_safe_reference(
+            self.raw_output_reference
+        ):
+            raise ValueError("raw_output_reference must be a safe relative reference")
+        for reference in self.repair_record_references:
+            if not _is_safe_reference(reference):
+                raise ValueError(
+                    "repair_record_references entries must be non-blank safe relative references"
+                )
+        if len(set(self.repair_record_references)) != len(self.repair_record_references):
+            raise ValueError("repair_record_references must be unique")
+        return self
 
 
 ValidatorObservation = Annotated[
@@ -295,15 +347,137 @@ ValidatorObservation = Annotated[
 ]
 
 
+# --- Coverage records (Slice 12F) -----------------------------------------
+
+ValidatorRuleCoverageState = Literal[
+    "fully_evaluated",
+    "partially_evaluated",
+    "inapplicable",
+    "blocked_by_dependency",
+]
+
+_RULE_12 = "raw_output_and_repair_preservation"
+
+# Governed matrix reduction (SPEC-023 / ADR-024): the only rules that may be
+# inapplicable, and only at the two universe stages. Extraction stages have no
+# inapplicable rule. This is the direct-construction gate; evaluate additionally
+# binds each coverage record to the loaded parameters' exact stage entry.
+_STAGE_OPTIONAL_INAPPLICABLE: dict[str, frozenset[str]] = {
+    "universe_screen": frozenset(
+        {
+            "product_capability_task_parent_resolution",
+            "active_record_non_roadmap_evidence",
+            "customer_task_outcome_and_evidence",
+        }
+    ),
+    "universe_classification": frozenset(
+        {
+            "product_capability_task_parent_resolution",
+            "active_record_non_roadmap_evidence",
+            "customer_task_outcome_and_evidence",
+        }
+    ),
+}
+
+
+class ValidatorRuleCoverageReasonCount(_Slice8StrictModel):
+    reason_code: str
+    count: int
+
+    @model_validator(mode="after")
+    def _reason_invariants(self) -> "ValidatorRuleCoverageReasonCount":
+        _require_non_blank(self.reason_code, "reason_code")
+        if self.count < 1:
+            raise ValueError("reason count must be a positive integer")
+        return self
+
+
+class ValidatorRuleCoverage(_Slice8StrictModel):
+    rule_id: ValidatorRuleId
+    coverage_state: ValidatorRuleCoverageState
+    candidate_count: int
+    evaluated_observation_count: int
+    blocked_candidate_count: int
+    reason_counts: tuple[ValidatorRuleCoverageReasonCount, ...] = ()
+
+    @model_validator(mode="after")
+    def _coverage_invariants(self) -> "ValidatorRuleCoverage":
+        for name in (
+            "candidate_count",
+            "evaluated_observation_count",
+            "blocked_candidate_count",
+        ):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be non-negative")
+        if (
+            self.evaluated_observation_count + self.blocked_candidate_count
+            > self.candidate_count
+        ):
+            raise ValueError("evaluated + blocked must not exceed candidate_count")
+        codes = [rc.reason_code for rc in self.reason_counts]
+        if codes != sorted(codes):
+            raise ValueError("reason_counts must be in ascending reason_code order")
+        if len(set(codes)) != len(codes):
+            raise ValueError("reason_counts must have unique reason_code")
+        total = sum(rc.count for rc in self.reason_counts)
+        state = self.coverage_state
+        if state == "fully_evaluated":
+            if not (
+                self.candidate_count >= 1
+                and self.evaluated_observation_count == self.candidate_count
+                and self.blocked_candidate_count == 0
+                and not self.reason_counts
+            ):
+                raise ValueError(
+                    "fully_evaluated requires evaluated==candidate>=1, blocked==0, no reasons"
+                )
+        elif state == "partially_evaluated":
+            if not (
+                0 < self.evaluated_observation_count < self.candidate_count
+                and self.blocked_candidate_count >= 1
+                and self.evaluated_observation_count + self.blocked_candidate_count
+                == self.candidate_count
+                and self.reason_counts
+                and total == self.blocked_candidate_count
+            ):
+                raise ValueError("partially_evaluated coverage invariants violated")
+        elif state == "blocked_by_dependency":
+            if not (
+                self.candidate_count >= 1
+                and self.evaluated_observation_count == 0
+                and self.blocked_candidate_count == self.candidate_count
+                and self.reason_counts
+                and total == self.blocked_candidate_count
+            ):
+                raise ValueError("blocked_by_dependency coverage invariants violated")
+        else:  # inapplicable
+            if not (
+                self.candidate_count == 0
+                and self.evaluated_observation_count == 0
+                and self.blocked_candidate_count == 0
+                and len(self.reason_counts) == 1
+                and self.reason_counts[0].count == 1
+            ):
+                raise ValueError(
+                    "inapplicable requires zero counts and exactly one reason with count 1"
+                )
+        return self
+
+
 class ValidationArtifactSnapshot(_Slice8StrictModel):
     """Caller-supplied normalized primitives for one artifact under validation."""
 
     eval_run_id: str
     artifact_id: str
+    stage: EvaluationStage
     artifact_sha256: str = Field(min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN)
+    parsed_prediction_content_sha256: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
     created_at: str
     case_id: str | None = None
     observations: tuple[ValidatorObservation, ...]
+    coverage: tuple[ValidatorRuleCoverage, ...]
 
     @model_validator(mode="after")
     def _snapshot_invariants(self) -> "ValidationArtifactSnapshot":
@@ -312,6 +486,15 @@ class ValidationArtifactSnapshot(_Slice8StrictModel):
         _require_rfc3339(self.created_at, "created_at")
         if self.case_id is not None:
             _require_non_blank(self.case_id, "case_id")
+        allowed_inapplicable = _STAGE_OPTIONAL_INAPPLICABLE.get(self.stage, frozenset())
+        for record in self.coverage:
+            if (
+                record.coverage_state == "inapplicable"
+                and record.rule_id not in allowed_inapplicable
+            ):
+                raise ValueError(
+                    f"rule {record.rule_id!r} may not be inapplicable at stage {self.stage!r}"
+                )
         seen: set[str] = set()
         for observation in self.observations:
             if observation.observation_id in seen:
@@ -319,11 +502,36 @@ class ValidationArtifactSnapshot(_Slice8StrictModel):
                     f"duplicate observation_id {observation.observation_id!r} in snapshot"
                 )
             seen.add(observation.observation_id)
-        covered = {observation.rule_id for observation in self.observations}
-        missing = [rule for rule in VALIDATOR_RULE_ORDER if rule not in covered]
-        if missing:
+        coverage_rules = tuple(record.rule_id for record in self.coverage)
+        if coverage_rules != VALIDATOR_RULE_ORDER:
             raise ValueError(
-                f"snapshot is missing observations for rule(s): {', '.join(missing)}"
+                "coverage must carry exactly the twelve rules in canonical order"
+            )
+        obs_by_rule = Counter(observation.rule_id for observation in self.observations)
+        for record in self.coverage:
+            if obs_by_rule.get(record.rule_id, 0) != record.evaluated_observation_count:
+                raise ValueError(
+                    f"observation count for {record.rule_id!r} does not equal "
+                    "evaluated_observation_count"
+                )
+        rule12 = next(r for r in self.coverage if r.rule_id == _RULE_12)
+        if not (
+            rule12.coverage_state == "fully_evaluated"
+            and rule12.candidate_count == 1
+            and rule12.evaluated_observation_count == 1
+            and rule12.blocked_candidate_count == 0
+            and not rule12.reason_counts
+        ):
+            raise ValueError(
+                "Rule 12 coverage must be fully_evaluated with counts 1/1/0 and no reasons"
+            )
+        rule12_obs = [o for o in self.observations if o.rule_id == _RULE_12]
+        if len(rule12_obs) != 1:
+            raise ValueError("snapshot must carry exactly one Rule 12 observation")
+        if rule12_obs[0].parsed_content_sha256 != self.parsed_prediction_content_sha256:
+            raise ValueError(
+                "Rule 12 observation parsed_content_sha256 must equal the snapshot's "
+                "parsed_prediction_content_sha256"
             )
         return self
 
@@ -738,18 +946,34 @@ def _handle_raw_output_and_repair_preservation(
 ) -> _RuleOutcome:
     reference = observation.raw_output_reference
     raw_present = reference is not None and reference.strip() != ""
+    sha = observation.raw_artifact_sha256
+    sha_present = sha is not None and sha.strip() != ""
     # A blank repair-record reference does not count as a preserved repair record.
     nonblank_repairs = tuple(r for r in observation.repair_record_references if r.strip() != "")
-    repair_ok = (not observation.repair_applied) or bool(nonblank_repairs)
-    if raw_present and repair_ok:
+    # Repair reference/hash provenance must pair exactly when a repair was applied.
+    if observation.repair_applied:
+        repair_ok = (
+            len(observation.repair_record_references) == len(observation.repair_record_hashes)
+            and len(nonblank_repairs) == len(observation.repair_record_references)
+            and len(nonblank_repairs) >= 1
+        )
+    else:
+        repair_ok = (
+            not observation.repair_record_references and not observation.repair_record_hashes
+        )
+    if raw_present and sha_present and observation.raw_output_preserved and repair_ok:
         return None
     return (
         f"raw_output_reference_present={raw_present};"
+        f"raw_artifact_sha256_present={sha_present};"
+        f"raw_output_preserved={observation.raw_output_preserved};"
         f"repair_applied={observation.repair_applied};"
         f"{_count_phrase('repair_record_count', len(observation.repair_record_references))};"
+        f"{_count_phrase('repair_record_hash_count', len(observation.repair_record_hashes))};"
         f"{_count_phrase('nonblank_repair_record_count', len(nonblank_repairs))}",
-        "raw model output must be preserved and any repair must have a non-blank repair record",
-        "raw output reference or required repair record is missing",
+        "raw model output must be preserved with its hash and any repair must carry paired "
+        "non-blank reference and hash records",
+        "raw output reference/hash or required repair reference/hash provenance is missing",
         f"repair_record_references={','.join(sorted(nonblank_repairs))}",
     )
 
@@ -831,32 +1055,222 @@ def _finding_contract_metadata() -> dict[str, str]:
 # --- Pure evaluation ------------------------------------------------------
 
 
+def _build_rule12_validation_observation(
+    loaded: LoadedParsedPredictionContent,
+) -> tuple[RawOutputAndRepairPreservationObservation, ValidatorRuleCoverage]:
+    """Derive the single Rule 12 observation and its coverage from parsed content.
+
+    Module-private: the sanctioned public entry point is
+    ``build_validation_artifact_snapshot``. Both the observation's
+    ``parsed_content_sha256`` and the snapshot's
+    ``parsed_prediction_content_sha256`` are derived from the same
+    ``LoadedParsedPredictionContent.sha256``.
+    """
+    if not isinstance(loaded, LoadedParsedPredictionContent):
+        raise TypeError(
+            f"loaded must be a LoadedParsedPredictionContent, got {type(loaded).__name__}"
+        )
+    content = loaded.content
+    observation = RawOutputAndRepairPreservationObservation(
+        observation_id=f"rule12:{content.prediction_record_id}",
+        rule_id="raw_output_and_repair_preservation",
+        raw_output_reference=content.raw_artifact_reference,
+        raw_artifact_sha256=content.raw_artifact_sha256,
+        raw_output_preserved=content.raw_output_preserved,
+        repair_applied=content.repair_applied,
+        repair_record_references=content.repair_record_references,
+        repair_record_hashes=content.repair_record_hashes,
+        parsed_content_sha256=loaded.sha256,
+    )
+    coverage = ValidatorRuleCoverage(
+        rule_id="raw_output_and_repair_preservation",
+        coverage_state="fully_evaluated",
+        candidate_count=1,
+        evaluated_observation_count=1,
+        blocked_candidate_count=0,
+        reason_counts=(),
+    )
+    return observation, coverage
+
+
+def build_validation_artifact_snapshot(
+    loaded: LoadedParsedPredictionContent,
+    *,
+    eval_run_id: str,
+    artifact_id: str,
+    artifact_sha256: str,
+    created_at: str,
+    case_id: str | None = None,
+    observations: tuple[ValidatorObservation, ...],
+    coverage: tuple[ValidatorRuleCoverage, ...],
+) -> ValidationArtifactSnapshot:
+    """The sole sanctioned public producer of a full validation-artifact snapshot.
+
+    Accepts caller-supplied Rules 1-11 observations and coverage only; rejects a
+    caller-supplied Rule 12 observation or Rule 12 coverage record. Rule 12 is
+    obtained exclusively through ``_build_rule12_validation_observation(loaded)``
+    and appended in canonical order, and ``parsed_prediction_content_sha256`` is
+    bound to ``loaded.sha256``. Direct low-level model construction remains
+    possible but is not the integration path.
+    """
+    if not isinstance(loaded, LoadedParsedPredictionContent):
+        raise TypeError(
+            f"loaded must be a LoadedParsedPredictionContent, got {type(loaded).__name__}"
+        )
+    for observation in observations:
+        if observation.rule_id == _RULE_12:
+            raise ValueError(
+                "caller-supplied observations must cover Rules 1-11 only; "
+                "Rule 12 is produced internally"
+            )
+    for record in coverage:
+        if record.rule_id == _RULE_12:
+            raise ValueError(
+                "caller-supplied coverage must cover Rules 1-11 only; "
+                "Rule 12 is produced internally"
+            )
+    rule12_observation, rule12_coverage = _build_rule12_validation_observation(loaded)
+    return ValidationArtifactSnapshot(
+        eval_run_id=eval_run_id,
+        artifact_id=artifact_id,
+        stage=loaded.content.stage,
+        artifact_sha256=artifact_sha256,
+        parsed_prediction_content_sha256=loaded.sha256,
+        created_at=created_at,
+        case_id=case_id,
+        observations=tuple(observations) + (rule12_observation,),
+        coverage=tuple(coverage) + (rule12_coverage,),
+    )
+
+
 def evaluate_validator_findings(
     snapshot: ValidationArtifactSnapshot,
     *,
     bundle: ValidatorBundle,
     run_manifest: EvaluationRunManifest,
+    rule_parameters: Any,
 ) -> EvaluatedValidatorFindings:
     """Run the twelve SPEC-023 rules over one normalized artifact snapshot.
 
     Pure: no filesystem access, no source or registry read, no resolver call,
-    no wall-clock read. Emits one immutable ``ValidatorFinding`` per failed
-    observation, ordered by canonical rule order then ``observation_id``.
+    no wall-clock read. Coverage-aware production requires an
+    ``EvaluationRunManifestV2`` and a ``LoadedValidatorRuleParameters`` whose
+    version and aggregate hash equal the v0.2 pin; a v0.1 manifest fails with the
+    ``run_manifest_version_unsupported`` binding kind before any finding is
+    produced. Emits one immutable ``ValidatorFinding`` per failed observation,
+    ordered by canonical rule order then ``observation_id``.
     """
+    from .models import EvaluationRunManifestV2
+    from .validator_parameters import (
+        LoadedValidatorRuleParameters,
+        complete_rule_parameter_hash,
+        validator_rule_parameters_aggregate_hash,
+    )
+
     if not isinstance(snapshot, ValidationArtifactSnapshot):
         raise TypeError(
             f"snapshot must be a ValidationArtifactSnapshot, got {type(snapshot).__name__}"
         )
     if not isinstance(bundle, ValidatorBundle):
         raise TypeError(f"bundle must be a ValidatorBundle, got {type(bundle).__name__}")
-    if not isinstance(run_manifest, EvaluationRunManifest):
+    if not isinstance(run_manifest, EvaluationRunManifestV2):
+        raise ValidatorBundleBindingError(
+            "coverage-aware deterministic validation requires evaluation_run_manifest v0.2",
+            eval_run_id=getattr(run_manifest, "eval_run_id", None),
+            binding_kind="run_manifest_version_unsupported",
+        )
+    if not isinstance(rule_parameters, LoadedValidatorRuleParameters):
         raise TypeError(
-            f"run_manifest must be an EvaluationRunManifest, got {type(run_manifest).__name__}"
+            f"rule_parameters must be a LoadedValidatorRuleParameters, got "
+            f"{type(rule_parameters).__name__}"
         )
 
     # The bundle model already guarantees exactly the twelve rules in
     # canonical order, so this mapping always has all twelve keys.
     rule_by_id = {rule.rule_id: rule for rule in bundle.rules}
+    entries_by_rule = {entry.rule_id: entry for entry in rule_parameters.model.entries}
+
+    if rule_parameters.version != run_manifest.validator_rule_parameters_version:
+        raise ValidatorBundleBindingError(
+            "validator rule parameters version does not match the run manifest pin",
+            eval_run_id=run_manifest.eval_run_id,
+            binding_kind="parameter_set_version_mismatch",
+        )
+    if (
+        validator_rule_parameters_aggregate_hash(rule_parameters.model)
+        != run_manifest.validator_rule_parameters_hash
+    ):
+        raise ValidatorBundleBindingError(
+            "validator rule parameters aggregate hash does not match the run manifest pin",
+            eval_run_id=run_manifest.eval_run_id,
+            binding_kind="parameter_set_hash_mismatch",
+        )
+    for rule in bundle.rules:
+        if rule.rule_params_hash != complete_rule_parameter_hash(entries_by_rule[rule.rule_id]):
+            raise ValidatorBundleBindingError(
+                "bundle rule_params_hash does not equal the complete per-rule parameter hash",
+                eval_run_id=run_manifest.eval_run_id,
+                binding_kind="rule_params_hash_mismatch",
+            )
+    for record in snapshot.coverage:
+        entry = entries_by_rule[record.rule_id]
+        selected = next(sp for sp in entry.stage_parameters if sp.stage == snapshot.stage)
+        # Structural dependency-absent guard first: a rule that declares no
+        # dependency can never have blocked candidates, regardless of stage
+        # applicability or the (necessarily empty) governed reason set. This must
+        # precede reason governance so the correct binding_kind is reported.
+        if record.blocked_candidate_count > 0 and not entry.dependency_rule_ids:
+            raise ValidatorBundleBindingError(
+                "blocked coverage requires the rule to declare a dependency",
+                eval_run_id=run_manifest.eval_run_id,
+                binding_kind="coverage_dependency_absent",
+            )
+        if selected.applicability == "inapplicable":
+            if record.coverage_state != "inapplicable":
+                raise ValidatorBundleBindingError(
+                    "an inapplicable stage parameter permits only inapplicable coverage",
+                    eval_run_id=run_manifest.eval_run_id,
+                    binding_kind="coverage_inapplicable_stage_state",
+                )
+            for reason in record.reason_counts:
+                if reason.reason_code != selected.reason_code:
+                    raise ValidatorBundleBindingError(
+                        "coverage inapplicable reason does not equal the selected stage reason",
+                        eval_run_id=run_manifest.eval_run_id,
+                        binding_kind="coverage_reason_code_unknown",
+                    )
+        else:
+            if record.coverage_state == "inapplicable":
+                raise ValidatorBundleBindingError(
+                    "an applicable stage parameter rejects inapplicable coverage",
+                    eval_run_id=run_manifest.eval_run_id,
+                    binding_kind="coverage_applicable_stage_inapplicable",
+                )
+            governed = set(entry.blocking_reason_codes)
+            for reason in record.reason_counts:
+                if reason.reason_code not in governed:
+                    raise ValidatorBundleBindingError(
+                        "coverage reason code is not governed by the rule parameters",
+                        eval_run_id=run_manifest.eval_run_id,
+                        binding_kind="coverage_reason_code_unknown",
+                    )
+        # Truthful dependency blocking: a rule with blocked candidates (its
+        # dependency non-empty by the guard above) is only legitimate when at
+        # least one declared dependency actually fails in this snapshot under the
+        # same pure dispatch. A clean dependency can never justify omitting the
+        # rule's observation.
+        if record.blocked_candidate_count > 0:
+            dependency_failed = any(
+                observation.rule_id in entry.dependency_rule_ids
+                and _dispatch_rule(observation) is not None
+                for observation in snapshot.observations
+            )
+            if not dependency_failed:
+                raise ValidatorBundleBindingError(
+                    "blocked coverage requires a declared dependency to actually fail",
+                    eval_run_id=run_manifest.eval_run_id,
+                    binding_kind="coverage_dependency_not_failing",
+                )
 
     if bundle.bundle_version != run_manifest.validator_bundle_version:
         raise ValidatorBundleBindingError(

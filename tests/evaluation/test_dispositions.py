@@ -42,14 +42,18 @@ from dynamic_ai_products.evaluation.dispositions import (
     derive_disposition_states,
     load_finding_dispositions,
 )
-from dynamic_ai_products.evaluation.models import FindingDisposition
+from dynamic_ai_products.evaluation.models import EvaluationRunManifestV2, FindingDisposition
 from dynamic_ai_products.evaluation.references import load_target_registry
 from dynamic_ai_products.evaluation.runs import (
     RunArtifactNotAFileError,
     initialize_evaluation_run,
-    load_evaluation_run_manifest,
 )
 from dynamic_ai_products.evaluation.scoring_config import load_scoring_gate_config
+from dynamic_ai_products.evaluation.validator_parameters import (
+    complete_rule_parameter_hash,
+    load_validator_rule_parameters,
+    validator_rule_parameters_aggregate_hash,
+)
 from dynamic_ai_products.evaluation.validators import (
     VALIDATOR_RULE_ORDER,
     ValidationArtifactSnapshot,
@@ -70,10 +74,49 @@ CASE_SET = load_case_set_manifest("valid_base_case_set_manifest.json", eval_root
 
 HEX = "a" * 64
 CREATED_AT = "2026-07-20T00:00:00Z"
+PSHA = "d" * 64
+V2_HASH = "6918e96c0f9d2066e89eaf6a699c00b36e1e52e5b5c74ec0e926533eacaf84d6"
+PARAMS = load_validator_rule_parameters(
+    "validator_parameters/validator_rule_parameters.json", eval_root=FX
+)
+AGG = validator_rule_parameters_aggregate_hash(PARAMS.model)
+ENTRIES = {e.rule_id: e for e in PARAMS.model.entries}
 DISP_META = {
     "contract_id": "finding_disposition", "contract_version": "0.1.0",
     "contract_hash": model_contract_hash(FindingDisposition, "finding_disposition", "0.1.0"),
 }
+
+
+def _v2_manifest(run_id, bundle):
+    doc = {
+        "contract": {"contract_id": "evaluation_run_manifest", "contract_version": "0.2.0",
+                     "contract_hash": V2_HASH},
+        "eval_run_id": run_id, "prediction_run_id": "p", "prediction_run_manifest_hash": HEX,
+        "case_set_version": "v", "case_set_hash": HEX, "registry_snapshot_hash": HEX,
+        "validator_bundle_version": bundle.bundle_version,
+        "validator_bundle_hash": validator_bundle_hash(bundle),
+        "scoring_gate_config_version": "sc", "scoring_gate_config_hash": HEX,
+        "code_commit": "commit", "pydantic_runtime_version": "2.13.4",
+        "evaluation_created_at": "2026-07-23T12:00:00Z",
+        "stage_profile_registry_version": "0.1.0", "stage_profile_registry_hash": HEX,
+        "selected_stage_profile_entry_hash": HEX,
+        "semantic_adapter_registry_version": "0.1.0", "semantic_adapter_registry_hash": HEX,
+        "selected_semantic_adapter_entry_hash": HEX,
+        "source_passage_snapshot_version": "0.1.0", "source_passage_snapshot_hash": HEX,
+        "gold_assertion_set_version": "0.1.0", "gold_assertion_set_hash": HEX,
+        "axis_taxonomy_version": "0.1.0", "axis_taxonomy_hash": HEX,
+        "validator_rule_parameters_version": PARAMS.version,
+        "validator_rule_parameters_hash": AGG,
+    }
+    return EvaluationRunManifestV2.model_validate(doc)
+
+
+def _full_coverage():
+    return [
+        {"rule_id": rid, "coverage_state": "fully_evaluated", "candidate_count": 1,
+         "evaluated_observation_count": 1, "blocked_candidate_count": 0, "reason_counts": []}
+        for rid in VALIDATOR_RULE_ORDER
+    ]
 
 ALL_DISPOSITION_TYPES = (
     "confirmed_defect", "suspected_validator_false_positive",
@@ -88,7 +131,10 @@ def _bundle(*, critical_first=False):
     for i, rid in enumerate(VALIDATOR_RULE_ORDER):
         sev = "critical" if (critical_first and i == 0) else "error"
         rules.append(
-            ValidatorRuleConfig(rule_id=rid, severity=sev, rule_params_hash=HEX, repairable=False)
+            ValidatorRuleConfig(
+                rule_id=rid, severity=sev,
+                rule_params_hash=complete_rule_parameter_hash(ENTRIES[rid]), repairable=False,
+            )
         )
     return ValidatorBundle(bundle_version="vb-1", rules=tuple(rules))
 
@@ -143,8 +189,10 @@ def _passing_observations():
         },
         "raw_output_and_repair_preservation": {
             "rule_id": "raw_output_and_repair_preservation", "observation_id": "o12",
-            "raw_output_reference": "raw.json", "repair_applied": False,
-            "repair_record_references": (),
+            "raw_output_reference": "raw.json", "raw_artifact_sha256": "c" * 64,
+            "raw_output_preserved": True, "repair_applied": False,
+            "repair_record_references": (), "repair_record_hashes": (),
+            "parsed_content_sha256": PSHA,
         },
     }
 
@@ -159,9 +207,11 @@ def _snapshot(*, failing, run_id="run1"):
     for rid in failing:
         base[rid] = {**base[rid], **fail_overrides[rid]}
     return ValidationArtifactSnapshot.model_validate({
-        "eval_run_id": run_id, "artifact_id": "art-1", "artifact_sha256": "b" * 64,
+        "eval_run_id": run_id, "artifact_id": "art-1", "stage": "capability_extraction",
+        "artifact_sha256": "b" * 64, "parsed_prediction_content_sha256": PSHA,
         "created_at": CREATED_AT, "case_id": "SYNTH-CASE-0001",
         "observations": [base[r] for r in VALIDATOR_RULE_ORDER],
+        "coverage": _full_coverage(),
     })
 
 
@@ -177,10 +227,19 @@ def init_run(eval_root, run_id="run1", *, critical_first=False):
 
 
 def seed_findings(eval_root, run_id="run1", *, failing=("source_id_resolution",), critical_first=False):
-    """Initialize a run, evaluate, and persist findings; return the findings."""
+    """Initialize a run, evaluate, and persist findings; return the findings.
+
+    The on-disk run directory remains the committed v0.1 initialization (findings
+    persistence and disposition tests bind to that run-directory layout); the
+    coverage-aware evaluation uses an in-memory ``EvaluationRunManifestV2`` whose
+    bundle and parameter pins match the reconciled bundle and loaded parameters.
+    """
     b = init_run(eval_root, run_id, critical_first=critical_first)
-    run = load_evaluation_run_manifest(run_id, eval_root=eval_root).manifest
-    ev = evaluate_validator_findings(_snapshot(failing=failing, run_id=run_id), bundle=b, run_manifest=run)
+    manifest = _v2_manifest(run_id, b)
+    ev = evaluate_validator_findings(
+        _snapshot(failing=failing, run_id=run_id), bundle=b, run_manifest=manifest,
+        rule_parameters=PARAMS,
+    )
     persist_validator_findings(ev.findings, eval_root=eval_root, eval_run_id=run_id)
     return ev.findings
 
