@@ -1,0 +1,27 @@
+{
+  "predicted_entities": [
+    {
+      "entity_kind": "capability",
+      "entity_ref": "SYNTH.PRODUCT.ALPHA.CAPABILITY"
+    },
+    {
+      "entity_kind": "product",
+      "entity_ref": "SYNTH.PRODUCT.ALPHA"
+    }
+  ],
+  "predicted_fields": [
+    {
+      "entity_ref": "SYNTH.PRODUCT.ALPHA.CAPABILITY",
+      "field_name": "maturity",
+      "field_value": "ga"
+    }
+  ],
+  "cited_evidence": [
+    {
+      "entity_ref": "SYNTH.PRODUCT.ALPHA.CAPABILITY",
+      "source_id": "synth-source-0002",
+      "passage_id": "synth-passage-0003",
+      "quote": "alpha ships"
+    }
+  ]
+}

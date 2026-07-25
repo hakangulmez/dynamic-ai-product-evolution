@@ -1,0 +1,19 @@
+{
+  "contract": {
+    "contract_id": "axis_taxonomy",
+    "contract_version": "0.1.0",
+    "contract_hash": "d6072c16fe82b9e7e7f1f52db2d5f57fdc079ef473c3e8803b0fde2c3e356df3"
+  },
+  "taxonomy_version": "synth-axis-taxonomy-v1",
+  "axes": [
+    {
+      "axis_id": "overall",
+      "axis_role": "capability",
+      "metric_type": "nominal_single_label",
+      "labels": [
+        "SYNTH.PRODUCT.ALPHA.CAPABILITY",
+        "SYNTH.PRODUCT.OTHER.CAPABILITY"
+      ]
+    }
+  ]
+}

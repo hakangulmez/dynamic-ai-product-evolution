@@ -1,0 +1,85 @@
+{
+  "contract": {
+    "contract_id": "validator_bundle_artifact",
+    "contract_version": "0.1.0",
+    "contract_hash": "474651b5eb59411dbd13e5a5a3ac3749d618e4dc5e8f39470d698c953524bc5c"
+  },
+  "bundle_version": "synth-validator-bundle-v1",
+  "rule_entries": [
+    {
+      "rule_id": "output_json_schema_validity",
+      "severity": "critical",
+      "rule_params_hash": "71e37f4bb9f24b30c540a6f03fb47043a0de6a033e4a863603084e5946030c50",
+      "repairable": false
+    },
+    {
+      "rule_id": "required_field_presence",
+      "severity": "critical",
+      "rule_params_hash": "64920672bb6e32c30898f8a4b9c19d312865297fc36736e7c91cecbc2276e57c",
+      "repairable": false
+    },
+    {
+      "rule_id": "source_id_resolution",
+      "severity": "critical",
+      "rule_params_hash": "672ff98e8f9f9074ded10fcbf1adad531d9efe1f7767170d3b7fd8a60d7cd411",
+      "repairable": false
+    },
+    {
+      "rule_id": "passage_id_resolution",
+      "severity": "critical",
+      "rule_params_hash": "223cbdafb0d238abe2ebecdd566ee9bb27433e0c2daad722bae9e6cef101cfbf",
+      "repairable": false
+    },
+    {
+      "rule_id": "evidence_quote_containment",
+      "severity": "critical",
+      "rule_params_hash": "134c2473448fa0362f46ec1625281f9615b0691843bd4d8ede0088df2ecfff78",
+      "repairable": false
+    },
+    {
+      "rule_id": "publication_date_cutoff",
+      "severity": "critical",
+      "rule_params_hash": "742e99559a9ab0baf23599926e49d50dac9540998cbf7c55025c08a30467b47d",
+      "repairable": false
+    },
+    {
+      "rule_id": "product_capability_task_parent_resolution",
+      "severity": "critical",
+      "rule_params_hash": "47af6b4b8777df4bba1d6b5e901a9f70dc84eb65b48471f8fdc07dd10f0786c8",
+      "repairable": false
+    },
+    {
+      "rule_id": "unique_ids_within_scope",
+      "severity": "critical",
+      "rule_params_hash": "a6d5873efa75d433b8c77aac4d4b02d89743ea678567371625a71797e3ea48ac",
+      "repairable": false
+    },
+    {
+      "rule_id": "prohibited_legacy_fields_absent",
+      "severity": "critical",
+      "rule_params_hash": "247193a7bf16e8f8a8372857064cb340d18166a9d892a1fc941874214d79e926",
+      "repairable": false
+    },
+    {
+      "rule_id": "active_record_non_roadmap_evidence",
+      "severity": "critical",
+      "rule_params_hash": "32067736bb8dc011b1dc222998606bf0795e11f363fb7fed87b186b17843a00c",
+      "repairable": false
+    },
+    {
+      "rule_id": "customer_task_outcome_and_evidence",
+      "severity": "critical",
+      "rule_params_hash": "71425cc83d5623ecf064d072400212ad7fffac74ada05c28a9b64cb0a4af0c50",
+      "repairable": false
+    },
+    {
+      "rule_id": "raw_output_and_repair_preservation",
+      "severity": "critical",
+      "rule_params_hash": "419e99e08900f42fe3e5f82bc58d48f8d12838109cac4f275e9bfd6d4a6820e9",
+      "repairable": false
+    }
+  ],
+  "parameter_set_version": "synth-validator-params-v1",
+  "parameter_set_aggregate_hash": "34974b2974dd9a4042150baf7ee5e0c4a3a7117f055a2f7c94945cc3297ea30e",
+  "bundle_hash": "65c442e63d8da2aac5321697c9354dd85133b36667e4c9111e351f09433c164a"
+}

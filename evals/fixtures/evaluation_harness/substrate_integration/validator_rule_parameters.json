@@ -1,0 +1,549 @@
+{
+  "contract": {
+    "contract_id": "validator_rule_parameters",
+    "contract_version": "0.1.0",
+    "contract_hash": "f9c20ba936e1c0541c721ac6c3c34bec183b4b360dfa177516c57b0bd0945822"
+  },
+  "parameter_set_version": "synth-validator-params-v1",
+  "entries": [
+    {
+      "rule_id": "output_json_schema_validity",
+      "dependency_rule_ids": [],
+      "blocking_reason_codes": [],
+      "stage_parameters": [
+        {
+          "applicability": "applicable",
+          "stage": "capability_extraction",
+          "payload": {
+            "payload_kind": "rule1_static_schema",
+            "output_schema_id": "capability_observation",
+            "output_schema_reference": "schemas/capability_observation.schema.json",
+            "output_schema_sha256": "4ade397f3383ff756a1aa2ba5f98bdb99f76c002d5cf049d7e8dcd7abf493733"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "task_extraction",
+          "payload": {
+            "payload_kind": "rule1_static_schema",
+            "output_schema_id": "task_observation",
+            "output_schema_reference": "schemas/task_observation.schema.json",
+            "output_schema_sha256": "b135ab828a3b710f1c63f6a8bf473caa6e29c3a63a5330cb203b470f772e3b03"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_screen",
+          "payload": {
+            "payload_kind": "rule1_universe_screen",
+            "output_contract_id": "universe_screen_output",
+            "output_contract_version": "0.1.0",
+            "output_contract_hash": "97703d752d1bdf6216a98c14923ba1c145e1c24aa70c2c8dd24e9160a6949c50"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_classification",
+          "payload": {
+            "payload_kind": "rule1_static_schema",
+            "output_schema_id": "company_universe_classification",
+            "output_schema_reference": "schemas/company_universe_classification.schema.json",
+            "output_schema_sha256": "1d47a80ee670f927e55d6af50550b1584aab022389471739a055a9e550552a22"
+          }
+        }
+      ],
+      "complete_rule_parameter_hash": "71e37f4bb9f24b30c540a6f03fb47043a0de6a033e4a863603084e5946030c50"
+    },
+    {
+      "rule_id": "required_field_presence",
+      "dependency_rule_ids": [
+        "output_json_schema_validity"
+      ],
+      "blocking_reason_codes": [
+        "blocked_output_schema_invalid"
+      ],
+      "stage_parameters": [
+        {
+          "applicability": "applicable",
+          "stage": "capability_extraction",
+          "payload": {
+            "payload_kind": "rule2_required_fields",
+            "required_fields": [
+              "capability_id",
+              "product_id",
+              "task_id"
+            ]
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "task_extraction",
+          "payload": {
+            "payload_kind": "rule2_required_fields",
+            "required_fields": [
+              "task_id"
+            ]
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_screen",
+          "payload": {
+            "payload_kind": "rule2_universe_screen",
+            "output_contract_id": "universe_screen_output",
+            "output_contract_version": "0.1.0",
+            "output_contract_hash": "97703d752d1bdf6216a98c14923ba1c145e1c24aa70c2c8dd24e9160a6949c50",
+            "required_fields": [
+              "company_id",
+              "in_universe",
+              "prediction_record_id",
+              "screen_status"
+            ]
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_classification",
+          "payload": {
+            "payload_kind": "rule2_required_fields",
+            "required_fields": [
+              "classification",
+              "company_id"
+            ]
+          }
+        }
+      ],
+      "complete_rule_parameter_hash": "64920672bb6e32c30898f8a4b9c19d312865297fc36736e7c91cecbc2276e57c"
+    },
+    {
+      "rule_id": "source_id_resolution",
+      "dependency_rule_ids": [
+        "output_json_schema_validity"
+      ],
+      "blocking_reason_codes": [
+        "blocked_output_schema_invalid"
+      ],
+      "stage_parameters": [
+        {
+          "applicability": "applicable",
+          "stage": "capability_extraction",
+          "payload": {
+            "payload_kind": "rule3_source_resolution",
+            "resolution_domain": "source_id"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "task_extraction",
+          "payload": {
+            "payload_kind": "rule3_source_resolution",
+            "resolution_domain": "source_id"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_screen",
+          "payload": {
+            "payload_kind": "rule3_source_resolution",
+            "resolution_domain": "source_id"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_classification",
+          "payload": {
+            "payload_kind": "rule3_source_resolution",
+            "resolution_domain": "source_id"
+          }
+        }
+      ],
+      "complete_rule_parameter_hash": "672ff98e8f9f9074ded10fcbf1adad531d9efe1f7767170d3b7fd8a60d7cd411"
+    },
+    {
+      "rule_id": "passage_id_resolution",
+      "dependency_rule_ids": [
+        "output_json_schema_validity"
+      ],
+      "blocking_reason_codes": [
+        "blocked_output_schema_invalid"
+      ],
+      "stage_parameters": [
+        {
+          "applicability": "applicable",
+          "stage": "capability_extraction",
+          "payload": {
+            "payload_kind": "rule4_passage_resolution",
+            "resolution_domain": "passage_id"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "task_extraction",
+          "payload": {
+            "payload_kind": "rule4_passage_resolution",
+            "resolution_domain": "passage_id"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_screen",
+          "payload": {
+            "payload_kind": "rule4_passage_resolution",
+            "resolution_domain": "passage_id"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_classification",
+          "payload": {
+            "payload_kind": "rule4_passage_resolution",
+            "resolution_domain": "passage_id"
+          }
+        }
+      ],
+      "complete_rule_parameter_hash": "223cbdafb0d238abe2ebecdd566ee9bb27433e0c2daad722bae9e6cef101cfbf"
+    },
+    {
+      "rule_id": "evidence_quote_containment",
+      "dependency_rule_ids": [
+        "passage_id_resolution"
+      ],
+      "blocking_reason_codes": [
+        "blocked_passage_unresolved"
+      ],
+      "stage_parameters": [
+        {
+          "applicability": "applicable",
+          "stage": "capability_extraction",
+          "payload": {
+            "payload_kind": "rule5_quote_containment",
+            "match_mode": "verbatim_substring"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "task_extraction",
+          "payload": {
+            "payload_kind": "rule5_quote_containment",
+            "match_mode": "verbatim_substring"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_screen",
+          "payload": {
+            "payload_kind": "rule5_quote_containment",
+            "match_mode": "verbatim_substring"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_classification",
+          "payload": {
+            "payload_kind": "rule5_quote_containment",
+            "match_mode": "verbatim_substring"
+          }
+        }
+      ],
+      "complete_rule_parameter_hash": "134c2473448fa0362f46ec1625281f9615b0691843bd4d8ede0088df2ecfff78"
+    },
+    {
+      "rule_id": "publication_date_cutoff",
+      "dependency_rule_ids": [
+        "source_id_resolution"
+      ],
+      "blocking_reason_codes": [
+        "blocked_source_unresolved"
+      ],
+      "stage_parameters": [
+        {
+          "applicability": "applicable",
+          "stage": "capability_extraction",
+          "payload": {
+            "payload_kind": "rule6_publication_cutoff",
+            "comparison": "publication_le_cutoff"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "task_extraction",
+          "payload": {
+            "payload_kind": "rule6_publication_cutoff",
+            "comparison": "publication_le_cutoff"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_screen",
+          "payload": {
+            "payload_kind": "rule6_publication_cutoff",
+            "comparison": "publication_le_cutoff"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_classification",
+          "payload": {
+            "payload_kind": "rule6_publication_cutoff",
+            "comparison": "publication_le_cutoff"
+          }
+        }
+      ],
+      "complete_rule_parameter_hash": "742e99559a9ab0baf23599926e49d50dac9540998cbf7c55025c08a30467b47d"
+    },
+    {
+      "rule_id": "product_capability_task_parent_resolution",
+      "dependency_rule_ids": [
+        "required_field_presence"
+      ],
+      "blocking_reason_codes": [
+        "blocked_required_field_missing"
+      ],
+      "stage_parameters": [
+        {
+          "applicability": "applicable",
+          "stage": "capability_extraction",
+          "payload": {
+            "payload_kind": "rule7_parent_resolution",
+            "hierarchy": "product_capability_task"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "task_extraction",
+          "payload": {
+            "payload_kind": "rule7_parent_resolution",
+            "hierarchy": "product_capability_task"
+          }
+        },
+        {
+          "applicability": "inapplicable",
+          "stage": "universe_screen",
+          "reason_code": "stage_has_no_product_capability_task_hierarchy"
+        },
+        {
+          "applicability": "inapplicable",
+          "stage": "universe_classification",
+          "reason_code": "stage_has_no_product_capability_task_hierarchy"
+        }
+      ],
+      "complete_rule_parameter_hash": "47af6b4b8777df4bba1d6b5e901a9f70dc84eb65b48471f8fdc07dd10f0786c8"
+    },
+    {
+      "rule_id": "unique_ids_within_scope",
+      "dependency_rule_ids": [
+        "output_json_schema_validity"
+      ],
+      "blocking_reason_codes": [
+        "blocked_output_schema_invalid"
+      ],
+      "stage_parameters": [
+        {
+          "applicability": "applicable",
+          "stage": "capability_extraction",
+          "payload": {
+            "payload_kind": "rule8_unique_ids",
+            "scope": "declared_record_scope"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "task_extraction",
+          "payload": {
+            "payload_kind": "rule8_unique_ids",
+            "scope": "declared_record_scope"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_screen",
+          "payload": {
+            "payload_kind": "rule8_unique_ids",
+            "scope": "declared_record_scope"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_classification",
+          "payload": {
+            "payload_kind": "rule8_unique_ids",
+            "scope": "declared_record_scope"
+          }
+        }
+      ],
+      "complete_rule_parameter_hash": "a6d5873efa75d433b8c77aac4d4b02d89743ea678567371625a71797e3ea48ac"
+    },
+    {
+      "rule_id": "prohibited_legacy_fields_absent",
+      "dependency_rule_ids": [
+        "output_json_schema_validity"
+      ],
+      "blocking_reason_codes": [
+        "blocked_output_schema_invalid"
+      ],
+      "stage_parameters": [
+        {
+          "applicability": "applicable",
+          "stage": "capability_extraction",
+          "payload": {
+            "payload_kind": "rule9_prohibited_legacy",
+            "prohibited_field_names": [
+              "legacy_score",
+              "legacy_tag"
+            ]
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "task_extraction",
+          "payload": {
+            "payload_kind": "rule9_prohibited_legacy",
+            "prohibited_field_names": [
+              "legacy_score",
+              "legacy_tag"
+            ]
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_screen",
+          "payload": {
+            "payload_kind": "rule9_prohibited_legacy",
+            "prohibited_field_names": [
+              "legacy_score",
+              "legacy_tag"
+            ]
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_classification",
+          "payload": {
+            "payload_kind": "rule9_prohibited_legacy",
+            "prohibited_field_names": [
+              "legacy_score",
+              "legacy_tag"
+            ]
+          }
+        }
+      ],
+      "complete_rule_parameter_hash": "247193a7bf16e8f8a8372857064cb340d18166a9d892a1fc941874214d79e926"
+    },
+    {
+      "rule_id": "active_record_non_roadmap_evidence",
+      "dependency_rule_ids": [
+        "required_field_presence"
+      ],
+      "blocking_reason_codes": [
+        "blocked_required_field_missing"
+      ],
+      "stage_parameters": [
+        {
+          "applicability": "applicable",
+          "stage": "capability_extraction",
+          "payload": {
+            "payload_kind": "rule10_active_roadmap",
+            "policy": "active_requires_nonroadmap_evidence"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "task_extraction",
+          "payload": {
+            "payload_kind": "rule10_active_roadmap",
+            "policy": "active_requires_nonroadmap_evidence"
+          }
+        },
+        {
+          "applicability": "inapplicable",
+          "stage": "universe_screen",
+          "reason_code": "stage_has_no_active_deployment_record"
+        },
+        {
+          "applicability": "inapplicable",
+          "stage": "universe_classification",
+          "reason_code": "stage_has_no_active_deployment_record"
+        }
+      ],
+      "complete_rule_parameter_hash": "32067736bb8dc011b1dc222998606bf0795e11f363fb7fed87b186b17843a00c"
+    },
+    {
+      "rule_id": "customer_task_outcome_and_evidence",
+      "dependency_rule_ids": [
+        "required_field_presence"
+      ],
+      "blocking_reason_codes": [
+        "blocked_required_field_missing"
+      ],
+      "stage_parameters": [
+        {
+          "applicability": "applicable",
+          "stage": "capability_extraction",
+          "payload": {
+            "payload_kind": "rule11_customer_task",
+            "policy": "customer_task_requires_outcome_and_evidence"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "task_extraction",
+          "payload": {
+            "payload_kind": "rule11_customer_task",
+            "policy": "customer_task_requires_outcome_and_evidence"
+          }
+        },
+        {
+          "applicability": "inapplicable",
+          "stage": "universe_screen",
+          "reason_code": "stage_emits_no_customer_facing_task"
+        },
+        {
+          "applicability": "inapplicable",
+          "stage": "universe_classification",
+          "reason_code": "stage_emits_no_customer_facing_task"
+        }
+      ],
+      "complete_rule_parameter_hash": "71425cc83d5623ecf064d072400212ad7fffac74ada05c28a9b64cb0a4af0c50"
+    },
+    {
+      "rule_id": "raw_output_and_repair_preservation",
+      "dependency_rule_ids": [],
+      "blocking_reason_codes": [],
+      "stage_parameters": [
+        {
+          "applicability": "applicable",
+          "stage": "capability_extraction",
+          "payload": {
+            "payload_kind": "rule12_raw_preservation",
+            "policy": "raw_output_and_repair_preserved"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "task_extraction",
+          "payload": {
+            "payload_kind": "rule12_raw_preservation",
+            "policy": "raw_output_and_repair_preserved"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_screen",
+          "payload": {
+            "payload_kind": "rule12_raw_preservation",
+            "policy": "raw_output_and_repair_preserved"
+          }
+        },
+        {
+          "applicability": "applicable",
+          "stage": "universe_classification",
+          "payload": {
+            "payload_kind": "rule12_raw_preservation",
+            "policy": "raw_output_and_repair_preserved"
+          }
+        }
+      ],
+      "complete_rule_parameter_hash": "419e99e08900f42fe3e5f82bc58d48f8d12838109cac4f275e9bfd6d4a6820e9"
+    }
+  ]
+}

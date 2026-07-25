@@ -1,0 +1,82 @@
+{
+  "contract": {
+    "contract_id": "gold_assertion_set",
+    "contract_version": "0.1.0",
+    "contract_hash": "48bb5f185072ed004aa4fcfda30408ff710406ac42bc5ea611d3f5a1fb118cfe"
+  },
+  "gold_set_version": "synth-gold-set-v1",
+  "entries": [
+    {
+      "case_id": "SYNTH-CASE-FULL-0002",
+      "assertion_id": "SYNTH-CASE-FULL-0002-A1",
+      "assertion_semantic_version": "0.1.0",
+      "assertion_kind": "expected_entity",
+      "canonical_target_reference": "SYNTH.PRODUCT.ALPHA",
+      "provenance": {
+        "gold_origin": "constructed",
+        "verification_status": "verified",
+        "verification_method": "construction_review",
+        "annotator_ids": [
+          "synthetic-annotator-0001"
+        ],
+        "reviewer_ids": [
+          "synthetic-reviewer-0001"
+        ],
+        "annotation_timestamps": [
+          "2026-01-15T10:00:00+00:00"
+        ],
+        "source_packet_hash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "case_version": "synth-case-v1",
+        "change_reason": "initial synthetic construction"
+      }
+    },
+    {
+      "case_id": "SYNTH-CASE-FULL-0002",
+      "assertion_id": "SYNTH-CASE-FULL-0002-A1",
+      "assertion_semantic_version": "0.1.0",
+      "assertion_kind": "expected_entity",
+      "canonical_target_reference": "SYNTH.PRODUCT.ALPHA.CAPABILITY",
+      "provenance": {
+        "gold_origin": "constructed",
+        "verification_status": "verified",
+        "verification_method": "construction_review",
+        "annotator_ids": [
+          "synthetic-annotator-0001"
+        ],
+        "reviewer_ids": [
+          "synthetic-reviewer-0001"
+        ],
+        "annotation_timestamps": [
+          "2026-01-15T10:00:00+00:00"
+        ],
+        "source_packet_hash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "case_version": "synth-case-v1",
+        "change_reason": "initial synthetic construction"
+      }
+    },
+    {
+      "case_id": "SYNTH-CASE-FULL-0002",
+      "assertion_id": "SYNTH-CASE-FULL-0002-A2",
+      "assertion_contract_hash": "synthetic-opaque-assertion-contract-identity-0002",
+      "assertion_kind": "forbidden_entity",
+      "canonical_target_reference": "SYNTH.PRODUCT.ROADMAP_ONLY",
+      "provenance": {
+        "gold_origin": "constructed",
+        "verification_status": "verified",
+        "verification_method": "construction_review",
+        "annotator_ids": [
+          "synthetic-annotator-0001"
+        ],
+        "reviewer_ids": [
+          "synthetic-reviewer-0001"
+        ],
+        "annotation_timestamps": [
+          "2026-01-15T10:00:00+00:00"
+        ],
+        "source_packet_hash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "case_version": "synth-case-v1",
+        "change_reason": "initial synthetic construction"
+      }
+    }
+  ]
+}

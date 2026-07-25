@@ -1,0 +1,97 @@
+{
+  "config_version": "synth-scoring-gate-config-v1",
+  "blocking_severities": [
+    "synth-critical",
+    "synth-error"
+  ],
+  "protected_regression_classes": [
+    "synth-protected-temporal",
+    "synth-protected-evidence"
+  ],
+  "gates": [
+    {
+      "reference_id": "synth-scoring-gate-ref-0001",
+      "metric_id": "synth-metric-precision",
+      "population_slice_id": "synth-slice-global",
+      "verified_support_requirement": {
+        "synth_min_verified_support": 10
+      },
+      "ci_method_reference": "synth-ci-method-wilson",
+      "blocking_severity": "synth-critical",
+      "protected_regression_class_references": [
+        "synth-protected-temporal"
+      ],
+      "slice_definitions": [
+        {
+          "synth_slice": "global"
+        }
+      ],
+      "threshold": {
+        "synth_max_rate_upper_bound": 0.1
+      }
+    }
+  ],
+  "diagnostics": [
+    {
+      "reference_id": "synth-scoring-gate-ref-0002",
+      "metric_id": "synth-metric-precision",
+      "population_slice_id": "synth-slice-stratum",
+      "slice_definitions": [
+        {
+          "synth_slice": "stratum",
+          "synth_stratum_id": "synth-A"
+        }
+      ]
+    },
+    {
+      "reference_id": "synth-diag-assertion_outcomes",
+      "metric_id": "assertion_outcomes",
+      "population_slice_id": "overall",
+      "slice_definitions": [
+        {
+          "minimum_verified_support": 0
+        }
+      ]
+    },
+    {
+      "reference_id": "synth-diag-validator_rules",
+      "metric_id": "validator_rules",
+      "population_slice_id": "overall",
+      "slice_definitions": [
+        {
+          "minimum_verified_support": 0
+        }
+      ]
+    },
+    {
+      "reference_id": "synth-diag-validator_summaries",
+      "metric_id": "validator_summaries",
+      "population_slice_id": "overall",
+      "slice_definitions": [
+        {
+          "minimum_verified_support": 0
+        }
+      ]
+    },
+    {
+      "reference_id": "synth-diag-axis-nominal",
+      "metric_id": "axis_nominal_single_label",
+      "population_slice_id": "overall",
+      "slice_definitions": [
+        {
+          "minimum_verified_support": 0
+        }
+      ]
+    },
+    {
+      "reference_id": "synth-diag-axis-abstention",
+      "metric_id": "axis_abstention",
+      "population_slice_id": "overall",
+      "slice_definitions": [
+        {
+          "minimum_verified_support": 0
+        }
+      ]
+    }
+  ]
+}

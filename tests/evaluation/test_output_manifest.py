@@ -763,7 +763,7 @@ def test_export_list_sorted_unique_and_count():
 
 def test_repo_manifest_count_and_paths():
     text = (ROOT / "REPO_MANIFEST.md").read_text()
-    assert "Total tracked/scaffold files listed: **364**" in text
+    assert "Total tracked/scaffold files listed: **381**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
 

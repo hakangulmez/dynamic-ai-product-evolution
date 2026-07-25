@@ -1,0 +1,49 @@
+{
+  "registry_version": "synth-target-registry-v1",
+  "contracts": [
+    {
+      "contract_id": "synth-product-contract",
+      "contract_version": "0.1.0",
+      "contract_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "contract_id": "synth-gold-contract",
+      "contract_version": "0.1.0",
+      "contract_hash": "2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  ],
+  "entries": [
+    {
+      "reference_id": "SYNTH.PRODUCT.CAPABILITY.TASK",
+      "reference_kind": "target",
+      "contract_id": "synth-product-contract",
+      "contract_version": "0.1.0",
+      "aliases": ["SYNTH.ALIAS.TASK"],
+      "description": "Synthetic customer-facing task target entry."
+    },
+    {
+      "reference_id": "SYNTH.PRODUCT.ALPHA",
+      "reference_kind": "target",
+      "contract_id": "synth-product-contract",
+      "contract_version": "0.1.0",
+      "aliases": [],
+      "description": "Synthetic product target entry."
+    },
+    {
+      "reference_id": "SYNTH.PRODUCT.ALPHA.CAPABILITY",
+      "reference_kind": "target",
+      "contract_id": "synth-product-contract",
+      "contract_version": "0.1.0",
+      "aliases": [],
+      "description": "Synthetic capability target entry."
+    },
+    {
+      "reference_id": "SYNTH.PRODUCT.ROADMAP_ONLY",
+      "reference_kind": "gold",
+      "contract_id": "synth-gold-contract",
+      "contract_version": "0.1.0",
+      "aliases": [],
+      "description": "Synthetic forbidden-entity gold entry."
+    }
+  ]
+}

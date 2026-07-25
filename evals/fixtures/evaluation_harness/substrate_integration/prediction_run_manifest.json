@@ -1,0 +1,17 @@
+{
+  "contract": {
+    "contract_id": "prediction_artifact_manifest",
+    "contract_version": "0.1.0",
+    "contract_hash": "4b164aea18fc99f9518854aca0fb98587eb71d81c972a477d48cb815ddc0dbe4"
+  },
+  "prediction_run_id": "SYNTH-PRED-RUN-0001",
+  "envelopes_reference": "prediction_envelopes.jsonl",
+  "envelopes_sha256": "e5a747557a3a238f94182bc8eb30eae1ccc4a98db81922302b1ddb2de0a0fc68",
+  "record_count": 1,
+  "source_artifacts": [
+    {
+      "reference": "prediction_source.json",
+      "sha256": "29e269e9c797f1ef206e869ff9e7de89af94e0196306327d1183bb70606ffff8"
+    }
+  ]
+}

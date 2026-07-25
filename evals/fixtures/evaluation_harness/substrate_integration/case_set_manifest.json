@@ -1,0 +1,22 @@
+{
+  "contract": {
+    "contract_id": "case_set_manifest",
+    "contract_version": "0.1.0",
+    "contract_hash": "0b464d786d5a8addb1305c21c2d93b01c834e8f398fd3b12be30d1fc49083bb5"
+  },
+  "case_set_version": "synth-substrate-case-set-v1",
+  "lifecycle": "draft",
+  "registry_snapshot_version": "synth-target-registry-v1",
+  "registry_snapshot_hash": "10e0cfa69a345583832327a4085e7e5c50e527385e03a420170ef3924c92e01c",
+  "entries": [
+    {
+      "case_id": "SYNTH-CASE-FULL-0002",
+      "partition": "dev",
+      "suites": [
+        "adversarial",
+        "regression"
+      ],
+      "input_packet_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  ]
+}

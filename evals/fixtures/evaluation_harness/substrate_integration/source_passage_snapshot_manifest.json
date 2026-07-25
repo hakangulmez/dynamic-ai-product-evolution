@@ -1,0 +1,15 @@
+{
+  "aggregate_content_hash": "72e5e894bd15be6f3ae8f3a6aee01f18bed5f54ea5c83c62e56a51bb70aae552",
+  "contract": {
+    "contract_hash": "c169be58c6df0370e5f51f276a528f452252e9796d19fb5e3a905cd34a3c21a5",
+    "contract_id": "source_passage_snapshot_manifest",
+    "contract_version": "0.1.0"
+  },
+  "snapshot_version": "0.1.0",
+  "source_document_count": 3,
+  "source_documents_reference": "source_documents.jsonl",
+  "source_documents_sha256": "5e058ed7d854ffe736506c888073177d0a1af8de5972fc9320fe9cc6104d64c8",
+  "source_passage_count": 4,
+  "source_passages_reference": "source_passages.jsonl",
+  "source_passages_sha256": "078ce90ba8eeb4a176bcb2876783190346d56db2253038e318480493cb6c5ddb"
+}

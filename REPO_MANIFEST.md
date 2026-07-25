@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **364**
+Total tracked/scaffold files listed: **381**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -139,6 +139,22 @@ Total tracked/scaffold files listed: **364**
 - `evals/fixtures/evaluation_harness/source_snapshots/source_passages.jsonl`
 - `evals/fixtures/evaluation_harness/stage_evidence/universe_stage_metric_evidence_set.json`
 - `evals/fixtures/evaluation_harness/stage_profiles/stage_profile_registry.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/axis_taxonomy.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/capability_case.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/case_set_manifest.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/gold_assertion_set.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/prediction_envelopes.jsonl`
+- `evals/fixtures/evaluation_harness/substrate_integration/prediction_run_manifest.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/prediction_source.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/scoring_gate_config.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/semantic_adapter_registry.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/source_documents.jsonl`
+- `evals/fixtures/evaluation_harness/substrate_integration/source_passage_snapshot_manifest.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/source_passages.jsonl`
+- `evals/fixtures/evaluation_harness/substrate_integration/stage_profile_registry.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/target_registry.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/validator_bundle_artifact.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/validator_rule_parameters.json`
 - `evals/fixtures/evaluation_harness/taxonomy/axis_taxonomy.json`
 - `evals/fixtures/evaluation_harness/validation/validation_artifact_snapshot_set.json`
 - `evals/fixtures/evaluation_harness/validator_bundle/validator_bundle_artifact.json`
@@ -345,6 +361,7 @@ Total tracked/scaffold files listed: **364**
 - `tests/evaluation/test_scoring_config.py`
 - `tests/evaluation/test_semantic_adapters.py`
 - `tests/evaluation/test_semantic_assertions.py`
+- `tests/evaluation/test_semantic_substrate_integration.py`
 - `tests/evaluation/test_source_snapshot.py`
 - `tests/evaluation/test_stage_evidence.py`
 - `tests/evaluation/test_stage_profiles.py`
