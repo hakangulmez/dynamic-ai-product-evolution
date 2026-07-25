@@ -104,16 +104,16 @@ class ValidatorBundleArtifact(ContractStampedModel):
     parameter_set_aggregate_hash: str = Field(**_SHA256_HEX)
     bundle_hash: str = Field(**_SHA256_HEX)
 
-    @model_validator(mode="after")
-    def _artifact_invariants(self) -> "ValidatorBundleArtifact":
-        _require_non_blank(self.bundle_version, "bundle_version")
-        _require_non_blank(self.parameter_set_version, "parameter_set_version")
-        observed = tuple(entry.rule_id for entry in self.rule_entries)
-        if observed != VALIDATOR_RULE_ORDER:
-            raise ValueError(
-                "rule_entries must be exactly the twelve rules in canonical order"
-            )
-        reconstructed = ValidatorBundle(
+    def to_validator_bundle(self) -> ValidatorBundle:
+        """Construct a fresh validated ``ValidatorBundle`` from this artifact.
+
+        The returned bundle preserves the artifact's ``bundle_version`` and each
+        canonical rule entry's ID, severity, complete rule-parameter hash, and
+        repairability. This is the public, canonical conversion used both by the
+        artifact's own self-consistency check and by downstream deterministic
+        validation, so no caller need hand-reconstruct a bundle.
+        """
+        return ValidatorBundle(
             bundle_version=self.bundle_version,
             rules=tuple(
                 ValidatorRuleConfig(
@@ -125,7 +125,17 @@ class ValidatorBundleArtifact(ContractStampedModel):
                 for entry in self.rule_entries
             ),
         )
-        if validator_bundle_hash(reconstructed) != self.bundle_hash:
+
+    @model_validator(mode="after")
+    def _artifact_invariants(self) -> "ValidatorBundleArtifact":
+        _require_non_blank(self.bundle_version, "bundle_version")
+        _require_non_blank(self.parameter_set_version, "parameter_set_version")
+        observed = tuple(entry.rule_id for entry in self.rule_entries)
+        if observed != VALIDATOR_RULE_ORDER:
+            raise ValueError(
+                "rule_entries must be exactly the twelve rules in canonical order"
+            )
+        if validator_bundle_hash(self.to_validator_bundle()) != self.bundle_hash:
             raise ValueError(
                 "bundle_hash does not match validator_bundle_hash of the reconstructed bundle"
             )

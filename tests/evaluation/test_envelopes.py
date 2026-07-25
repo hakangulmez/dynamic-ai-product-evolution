@@ -53,8 +53,13 @@ from dynamic_ai_products.evaluation.envelopes import (
 )
 from dynamic_ai_products.evaluation.models import PredictionEnvelope
 from dynamic_ai_products.evaluation.references import load_target_registry
-from dynamic_ai_products.evaluation.runs import initialize_evaluation_run
+from dynamic_ai_products.evaluation.runs import (
+    initialize_evaluation_run,
+    initialize_evaluation_run_v2,
+    load_evaluation_run_manifest_v2,
+)
 from dynamic_ai_products.evaluation.scoring_config import load_scoring_gate_config
+from dynamic_ai_products.evaluation.stage_profiles import load_stage_profile_registry
 from dynamic_ai_products.universe.io_utils import sha256_bytes
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -74,6 +79,10 @@ MAN_HASH = model_contract_hash(
 FIXTURE_MANIFEST_SHA = sha256_bytes((PRED_ROOT / SUB / "prediction_run_manifest.json").read_bytes())
 
 
+SP_REG = load_stage_profile_registry("stage_profiles/stage_profile_registry.json", eval_root=FX)
+HEXV = "a" * 64
+
+
 def init_run(eval_root, run_id="run1", *, prediction_run_id="SYNTH-PRED-RUN-0001",
              manifest_hash=FIXTURE_MANIFEST_SHA):
     return initialize_evaluation_run(
@@ -81,6 +90,25 @@ def init_run(eval_root, run_id="run1", *, prediction_run_id="SYNTH-PRED-RUN-0001
         prediction_run_manifest_hash=manifest_hash, case_set=CASE_SET, registry=REGISTRY,
         validator_bundle_version="vb", validator_bundle_hash="b" * 64,
         scoring_config=SCORING, code_commit="c", config_snapshot_source_root=FX / "configs",
+    )
+
+
+def init_run_v2(eval_root, run_id="run1", *, prediction_run_id="SYNTH-PRED-RUN-0001",
+                manifest_hash=FIXTURE_MANIFEST_SHA):
+    """Initialize a genuine v0.2 run bound to the same fixture prediction manifest."""
+    return initialize_evaluation_run_v2(
+        eval_root=eval_root, eval_run_id=run_id, prediction_run_id=prediction_run_id,
+        prediction_run_manifest_hash=manifest_hash, case_set=CASE_SET, registry=REGISTRY,
+        validator_bundle_version="vb", validator_bundle_hash="b" * 64, scoring_config=SCORING,
+        code_commit="c", config_snapshot_source_root=FX / "configs",
+        evaluation_created_at="2026-07-25T00:00:00+00:00",
+        evaluation_stage="capability_extraction", stage_profile_registry=SP_REG,
+        semantic_adapter_registry_version="sa-v1", semantic_adapter_registry_hash=HEXV,
+        selected_semantic_adapter_entry_hash=HEXV,
+        source_passage_snapshot_version="sp-v1", source_passage_snapshot_hash=HEXV,
+        gold_assertion_set_version="g-v1", gold_assertion_set_hash=HEXV,
+        axis_taxonomy_version="ax-v1", axis_taxonomy_hash=HEXV,
+        validator_rule_parameters_version="vp-v1", validator_rule_parameters_hash=HEXV,
     )
 
 
@@ -712,3 +740,55 @@ def test_package_import_no_io_or_hash() -> None:
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT)
     assert result.returncode == 0 and "OK" in result.stdout, result.stderr
+
+
+# --- Correction A: run-manifest version-agnostic envelope I/O -------------
+
+
+def test_v1_normalize_and_reload_envelopes_unchanged(tmp_path: Path) -> None:
+    # v0.1 behavior preserved: normalize, then reload through load_prediction_envelopes.
+    init_run(tmp_path)
+    nr = normalize_prediction_artifact(MAN_REF, source_root=PRED_ROOT, eval_root=tmp_path,
+                                       eval_run_id="run1")
+    loaded = load_prediction_envelopes("run1", eval_root=tmp_path)
+    assert loaded.eval_run_id == "run1"
+    assert loaded.sha256 == nr.sha256
+    assert [e.prediction_record_id for e in loaded.envelopes] == \
+        [e.prediction_record_id for e in nr.envelopes] == ["SYNTH-PRED-0001", "SYNTH-PRED-0002"]
+
+
+def test_v2_normalize_and_reload_envelopes(tmp_path: Path) -> None:
+    # A genuine v0.2 run with a matching prediction manifest normalizes and reloads.
+    init_run_v2(tmp_path)
+    # Confirm the persisted run manifest is truly v0.2.
+    rm = load_evaluation_run_manifest_v2("run1", eval_root=tmp_path).manifest
+    assert rm.contract.contract_version == "0.2.0"
+    nr = normalize_prediction_artifact(MAN_REF, source_root=PRED_ROOT, eval_root=tmp_path,
+                                       eval_run_id="run1")
+    assert isinstance(nr, NormalizedPredictionRun)
+    assert nr.prediction_run_id == "SYNTH-PRED-RUN-0001"
+    assert nr.artifact_reference == "run1/predictions/normalized_envelopes.jsonl"
+    assert [e.prediction_record_id for e in nr.envelopes] == ["SYNTH-PRED-0001", "SYNTH-PRED-0002"]
+    disk = (tmp_path / "run1/predictions/normalized_envelopes.jsonl").read_bytes()
+    assert disk.endswith(b"\n") and nr.sha256 == sha256_bytes(disk)
+    loaded = load_prediction_envelopes("run1", eval_root=tmp_path)
+    assert loaded.eval_run_id == "run1" and loaded.sha256 == nr.sha256
+    assert [e.prediction_record_id for e in loaded.envelopes] == \
+        [e.prediction_record_id for e in nr.envelopes]
+
+
+def test_v2_normalization_binds_prediction_identity_and_bytes(tmp_path: Path) -> None:
+    # Run/prediction identity and persisted-byte binding hold on a v0.2 run.
+    init_run_v2(tmp_path)
+    # Capture the genuine v0.2 run manifest bytes before any envelope I/O.
+    before = (tmp_path / "run1" / "evaluation_run_manifest.json").read_bytes()
+    nr = normalize_prediction_artifact(MAN_REF, source_root=PRED_ROOT, eval_root=tmp_path,
+                                       eval_run_id="run1")
+    assert nr.eval_run_id == "run1"
+    rebuilt = env_mod._serialize_envelopes_jsonl(nr.envelopes)
+    assert sha256_bytes(rebuilt) == nr.sha256
+    # Normalization leaves the v0.2 run manifest byte-identical.
+    assert (tmp_path / "run1" / "evaluation_run_manifest.json").read_bytes() == before
+    # Reload also leaves the v0.2 run manifest byte-identical.
+    load_prediction_envelopes("run1", eval_root=tmp_path)
+    assert (tmp_path / "run1" / "evaluation_run_manifest.json").read_bytes() == before

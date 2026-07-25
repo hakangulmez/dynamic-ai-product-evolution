@@ -43,7 +43,7 @@ from pydantic import (
 from .cases import InvalidEvaluationRootError
 from .contracts import canonical_contract_bytes, model_contract_hash
 from .models import ContractMetadata, PredictionEnvelope
-from .runs import load_evaluation_run_manifest
+from .runs import _load_run_manifest_any_supported_version
 from ..universe.io_utils import sha256_bytes
 
 _SHA256_HEX_PATTERN = r"^[0-9a-f]{64}$"
@@ -1008,7 +1008,7 @@ def normalize_prediction_artifact(
     """
     resolved_source_root = _validate_root(source_root, "source_root")
     resolved_eval_root = _validate_root(eval_root, "eval_root")
-    loaded_run = load_evaluation_run_manifest(eval_run_id, eval_root=resolved_eval_root)
+    loaded_run = _load_run_manifest_any_supported_version(eval_run_id, eval_root=resolved_eval_root)
     run_manifest = loaded_run.manifest
 
     manifest, manifest_reference, manifest_sha256, envelopes, _ = _load_prediction_artifact(
@@ -1096,7 +1096,7 @@ def load_prediction_envelopes(
     rules. No source root is required and no source artifact is revalidated.
     """
     resolved_eval_root = _validate_root(eval_root, "eval_root")
-    load_evaluation_run_manifest(eval_run_id, eval_root=resolved_eval_root)
+    _load_run_manifest_any_supported_version(eval_run_id, eval_root=resolved_eval_root)
     run_dir = resolved_eval_root / eval_run_id
     predictions_dir = run_dir / _PREDICTIONS_DIR
     artifact_reference = f"{eval_run_id}/{_PREDICTIONS_DIR}/{_NORMALIZED_FILENAME}"

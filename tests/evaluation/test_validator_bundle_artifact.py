@@ -300,3 +300,39 @@ def test_import_no_io_no_hash_no_clock():
     ])
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT)
     assert r.returncode == 0 and "OK" in r.stdout, r.stderr
+
+
+# --- Correction B: public canonical bundle conversion --------------------
+
+
+def test_to_validator_bundle_canonical_order_and_hash():
+    loaded = load_bundle(REL, eval_root=FX)
+    bundle = loaded.model.to_validator_bundle()
+    assert isinstance(bundle, ValidatorBundle)
+    assert tuple(r.rule_id for r in bundle.rules) == VALIDATOR_RULE_ORDER
+    assert validator_bundle_hash(bundle) == loaded.model.bundle_hash
+    # Each rule preserves ID, severity, complete rule-parameter hash, repairability.
+    for entry, rule in zip(loaded.model.rule_entries, bundle.rules):
+        assert rule.rule_id == entry.rule_id
+        assert rule.severity == entry.severity
+        assert rule.rule_params_hash == entry.rule_params_hash
+        assert rule.repairable == entry.repairable
+
+
+def test_to_validator_bundle_returns_fresh_usable_value():
+    loaded = load_bundle(REL, eval_root=FX)
+    first = loaded.model.to_validator_bundle()
+    second = loaded.model.to_validator_bundle()
+    assert first is not second          # a fresh value each call
+    assert first == second              # equal by value
+    # The fresh value is usable: its hash reconciles to the artifact.
+    assert validator_bundle_hash(first) == loaded.model.bundle_hash
+
+
+def test_model_contract_hash_preserved_with_conversion_method():
+    # Adding the to_validator_bundle() method must not change the schema-derived
+    # model-contract hash.
+    assert model_contract_hash(
+        ValidatorBundleArtifact, "validator_bundle_artifact", "0.1.0") == MODEL_HASH
+    # The public conversion is a model method, not a new package export.
+    assert "to_validator_bundle" not in evaluation_pkg.__all__
