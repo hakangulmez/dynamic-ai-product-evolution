@@ -1080,3 +1080,39 @@ def load_evaluation_run_manifest_v2(
     return LoadedEvaluationRunManifest(
         manifest=manifest, sha256=observed, artifact_reference=manifest_reference
     )
+
+
+def _load_run_manifest_any_supported_version(
+    eval_run_id: str, *, eval_root: str | Path
+) -> LoadedEvaluationRunManifest:
+    """Internal artifact-I/O helper: load a run manifest of *either* supported
+    version by inspecting the persisted contract version and dispatching to the
+    matching explicit reader.
+
+    This is not a public reader and is deliberately not exported. The two public
+    readers (:func:`load_evaluation_run_manifest`,
+    :func:`load_evaluation_run_manifest_v2`) remain strictly single-version and
+    never fall back. This helper exists solely so that internal derived-artifact
+    persistence and loading can bind to a run directory regardless of whether it
+    holds a historical v0.1 or a current v0.2 run manifest. An unsupported or
+    absent declared contract version continues to fail through the established
+    :class:`RunManifestUnsupportedVersionError` vocabulary.
+    """
+    payload, _observed, manifest_reference, run_id = _read_run_manifest_payload(
+        eval_run_id, eval_root
+    )
+    declared = _payload_contract_version(payload)
+    if declared == _RUN_MANIFEST_CONTRACT_VERSION:
+        return load_evaluation_run_manifest(eval_run_id, eval_root=eval_root)
+    if declared == _RUN_MANIFEST_CONTRACT_VERSION_V2:
+        return load_evaluation_run_manifest_v2(eval_run_id, eval_root=eval_root)
+    raise RunManifestUnsupportedVersionError(
+        f"run manifest {manifest_reference!r} declares an unsupported "
+        f"{_RUN_MANIFEST_CONTRACT_ID} contract version",
+        eval_run_id=run_id,
+        artifact_reference=manifest_reference,
+        observed_version=declared,
+        expected_version=(
+            f"{_RUN_MANIFEST_CONTRACT_VERSION} | {_RUN_MANIFEST_CONTRACT_VERSION_V2}"
+        ),
+    )

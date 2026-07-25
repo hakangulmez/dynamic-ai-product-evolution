@@ -46,7 +46,7 @@ from .models import (
     EvaluationStrictModel,
 )
 from .references import ResolutionFinding, ResolvedAssertionReferences
-from .runs import LoadedEvaluationRunManifest, load_evaluation_run_manifest
+from .runs import LoadedEvaluationRunManifest, _load_run_manifest_any_supported_version
 from ..universe.io_utils import sha256_bytes
 
 _ASSERTIONS_DIR = "assertions"
@@ -753,7 +753,7 @@ def persist_assertion_outcomes(
 ) -> PersistedAssertionOutcomes:
     """Persist assertion outcomes as write-once JSONL in the Slice 5 run dir."""
     resolved_root = _validate_root(eval_root)
-    loaded = load_evaluation_run_manifest(eval_run_id, eval_root=resolved_root)
+    loaded = _load_run_manifest_any_supported_version(eval_run_id, eval_root=resolved_root)
     run_id = loaded.manifest.eval_run_id
     for outcome in outcomes:
         if outcome.eval_run_id != run_id:
@@ -841,7 +841,7 @@ def load_assertion_outcomes(
 ) -> LoadedAssertionOutcomes:
     """Load assertion outcomes from the fixed run-directory JSONL path."""
     resolved_root = _validate_root(eval_root)
-    load_evaluation_run_manifest(eval_run_id, eval_root=resolved_root)
+    _load_run_manifest_any_supported_version(eval_run_id, eval_root=resolved_root)
     run_dir = resolved_root / eval_run_id
     assertions_dir = run_dir / _ASSERTIONS_DIR
     reference = f"{eval_run_id}/{_ASSERTIONS_DIR}/{_OUTCOMES_FILENAME}"

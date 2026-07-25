@@ -466,7 +466,7 @@ def test_public_surface():
     for name in ("MetricFamilyApplicabilityEntry", "MetricReportV2",
                  "compute_metric_report_v2", "load_metric_report_v2"):
         assert name in evaluation_pkg.__all__
-    assert len(evaluation_pkg.__all__) == 525
+    assert len(evaluation_pkg.__all__) == 531
     assert evaluation_pkg.__all__ == sorted(evaluation_pkg.__all__)
     assert len(set(evaluation_pkg.__all__)) == len(evaluation_pkg.__all__)
     # v0.2 loaded/persisted wrappers stay module-private.
@@ -479,7 +479,7 @@ def test_manifest_count():
     txt = (ROOT / "REPO_MANIFEST.md").read_text().splitlines()
     declared = int(re.search(r"listed:\s*\*\*(\d+)\*\*", "\n".join(txt)).group(1))
     paths = [re.match(r"- `([^`]+)`", ln).group(1) for ln in txt if re.match(r"- `[^`]+`\s*$", ln)]
-    assert declared == len(paths) == 362
+    assert declared == len(paths) == 364
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

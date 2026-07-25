@@ -53,7 +53,7 @@ from .models import (
     ValidatorFinding,
 )
 from .prediction_content import EvaluationStage, LoadedParsedPredictionContent
-from .runs import load_evaluation_run_manifest
+from .runs import _load_run_manifest_any_supported_version
 from ..universe.io_utils import sha256_bytes
 
 _FINDINGS_DIR = "findings"
@@ -1408,7 +1408,7 @@ def persist_validator_findings(
 ) -> PersistedValidatorFindings:
     """Persist validator findings as write-once, immutable JSONL."""
     resolved_root = _validate_root(eval_root)
-    loaded = load_evaluation_run_manifest(eval_run_id, eval_root=resolved_root)
+    loaded = _load_run_manifest_any_supported_version(eval_run_id, eval_root=resolved_root)
     run_id = loaded.manifest.eval_run_id
     for finding in findings:
         if finding.run_id != run_id:
@@ -1593,7 +1593,7 @@ def load_validator_findings(
 ) -> LoadedValidatorFindings:
     """Load immutable validator findings from the fixed run-directory path."""
     resolved_root = _validate_root(eval_root)
-    load_evaluation_run_manifest(eval_run_id, eval_root=resolved_root)
+    _load_run_manifest_any_supported_version(eval_run_id, eval_root=resolved_root)
     run_dir = resolved_root / eval_run_id
     findings_dir = run_dir / _FINDINGS_DIR
     reference = f"{eval_run_id}/{_FINDINGS_DIR}/{_FINDINGS_FILENAME}"
