@@ -1652,6 +1652,17 @@ def test_metric_report_contract_hash_stable():
     )
 
 
+def test_v0_1_producer_returns_v0_1_report_unchanged(ctx):
+    # The frozen v0.1 producer/model are untouched by Slice 12J: compute_metric_report
+    # still returns a metric_report@0.1.0 with no applicability ledger.
+    rep = compute(ctx)
+    assert rep.contract.contract_version == "0.1.0"
+    assert not hasattr(rep, "applicability_ledger")
+    # The v0.2 private loaded/persisted wrappers are not package exports.
+    assert "_LoadedMetricReportV2" not in evaluation_pkg.__all__
+    assert "_PersistedMetricReportV2" not in evaluation_pkg.__all__
+
+
 PROTECTED_HASHES = {
     ("PredictionEnvelope", "prediction_envelope"): "5ac06fb78220c3f7369863cda32ee914a1d33ff01020fc01e57d9bd0ccbb18a3",
     ("AssertionOutcome", "assertion_outcome"): "4af3a9eb7c99e3e3ba088784b3395f4b6920fa1f8061f7bb1118af6bd2720bd6",
@@ -1674,6 +1685,8 @@ def test_protected_contract_hashes_unchanged():
 PUBLIC_FUNCTIONS = (
     "compute_metric_report", "persist_metric_report", "load_metric_report",
     "metric_input_snapshot_hash",
+    # Slice 12J v0.2 producer/reader.
+    "compute_metric_report_v2", "load_metric_report_v2",
 )
 PUBLIC_MODELS = (
     "AxisDefinition", "AxisEvaluationRecord", "AssertionMetricBinding",
@@ -1681,6 +1694,8 @@ PUBLIC_MODELS = (
     "UnsafeAuditStratum", "UnsafeExclusionAuditSnapshot", "ScreenOperationalSummary",
     "MetricInputSnapshot", "MetricDimension", "ConfidenceInterval", "MetricSupport",
     "MetricDatum", "MetricReport", "PersistedMetricReport", "LoadedMetricReport",
+    # Slice 12J v0.2 models.
+    "MetricReportV2", "MetricFamilyApplicabilityEntry",
 )
 PUBLIC_EXCEPTIONS = (
     "MetricError", "SnapshotBindingError", "AssertionBindingMismatchError",

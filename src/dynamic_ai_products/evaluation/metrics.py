@@ -39,7 +39,7 @@ import os
 import statistics
 from collections import Counter
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, get_args
 
 from pydantic import (
     BaseModel,
@@ -82,8 +82,16 @@ from .models import (
     EvaluationRunManifestV2,
     ValidatorFinding,
 )
+from .models import _reject_explicit_null
 from .runs import load_evaluation_run_manifest_v2
 from .scoring_config import LoadedScoringGateConfig, ScoringGateConfig
+from .stage_profiles import (
+    LoadedStageProfileRegistry,
+    MetricFamily,
+    StageProfileError,
+    resolve_metric_applicability,
+    stage_profile_registry_hash,
+)
 from .stage_evidence import (
     GoldVerificationStatus as GoldVerificationStatus,
     ScreenOperationalSummary as ScreenOperationalSummary,
@@ -97,8 +105,15 @@ from ..universe.io_utils import sha256_bytes
 
 _METRICS_DIR = "metrics"
 _METRICS_FILENAME = "metric_report.json"
+_METRICS_V2_FILENAME = "metric_report.v2.json"
 _REPORT_CONTRACT_ID = "metric_report"
 _REPORT_CONTRACT_VERSION = "0.1.0"
+_REPORT_V2_CONTRACT_VERSION = "0.2.0"
+
+# The eleven governed metric families in canonical sorted order (derived from the
+# closed ``MetricFamily`` literal so the ledger can never drift from the
+# stage-profile universe).
+_CANONICAL_METRIC_FAMILIES: tuple[str, ...] = tuple(sorted(get_args(MetricFamily)))
 _SHA256_HEX_PATTERN = r"^[0-9a-f]{64}$"
 _UNSAFE_CI_METHOD = "wilson_one_sided_stratified"
 
@@ -291,7 +306,9 @@ class PersistedMetricReport(_Slice9StrictModel):
     eval_run_id: str
     artifact_reference: str
     sha256: str
-    report: MetricReport
+    # The public persistence wrapper represents either report version; its v0.1
+    # behavior and bytes are unchanged.
+    report: "MetricReport | MetricReportV2"
 
 
 class LoadedMetricReport(_Slice9StrictModel):
@@ -299,6 +316,105 @@ class LoadedMetricReport(_Slice9StrictModel):
     artifact_reference: str
     sha256: str
     report: MetricReport
+
+
+# --- Metric report v0.2 (applicability ledger) ----------------------------
+
+
+class MetricFamilyApplicabilityEntry(_Slice9StrictModel):
+    """One governed metric family's applicability state in the v0.2 ledger."""
+
+    metric_family: MetricFamily
+    applicability_state: Literal["applicable", "inapplicable"]
+    reason_code: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_explicit_null_reason(cls, data: Any) -> Any:
+        return _reject_explicit_null(data, ("reason_code",), "MetricFamilyApplicabilityEntry")
+
+    @model_validator(mode="after")
+    def _entry_invariants(self) -> "MetricFamilyApplicabilityEntry":
+        if self.applicability_state == "inapplicable":
+            if self.reason_code is None:
+                raise ValueError("an inapplicable family requires a reason_code")
+            _require_non_blank(self.reason_code, "reason_code")
+        else:
+            if self.reason_code is not None:
+                raise ValueError("an applicable family must omit reason_code")
+        return self
+
+
+class MetricReportV2(_ContractStamped):
+    # Docstring intentionally omitted so the generated JSON Schema (and thus the
+    # governed model-contract hash) carries no description.
+    _contract_id: ClassVar[str] = _REPORT_CONTRACT_ID
+    _contract_version: ClassVar[str] = _REPORT_V2_CONTRACT_VERSION
+
+    eval_run_id: str
+    case_set_version: str
+    case_set_hash: str = Field(min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN)
+    scoring_gate_config_version: str
+    scoring_gate_config_hash: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+    metric_input_snapshot_hash: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+    evaluation_stage: str
+    stage_profile_registry_version: str
+    stage_profile_registry_hash: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+    selected_stage_profile_entry_hash: str = Field(
+        min_length=64, max_length=64, pattern=_SHA256_HEX_PATTERN
+    )
+    applicability_ledger: tuple[MetricFamilyApplicabilityEntry, ...]
+    metrics: tuple[MetricDatum, ...]
+
+    @model_validator(mode="after")
+    def _report_v2_invariants(self) -> "MetricReportV2":
+        _require_non_blank(self.eval_run_id, "eval_run_id")
+        _require_non_blank(self.evaluation_stage, "evaluation_stage")
+        _require_non_blank(self.stage_profile_registry_version, "stage_profile_registry_version")
+        families = tuple(e.metric_family for e in self.applicability_ledger)
+        if families != _CANONICAL_METRIC_FAMILIES:
+            raise ValueError(
+                "applicability_ledger must list exactly the eleven governed families "
+                "in canonical sorted order"
+            )
+        applicable = {
+            e.metric_family for e in self.applicability_ledger
+            if e.applicability_state == "applicable"
+        }
+        seen: set[tuple[str, str, tuple[tuple[str, str], ...]]] = set()
+        for datum in self.metrics:
+            if datum.metric_id not in applicable:
+                raise ValueError(
+                    "every MetricDatum must belong to an applicable metric family"
+                )
+            key = (
+                datum.metric_id,
+                datum.population_slice_id,
+                tuple((d.key, d.value) for d in datum.dimensions),
+            )
+            if key in seen:
+                raise ValueError("duplicate metric identity (metric_id, slice, dimensions)")
+            seen.add(key)
+        return self
+
+
+class _LoadedMetricReportV2(_Slice9StrictModel):
+    eval_run_id: str
+    artifact_reference: str
+    sha256: str
+    report: MetricReportV2
+
+
+# ``PersistedMetricReport`` forward-references ``MetricReportV2`` (defined above);
+# resolve that reference now that the class exists. The public wrapper carries
+# either report version.
+PersistedMetricReport.model_rebuild()
 
 
 # --- Exceptions -----------------------------------------------------------
@@ -1255,6 +1371,16 @@ def _report_contract_metadata() -> dict[str, str]:
     }
 
 
+def _report_v2_contract_metadata() -> dict[str, str]:
+    return {
+        "contract_id": _REPORT_CONTRACT_ID,
+        "contract_version": _REPORT_V2_CONTRACT_VERSION,
+        "contract_hash": model_contract_hash(
+            MetricReportV2, _REPORT_CONTRACT_ID, _REPORT_V2_CONTRACT_VERSION
+        ),
+    }
+
+
 _AXIS_FAMILY_BY_TYPE = {
     "multi_label": METRIC_AXIS_MULTI_LABEL,
     "structured_set": METRIC_AXIS_STRUCTURED_SET,
@@ -1464,6 +1590,183 @@ def compute_metric_report(
     })
 
 
+def _build_applicability_ledger(entry) -> list[dict[str, str]]:
+    """Derive the canonical eleven-family ledger from a resolved stage-profile
+    entry: applicable families carry no reason; each inapplicable family takes
+    its reason code from ``applicability_reason_codes`` paired positionally with
+    the canonical complement of applicable families."""
+    applicable = set(entry.applicable_metric_families)
+    complement = tuple(f for f in _CANONICAL_METRIC_FAMILIES if f not in applicable)
+    reasons = entry.applicability_reason_codes
+    if len(reasons) != len(complement):
+        raise SnapshotBindingError(
+            "stage-profile entry reason codes do not pair with the inapplicable families",
+            binding_kind="applicability_reason_arity")
+    reason_by_family = dict(zip(complement, reasons))
+    ledger: list[dict[str, str]] = []
+    for family in _CANONICAL_METRIC_FAMILIES:
+        if family in applicable:
+            ledger.append({"metric_family": family, "applicability_state": "applicable"})
+        else:
+            ledger.append({
+                "metric_family": family, "applicability_state": "inapplicable",
+                "reason_code": reason_by_family[family],
+            })
+    return ledger
+
+
+def _verify_v2_report_against_registry(
+    report: "MetricReportV2",
+    m: EvaluationRunManifestV2,
+    stage_profile_registry: LoadedStageProfileRegistry,
+) -> None:
+    """Fail closed unless a v0.2 report's stage, registry identity, selected entry,
+    applicable-family set, every ledger state, and every inapplicable reason code
+    are exactly what the supplied hash-bound stage-profile registry resolves —
+    not merely the run-manifest pins. Structural validity is not sufficient: the
+    ledger is rebuilt from the resolved entry and compared entry-for-entry so a
+    nonblank but forged/swapped reason code is rejected."""
+    if not isinstance(stage_profile_registry, LoadedStageProfileRegistry):
+        raise TypeError(
+            f"stage_profile_registry must be a LoadedStageProfileRegistry, got "
+            f"{type(stage_profile_registry).__name__}")
+    try:
+        entry = resolve_metric_applicability(
+            stage_profile_registry.registry, report.evaluation_stage)
+    except StageProfileError as exc:
+        raise MetricReportBindingError(
+            "report evaluation stage does not resolve to a supported profile entry",
+            eval_run_id=m.eval_run_id) from exc
+    registry_version = stage_profile_registry.version
+    registry_hash = stage_profile_registry_hash(stage_profile_registry.registry)
+    # Stage is bound to the manifest transitively: the manifest carries no literal
+    # stage field, so the resolved entry hash must equal the manifest's selected
+    # entry pin AND the resolved entry's stage must equal the report stage.
+    if entry.evaluation_stage != report.evaluation_stage:
+        raise MetricReportBindingError("resolved stage does not match the report stage",
+                                       eval_run_id=m.eval_run_id)
+    if not (registry_version == report.stage_profile_registry_version
+            == m.stage_profile_registry_version):
+        raise MetricReportBindingError("stage-profile registry version disagreement",
+                                       eval_run_id=m.eval_run_id)
+    if not (registry_hash == report.stage_profile_registry_hash
+            == m.stage_profile_registry_hash):
+        raise MetricReportBindingError("stage-profile registry content-hash disagreement",
+                                       eval_run_id=m.eval_run_id)
+    if not (entry.entry_hash == report.selected_stage_profile_entry_hash
+            == m.selected_stage_profile_entry_hash):
+        raise MetricReportBindingError("selected stage-profile entry hash disagreement",
+                                       eval_run_id=m.eval_run_id)
+    ledger_applicable = tuple(
+        e.metric_family for e in report.applicability_ledger
+        if e.applicability_state == "applicable")
+    if tuple(entry.applicable_metric_families) != ledger_applicable:
+        raise MetricReportBindingError("ledger applicable-family set disagreement",
+                                       eval_run_id=m.eval_run_id)
+    expected = tuple(
+        MetricFamilyApplicabilityEntry.model_validate(d)
+        for d in _build_applicability_ledger(entry))
+    if report.applicability_ledger != expected:
+        raise MetricReportBindingError(
+            "applicability ledger does not match the registry-derived ledger "
+            "(state or reason code mismatch)", eval_run_id=m.eval_run_id)
+
+
+def compute_metric_report_v2(
+    snapshot: MetricInputSnapshot,
+    *,
+    assertion_outcomes: tuple[AssertionOutcome, ...],
+    validator_findings: tuple[ValidatorFinding, ...],
+    run_manifest: EvaluationRunManifestV2,
+    case_set_manifest: CaseSetManifest,
+    scoring_config: LoadedScoringGateConfig,
+    stage_profile_registry: LoadedStageProfileRegistry,
+) -> MetricReportV2:
+    """Compute a deterministic ``metric_report@0.2.0`` with the applicability
+    ledger. Pure: no I/O, no clock, no gate. Resolves the snapshot's stage
+    through the supplied registry and fails closed unless the registry identity,
+    selected entry, stage, applicable-family set, required evidence kinds, and the
+    v0.2 run-manifest pins all agree; every inapplicable reason is derived from
+    the resolved ``StageProfileEntry`` — never caller-supplied."""
+    if not isinstance(snapshot, MetricInputSnapshot):
+        raise TypeError(f"snapshot must be a MetricInputSnapshot, got {type(snapshot).__name__}")
+    if not isinstance(run_manifest, EvaluationRunManifestV2):
+        raise TypeError(
+            f"run_manifest must be an EvaluationRunManifestV2, got {type(run_manifest).__name__}")
+    if not isinstance(stage_profile_registry, LoadedStageProfileRegistry):
+        raise TypeError(
+            f"stage_profile_registry must be a LoadedStageProfileRegistry, got "
+            f"{type(stage_profile_registry).__name__}")
+
+    binding = snapshot.applicability_binding
+    m = run_manifest
+    try:
+        entry = resolve_metric_applicability(stage_profile_registry.registry, binding.evaluation_stage)
+    except StageProfileError as exc:
+        raise SnapshotBindingError(
+            "snapshot evaluation stage does not resolve to a supported profile entry",
+            binding_kind="stage_resolution", eval_run_id=m.eval_run_id) from exc
+
+    registry_version = stage_profile_registry.version
+    registry_hash = stage_profile_registry_hash(stage_profile_registry.registry)
+    if not (registry_version == binding.stage_profile_registry_version
+            == m.stage_profile_registry_version):
+        raise SnapshotBindingError("stage-profile registry version disagreement",
+                                   binding_kind="stage_profile_registry_version",
+                                   eval_run_id=m.eval_run_id)
+    if not (registry_hash == binding.stage_profile_registry_hash
+            == m.stage_profile_registry_hash):
+        raise SnapshotBindingError("stage-profile registry content-hash disagreement",
+                                   binding_kind="stage_profile_registry_hash",
+                                   eval_run_id=m.eval_run_id)
+    if not (entry.entry_hash == binding.selected_stage_profile_entry_hash
+            == m.selected_stage_profile_entry_hash):
+        raise SnapshotBindingError("selected stage-profile entry hash disagreement",
+                                   binding_kind="selected_stage_profile_entry_hash",
+                                   eval_run_id=m.eval_run_id)
+    if entry.evaluation_stage != binding.evaluation_stage:
+        raise SnapshotBindingError("resolved stage does not match the snapshot binding",
+                                   binding_kind="evaluation_stage", eval_run_id=m.eval_run_id)
+    if tuple(entry.applicable_metric_families) != tuple(binding.applicable_metric_families):
+        raise SnapshotBindingError("applicable metric-family set disagreement",
+                                   binding_kind="applicable_metric_families",
+                                   eval_run_id=m.eval_run_id)
+    if tuple(entry.required_stage_evidence_kinds) != tuple(binding.required_stage_evidence_kinds):
+        raise SnapshotBindingError("required stage-evidence kinds disagreement",
+                                   binding_kind="required_stage_evidence_kinds",
+                                   eval_run_id=m.eval_run_id)
+
+    # Only after every registry/binding check passes is the v0.1 producer reused
+    # for the metric data; it performs its own snapshot/manifest binding checks.
+    base = compute_metric_report(
+        snapshot, assertion_outcomes=assertion_outcomes, validator_findings=validator_findings,
+        run_manifest=run_manifest, case_set_manifest=case_set_manifest, scoring_config=scoring_config)
+
+    applicable = set(entry.applicable_metric_families)
+    # Independent enforcement of the no-inapplicable-datum rule.
+    for datum in base.metrics:
+        if datum.metric_id not in applicable:
+            raise SnapshotBindingError(
+                "a computed MetricDatum belongs to an inapplicable metric family",
+                binding_kind="inapplicable_datum", eval_run_id=m.eval_run_id)
+
+    return MetricReportV2.model_validate({
+        "contract": _report_v2_contract_metadata(),
+        "eval_run_id": base.eval_run_id,
+        "case_set_version": base.case_set_version,
+        "case_set_hash": base.case_set_hash,
+        "scoring_gate_config_version": base.scoring_gate_config_version,
+        "scoring_gate_config_hash": base.scoring_gate_config_hash,
+        "metric_input_snapshot_hash": base.metric_input_snapshot_hash,
+        "evaluation_stage": binding.evaluation_stage,
+        "stage_profile_registry_version": registry_version,
+        "stage_profile_registry_hash": registry_hash,
+        "selected_stage_profile_entry_hash": entry.entry_hash,
+        "applicability_ledger": _build_applicability_ledger(entry),
+        "metrics": [d.model_dump(mode="json", exclude_unset=False) for d in base.metrics],
+    })
+
+
 # --- Persistence ----------------------------------------------------------
 
 
@@ -1490,45 +1793,13 @@ def _canonical_report_bytes(report: MetricReport) -> bytes:
     return canonical_contract_bytes(report.model_dump(mode="json", exclude_unset=False))
 
 
-def persist_metric_report(
-    report: MetricReport, *, eval_root: str | Path, eval_run_id: str
-) -> PersistedMetricReport:
-    """Persist a metric report as write-once JSON in the Slice 5 run dir."""
-    if not isinstance(report, MetricReport):
-        raise TypeError(f"report must be a MetricReport, got {type(report).__name__}")
-    resolved_root = _validate_root(eval_root)
-    loaded = load_evaluation_run_manifest_v2(eval_run_id, eval_root=resolved_root)
-    m = loaded.manifest
-    if report.eval_run_id != m.eval_run_id:
-        raise MetricReportBindingError("report eval_run_id does not match the run manifest",
-                                       eval_run_id=m.eval_run_id)
-    if report.case_set_version != m.case_set_version or report.case_set_hash != m.case_set_hash:
-        raise MetricReportBindingError("report case-set identity does not match the run manifest",
-                                       eval_run_id=m.eval_run_id)
-    if (report.scoring_gate_config_version != m.scoring_gate_config_version
-            or report.scoring_gate_config_hash != m.scoring_gate_config_hash):
-        raise MetricReportBindingError("report scoring-config identity does not match the manifest",
-                                       eval_run_id=m.eval_run_id)
-
-    metrics_dir = resolved_root / eval_run_id / _METRICS_DIR
-    reference = f"{eval_run_id}/{_METRICS_DIR}/{_METRICS_FILENAME}"
-    if metrics_dir.exists() or metrics_dir.is_symlink():
-        raise MetricReportExistsError(f"metrics directory {eval_run_id}/{_METRICS_DIR} already exists",
-                                      eval_run_id=eval_run_id,
-                                      artifact_reference=f"{eval_run_id}/{_METRICS_DIR}")
-    try:
-        metrics_dir.mkdir(exist_ok=False)
-    except FileExistsError as exc:
-        raise MetricReportExistsError(f"metrics directory {eval_run_id}/{_METRICS_DIR} already exists",
-                                      eval_run_id=eval_run_id,
-                                      artifact_reference=f"{eval_run_id}/{_METRICS_DIR}") from exc
-    except OSError as exc:
-        raise MetricWriteError(f"failed to create metrics directory for {eval_run_id!r}",
-                               eval_run_id=eval_run_id) from exc
-
-    data = _canonical_report_bytes(report) + b"\n"
+def _write_metric_artifact_once(dest: Path, data: bytes, *, eval_run_id: str,
+                                reference: str) -> str:
+    """Exclusive-create write of ``data`` to ``dest`` with read-back verification."""
     expected = sha256_bytes(data)
-    dest = metrics_dir / _METRICS_FILENAME
+    if dest.is_symlink():
+        raise MetricReportExistsError(f"metrics artifact {reference!r} already exists; write-once",
+                                      eval_run_id=eval_run_id, artifact_reference=reference)
     try:
         fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
     except FileExistsError as exc:
@@ -1556,6 +1827,90 @@ def persist_metric_report(
             eval_run_id=eval_run_id, artifact_reference=reference,
             expected_sha256=expected, observed_sha256=observed,
         )
+    return expected
+
+
+def persist_metric_report(
+    report: "MetricReport | MetricReportV2", *, eval_root: str | Path, eval_run_id: str,
+    stage_profile_registry: LoadedStageProfileRegistry | None = None,
+) -> PersistedMetricReport:
+    """Persist a metric report as write-once JSON in the Slice 5 run dir.
+
+    This is the single public persistence path for both report versions. The v0.1
+    behavior, bytes, artifact path (``metrics/metric_report.json``), write-once
+    semantics, and return wrapper are unchanged and require **no** registry. A
+    ``MetricReportV2`` is written to the distinct ``metrics/metric_report.v2.json``
+    artifact and **requires** a ``LoadedStageProfileRegistry`` against which its
+    stage, registry identity, selected entry, applicable-family set, ledger
+    states, and every inapplicable reason code are verified before any bytes are
+    written; it returns the same public ``PersistedMetricReport`` wrapper.
+    """
+    is_v2 = isinstance(report, MetricReportV2)
+    if not is_v2 and not isinstance(report, MetricReport):
+        raise TypeError(
+            f"report must be a MetricReport or MetricReportV2, got {type(report).__name__}")
+    resolved_root = _validate_root(eval_root)
+    loaded = load_evaluation_run_manifest_v2(eval_run_id, eval_root=resolved_root)
+    m = loaded.manifest
+    if report.eval_run_id != m.eval_run_id:
+        raise MetricReportBindingError("report eval_run_id does not match the run manifest",
+                                       eval_run_id=m.eval_run_id)
+    if report.case_set_version != m.case_set_version or report.case_set_hash != m.case_set_hash:
+        raise MetricReportBindingError("report case-set identity does not match the run manifest",
+                                       eval_run_id=m.eval_run_id)
+    if (report.scoring_gate_config_version != m.scoring_gate_config_version
+            or report.scoring_gate_config_hash != m.scoring_gate_config_hash):
+        raise MetricReportBindingError("report scoring-config identity does not match the manifest",
+                                       eval_run_id=m.eval_run_id)
+
+    metrics_dir = resolved_root / eval_run_id / _METRICS_DIR
+
+    if is_v2:
+        if stage_profile_registry is None:
+            raise MetricReportBindingError(
+                "persisting a v0.2 metric report requires a stage-profile registry",
+                eval_run_id=m.eval_run_id)
+        _verify_v2_report_against_registry(report, m, stage_profile_registry)
+        reference = f"{eval_run_id}/{_METRICS_DIR}/{_METRICS_V2_FILENAME}"
+        if metrics_dir.is_symlink():
+            raise MetricReportExistsError(
+                f"metrics directory {eval_run_id}/{_METRICS_DIR} is a symlink",
+                eval_run_id=eval_run_id, artifact_reference=f"{eval_run_id}/{_METRICS_DIR}")
+        if not metrics_dir.exists():
+            try:
+                metrics_dir.mkdir(exist_ok=False)
+            except OSError as exc:
+                raise MetricWriteError(f"failed to create metrics directory for {eval_run_id!r}",
+                                       eval_run_id=eval_run_id) from exc
+        elif not metrics_dir.is_dir():
+            raise MetricReportExistsError(
+                f"metrics path {eval_run_id}/{_METRICS_DIR} is not a directory",
+                eval_run_id=eval_run_id, artifact_reference=f"{eval_run_id}/{_METRICS_DIR}")
+        data = canonical_contract_bytes(report.model_dump(mode="json", exclude_unset=True)) + b"\n"
+        dest = metrics_dir / _METRICS_V2_FILENAME
+        expected = _write_metric_artifact_once(dest, data, eval_run_id=eval_run_id,
+                                               reference=reference)
+        return PersistedMetricReport(eval_run_id=eval_run_id, artifact_reference=reference,
+                                     sha256=expected, report=report)
+
+    # --- v0.1 path (unchanged: fresh metrics dir required, distinct filename) ---
+    reference = f"{eval_run_id}/{_METRICS_DIR}/{_METRICS_FILENAME}"
+    if metrics_dir.exists() or metrics_dir.is_symlink():
+        raise MetricReportExistsError(f"metrics directory {eval_run_id}/{_METRICS_DIR} already exists",
+                                      eval_run_id=eval_run_id,
+                                      artifact_reference=f"{eval_run_id}/{_METRICS_DIR}")
+    try:
+        metrics_dir.mkdir(exist_ok=False)
+    except FileExistsError as exc:
+        raise MetricReportExistsError(f"metrics directory {eval_run_id}/{_METRICS_DIR} already exists",
+                                      eval_run_id=eval_run_id,
+                                      artifact_reference=f"{eval_run_id}/{_METRICS_DIR}") from exc
+    except OSError as exc:
+        raise MetricWriteError(f"failed to create metrics directory for {eval_run_id!r}",
+                               eval_run_id=eval_run_id) from exc
+    data = _canonical_report_bytes(report) + b"\n"
+    dest = metrics_dir / _METRICS_FILENAME
+    expected = _write_metric_artifact_once(dest, data, eval_run_id=eval_run_id, reference=reference)
     return PersistedMetricReport(eval_run_id=eval_run_id, artifact_reference=reference,
                                  sha256=expected, report=report)
 
@@ -1665,3 +2020,102 @@ def load_metric_report(eval_run_id: str, *, eval_root: str | Path) -> LoadedMetr
                                        eval_run_id=eval_run_id, artifact_reference=reference)
     return LoadedMetricReport(eval_run_id=eval_run_id, artifact_reference=reference,
                               sha256=observed, report=report)
+
+
+# --- Metric report v0.2 persistence / reader ------------------------------
+
+
+def load_metric_report_v2(
+    eval_run_id: str, *, eval_root: str | Path,
+    stage_profile_registry: LoadedStageProfileRegistry,
+) -> "_LoadedMetricReportV2":
+    """Load a ``metric_report@0.2.0`` report; accepts only v0.2 (a v0.1 artifact
+    is rejected, never silently upgraded). Applies the same strict JSON / symlink
+    / hash / read-back protections as the v0.1 reader, revalidates the v0.2 run,
+    stage-profile, and report identity bindings against the run manifest, and then
+    verifies the report against the supplied hash-bound stage-profile registry so a
+    tampered but structurally valid ledger reason or stage mismatch fails closed."""
+    resolved_root = _validate_root(eval_root)
+    loaded_run = load_evaluation_run_manifest_v2(eval_run_id, eval_root=resolved_root)
+    m = loaded_run.manifest
+    run_dir = resolved_root / eval_run_id
+    metrics_dir = run_dir / _METRICS_DIR
+    reference = f"{eval_run_id}/{_METRICS_DIR}/{_METRICS_V2_FILENAME}"
+    dest = metrics_dir / _METRICS_V2_FILENAME
+    if run_dir.is_symlink() or metrics_dir.is_symlink() or dest.is_symlink():
+        raise MetricArtifactNotAFileError(f"metrics artifact {reference!r} or a parent is a symlink",
+                                          eval_run_id=eval_run_id, artifact_reference=reference)
+    if not dest.exists():
+        raise MetricArtifactMissingError(f"metrics artifact {reference!r} does not exist",
+                                         eval_run_id=eval_run_id, artifact_reference=reference)
+    if not dest.is_file():
+        raise MetricArtifactNotAFileError(f"metrics artifact {reference!r} is not a regular file",
+                                          eval_run_id=eval_run_id, artifact_reference=reference)
+    try:
+        raw = dest.read_bytes()
+    except OSError as exc:
+        raise MetricArtifactReadError(f"failed to read metrics artifact {reference!r}",
+                                      eval_run_id=eval_run_id, artifact_reference=reference) from exc
+    observed = sha256_bytes(raw)
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise MetricDecodeError(f"metrics artifact {reference!r} is not valid UTF-8",
+                                eval_run_id=eval_run_id, artifact_reference=reference) from exc
+    if text.startswith("\ufeff"):
+        raise MetricJsonError(f"metrics artifact {reference!r} has a UTF-8 BOM",
+                              eval_run_id=eval_run_id, artifact_reference=reference)
+    try:
+        payload = json.loads(text, object_pairs_hook=_reject_duplicate_keys,
+                             parse_constant=_reject_non_finite_constant)
+    except json.JSONDecodeError as exc:
+        raise MetricJsonError(f"metrics artifact {reference!r} is not valid JSON: {exc.msg}",
+                              eval_run_id=eval_run_id, artifact_reference=reference) from exc
+    except _DuplicateKeyControl as exc:
+        raise MetricJsonError(f"metrics artifact {reference!r} has duplicate key {exc.key!r}",
+                              eval_run_id=eval_run_id, artifact_reference=reference,
+                              duplicate_key=exc.key) from exc
+    except _NonFiniteControl as exc:
+        raise MetricJsonError(f"metrics artifact {reference!r} has non-JSON constant "
+                              f"{exc.constant_name}", eval_run_id=eval_run_id,
+                              artifact_reference=reference, constant_name=exc.constant_name) from exc
+    non_finite = _first_non_finite(payload)
+    if non_finite is not None:
+        raise MetricJsonError(f"metrics artifact {reference!r} has non-finite number ({non_finite})",
+                              eval_run_id=eval_run_id, artifact_reference=reference,
+                              constant_name=non_finite)
+    if not isinstance(payload, dict):
+        raise MetricTopLevelTypeError(f"metrics artifact {reference!r} is not a JSON object",
+                                      eval_run_id=eval_run_id, artifact_reference=reference,
+                                      observed_type=type(payload).__name__)
+    try:
+        report = MetricReportV2.model_validate(payload)
+    except PydanticValidationError as exc:
+        pairs = sorted(("/".join(str(p) for p in e["loc"]), e["type"]) for e in exc.errors())
+        raise MetricModelValidationError(
+            f"metrics artifact {reference!r} failed MetricReportV2 validation",
+            eval_run_id=eval_run_id, artifact_reference=reference,
+            field_locations=tuple(loc for loc, _ in pairs),
+            error_types=tuple(t for _, t in pairs),
+        ) from exc
+    if report.eval_run_id != m.eval_run_id:
+        raise MetricReportBindingError(f"metrics artifact {reference!r} records a different run",
+                                       eval_run_id=eval_run_id, artifact_reference=reference)
+    if report.case_set_version != m.case_set_version or report.case_set_hash != m.case_set_hash:
+        raise MetricReportBindingError(f"metrics artifact {reference!r} case-set identity mismatch",
+                                       eval_run_id=eval_run_id, artifact_reference=reference)
+    if (report.scoring_gate_config_version != m.scoring_gate_config_version
+            or report.scoring_gate_config_hash != m.scoring_gate_config_hash):
+        raise MetricReportBindingError(f"metrics artifact {reference!r} scoring-config mismatch",
+                                       eval_run_id=eval_run_id, artifact_reference=reference)
+    if (report.stage_profile_registry_version != m.stage_profile_registry_version
+            or report.stage_profile_registry_hash != m.stage_profile_registry_hash
+            or report.selected_stage_profile_entry_hash != m.selected_stage_profile_entry_hash):
+        raise MetricReportBindingError(f"metrics artifact {reference!r} stage-profile pin mismatch",
+                                       eval_run_id=eval_run_id, artifact_reference=reference)
+    # Registry-truthful verification: resolve the report stage through the supplied
+    # hash-bound registry and reject a tampered stage or ledger reason even when the
+    # on-disk artifact is structurally valid and matches the manifest pins.
+    _verify_v2_report_against_registry(report, m, stage_profile_registry)
+    return _LoadedMetricReportV2(eval_run_id=eval_run_id, artifact_reference=reference,
+                                 sha256=observed, report=report)
