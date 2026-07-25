@@ -52,7 +52,9 @@ from .metrics import (
     MetricDatum,
     MetricDimension,
     MetricReport,
+    MetricReportV2,
     MetricSupport,
+    _LoadedMetricReportV2,
 )
 from .models import (
     CaseSetManifest,
@@ -277,6 +279,26 @@ class GateMetricReportBindingError(GateEvaluationError):
     """Metric-report identity does not bind to the run/case-set/config."""
 
 
+class GateApplicabilityBindingError(GateEvaluationError):
+    """A gate targets a metric family the v0.2 report marks inapplicable.
+
+    Raised before datum selection, support checks, outcome generation, or verdict
+    derivation — it is a binding error, never a ``GateMetricSelectionError``, an
+    ``indeterminate`` outcome, or a pass/fail verdict. Carries safe, machine-
+    readable metadata (family, applicability state, governed ledger reason code)
+    with no raw source text or evidence content.
+    """
+
+    def __init__(
+        self, message: str, *, metric_family: str | None = None,
+        applicability_state: str | None = None, reason_code: str | None = None, **kw: Any,
+    ) -> None:
+        super().__init__(message, **kw)
+        self.metric_family = metric_family
+        self.applicability_state = applicability_state
+        self.reason_code = reason_code
+
+
 class GateFindingsBindingError(GateEvaluationError):
     """Validator-finding identity does not bind to the run."""
 
@@ -495,7 +517,9 @@ def _datum_dims(datum: MetricDatum) -> dict[str, str]:
     return {d.key: d.value for d in datum.dimensions}
 
 
-def _select_datum(gate: _ExecutableGate, report: MetricReport) -> MetricDatum:
+def _select_datum(
+    gate: _ExecutableGate, report: "MetricReport | MetricReportV2"
+) -> MetricDatum:
     want = gate.selector.as_mapping
     candidates = [
         d for d in report.metrics
@@ -755,25 +779,45 @@ def assess_completed_evaluation(
     run_manifest: EvaluationRunManifest,
     case_set_manifest: CaseSetManifest,
     scoring_config: LoadedScoringGateConfig,
-    metric_report: LoadedMetricReport,
+    metric_report: "LoadedMetricReport | _LoadedMetricReportV2",
     findings: LoadedValidatorFindings,
 ) -> EvaluationResultV2:
-    """Assess a completed evaluation. Pure; raises typed errors on invalid input."""
+    """Assess a completed evaluation. Pure; raises typed errors on invalid input.
+
+    ``metric_report`` is the v0.1 ``LoadedMetricReport`` or the v0.2 wrapper
+    returned by ``load_metric_report_v2``; only a v0.2 report (whose inner report
+    is a ``MetricReportV2``) carries the applicability ledger that gates a
+    metric-family binding check.
+    """
     for name, obj, typ in (
         ("run_manifest", run_manifest, EvaluationRunManifest),
         ("case_set_manifest", case_set_manifest, CaseSetManifest),
         ("scoring_config", scoring_config, LoadedScoringGateConfig),
-        ("metric_report", metric_report, LoadedMetricReport),
         ("findings", findings, LoadedValidatorFindings),
     ):
         if not isinstance(obj, typ):
             raise TypeError(f"{name} must be a {typ.__name__}, got {type(obj).__name__}")
+    if not isinstance(metric_report, (LoadedMetricReport, _LoadedMetricReportV2)):
+        raise TypeError(
+            f"metric_report must be a LoadedMetricReport or the v0.2 loaded wrapper, "
+            f"got {type(metric_report).__name__}")
     stage = _validate_stage(stage)
     m = run_manifest
     _bind_case_set(case_set_manifest, m)
     _bind_scoring_config(scoring_config, m)
     _bind_metric_report(metric_report, m)
     critical_ids = _bind_findings(findings, m)
+
+    # v0.2 only: the applicability ledger's inapplicable families (with their
+    # governed reason codes). None for a v0.1 report, which has no ledger, so the
+    # legacy gate path is preserved exactly.
+    inapplicable_reasons: dict[str, str] | None = None
+    if isinstance(metric_report.report, MetricReportV2):
+        inapplicable_reasons = {
+            e.metric_family: e.reason_code
+            for e in metric_report.report.applicability_ledger
+            if e.applicability_state == "inapplicable"
+        }
 
     gates = tuple(_parse_gate(g, scoring_config.config) for g in scoring_config.config.gates)
     outcomes: list[GateOutcome] = []
@@ -784,6 +828,16 @@ def assess_completed_evaluation(
             raise GatePolicyError(f"duplicate gate reference id {gate.reference_id!r}",
                                   gate_reference_id=gate.reference_id)
         seen_refs.add(gate.reference_id)
+        # A gate targeting an inapplicable metric family is a binding error raised
+        # strictly before datum selection, support checks, outcomes, or verdict.
+        if inapplicable_reasons is not None and gate.metric_id in inapplicable_reasons:
+            raise GateApplicabilityBindingError(
+                f"gate {gate.reference_id!r} targets an inapplicable metric family",
+                eval_run_id=m.eval_run_id,
+                artifact_reference=metric_report.artifact_reference,
+                gate_reference_id=gate.reference_id, metric_family=gate.metric_id,
+                applicability_state="inapplicable",
+                reason_code=inapplicable_reasons[gate.metric_id])
         datum = _select_datum(gate, metric_report.report)
         identity = (datum.metric_id, datum.population_slice_id,
                     tuple((d.key, d.value) for d in datum.dimensions))

@@ -32,6 +32,7 @@ from dynamic_ai_products.evaluation.gates import (
     EvaluationResultSchemaValidationError,
     EvaluationResultTopLevelTypeError,
     EvaluationResultWriteError,
+    GateApplicabilityBindingError,
     GateCaseSetBindingError,
     GateEvaluationError,
     GateFindingsBindingError,
@@ -51,6 +52,7 @@ from dynamic_ai_products.evaluation.gates import (
 from dynamic_ai_products.evaluation.metric_inputs import build_metric_input_snapshot
 from dynamic_ai_products.evaluation.models import (
     AssertionOutcome,
+    EvaluationRunManifest,
     EvaluationRunManifestV2,
     ValidatorFinding,
 )
@@ -58,6 +60,7 @@ from dynamic_ai_products.evaluation.references import load_target_registry
 from dynamic_ai_products.evaluation.runs import (
     RunArtifactNotAFileError,
     initialize_evaluation_run,
+    initialize_evaluation_run_v2,
     load_evaluation_run_manifest,
 )
 from dynamic_ai_products.evaluation.stage_evidence import (
@@ -307,6 +310,54 @@ def screen_report(ctx, *, unsafe_min=1, audited_missed=(False,), pop=100):
     tmp_path, rm, _ = ctx
     return build_report(tmp_path, rm, stage="universe_screen", unsafe_min=unsafe_min,
                         audited_missed=audited_missed, pop=pop)
+
+
+def build_report_v2(root, rm, *, stage="universe_classification", axis_min=0, unsafe_min=1,
+                    audited_missed=(False,), pop=100):
+    """Compute an in-memory ``_LoadedMetricReportV2`` (v0.2 report with an
+    applicability ledger) — the exact wrapper type ``load_metric_report_v2``
+    returns — via the public ``compute_metric_report_v2`` producer."""
+    entry = resolve_metric_applicability(SP_REG.registry, stage)
+    ev = _stage_evidence(stage, unsafe_min=unsafe_min, audited_missed=audited_missed, pop=pop)
+    ev_ver = ev.model.set_version if ev is not None else None
+    ev_hash = stage_metric_evidence_set_hash(ev.model) if ev is not None else None
+    local_rm = _v2_rm(
+        eval_run_id="run1", case_set_version=rm.case_set_version, case_set_hash=rm.case_set_hash,
+        scoring_version=rm.scoring_gate_config_version, scoring_hash=rm.scoring_gate_config_hash,
+        stage=stage, entry_hash=entry.entry_hash, ev_ver=ev_ver, ev_hash=ev_hash)
+    axis = met.AxisDefinition(axis_id="axis-1", axis_role="product", metric_type="abstention_allowed",
+                              base_metric_type="multi_label", labels=("a", "b"))
+    ex = (met.ValidatorRuleEvaluationRecord(artifact_id="art1", rule_id="source_id_resolution",
+                                            evaluated_observation_count=5, failed_observation_count=1),)
+    snap = build_metric_input_snapshot(
+        evaluation_stage=stage, stage_profile_registry=SP_REG, run_manifest=local_rm,
+        axis_definitions=(axis,),
+        axis_records=(met.AxisEvaluationRecord(record_id="r1", case_id=CID, axis_id="axis-1",
+            metric_scope="conditional", verification_status="verified",
+            evidence_resolvability="resolvable", predicted_values=("a",), gold_values=("a",)),),
+        assertion_bindings=(met.AssertionMetricBinding(case_id=CID, assertion_id="A1",
+            assertion_kind="expected_entity", partition="dev", suites=("adversarial", "regression")),),
+        validator_rule_evaluations=ex, stage_evidence=ev)
+    scfg = ScoringGateConfig(config_version=rm.scoring_gate_config_version,
+        blocking_severities=("synth-critical",), protected_regression_classes=(),
+        gates=(_s9gate(met.METRIC_TIER_CONTRACT, "overall"),
+               _s9gate(met.METRIC_UNSAFE_EXCLUSION, "overall", {"minimum_audited_per_stratum": unsafe_min},
+                       "wilson_one_sided_stratified", {"confidence_level": 0.95}),
+               _s9gate(met.METRIC_AXIS_MULTI_LABEL, "axis-1", {"minimum_verified_support": axis_min})),
+        diagnostics=(_diag(met.METRIC_ASSERTION_OUTCOMES, "overall"),
+                     _diag(met.METRIC_VALIDATOR_RULES, "overall"),
+                     _diag(met.METRIC_VALIDATOR_SUMMARIES, "overall"),
+                     _diag(met.METRIC_SCREEN_OPERATIONAL, "overall"),
+                     _diag(met.METRIC_AXIS_ABSTENTION, "axis-1")))
+    run_rm = _rm_from_snapshot(snap)
+    lc = LoadedScoringGateConfig(config=scfg, version=run_rm.scoring_gate_config_version,
+                                 sha256=run_rm.scoring_gate_config_hash, artifact_reference="x")
+    rep = met.compute_metric_report_v2(snap, assertion_outcomes=(ao(),), validator_findings=(vf(),),
+        run_manifest=run_rm, case_set_manifest=CASE_SET, scoring_config=lc,
+        stage_profile_registry=SP_REG)
+    return met._LoadedMetricReportV2(
+        eval_run_id="run1", artifact_reference="run1/metrics/metric_report.v2.json",
+        sha256=sha256_bytes(rep.model_dump_json(exclude_unset=True).encode()), report=rep)
 
 
 # --- Completed status and verdict -----------------------------------------
@@ -1157,3 +1208,140 @@ def test_package_import_no_io_or_hash():
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT)
     assert result.returncode == 0 and "OK" in result.stdout, result.stderr
+
+
+# --- Slice 12K: gate applicability binding ---------------------------------
+
+
+def _v1_rm(rm2):
+    """A v0.1 gate manifest sharing a v0.2 report's run/case-set/scoring identity."""
+    return EvaluationRunManifest.model_validate({
+        "contract": {"contract_id": "evaluation_run_manifest", "contract_version": "0.1.0",
+                     "contract_hash": model_contract_hash(
+                         EvaluationRunManifest, "evaluation_run_manifest", "0.1.0")},
+        "eval_run_id": rm2.eval_run_id, "prediction_run_id": "P",
+        "prediction_run_manifest_hash": HEX,
+        "case_set_version": rm2.case_set_version, "case_set_hash": rm2.case_set_hash,
+        "registry_snapshot_hash": HEX, "validator_bundle_version": "vb",
+        "validator_bundle_hash": "b" * 64,
+        "scoring_gate_config_version": rm2.scoring_gate_config_version,
+        "scoring_gate_config_hash": rm2.scoring_gate_config_hash,
+        "code_commit": "c", "pydantic_runtime_version": "2"})
+
+
+def _public_v2_loaded(tmp_path, stage="universe_classification"):
+    """Produce, persist, and re-load a v0.2 report through the PUBLIC v0.2 APIs."""
+    ev = _stage_evidence(stage, unsafe_min=1, audited_missed=(False,), pop=100)
+    ev_ver = ev.model.set_version if ev is not None else None
+    ev_hash = stage_metric_evidence_set_hash(ev.model) if ev is not None else None
+    rm2 = initialize_evaluation_run_v2(
+        eval_root=tmp_path, eval_run_id="run1", prediction_run_id="P",
+        prediction_run_manifest_hash="a" * 64, case_set=CASE_SET, registry=REGISTRY,
+        validator_bundle_version="vb", validator_bundle_hash="b" * 64, scoring_config=SCORING,
+        code_commit="c", config_snapshot_source_root=FX / "configs", evaluation_created_at=CREATED,
+        evaluation_stage=stage, stage_profile_registry=SP_REG,
+        semantic_adapter_registry_version="sa-v1", semantic_adapter_registry_hash=HEX,
+        selected_semantic_adapter_entry_hash=HEX,
+        source_passage_snapshot_version="sp-v1", source_passage_snapshot_hash=HEX,
+        gold_assertion_set_version="g-v1", gold_assertion_set_hash=HEX,
+        axis_taxonomy_version="ax-v1", axis_taxonomy_hash=HEX,
+        validator_rule_parameters_version="vp-v1", validator_rule_parameters_hash=HEX,
+        stage_metric_evidence_set_version=ev_ver, stage_metric_evidence_set_hash=ev_hash).manifest
+    axis = met.AxisDefinition(axis_id="axis-1", axis_role="product", metric_type="abstention_allowed",
+                              base_metric_type="multi_label", labels=("a", "b"))
+    ex = (met.ValidatorRuleEvaluationRecord(artifact_id="art1", rule_id="source_id_resolution",
+                                            evaluated_observation_count=5, failed_observation_count=1),)
+    snap = build_metric_input_snapshot(
+        evaluation_stage=stage, stage_profile_registry=SP_REG, run_manifest=rm2,
+        axis_definitions=(axis,),
+        axis_records=(met.AxisEvaluationRecord(record_id="r1", case_id=CID, axis_id="axis-1",
+            metric_scope="conditional", verification_status="verified",
+            evidence_resolvability="resolvable", predicted_values=("a",), gold_values=("a",)),),
+        assertion_bindings=(met.AssertionMetricBinding(case_id=CID, assertion_id="A1",
+            assertion_kind="expected_entity", partition="dev", suites=("adversarial", "regression")),),
+        validator_rule_evaluations=ex, stage_evidence=ev)
+    scfg = ScoringGateConfig(config_version=rm2.scoring_gate_config_version,
+        blocking_severities=("synth-critical",), protected_regression_classes=(),
+        gates=(_s9gate(met.METRIC_TIER_CONTRACT, "overall"),
+               _s9gate(met.METRIC_AXIS_MULTI_LABEL, "axis-1", {"minimum_verified_support": 0})),
+        diagnostics=(_diag(met.METRIC_ASSERTION_OUTCOMES, "overall"),
+                     _diag(met.METRIC_VALIDATOR_RULES, "overall"),
+                     _diag(met.METRIC_VALIDATOR_SUMMARIES, "overall"),
+                     _diag(met.METRIC_AXIS_ABSTENTION, "axis-1")))
+    lc = LoadedScoringGateConfig(config=scfg, version=rm2.scoring_gate_config_version,
+                                 sha256=rm2.scoring_gate_config_hash, artifact_reference="x")
+    v2 = met.compute_metric_report_v2(snap, assertion_outcomes=(ao(),), validator_findings=(vf(),),
+        run_manifest=rm2, case_set_manifest=CASE_SET, scoring_config=lc,
+        stage_profile_registry=SP_REG)
+    met.persist_metric_report(v2, eval_root=tmp_path, eval_run_id="run1", stage_profile_registry=SP_REG)
+    return met.load_metric_report_v2("run1", eval_root=tmp_path, stage_profile_registry=SP_REG), rm2
+
+
+def _inapplicable_gate():
+    # unsafe_exclusion is inapplicable for universe_classification.
+    return exec_gate(met.METRIC_UNSAFE_EXCLUSION, "overall", operator="less_than_or_equal",
+                     value=0.99, sel=UNSAFE_SEL, support={"minimum_audited_per_stratum": 1},
+                     confidence_level=0.95, ci="wilson_one_sided_stratified")
+
+
+def test_v2_public_path_inapplicable_family_raises_binding_error(tmp_path):
+    # A v0.2 report loaded through the public v0.2 path, gate on an inapplicable
+    # family -> GateApplicabilityBindingError.
+    loaded, rm2 = _public_v2_loaded(tmp_path)
+    v1 = _v1_rm(rm2)
+    with pytest.raises(GateApplicabilityBindingError):
+        assess_completed_evaluation(stage="s", run_manifest=v1, case_set_manifest=CASE_SET,
+            scoring_config=exec_config(v1, [_inapplicable_gate()]), metric_report=loaded,
+            findings=loaded_findings(vf()))
+
+
+def test_v2_applicability_error_metadata(ctx):
+    tmp_path, rm, _ = ctx
+    report = build_report_v2(tmp_path, rm)  # classification
+    with pytest.raises(GateApplicabilityBindingError) as exc:
+        assess(ctx, gates=[_inapplicable_gate()], report=report)
+    e = exc.value
+    assert e.metric_family == met.METRIC_UNSAFE_EXCLUSION
+    assert e.applicability_state == "inapplicable"
+    assert e.reason_code and e.reason_code.startswith("unsafe_exclusion_")
+    assert e.eval_run_id == "run1"
+    assert e.artifact_reference == "run1/metrics/metric_report.v2.json"
+    assert e.gate_reference_id == "g-unsafe_exclusion-overall"
+
+
+def test_v2_applicability_precedes_selection_error(ctx):
+    tmp_path, rm, _ = ctx
+    report = build_report_v2(tmp_path, rm)
+    # The inapplicable-family gate would otherwise reach _select_datum and raise a
+    # zero-candidate GateMetricSelectionError; the binding error must win first.
+    with pytest.raises(GateApplicabilityBindingError) as exc:
+        assess(ctx, gates=[_inapplicable_gate()], report=report)
+    assert not isinstance(exc.value, GateMetricSelectionError)
+    assert not hasattr(exc.value, "candidate_count")
+
+
+def test_v2_applicable_family_gate_evaluates_normally(ctx):
+    tmp_path, rm, _ = ctx
+    report = build_report_v2(tmp_path, rm)  # axis_multi_label applicable
+    r = assess(ctx, report=report, gates=[
+        exec_gate(met.METRIC_AXIS_MULTI_LABEL, "axis-1", operator="greater_than_or_equal",
+                  value=0.5, sel=AXIS_SEL, support={"minimum_verified_support": 0})])
+    assert r.execution_status == "completed" and r.gate_verdict == "pass"
+
+
+def test_v1_report_inapplicable_family_keeps_legacy_selection_error(ctx):
+    # A legacy v0.1 report has no ledger: an unsafe gate on a classification report
+    # finds no datum and raises the existing GateMetricSelectionError, NOT the new
+    # applicability binding error.
+    tmp_path, rm, rep = ctx  # rep is a v0.1 classification LoadedMetricReport
+    with pytest.raises(GateMetricSelectionError) as exc:
+        assess(ctx, gates=[_inapplicable_gate()])
+    assert not isinstance(exc.value, GateApplicabilityBindingError)
+    assert exc.value.candidate_count == 0
+
+
+def test_applicability_error_public_wrappers_private():
+    assert "GateApplicabilityBindingError" in evaluation_pkg.__all__
+    assert issubclass(GateApplicabilityBindingError, GateEvaluationError)
+    # v0.2 loaded wrapper stays module-private.
+    assert "_LoadedMetricReportV2" not in evaluation_pkg.__all__
