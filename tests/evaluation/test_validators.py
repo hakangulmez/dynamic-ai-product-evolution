@@ -531,6 +531,104 @@ def test_partial_coverage_unaccounted_candidate_rejected():
         )  # evaluated(3)+blocked(1) != candidate(5)
 
 
+# --- P2-pre-a: Rule 11 extraction-stage inapplicability permission --------
+#
+# The static gate only *permits* a state; it never produces one. Acceptance is
+# therefore asserted at the model-construction layer, and the v0.1 end-to-end
+# path is asserted unchanged: loaded v0.1 parameters still declare Rule 11
+# applicable at both extraction stages and continue to govern evaluate().
+
+_RULE_11 = "customer_task_outcome_and_evidence"
+_RULE_11_REASON = "stage_emits_no_customer_facing_task"
+_EXTRACTION_STAGES = ("capability_extraction", "task_extraction")
+
+
+def _rule11_inapplicable_snapshot(stage):
+    cov = full_coverage()
+    cov[VALIDATOR_RULE_ORDER.index(_RULE_11)] = {
+        "rule_id": _RULE_11, "coverage_state": "inapplicable", "candidate_count": 0,
+        "evaluated_observation_count": 0, "blocked_candidate_count": 0,
+        "reason_counts": [{"reason_code": _RULE_11_REASON, "count": 1}],
+    }
+    obs = _passing_observations()
+    del obs[_RULE_11]  # inapplicable -> no observation
+    ordered = tuple(obs[r] for r in VALIDATOR_RULE_ORDER if r != _RULE_11)
+    return snapshot(stage=stage, coverage=cov, observations=ordered)
+
+
+@pytest.mark.parametrize("stage", _EXTRACTION_STAGES)
+def test_extraction_stage_accepts_rule11_inapplicable(stage):
+    snap = _rule11_inapplicable_snapshot(stage)
+    assert snap.stage == stage
+    record = {c.rule_id: c for c in snap.coverage}[_RULE_11]
+    assert record.coverage_state == "inapplicable"
+    assert (
+        record.candidate_count,
+        record.evaluated_observation_count,
+        record.blocked_candidate_count,
+    ) == (0, 0, 0)
+    assert tuple((r.reason_code, r.count) for r in record.reason_counts) == (
+        (_RULE_11_REASON, 1),
+    )
+    assert all(o.rule_id != _RULE_11 for o in snap.observations)
+
+
+@pytest.mark.parametrize("stage", _EXTRACTION_STAGES)
+@pytest.mark.parametrize(
+    ("rule_id", "reason"),
+    [
+        (
+            "product_capability_task_parent_resolution",
+            "stage_has_no_product_capability_task_hierarchy",
+        ),
+        ("active_record_non_roadmap_evidence", "stage_has_no_active_deployment_record"),
+    ],
+)
+def test_extraction_stage_still_rejects_other_inapplicable_rules(stage, rule_id, reason):
+    cov = full_coverage()
+    cov[VALIDATOR_RULE_ORDER.index(rule_id)] = {
+        "rule_id": rule_id, "coverage_state": "inapplicable", "candidate_count": 0,
+        "evaluated_observation_count": 0, "blocked_candidate_count": 0,
+        "reason_counts": [{"reason_code": reason, "count": 1}],
+    }
+    obs = _passing_observations()
+    del obs[rule_id]
+    ordered = tuple(obs[r] for r in VALIDATOR_RULE_ORDER if r != rule_id)
+    with pytest.raises(PydanticValidationError):
+        snapshot(stage=stage, coverage=cov, observations=ordered)
+
+
+def test_universe_stage_permission_sets_unchanged():
+    universe = frozenset(
+        {
+            "product_capability_task_parent_resolution",
+            "active_record_non_roadmap_evidence",
+            _RULE_11,
+        }
+    )
+    gate = val_mod._STAGE_OPTIONAL_INAPPLICABLE
+    assert gate["universe_screen"] == universe
+    assert gate["universe_classification"] == universe
+    assert gate["capability_extraction"] == frozenset({_RULE_11})
+    assert gate["task_extraction"] == frozenset({_RULE_11})
+
+
+def test_rule11_permission_does_not_override_v01_parameter_applicability():
+    # v0.1 parameters declare Rule 11 applicable at capability_extraction, so the
+    # static permission alone must not let inapplicable coverage through evaluate.
+    assert ENTRIES[_RULE_11].stage_parameters[0].stage == "capability_extraction"
+    assert ENTRIES[_RULE_11].stage_parameters[0].applicability == "applicable"
+    with pytest.raises(ValidatorBundleBindingError) as exc:
+        evaluate(_rule11_inapplicable_snapshot("capability_extraction"))
+    assert exc.value.binding_kind == "coverage_applicable_stage_inapplicable"
+
+
+def test_v01_end_to_end_capability_extraction_unchanged():
+    # The ordinary v0.1 path is untouched: Rule 11 stays fully evaluated.
+    result = evaluate(snapshot())
+    assert result.findings == ()
+
+
 # --- Correction B: Rule 12 real hash provenance ---------------------------
 
 

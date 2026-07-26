@@ -359,9 +359,15 @@ ValidatorRuleCoverageState = Literal[
 _RULE_12 = "raw_output_and_repair_preservation"
 
 # Governed matrix reduction (SPEC-023 / ADR-024): the only rules that may be
-# inapplicable, and only at the two universe stages. Extraction stages have no
-# inapplicable rule. This is the direct-construction gate; evaluate additionally
-# binds each coverage record to the loaded parameters' exact stage entry.
+# inapplicable, per stage. The two universe stages permit three rules; the two
+# extraction stages permit only customer_task_outcome_and_evidence, because
+# neither extraction output schema carries is_customer_facing_task or
+# customer_outcome, so Rule 11 is not derivable there.
+#
+# This is a permission gate for direct snapshot construction, not an effect:
+# nothing here makes a rule inapplicable. evaluate additionally binds each
+# coverage record to the loaded parameters' exact stage entry, so a parameter
+# set that declares Rule 11 applicable at an extraction stage still governs.
 _STAGE_OPTIONAL_INAPPLICABLE: dict[str, frozenset[str]] = {
     "universe_screen": frozenset(
         {
@@ -377,6 +383,8 @@ _STAGE_OPTIONAL_INAPPLICABLE: dict[str, frozenset[str]] = {
             "customer_task_outcome_and_evidence",
         }
     ),
+    "capability_extraction": frozenset({"customer_task_outcome_and_evidence"}),
+    "task_extraction": frozenset({"customer_task_outcome_and_evidence"}),
 }
 
 
