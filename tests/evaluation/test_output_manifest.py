@@ -756,14 +756,14 @@ def test_six_new_exports_present():
 
 
 def test_export_list_sorted_unique_and_count():
-    assert len(evaluation_pkg.__all__) == 531
+    assert len(evaluation_pkg.__all__) == 536
     assert evaluation_pkg.__all__ == sorted(evaluation_pkg.__all__)
     assert len(set(evaluation_pkg.__all__)) == len(evaluation_pkg.__all__)
 
 
 def test_repo_manifest_count_and_paths():
     text = (ROOT / "REPO_MANIFEST.md").read_text()
-    assert "Total tracked/scaffold files listed: **381**" in text
+    assert "Total tracked/scaffold files listed: **383**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
 

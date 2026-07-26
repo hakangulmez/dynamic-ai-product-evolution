@@ -612,6 +612,13 @@ from .semantic_assertions import (
     SemanticAssertionEvaluationResult,
     build_resolved_assertion_evaluations,
 )
+from .parent_observation_snapshot import (
+    LoadedParentObservationSnapshot,
+    ParentObservationSnapshot,
+    ParentObservationSnapshotError,
+    load_parent_observation_snapshot,
+    verify_child_case_context,
+)
 __all__ = [
     "ActiveRecordNonRoadmapEvidenceObservation",
     "AppendedFindingDispositions",
@@ -839,6 +846,7 @@ __all__ = [
     "LoadedHistoricalEvaluationResult",
     "LoadedMetricInputSnapshot",
     "LoadedMetricReport",
+    "LoadedParentObservationSnapshot",
     "LoadedParsedPredictionContent",
     "LoadedPredictionEnvelopes",
     "LoadedScoringGateConfig",
@@ -898,6 +906,8 @@ __all__ = [
     "OTHER",
     "OutcomeRunBindingError",
     "OutputJsonSchemaValidityObservation",
+    "ParentObservationSnapshot",
+    "ParentObservationSnapshotError",
     "ParsedEntityCollection",
     "ParsedEvidenceCollection",
     "ParsedFieldValueCollection",
@@ -1091,6 +1101,7 @@ __all__ = [
     "load_metric_input_snapshot",
     "load_metric_report",
     "load_metric_report_v2",
+    "load_parent_observation_snapshot",
     "load_parsed_prediction_content",
     "load_prediction_envelopes",
     "load_schema",
@@ -1142,6 +1153,7 @@ __all__ = [
     "validator_bundle_hash",
     "validator_rule_parameters_aggregate_hash",
     "verify_case_set_succession",
+    "verify_child_case_context",
     "verify_contract_hash",
     "verify_event_log_extension",
 ]
