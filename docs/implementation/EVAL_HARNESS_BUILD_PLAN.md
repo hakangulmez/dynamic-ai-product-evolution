@@ -282,7 +282,10 @@ graph rather than a single chain:
 - 12I → 12J → 12K;
 - {12B, 12I, 12J, 12K} → 12L;
 - {12A, 12B, 12D, 12E, 12F, 12G, 12H, 12I, 12J, 12K, 12L} → 12M;
-- {12C, 12M} → 13 → 14.
+- {12C, 12M} → Xe2a → Xe-bind → P1 → {P2, P3} → 13 → 14.
+- Slice 13B (multi-case / package-case runner) is outside Phase 1; its
+  precondition is a separate design lock that explicitly changes the
+  evaluation-cardinality contract in `assertions.py` (ADR-027).
 
 Deterministic validation (validator-rule parameters, the validator-bundle
 artifact, `ValidatorRuleCoverage`, and the validation-artifact snapshot set) is
@@ -538,8 +541,10 @@ slice's exact `New paths` set. Stage/payload implementation models are
 module-private and add no package exports. Cumulative totals from baseline
 exports 420 / manifest 323 are locked: 12A 430/326; 12B 433/327; 12C 433/327;
 12D 459/339; 12E 476/345; 12F 494/351; 12G 502/354; 12H 505/356; 12I 520/361;
-12J 524/362; 12K 525/362; 12L 531/364; 12M 531/381; and Slice 13's three new
-tracked paths bring the manifest to 384. Preserved committed contract hashes:
+12J 524/362; 12K 525/362; 12L 531/364; 12M 531/381. Prerequisite slices Xe2a,
+Xe-bind, P1, P2, and P3 land between 12M and Slice 13 and each raise the
+baseline, so Slice 13's totals are stated relatively: its three new tracked
+paths add exactly 3 to whatever manifest count its own baseline HEAD carries. Preserved committed contract hashes:
 `evaluation_run_manifest@0.1.0` `7f8909d8e7059952c933c8e30f43044178b3f8a21d4baaa77bfb5c786b38d6ee`,
 `metric_report@0.1.0` `d9e3f6d7399af628b38754758a7cb580e57955ad695ee7d92fb56c67c4ceac39`,
 `validator_finding@0.1.0` `96f63fee300d363a662f4f956bacccdca596acfb0f22bf7039aa1335b6d61292`,
@@ -637,16 +642,79 @@ tracked paths bring the manifest to 384. Preserved committed contract hashes:
 - Reconciliation invariants: loaded target-registry SHA equals the run-manifest registry hash and the integration case-set's registry snapshot hash; case-set snapshot hash equals the run-manifest case-set hash; membership input-packet hash equals the prediction-envelope input-packet hash; parsed raw-artifact hash equals the prediction-source byte hash; source/passage aggregate hash equals the run-manifest source/passage hash; each complete per-rule parameter hash equals its bundle rule hash and the aggregate/bundle hashes equal their run-manifest pins; extraction-stage stage-evidence fields are absent; output-manifest hashes are read-back persisted byte hashes.
 - Stop point: the full producer chain yields a real `MetricReport` and `EvaluationOutputManifest` over the coherent bundle through public APIs only; unrelated committed fixtures remain byte-identical.
 
+### Slice P1 — Adjudication decision set and parsed-content preparation boundary
+
+- Objective: own the adjudication layer the binding producer consumes.
+  `evaluation/resolution_decisions.py` becomes the canonical owner of
+  `EXTRACTION_EVALUATION_STAGES`, `ObservationTargetResolutionProvenance`, and
+  `ObservationTargetResolutionDecision`, and adds
+  `observation_target_resolution_decision_set@0.1.0` — a run-external,
+  hash-bound artifact with strict model, fail-closed revalidation, canonical
+  write-once persistence, and a loader. `prediction_content` gains the public
+  preparation boundary `parsed_prediction_content_artifact_bytes` /
+  `parsed_prediction_content_artifact_sha256`, sharing one private byte producer
+  with the persister so an adjudicator can pin a decision set to one exact parse
+  before any run directory exists. `observation_target_binding` imports and
+  re-exports the moved names and accepts the loaded set as a channel mutually
+  exclusive with its `resolution_entries` tuple.
+- Governing: ADR-026, ADR-027.
+- Existing files modified: `evaluation/prediction_content.py`,
+  `evaluation/observation_target_binding.py`, `evaluation/__init__.py`,
+  `tests/evaluation/test_prediction_content.py`,
+  `tests/evaluation/test_observation_target_binding.py`, the two count
+  assertions, `REPO_MANIFEST.md`, `docs/DECISION_LOG.md` (ADR-027), and this
+  build plan.
+- New files: `evaluation/resolution_decisions.py`,
+  `tests/evaluation/test_resolution_decisions.py`.
+- Preserved: `parsed_prediction_content@0.1.0`
+  (`ffeae7ab54fa03948f4498a3ceb5a634b17444791fd91f94a57c086afedbda3e`),
+  `observation_target_binding@0.1.0`
+  (`f3ec0e0f2db9185333c667a6d7a52bf64a3b2a21b65bf1cbd90fa582ed67acd2`), the
+  existing persist/load byte behaviour, and the tuple-based binding API.
+- Stop point: helper SHA equals the persisted and re-read artifact SHA; the
+  single-stage `exclude_unset` shortcut is proven to drift and is rejected;
+  re-export identity and both import orders hold; no fixture added.
+
+### Slice P2 — Deterministic validator observation/coverage producer
+
+- Objective: a pure public producer for Rules 1–11 `ValidatorObservation`
+  values and their `ValidatorRuleCoverage`, derived from parsed content,
+  resolved sources, rule parameters, and (at an extraction stage) the binding.
+  No persisted artifact of its own: the output is embedded in the persisted
+  `ValidationArtifactSnapshotSet`, which `evaluation_output_manifest@0.2.0`
+  already hash-binds. Rule 12 stays where it is.
+- Governing: SPEC-023, ADR-024, ADR-027.
+- Deferred/forbidden: a separate persisted observation-set artifact would
+  require a new output-manifest version; adding fields to v0.2 is forbidden.
+
+### Slice P3 — Deterministic axis-record producer
+
+- Objective: a pure public producer for `AxisEvaluationRecord` values from
+  parsed content, bound gold, the axis taxonomy, resolved sources, and (at an
+  extraction stage) the binding, which is what makes an observation-shaped
+  prediction comparable to canonical axis labels. Output is embedded in the
+  persisted `MetricInputSnapshot`; no separate persisted artifact.
+- Governing: SPEC-020, ADR-024, ADR-026, ADR-027.
+
 ### Slice 13 — Canonical runner / CLI orchestration
 
 - Objective: `python -m dynamic_ai_products.evaluation.runner` (Typer,
-  following `validation.py`): load case set → resolve references/config →
-  normalize predictions → evaluate assertions → validators → metrics →
-  gates → persist immutable run under required `--eval-root`; machine- and
-  human-readable reports.
-- Governing: SPEC-020, SPEC-024.
-- Existing files modified: none expected; if a shared CLI registration point
-  must change, that file is named in the pre-slice audit and approved first.
+  following `validation.py`): load the governed inputs → resolve
+  references/config → normalize predictions → evaluate assertions →
+  validators → metrics → gates → persist an immutable run under the required
+  `--eval-root`; machine- and human-readable reports. **First scope is a
+  single-case runner** (ADR-027): the case set must hold exactly one
+  membership entry, the prediction manifest exactly one envelope, and the
+  envelope must match exactly one case on `(input_packet_hash, stage)`.
+  Multi-case / package-case orchestration is Slice 13B.
+- Governing: SPEC-020, SPEC-024; ADR-024, ADR-025, ADR-026, ADR-027.
+- Existing files modified: `evaluation/gates.py` (run-manifest v0.1|v0.2
+  dispatch across the build/persist/load path, per ADR-027 — the projection,
+  `EvaluationResultV2`, and `evaluation_result.v2.schema.json` are unchanged),
+  `evaluation/__init__.py` (exports), `REPO_MANIFEST.md`, and the two
+  export/manifest count assertions in `tests/evaluation/test_output_manifest.py`
+  and `tests/evaluation/test_metric_report_v2.py`. No other shared file changes;
+  `assertions.py` in particular is unchanged.
 - New files: `evaluation/runner.py`, `evaluation/report.py`;
   `tests/evaluation/test_runner.py` (fixture end-to-end; no network, no paid
   APIs).

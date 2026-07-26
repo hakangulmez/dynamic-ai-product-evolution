@@ -42,7 +42,7 @@ import json
 import math
 import os
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar
 
 from pydantic import (
     Field,
@@ -57,7 +57,6 @@ from .models import (
     EvaluationStrictModel,
     _reject_explicit_null,
     _require_non_blank,
-    _require_rfc3339_offset,
 )
 from .parent_observation_snapshot import (
     LoadedParentObservationSnapshot,
@@ -66,7 +65,18 @@ from .parent_observation_snapshot import (
 )
 from .prediction_content import LoadedParsedPredictionContent, ParsedPredictionContent
 from .references import CaseResolution, LoadedTargetRegistry
-from .stage_evidence import GoldVerificationStatus
+# The adjudication layer is owned by ``resolution_decisions`` so the dependency
+# runs one way only (that module never imports this one). These names are
+# re-exported below under their original identities for backward compatibility.
+from .resolution_decisions import (
+    EXTRACTION_EVALUATION_STAGES,
+    LoadedObservationTargetResolutionDecisionSet,
+    ObservationTargetResolutionDecision,
+    ObservationTargetResolutionDecisionSet,
+    ObservationTargetResolutionDecisionSetError,
+    ObservationTargetResolutionProvenance,
+    _revalidate_loaded_set,
+)
 from ..universe.io_utils import sha256_bytes
 
 __all__ = [
@@ -90,13 +100,6 @@ _SNAPSHOT_FILENAME = "observation_target_binding.json"
 _SHA256_HEX_PATTERN = r"^[0-9a-f]{64}$"
 _HEX = {"min_length": 64, "max_length": 64, "pattern": _SHA256_HEX_PATTERN}
 
-# The governed extraction-stage vocabulary. Single source of truth for every
-# consumer (both semantic evaluators and output-manifest v0.2); a drift test
-# reconciles it with the semantic adapter's implemented-stage vocabulary.
-EXTRACTION_EVALUATION_STAGES: frozenset[str] = frozenset(
-    {"capability_extraction", "task_extraction"}
-)
-
 # The owning-subject entity kind of each extraction stage. Every other bound
 # observation is a parent reference.
 _STAGE_SUBJECT_KIND: dict[str, str] = {
@@ -112,16 +115,9 @@ _PARENT_KIND_FIELD: dict[str, str] = {
 
 # Omit-or-non-null optional properties: absence is legal, explicit JSON null is
 # rejected rather than silently rewritten into absence. NOTE
-# ``canonical_target_reference`` is deliberately NOT in any of these tuples: it is
-# a required field whose JSON null is the mandated unresolved representation.
-_PROVENANCE_OMIT_OR_NON_NULL = (
-    "source_field_name",
-    "source_field_value",
-    "registry_entry_reference_id",
-    "registry_entry_matched_alias",
-    "unresolved_reason_code",
-    "adjudication_reference",
-)
+# ``canonical_target_reference`` is deliberately NOT in this tuple: it is a
+# required field whose JSON null is the mandated unresolved representation. The
+# provenance counterpart lives with its model in ``resolution_decisions``.
 _BINDING_OMIT_OR_NON_NULL = (
     "parent_observation_snapshot_version",
     "parent_observation_snapshot_sha256",
@@ -159,14 +155,6 @@ class _NonFiniteControl(Exception):
 # --- Small local validators ------------------------------------------------
 
 
-def _require_unique_non_blank(values: tuple[str, ...], field_name: str) -> None:
-    for value in values:
-        if not isinstance(value, str) or not value or value != value.strip():
-            raise ValueError(f"each {field_name} entry must be a non-blank unstripped string")
-    if len(set(values)) != len(values):
-        raise ValueError(f"{field_name} must not contain a duplicate entry")
-
-
 def _is_safe_reference(value: Any) -> bool:
     if not isinstance(value, str) or not value or value != value.strip():
         return False
@@ -181,159 +169,6 @@ def _is_lower_sha256_hex(value: Any) -> bool:
         and len(value) == 64
         and all(c in "0123456789abcdef" for c in value)
     )
-
-
-# --- Public adjudication models --------------------------------------------
-
-
-class ObservationTargetResolutionProvenance(EvaluationStrictModel):
-    """How one observation-target decision was reached, plus its governance record."""
-
-    # How the decision was reached.
-    resolution_method: Literal[
-        "stable_identity_field",
-        "registry_alias",
-        "parent_link_field",
-        "declared_unresolved",
-    ]
-    source_field_name: str | None = None
-    source_field_value: str | None = None
-    registry_entry_reference_id: str | None = None
-    registry_entry_matched_alias: str | None = None
-    unresolved_reason_code: str | None = None
-    # Governance: never omitted, never inferred, never clock-generated here.
-    resolver_kind: Literal["deterministic_rule", "model_assisted", "human_adjudicated"]
-    resolver_ids: tuple[str, ...]
-    reviewer_ids: tuple[str, ...] = ()
-    verification_status: GoldVerificationStatus
-    verification_method: Literal[
-        "dual_independent_adjudication",
-        "solo_blinded_retest",
-        "expert_second_review",
-        "deterministic_rule_review",
-    ]
-    decision_timestamps: tuple[str, ...]
-    change_reason: str
-    adjudication_reference: str | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _no_explicit_null(cls, data: Any) -> Any:
-        return _reject_explicit_null(
-            data, _PROVENANCE_OMIT_OR_NON_NULL, "ObservationTargetResolutionProvenance"
-        )
-
-    @model_validator(mode="after")
-    def _provenance_invariants(self) -> "ObservationTargetResolutionProvenance":
-        method_fields = (
-            self.source_field_name,
-            self.source_field_value,
-            self.registry_entry_reference_id,
-            self.registry_entry_matched_alias,
-        )
-        if self.resolution_method == "declared_unresolved":
-            if self.unresolved_reason_code is None:
-                raise ValueError("declared_unresolved requires an unresolved_reason_code")
-            _require_non_blank(self.unresolved_reason_code, "unresolved_reason_code")
-            if any(value is not None for value in method_fields):
-                raise ValueError(
-                    "declared_unresolved must not carry any resolution/source field"
-                )
-        else:
-            if self.unresolved_reason_code is not None:
-                raise ValueError("a resolving method must not carry an unresolved_reason_code")
-            if self.registry_entry_reference_id is None:
-                raise ValueError("a resolving method requires a registry_entry_reference_id")
-            _require_non_blank(self.registry_entry_reference_id, "registry_entry_reference_id")
-            if self.resolution_method in ("stable_identity_field", "parent_link_field"):
-                if self.source_field_name is None or self.source_field_value is None:
-                    raise ValueError(
-                        "a field-derived method requires source_field_name and "
-                        "source_field_value"
-                    )
-                _require_non_blank(self.source_field_name, "source_field_name")
-                _require_non_blank(self.source_field_value, "source_field_value")
-            if self.resolution_method == "registry_alias":
-                if self.registry_entry_matched_alias is None:
-                    raise ValueError("registry_alias requires a registry_entry_matched_alias")
-                _require_non_blank(
-                    self.registry_entry_matched_alias, "registry_entry_matched_alias"
-                )
-        # Governance invariants.
-        if not self.resolver_ids:
-            raise ValueError("resolver_ids must not be empty")
-        _require_unique_non_blank(self.resolver_ids, "resolver_ids")
-        _require_unique_non_blank(self.reviewer_ids, "reviewer_ids")
-        if set(self.resolver_ids) & set(self.reviewer_ids):
-            raise ValueError("self_review_forbidden: resolver_ids and reviewer_ids must be disjoint")
-        if self.verification_status == "verified" and not self.reviewer_ids:
-            raise ValueError("a verified decision requires at least one reviewer id")
-        if self.resolver_kind == "human_adjudicated":
-            if not self.reviewer_ids:
-                raise ValueError("a human-adjudicated decision requires at least one reviewer id")
-            if self.adjudication_reference is None:
-                raise ValueError(
-                    "a human-adjudicated decision requires an adjudication_reference"
-                )
-        if (
-            self.verification_method == "deterministic_rule_review"
-            and self.resolver_kind != "deterministic_rule"
-        ):
-            raise ValueError(
-                "deterministic_rule_review applies only to a deterministic_rule resolver"
-            )
-        if not self.decision_timestamps:
-            raise ValueError("decision_timestamps must not be empty")
-        for stamp in self.decision_timestamps:
-            _require_rfc3339_offset(stamp, "decision_timestamps entry")
-        _require_non_blank(self.change_reason, "change_reason")
-        if self.adjudication_reference is not None and not _is_safe_reference(
-            self.adjudication_reference
-        ):
-            raise ValueError("adjudication_reference must be a safe relative reference")
-        return self
-
-
-class ObservationTargetResolutionDecision(EvaluationStrictModel):
-    """One adjudicated raw-observation -> canonical-target decision.
-
-    ``canonical_target_reference`` is a **required** field, not an
-    omit-or-non-null optional: a resolved decision carries a non-blank string, an
-    unresolved decision carries JSON ``null``, and it is never omitted.
-    """
-
-    observation_id: str
-    observation_kind: Literal["product", "capability", "task"]
-    resolution_status: Literal["resolved", "unresolved"]
-    canonical_target_reference: str | None
-    parent_referenced: bool
-    provenance: ObservationTargetResolutionProvenance
-
-    @model_validator(mode="after")
-    def _decision_invariants(self) -> "ObservationTargetResolutionDecision":
-        _require_non_blank(self.observation_id, "observation_id")
-        if self.resolution_status == "resolved":
-            if self.canonical_target_reference is None:
-                raise ValueError(
-                    "a resolved decision requires a non-null canonical_target_reference"
-                )
-            _require_non_blank(self.canonical_target_reference, "canonical_target_reference")
-            if self.provenance.resolution_method == "declared_unresolved":
-                raise ValueError("a resolved decision must not declare an unresolved method")
-        else:
-            if self.canonical_target_reference is not None:
-                raise ValueError(
-                    "an unresolved decision requires canonical_target_reference to be null"
-                )
-            if self.provenance.resolution_method != "declared_unresolved":
-                raise ValueError(
-                    "an unresolved decision requires the declared_unresolved method"
-                )
-        return self
-
-    @property
-    def _identity(self) -> str:
-        return self.observation_id
 
 
 # --- Persisted model -------------------------------------------------------
@@ -556,7 +391,8 @@ def build_observation_target_binding(
     resolution: CaseResolution,
     parsed_prediction_content: LoadedParsedPredictionContent,
     target_registry: LoadedTargetRegistry,
-    resolution_entries: tuple[ObservationTargetResolutionDecision, ...],
+    resolution_entries: tuple[ObservationTargetResolutionDecision, ...] | None = None,
+    resolution_decision_set: LoadedObservationTargetResolutionDecisionSet | None = None,
     parent_snapshot: LoadedParentObservationSnapshot | None = None,
 ) -> ObservationTargetBinding:
     """Reconcile adjudicated decisions into an ``observation_target_binding@0.1.0``.
@@ -589,6 +425,40 @@ def build_observation_target_binding(
         raise TypeError(
             f"target_registry must be a LoadedTargetRegistry, got {type(target_registry).__name__}"
         )
+    # Exactly one adjudication channel. ``resolution_entries`` is the ADR-026
+    # in-process typed boundary; ``resolution_decision_set`` is the governed
+    # run-external artifact a runner must use. Supplying both, or neither, is a
+    # fail-closed defect rather than a silent precedence rule.
+    if (resolution_entries is None) == (resolution_decision_set is None):
+        raise ObservationTargetBindingError(
+            "exactly one of resolution_entries or resolution_decision_set is required",
+            reason_code="adjudication_channel_ambiguous",
+        )
+    decision_set: ObservationTargetResolutionDecisionSet | None = None
+    if resolution_decision_set is not None:
+        if not isinstance(
+            resolution_decision_set, LoadedObservationTargetResolutionDecisionSet
+        ):
+            raise TypeError(
+                "resolution_decision_set must be a "
+                "LoadedObservationTargetResolutionDecisionSet, got "
+                f"{type(resolution_decision_set).__name__}"
+            )
+        # Set-level fail-closed revalidation through the owning module's boundary.
+        # Per-decision revalidation below cannot re-check ordering, uniqueness, the
+        # stage vocabulary, or the wrapper's declared contract version, so a
+        # validator-bypassed wrapper must be rejected here — never trusted and
+        # never surfaced as raw Pydantic or TypeError text.
+        try:
+            decision_set = _revalidate_loaded_set(resolution_decision_set)
+        except (ObservationTargetResolutionDecisionSetError, TypeError) as exc:
+            raise ObservationTargetBindingError(
+                "the adjudication decision set failed fail-closed revalidation",
+                reason_code="decision_set_invalid",
+                artifact_reference=getattr(
+                    resolution_decision_set, "artifact_reference", None),
+            ) from exc
+        resolution_entries = tuple(decision_set.decisions)
     if not isinstance(resolution_entries, tuple):
         raise TypeError("resolution_entries must be a tuple of decisions")
     if parent_snapshot is not None and not isinstance(
@@ -620,6 +490,29 @@ def build_observation_target_binding(
             reason_code="non_extraction_stage",
         )
     stage = content.stage
+
+    # --- Run-external adjudication set: exact-binding verification ---
+    # The set was authored before the run against one specific parse. Every pin
+    # must equal the parse actually persisted for this run, so an adjudication
+    # made against different model output can never be reused silently.
+    if decision_set is not None:
+        # Pins are read from the REVALIDATED set, never from the caller's object.
+        dset = decision_set
+        for declared, observed in (
+            (dset.case_id, case.case_id),
+            (dset.stage, stage),
+            (dset.company_id, company_id),
+            (dset.prediction_record_id, content.prediction_record_id),
+            (dset.raw_artifact_reference, content.raw_artifact_reference),
+            (dset.raw_artifact_sha256, content.raw_artifact_sha256),
+            (dset.parsed_prediction_content_sha256, parsed_prediction_content.sha256),
+        ):
+            if declared != observed:
+                raise ObservationTargetBindingError(
+                    "the adjudication decision set is not bound to this run's parse",
+                    reason_code="decision_set_binding_mismatch",
+                    artifact_reference=resolution_decision_set.artifact_reference,
+                )
 
     # --- The case's own resolved registry pin (checked before persistence) ---
     if resolution.case_id != case.case_id:

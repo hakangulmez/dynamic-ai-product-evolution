@@ -19,6 +19,8 @@ from dynamic_ai_products.evaluation.prediction_content import (
     ParsedPredictionContent,
     ParsedPredictionContentError,
     load_parsed_prediction_content,
+    parsed_prediction_content_artifact_bytes,
+    parsed_prediction_content_artifact_sha256,
     persist_parsed_prediction_content,
 )
 from dynamic_ai_products.universe.io_utils import sha256_bytes
@@ -289,7 +291,10 @@ def test_module_surface():
     exported = {
         "LoadedParsedPredictionContent", "ParsedEntityCollection", "ParsedEvidenceCollection",
         "ParsedFieldValueCollection", "ParsedPredictionContent", "ParsedPredictionContentError",
-        "load_parsed_prediction_content", "persist_parsed_prediction_content"}
+        "load_parsed_prediction_content", "persist_parsed_prediction_content",
+        # P1: the public artifact-bytes/SHA preparation boundary.
+        "parsed_prediction_content_artifact_bytes",
+        "parsed_prediction_content_artifact_sha256"}
     assert set(pc_mod.__all__) == exported
     for name in exported:
         assert name in evaluation_pkg.__all__
@@ -328,3 +333,94 @@ def test_import_no_io_no_hash_no_clock():
     ])
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT)
     assert r.returncode == 0 and "OK" in r.stdout, r.stderr
+
+
+# --- P1: public artifact bytes/SHA preparation boundary ---------------------
+#
+# An adjudicator must be able to obtain the exact persisted-artifact SHA-256
+# BEFORE any run directory exists, so a resolution-decision set can be pinned to
+# one specific parse. The helper and the persister therefore share a single byte
+# producer; if they ever diverged, every extraction run would fail its
+# decision-set binding check.
+
+
+def _omitting_content():
+    """Content whose defaulted repair tuples were never set.
+
+    This shape is what exposes serialization drift: a single-stage
+    ``exclude_unset`` dump omits the defaulted fields, while the persist path
+    revalidates first (marking every field set) and therefore includes them.
+    Adapter-produced content always sets them, so a real fixture cannot reveal
+    the difference — this synthetic shape is required for the test to have teeth.
+    """
+    doc = base_doc()
+    del doc["repair_record_references"]
+    del doc["repair_record_hashes"]
+    c = ParsedPredictionContent.model_validate(doc)
+    assert "repair_record_references" not in c.model_fields_set
+    return c
+
+
+def test_helper_sha_equals_persisted_and_reread_sha(tmp_path):
+    for c in (content(), _omitting_content()):
+        root = tmp_path / ("full" if c is not None and
+                           "repair_record_references" in c.model_fields_set else "omitting")
+        (root / "run1").mkdir(parents=True)
+        helper_sha = parsed_prediction_content_artifact_sha256(c)
+        persisted = persist_parsed_prediction_content(c, eval_root=root, eval_run_id="run1")
+        disk = root / "run1" / "snapshots" / "parsed_prediction_content.json"
+        assert helper_sha == persisted.sha256 == sha256_bytes(disk.read_bytes())
+        assert parsed_prediction_content_artifact_bytes(c) == disk.read_bytes()
+        reloaded = load_parsed_prediction_content(
+            persisted.artifact_reference, eval_root=root, expected_sha256=helper_sha)
+        assert reloaded.sha256 == helper_sha
+
+
+def test_single_stage_exclude_unset_dump_would_drift():
+    # Regression guard for the two-stage rule: the naive shortcut is NOT equal.
+    c = _omitting_content()
+    naive = canonical_contract_bytes(c.model_dump(mode="json", exclude_unset=True)) + b"\n"
+    exact = parsed_prediction_content_artifact_bytes(c)
+    assert naive != exact
+    assert sha256_bytes(naive) != parsed_prediction_content_artifact_sha256(c)
+    # The defaulted tuples are present in the persisted artifact, absent in the naive dump.
+    assert b"repair_record_references" in exact
+    assert b"repair_record_references" not in naive
+
+
+def test_artifact_bytes_end_with_exactly_one_terminal_newline():
+    for c in (content(), _omitting_content()):
+        data = parsed_prediction_content_artifact_bytes(c)
+        assert data.endswith(b"\n") and not data.endswith(b"\n\n")
+
+
+@pytest.mark.parametrize("override", [
+    {"repair_record_references": [], "repair_record_hashes": []},
+    {"raw_artifact_reference": "parsed_content/other.json"},
+])
+def test_helper_is_deterministic_and_content_sensitive(override):
+    base = parsed_prediction_content_artifact_sha256(content())
+    other = parsed_prediction_content_artifact_sha256(content(**override))
+    assert parsed_prediction_content_artifact_sha256(content()) == base
+    if override.get("raw_artifact_reference"):
+        assert other != base
+    else:
+        assert other == base  # explicit default equals the persisted shape
+
+
+def test_helper_revalidates_fail_closed():
+    bad = content().model_copy(update={"case_id": ""})
+    with pytest.raises(ParsedPredictionContentError) as ei:
+        parsed_prediction_content_artifact_sha256(bad)
+    assert ei.value.reason_code == "model_validation"
+    with pytest.raises(TypeError):
+        parsed_prediction_content_artifact_bytes(object())
+
+
+def test_helper_touches_no_filesystem_and_no_clock():
+    src = (ROOT / "src" / "dynamic_ai_products" / "evaluation"
+           / "prediction_content.py").read_text()
+    for forbidden in ("datetime.now", "time.time", "utcnow", "monotonic"):
+        assert forbidden not in src
+    # One byte producer only: the persist path must not re-derive the rule.
+    assert src.count('exclude_unset=True)) + b"\\n"') == 1

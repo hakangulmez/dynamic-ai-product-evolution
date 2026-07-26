@@ -44,6 +44,8 @@ __all__ = [
     "ParsedPredictionContent",
     "ParsedPredictionContentError",
     "load_parsed_prediction_content",
+    "parsed_prediction_content_artifact_bytes",
+    "parsed_prediction_content_artifact_sha256",
     "persist_parsed_prediction_content",
 ]
 
@@ -423,6 +425,47 @@ def _revalidate_content(content: ParsedPredictionContent) -> ParsedPredictionCon
         ) from exc
 
 
+# --- Canonical artifact bytes (single source of truth) ---------------------
+#
+# The persisted-artifact byte sequence is produced in exactly ONE place. Both
+# ``persist_parsed_prediction_content`` and the public preparation helpers below
+# call it, so a caller can obtain the exact artifact SHA-256 *before* any run
+# directory exists and be guaranteed it equals the hash the persister will later
+# report. Writing the rule twice would let the two drift apart.
+#
+# The two-stage shape is load-bearing: ``_revalidate_content`` dumps the whole
+# model (no ``exclude_unset``) and revalidates, which marks every field as set;
+# only then is ``exclude_unset=True`` applied. A single-stage
+# ``exclude_unset`` dump of a caller-built model that omitted defaulted fields
+# produces different bytes, so it must never be used as a shortcut.
+
+
+def _artifact_bytes(content: ParsedPredictionContent) -> bytes:
+    validated = _revalidate_content(content)
+    return canonical_contract_bytes(validated.model_dump(mode="json", exclude_unset=True)) + b"\n"
+
+
+def parsed_prediction_content_artifact_bytes(content: ParsedPredictionContent) -> bytes:
+    """The exact persisted-artifact bytes for ``content``, terminal newline included.
+
+    Pure: no filesystem access, no clock read, no run directory required. The
+    result is byte-identical to what ``persist_parsed_prediction_content`` writes
+    for the same content.
+    """
+    return _artifact_bytes(content)
+
+
+def parsed_prediction_content_artifact_sha256(content: ParsedPredictionContent) -> str:
+    """The exact persisted-artifact SHA-256 for ``content``.
+
+    Equals the ``sha256`` that ``persist_parsed_prediction_content`` returns (and
+    that ``load_parsed_prediction_content`` re-reads) for the same content. This
+    is the governed preparation boundary an adjudicator uses to pin a
+    resolution-decision set to one specific parse before any run exists.
+    """
+    return sha256_bytes(_artifact_bytes(content))
+
+
 # --- Loader ---------------------------------------------------------------
 
 
@@ -520,6 +563,7 @@ def persist_parsed_prediction_content(
     Destination:
     ``<eval_root>/<eval_run_id>/snapshots/parsed_prediction_content.json``.
     """
+    data = _artifact_bytes(content)
     validated = _revalidate_content(content)
     resolved_root = _validate_eval_root(eval_root)
     run_id = _validate_run_id(eval_run_id)
@@ -565,7 +609,6 @@ def persist_parsed_prediction_content(
             "parsed content already exists; snapshots are write-once",
             reason_code="snapshot_exists", artifact_reference=reference,
         )
-    data = canonical_contract_bytes(validated.model_dump(mode="json", exclude_unset=True)) + b"\n"
     expected = sha256_bytes(data)
     try:
         fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)

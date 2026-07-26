@@ -20,6 +20,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 import dynamic_ai_products.evaluation as evaluation_pkg
 from dynamic_ai_products.evaluation import observation_target_binding as otb_mod
+from dynamic_ai_products.evaluation import resolution_decisions as rd_mod
 from dynamic_ai_products.evaluation import semantic_adapters as sa_mod
 from dynamic_ai_products.evaluation.contracts import model_contract_hash
 from dynamic_ai_products.evaluation.models import EvaluationCase
@@ -291,7 +292,8 @@ def test_explicit_null_rejected_for_each_omit_or_non_null_provenance_field(field
 
 def test_canonical_reference_is_not_an_omit_or_non_null_field():
     # The required-null field must never be swept into the omit-or-non-null rule.
-    assert "canonical_target_reference" not in otb_mod._PROVENANCE_OMIT_OR_NON_NULL
+    # The provenance tuple lives with its model in the canonical owner module.
+    assert "canonical_target_reference" not in rd_mod._PROVENANCE_OMIT_OR_NON_NULL
     assert "canonical_target_reference" not in otb_mod._BINDING_OMIT_OR_NON_NULL
 
 
@@ -929,3 +931,237 @@ def test_pin_coupling_survives_a_reload(tmp_path):
     with pytest.raises(ObservationTargetBindingError) as ei:
         load_observation_target_binding(loaded.artifact_reference, eval_root=root)
     assert ei.value.reason_code == "model_validation"
+
+
+# --- P1: adjudication ownership, re-export identity, decision-set channel ---
+#
+# The adjudication layer moved to ``resolution_decisions`` so the dependency runs
+# one way only. The binding module re-exports the same objects, so every existing
+# import path and the tuple-based API keep working unchanged.
+
+
+def test_moved_models_are_identical_through_every_import_path():
+    for name in ("EXTRACTION_EVALUATION_STAGES", "ObservationTargetResolutionDecision",
+                 "ObservationTargetResolutionProvenance"):
+        canonical = getattr(rd_mod, name)
+        assert getattr(otb_mod, name) is canonical
+        assert getattr(evaluation_pkg, name) is canonical
+
+
+def test_binding_module_does_not_own_the_moved_models():
+    # Ownership, not merely visibility: the classes are defined in the new module.
+    assert ObservationTargetResolutionDecision.__module__.endswith("resolution_decisions")
+    assert ObservationTargetResolutionProvenance.__module__.endswith("resolution_decisions")
+
+
+def test_either_import_order_works_and_yields_one_object():
+    for first, second in (("resolution_decisions", "observation_target_binding"),
+                          ("observation_target_binding", "resolution_decisions")):
+        code = "\n".join([
+            "import sys",
+            "sys.path.insert(0, 'src')",
+            f"import dynamic_ai_products.evaluation.{first} as a",
+            f"import dynamic_ai_products.evaluation.{second} as b",
+            "d = getattr(a, 'ObservationTargetResolutionDecision', None) or "
+            "getattr(b, 'ObservationTargetResolutionDecision')",
+            "assert a.__name__ != b.__name__",
+            "assert getattr(a, 'ObservationTargetResolutionDecision', d) is d",
+            "assert getattr(b, 'ObservationTargetResolutionDecision', d) is d",
+            "print('OK')",
+        ])
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT)
+        assert r.returncode == 0 and "OK" in r.stdout, (first, second, r.stderr)
+
+
+def test_resolution_decisions_never_imports_the_binding_module():
+    src = (ROOT / "src" / "dynamic_ai_products" / "evaluation"
+           / "resolution_decisions.py").read_text()
+    assert "observation_target_binding" not in src.replace(
+        "``observation_target_binding@0.1.0``", "").replace(
+        "``observation_target_binding``", "")
+
+
+def _decision_set(tmp_path, content_sha, *, reference="adjudications/set-0001.json", **ov):
+    payload = {
+        "contract": {"contract_id": "observation_target_resolution_decision_set",
+                     "contract_version": "0.1.0",
+                     "contract_hash": model_contract_hash(
+                         rd_mod.ObservationTargetResolutionDecisionSet,
+                         "observation_target_resolution_decision_set", "0.1.0")},
+        "decision_set_version": "adj-v1", "case_id": CASE_ID, "stage": STAGE,
+        "company_id": COMPANY, "prediction_record_id": "pred-1",
+        "raw_artifact_reference": RAW_REF, "raw_artifact_sha256": RAW_SHA,
+        "parsed_prediction_content_sha256": content_sha,
+        "decisions": [
+            decision(CAP_OBS, "capability", CANON_CAP).model_dump(
+                mode="json", exclude_unset=True),
+            decision(PROD_OBS, "product", CANON_PROD, parent=True).model_dump(
+                mode="json", exclude_unset=True),
+        ],
+    }
+    payload.update(ov)
+    model = rd_mod.ObservationTargetResolutionDecisionSet.model_validate(payload)
+    (tmp_path / "adjudications").mkdir(parents=True, exist_ok=True)
+    return rd_mod.persist_observation_target_resolution_decision_set(
+        model, source_root=tmp_path, reference=reference)
+
+
+def test_loaded_decision_set_builds_the_same_binding_as_the_tuple_path(tmp_path):
+    content = parsed()
+    loaded_set = _decision_set(tmp_path, content.sha256)
+    from_set = build_observation_target_binding(
+        eval_run_id=RUN, case=_case(), company_id=COMPANY, resolution=resolution(),
+        parsed_prediction_content=content, target_registry=REGISTRY,
+        resolution_decision_set=loaded_set, parent_snapshot=SNAP)
+    from_tuple = build(content=content)
+    assert from_set == from_tuple
+
+
+def test_adjudication_channels_are_mutually_exclusive(tmp_path):
+    content = parsed()
+    loaded_set = _decision_set(tmp_path, content.sha256)
+    entries = (decision(CAP_OBS, "capability", CANON_CAP),
+               decision(PROD_OBS, "product", CANON_PROD, parent=True))
+    with pytest.raises(ObservationTargetBindingError) as both:
+        build_observation_target_binding(
+            eval_run_id=RUN, case=_case(), company_id=COMPANY, resolution=resolution(),
+            parsed_prediction_content=content, target_registry=REGISTRY,
+            resolution_entries=entries, resolution_decision_set=loaded_set,
+            parent_snapshot=SNAP)
+    assert both.value.reason_code == "adjudication_channel_ambiguous"
+    with pytest.raises(ObservationTargetBindingError) as neither:
+        build_observation_target_binding(
+            eval_run_id=RUN, case=_case(), company_id=COMPANY, resolution=resolution(),
+            parsed_prediction_content=content, target_registry=REGISTRY,
+            parent_snapshot=SNAP)
+    assert neither.value.reason_code == "adjudication_channel_ambiguous"
+
+
+def test_decision_set_wrong_wrapper_type_is_type_error():
+    with pytest.raises(TypeError):
+        build_observation_target_binding(
+            eval_run_id=RUN, case=_case(), company_id=COMPANY, resolution=resolution(),
+            parsed_prediction_content=parsed(), target_registry=REGISTRY,
+            resolution_decision_set=object(), parent_snapshot=SNAP)
+
+
+@pytest.mark.parametrize("override", [
+    {"case_id": "OTHER-CASE"},
+    {"stage": "task_extraction"},
+    {"company_id": "SYNTH-CO-OTHER"},
+    {"prediction_record_id": "pred-9"},
+    {"raw_artifact_reference": "other_source.json"},
+    {"raw_artifact_sha256": "9" * 64},
+])
+def test_decision_set_binding_mismatch_on_each_pin(tmp_path, override):
+    content = parsed()
+    loaded_set = _decision_set(tmp_path, content.sha256, **override)
+    with pytest.raises(ObservationTargetBindingError) as ei:
+        build_observation_target_binding(
+            eval_run_id=RUN, case=_case(), company_id=COMPANY, resolution=resolution(),
+            parsed_prediction_content=content, target_registry=REGISTRY,
+            resolution_decision_set=loaded_set, parent_snapshot=SNAP)
+    assert ei.value.reason_code == "decision_set_binding_mismatch"
+    assert ei.value.artifact_reference == "adjudications/set-0001.json"
+
+
+def test_decision_set_parsed_hash_off_by_one_byte_is_rejected(tmp_path):
+    content = parsed()
+    wrong = ("0" if content.sha256[0] != "0" else "1") + content.sha256[1:]
+    loaded_set = _decision_set(tmp_path, wrong)
+    with pytest.raises(ObservationTargetBindingError) as ei:
+        build_observation_target_binding(
+            eval_run_id=RUN, case=_case(), company_id=COMPANY, resolution=resolution(),
+            parsed_prediction_content=content, target_registry=REGISTRY,
+            resolution_decision_set=loaded_set, parent_snapshot=SNAP)
+    assert ei.value.reason_code == "decision_set_binding_mismatch"
+
+
+# --- Set-level fail-closed revalidation of the loaded decision set ----------
+#
+# A wrapper built through model_copy/model_construct satisfies isinstance while
+# carrying content that never passed the SET-level invariants (ordering,
+# uniqueness, stage vocabulary, non-blank identities) or a declared version that
+# disagrees with the revalidated stamp. Per-decision revalidation cannot see any
+# of that, so the builder must reject the wrapper outright.
+
+
+def _bind_with_set(loaded_set, content):
+    return build_observation_target_binding(
+        eval_run_id=RUN, case=_case(), company_id=COMPANY, resolution=resolution(),
+        parsed_prediction_content=content, target_registry=REGISTRY,
+        resolution_decision_set=loaded_set, parent_snapshot=SNAP)
+
+
+@pytest.mark.parametrize("update", [
+    {"decision_set_version": ""},
+    {"stage": "universe_classification"},
+    {"case_id": "   "},
+    {"raw_artifact_reference": "../escape.json"},
+])
+def test_validator_bypassed_inner_set_is_rejected(tmp_path, update):
+    content = parsed()
+    loaded_set = _decision_set(tmp_path, content.sha256)
+    forged = loaded_set.model_copy(update={"model": loaded_set.model.model_copy(update=update)})
+    with pytest.raises(ObservationTargetBindingError) as ei:
+        _bind_with_set(forged, content)
+    assert ei.value.reason_code == "decision_set_invalid"
+    assert ei.value.artifact_reference == "adjudications/set-0001.json"
+
+
+def test_bypassed_decision_ordering_is_rejected_at_set_level(tmp_path):
+    # Each decision individually is valid; only the SET rule (canonical ordering)
+    # is violated, which per-decision revalidation cannot detect.
+    content = parsed()
+    loaded_set = _decision_set(tmp_path, content.sha256)
+    reversed_decisions = tuple(reversed(loaded_set.model.decisions))
+    forged = loaded_set.model_copy(update={
+        "model": loaded_set.model.model_copy(update={"decisions": reversed_decisions})})
+    with pytest.raises(ObservationTargetBindingError) as ei:
+        _bind_with_set(forged, content)
+    assert ei.value.reason_code == "decision_set_invalid"
+
+
+def test_wrapper_version_disagreeing_with_the_stamp_is_rejected(tmp_path):
+    content = parsed()
+    loaded_set = _decision_set(tmp_path, content.sha256)
+    forged = loaded_set.model_copy(update={"version": "9.9.9"})
+    with pytest.raises(ObservationTargetBindingError) as ei:
+        _bind_with_set(forged, content)
+    assert ei.value.reason_code == "decision_set_invalid"
+
+
+def test_model_construct_wrapper_with_a_wrong_inner_model_is_rejected(tmp_path):
+    content = parsed()
+    forged = rd_mod.LoadedObservationTargetResolutionDecisionSet.model_construct(
+        model=object(), version="0.1.0", sha256="d" * 64,
+        artifact_reference="adjudications/set-0001.json")
+    with pytest.raises(ObservationTargetBindingError) as ei:
+        _bind_with_set(forged, content)
+    assert ei.value.reason_code == "decision_set_invalid"
+
+
+def test_decision_set_rejection_leaks_no_raw_pydantic_or_content(tmp_path):
+    content = parsed()
+    loaded_set = _decision_set(tmp_path, content.sha256)
+    forged = loaded_set.model_copy(update={
+        "model": loaded_set.model.model_copy(update={"case_id": "SECRET-CASE"})})
+    with pytest.raises(ObservationTargetBindingError) as ei:
+        _bind_with_set(forged, content)
+    # case_id is a set-level pin, so this is caught as a binding mismatch, not a
+    # revalidation failure — either way no raw text escapes.
+    assert ei.value.reason_code in ("decision_set_invalid", "decision_set_binding_mismatch")
+    text = str(ei.value)
+    assert "SECRET-CASE" not in text
+    assert "ValidationError" not in text and "pydantic" not in text.lower()
+
+
+def test_genuine_loader_set_and_tuple_path_both_still_pass(tmp_path):
+    # Regression: the happy path through the real loader is unchanged, and it
+    # yields the same binding as the in-process tuple channel.
+    content = parsed()
+    persisted = _decision_set(tmp_path, content.sha256)
+    from_loader = rd_mod.load_observation_target_resolution_decision_set(
+        persisted.artifact_reference, source_root=tmp_path,
+        expected_sha256=persisted.sha256)
+    assert _bind_with_set(from_loader, content) == build(content=content)

@@ -557,6 +557,8 @@ from .prediction_content import (
     ParsedPredictionContent,
     ParsedPredictionContentError,
     load_parsed_prediction_content,
+    parsed_prediction_content_artifact_bytes,
+    parsed_prediction_content_artifact_sha256,
     persist_parsed_prediction_content,
 )
 from .semantic_adapters import (
@@ -626,17 +628,24 @@ from .parent_observation_snapshot import (
     verify_child_case_context,
 )
 from .observation_target_binding import (
-    EXTRACTION_EVALUATION_STAGES,
     LoadedObservationTargetBinding,
     ObservationTargetBinding,
     ObservationTargetBindingError,
-    ObservationTargetResolutionDecision,
-    ObservationTargetResolutionProvenance,
     build_observation_target_binding,
     load_observation_target_binding,
     observations_by_canonical_target,
     persist_observation_target_binding,
     unresolved_observation_ids,
+)
+from .resolution_decisions import (
+    EXTRACTION_EVALUATION_STAGES,
+    LoadedObservationTargetResolutionDecisionSet,
+    ObservationTargetResolutionDecision,
+    ObservationTargetResolutionDecisionSet,
+    ObservationTargetResolutionDecisionSetError,
+    ObservationTargetResolutionProvenance,
+    load_observation_target_resolution_decision_set,
+    persist_observation_target_resolution_decision_set,
 )
 __all__ = [
     "ActiveRecordNonRoadmapEvidenceObservation",
@@ -869,6 +878,7 @@ __all__ = [
     "LoadedMetricInputSnapshot",
     "LoadedMetricReport",
     "LoadedObservationTargetBinding",
+    "LoadedObservationTargetResolutionDecisionSet",
     "LoadedParentObservationSnapshot",
     "LoadedParsedPredictionContent",
     "LoadedPredictionEnvelopes",
@@ -930,6 +940,8 @@ __all__ = [
     "ObservationTargetBinding",
     "ObservationTargetBindingError",
     "ObservationTargetResolutionDecision",
+    "ObservationTargetResolutionDecisionSet",
+    "ObservationTargetResolutionDecisionSetError",
     "ObservationTargetResolutionProvenance",
     "OutcomeRunBindingError",
     "OutputJsonSchemaValidityObservation",
@@ -1133,6 +1145,7 @@ __all__ = [
     "load_metric_report",
     "load_metric_report_v2",
     "load_observation_target_binding",
+    "load_observation_target_resolution_decision_set",
     "load_parent_observation_snapshot",
     "load_parsed_prediction_content",
     "load_prediction_envelopes",
@@ -1152,6 +1165,8 @@ __all__ = [
     "model_contract_hash",
     "normalize_prediction_artifact",
     "observations_by_canonical_target",
+    "parsed_prediction_content_artifact_bytes",
+    "parsed_prediction_content_artifact_sha256",
     "persist_assertion_outcomes",
     "persist_axis_taxonomy",
     "persist_comparison",
@@ -1162,6 +1177,7 @@ __all__ = [
     "persist_metric_input_snapshot",
     "persist_metric_report",
     "persist_observation_target_binding",
+    "persist_observation_target_resolution_decision_set",
     "persist_parsed_prediction_content",
     "persist_semantic_adapter_registry",
     "persist_source_passage_snapshot_manifest",
