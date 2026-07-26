@@ -11,7 +11,7 @@
   "source_artifacts": [
     {
       "reference": "prediction_source.json",
-      "sha256": "29e269e9c797f1ef206e869ff9e7de89af94e0196306327d1183bb70606ffff8"
+      "sha256": "66d3e179a3070c7fdfb748dce3342aa9913cb3fd38d94f910e7b2695d03b52fa"
     }
   ]
 }

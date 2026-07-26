@@ -33,6 +33,12 @@ from pydantic import model_validator
 from .assertions import ResolvedAssertionEvaluation
 from .gold import BoundGoldAssertionSet, LoadedGoldAssertionSet
 from .models import AssertionKind, EvaluationCase, EvaluationStrictModel, _require_non_blank
+from .observation_target_binding import (
+    EXTRACTION_EVALUATION_STAGES,
+    LoadedObservationTargetBinding,
+    observations_by_canonical_target,
+    unresolved_observation_ids,
+)
 from .prediction_content import LoadedParsedPredictionContent
 from .references import CaseResolution
 from .source_snapshot import (
@@ -46,6 +52,7 @@ from .validators import LoadedValidatorFindings
 __all__ = [
     "SemanticAssertionEvaluationError",
     "SemanticAssertionEvaluationResult",
+    "build_extraction_resolved_assertion_evaluations",
     "build_resolved_assertion_evaluations",
 ]
 
@@ -228,6 +235,79 @@ def _evidence_outcome(entry, content, documents_by_id, passages_by_id) -> str:
     return "satisfied"
 
 
+# --- Phase B outcome functions, binding-mediated (extraction stages) -------
+#
+# For an extraction stage a gold ``canonical_target_reference`` is NOT an
+# ``entity_ref``: the two live in separate namespaces and only
+# ``observation_target_binding@0.1.0`` maps between them. ``mapped`` is the
+# resolved canonical -> mapped-observation index (many-to-one), ``unresolved`` the
+# present unresolved observations. A missing resolved mapping is not
+# automatically indeterminate: unresolved observations must actually be present
+# for the outcome to be unknowable.
+
+
+def _binding_entity_outcome(kind: str, targets: set[str], content, mapped, unresolved) -> str:
+    collection = content.entity_collection
+    if collection.completeness != "complete":
+        return "indeterminate"
+    resolved_canonicals = set(mapped)
+    if kind == "expected_entity":
+        if targets <= resolved_canonicals:
+            return "satisfied"
+        return "indeterminate" if unresolved else "unsatisfied"
+    # forbidden_entity
+    if targets & resolved_canonicals:
+        return "unsatisfied"
+    return "indeterminate" if unresolved else "satisfied"
+
+
+def _binding_field_value_outcome(entry, content, mapped, unresolved) -> str:
+    collection = content.field_value_collection
+    if collection.completeness != "complete":
+        return "indeterminate"
+    if unresolved:
+        return "indeterminate"
+    observations = set(mapped.get(entry.canonical_target_reference, ()))
+    if not observations:
+        return "unsatisfied"
+    payload = entry.field_value_payload
+    matching = [
+        fv for fv in collection.field_values
+        if fv.entity_ref in observations and fv.field_name == payload.field_path
+    ]
+    if not matching:
+        return "unsatisfied"
+    expected = [_coerce_expected(v, payload.value_type) for v in payload.expected_values]
+    results = []
+    for fv in matching:
+        ok, actual = _parse_actual(fv.field_value, payload.value_type)
+        results.append(ok and _operator_satisfies(payload.operator, actual, expected))
+    if payload.operator in _POSITIVE_OPERATORS:
+        return "satisfied" if any(results) else "unsatisfied"
+    return "satisfied" if all(results) else "unsatisfied"
+
+
+def _binding_evidence_outcome(
+    entry, content, documents_by_id, passages_by_id, mapped, unresolved
+) -> str:
+    collection = content.evidence_collection
+    if collection.completeness != "complete":
+        return "indeterminate"
+    if unresolved:
+        return "indeterminate"
+    observations = set(mapped.get(entry.canonical_target_reference, ()))
+    if not observations:
+        return "unsatisfied"
+    payload = entry.evidence_provenance_payload
+    relevant = [ev for ev in collection.evidence if ev.entity_ref in observations]
+    if not relevant:
+        return "unsatisfied"
+    for evidence in relevant:
+        if not _evidence_record_ok(evidence, payload, documents_by_id, passages_by_id):
+            return "unsatisfied"
+    return "satisfied"
+
+
 def _deterministic_outcome(case_snapshots) -> str:
     states = [record.coverage_state for snap in case_snapshots for record in snap.coverage]
     if any(state in ("partially_evaluated", "blocked_by_dependency") for state in states):
@@ -251,7 +331,79 @@ def build_resolved_assertion_evaluations(
     validation_snapshots: LoadedValidationArtifactSnapshotSet,
     validator_findings: LoadedValidatorFindings,
 ) -> SemanticAssertionEvaluationResult:
-    """Evaluate one case's assertions (Phases A/B/C); pure and non-persisting."""
+    """Evaluate one *non-extraction* case's assertions (Phases A/B/C).
+
+    Stage-general and deliberately binding-free: a gold
+    ``canonical_target_reference`` is compared directly against the parsed
+    ``entity_ref`` namespace. An extraction-stage case is rejected — those
+    namespaces are distinct there, and only
+    :func:`build_extraction_resolved_assertion_evaluations` may bridge them.
+    Behaviour for every non-extraction stage is unchanged.
+    """
+    if isinstance(case, EvaluationCase) and case.stage in EXTRACTION_EVALUATION_STAGES:
+        raise SemanticAssertionEvaluationError(
+            "an extraction-stage case requires the binding-aware extraction evaluator",
+            reason_code="extraction_stage_requires_binding",
+        )
+    return _build_evaluations(
+        case=case, resolution=resolution, parsed_content=parsed_content, gold=gold,
+        bound_gold=bound_gold, source_snapshot=source_snapshot,
+        validation_snapshots=validation_snapshots, validator_findings=validator_findings,
+        binding=None,
+    )
+
+
+def build_extraction_resolved_assertion_evaluations(
+    *,
+    case: EvaluationCase,
+    resolution: CaseResolution,
+    parsed_content: LoadedParsedPredictionContent,
+    gold: LoadedGoldAssertionSet,
+    bound_gold: BoundGoldAssertionSet,
+    source_snapshot: LoadedSourcePassageSnapshotManifest,
+    validation_snapshots: LoadedValidationArtifactSnapshotSet,
+    validator_findings: LoadedValidatorFindings,
+    binding: LoadedObservationTargetBinding,
+) -> SemanticAssertionEvaluationResult:
+    """Evaluate one *extraction* case's assertions through the observation-target binding.
+
+    Mutually exclusive with :func:`build_resolved_assertion_evaluations`: a
+    non-extraction stage is rejected here, and an extraction stage is rejected
+    there. Every gold canonical target is mapped through the binding to its
+    (possibly several) raw observation IDs before entity/field/evidence semantics
+    run; unresolved observations make an otherwise-unprovable outcome
+    ``indeterminate`` rather than ``unsatisfied``.
+    """
+    if not isinstance(binding, LoadedObservationTargetBinding):
+        raise TypeError(
+            f"binding must be a LoadedObservationTargetBinding, got {type(binding).__name__}"
+        )
+    if isinstance(case, EvaluationCase) and case.stage not in EXTRACTION_EVALUATION_STAGES:
+        raise SemanticAssertionEvaluationError(
+            "a non-extraction-stage case must use the stage-general evaluator",
+            reason_code="non_extraction_stage_rejected",
+        )
+    return _build_evaluations(
+        case=case, resolution=resolution, parsed_content=parsed_content, gold=gold,
+        bound_gold=bound_gold, source_snapshot=source_snapshot,
+        validation_snapshots=validation_snapshots, validator_findings=validator_findings,
+        binding=binding,
+    )
+
+
+def _build_evaluations(
+    *,
+    case: EvaluationCase,
+    resolution: CaseResolution,
+    parsed_content: LoadedParsedPredictionContent,
+    gold: LoadedGoldAssertionSet,
+    bound_gold: BoundGoldAssertionSet,
+    source_snapshot: LoadedSourcePassageSnapshotManifest,
+    validation_snapshots: LoadedValidationArtifactSnapshotSet,
+    validator_findings: LoadedValidatorFindings,
+    binding: LoadedObservationTargetBinding | None,
+) -> SemanticAssertionEvaluationResult:
+    """Shared Phase A/B/C body; ``binding is None`` is the stage-general path."""
     if not isinstance(case, EvaluationCase):
         raise TypeError(f"case must be an EvaluationCase, got {type(case).__name__}")
     if not isinstance(resolution, CaseResolution):
@@ -313,6 +465,22 @@ def build_resolved_assertion_evaluations(
         for snap in case_snapshots
     ):
         add_global("case_snapshot_parsed_content_mismatch")
+    # Binding-vs-input reconciliation (extraction path only). Defence in depth:
+    # the producer already pinned these at construction time, so a disagreement
+    # here means the binding does not belong to this case/content/registry.
+    if binding is not None:
+        bmodel = binding.model
+        if bmodel.case_id != case.case_id:
+            add_global("binding_case_mismatch")
+        if bmodel.stage != case.stage:
+            add_global("binding_stage_mismatch")
+        if bmodel.parsed_prediction_content_sha256 != parsed_content.sha256:
+            add_global("binding_parsed_content_mismatch")
+        if (
+            bmodel.target_registry_version != resolution.target_registry_version
+            or bmodel.target_registry_sha256 != resolution.target_registry_sha256
+        ):
+            add_global("binding_target_registry_mismatch")
     # Every finding's own run_id must equal the wrapper's eval_run_id (which, in
     # turn, must equal the snapshot set's run — checked above).
     if any(f.run_id != validator_findings.eval_run_id for f in validator_findings.findings):
@@ -473,6 +641,11 @@ def build_resolved_assertion_evaluations(
         for finding in validator_findings.findings
     )
 
+    # Extraction path: resolve the canonical -> observation index once. The
+    # index is many-to-one and never includes an unresolved observation.
+    mapped = None if binding is None else observations_by_canonical_target(binding.model)
+    unresolved = () if binding is None else unresolved_observation_ids(binding.model)
+
     evaluations: list[ResolvedAssertionEvaluation] = []
     for spec in case.assertions:
         aid = spec.assertion_id
@@ -483,12 +656,24 @@ def build_resolved_assertion_evaluations(
             outcome = "unsatisfied" if relevant_finding else _deterministic_outcome(case_snapshots)
         elif kind in ("expected_entity", "forbidden_entity"):
             targets = {e.canonical_target_reference for e in gold_by_key[(case.case_id, aid)]}
-            outcome = _entity_outcome(kind, targets, content)
+            outcome = (
+                _entity_outcome(kind, targets, content) if mapped is None
+                else _binding_entity_outcome(kind, targets, content, mapped, unresolved)
+            )
         elif kind == "field_value":
-            outcome = _field_value_outcome(gold_by_key[(case.case_id, aid)][0], content)
+            entry = gold_by_key[(case.case_id, aid)][0]
+            outcome = (
+                _field_value_outcome(entry, content) if mapped is None
+                else _binding_field_value_outcome(entry, content, mapped, unresolved)
+            )
         else:  # evidence_provenance
-            outcome = _evidence_outcome(
-                gold_by_key[(case.case_id, aid)][0], content, documents_by_id, passages_by_id
+            entry = gold_by_key[(case.case_id, aid)][0]
+            outcome = (
+                _evidence_outcome(entry, content, documents_by_id, passages_by_id)
+                if mapped is None
+                else _binding_evidence_outcome(
+                    entry, content, documents_by_id, passages_by_id, mapped, unresolved
+                )
             )
         evaluations.append(_evaluation(case.case_id, spec, outcome))
 

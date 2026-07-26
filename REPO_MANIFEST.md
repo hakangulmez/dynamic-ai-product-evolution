@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **383**
+Total tracked/scaffold files listed: **388**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -143,6 +143,8 @@ Total tracked/scaffold files listed: **383**
 - `evals/fixtures/evaluation_harness/substrate_integration/capability_case.json`
 - `evals/fixtures/evaluation_harness/substrate_integration/case_set_manifest.json`
 - `evals/fixtures/evaluation_harness/substrate_integration/gold_assertion_set.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/members/product_parent.json`
+- `evals/fixtures/evaluation_harness/substrate_integration/parent_observation_snapshot.json`
 - `evals/fixtures/evaluation_harness/substrate_integration/prediction_envelopes.jsonl`
 - `evals/fixtures/evaluation_harness/substrate_integration/prediction_run_manifest.json`
 - `evals/fixtures/evaluation_harness/substrate_integration/prediction_source.json`
@@ -303,6 +305,7 @@ Total tracked/scaffold files listed: **383**
 - `src/dynamic_ai_products/evaluation/metric_inputs.py`
 - `src/dynamic_ai_products/evaluation/metrics.py`
 - `src/dynamic_ai_products/evaluation/models.py`
+- `src/dynamic_ai_products/evaluation/observation_target_binding.py`
 - `src/dynamic_ai_products/evaluation/output_manifest.py`
 - `src/dynamic_ai_products/evaluation/parent_observation_snapshot.py`
 - `src/dynamic_ai_products/evaluation/prediction_content.py`
@@ -353,7 +356,9 @@ Total tracked/scaffold files listed: **383**
 - `tests/evaluation/test_metric_report_v2.py`
 - `tests/evaluation/test_metrics.py`
 - `tests/evaluation/test_models.py`
+- `tests/evaluation/test_observation_target_binding.py`
 - `tests/evaluation/test_output_manifest.py`
+- `tests/evaluation/test_output_manifest_v2.py`
 - `tests/evaluation/test_parent_observation_snapshot.py`
 - `tests/evaluation/test_prediction_content.py`
 - `tests/evaluation/test_references.py`

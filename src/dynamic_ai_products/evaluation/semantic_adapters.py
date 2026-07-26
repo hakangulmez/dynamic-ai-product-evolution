@@ -253,56 +253,97 @@ def resolve_semantic_adapter(
 # --- Raw extraction payload (strict, extra-forbid) ------------------------
 
 
-class _RawEntity(EvaluationStrictModel):
-    entity_kind: str
-    entity_ref: str
-
-
-class _RawFieldValue(EvaluationStrictModel):
-    entity_ref: str
-    field_name: str
-    field_value: str
-
-
-class _RawEvidence(EvaluationStrictModel):
-    entity_ref: str
+class _ObservationEvidence(EvaluationStrictModel):
     source_id: str
     passage_id: str
     quote: str
 
 
-class _RawExtractionPayload(EvaluationStrictModel):
-    predicted_entities: tuple[_RawEntity, ...]
-    predicted_fields: tuple[_RawFieldValue, ...]
-    cited_evidence: tuple[_RawEvidence, ...]
+class _CapabilityObservation(EvaluationStrictModel):
+    # Mirrors schemas/capability_observation.schema.json (extra-forbid: any field
+    # outside the committed observation contract is fail-closed rejected).
+    capability_observation_id: str
+    stable_capability_id: str | None = None
+    product_observation_id: str
+    capability: str
+    normalized_capability: str | None = None
+    input_types: tuple[str, ...] = ()
+    output_types: tuple[str, ...] = ()
+    availability_status: str
+    ambiguity: str | None = None
+    confidence: Literal["high", "medium", "low", "unknown"]
+    schema_version: str | None = None
+    evidence: tuple[_ObservationEvidence, ...]
 
 
-def _build_collections(
-    payload: _RawExtractionPayload, evaluation_stage: str
-) -> dict[str, Any]:
-    allowed = _STAGE_ENTITY_KINDS[evaluation_stage]
-    for entity in payload.predicted_entities:
-        if entity.entity_kind not in allowed:
-            raise SemanticAdapterError(
-                "raw payload declares an entity kind not permitted for the stage",
-                reason_code="wrong_stage_payload",
-                evaluation_stage=evaluation_stage,
-            )
-    entities = sorted(
-        ({"entity_kind": e.entity_kind, "entity_ref": e.entity_ref}
-         for e in payload.predicted_entities),
-        key=lambda d: (d["entity_kind"], d["entity_ref"]),
-    )
-    field_values = sorted(
-        ({"entity_ref": f.entity_ref, "field_name": f.field_name, "field_value": f.field_value}
-         for f in payload.predicted_fields),
-        key=lambda d: (d["entity_ref"], d["field_name"], d["field_value"]),
-    )
-    evidence = sorted(
-        ({"entity_ref": v.entity_ref, "source_id": v.source_id,
-          "passage_id": v.passage_id, "quote": v.quote} for v in payload.cited_evidence),
-        key=lambda d: (d["entity_ref"], d["source_id"], d["passage_id"], d["quote"]),
-    )
+class _TaskObservation(EvaluationStrictModel):
+    # Mirrors schemas/task_observation.schema.json (extra-forbid).
+    task_observation_id: str
+    stable_task_id: str | None = None
+    company_id: str
+    observation_cutoff: str
+    product_observation_id: str
+    capability_observation_ids: tuple[str, ...]
+    task: str
+    customer_need: str
+    task_role: Literal["core", "major_supporting", "peripheral", "unknown"] | None = None
+    availability_status: str
+    target_customer: str | None = None
+    monetization_model: str | None = None
+    task_components: tuple[str, ...] = ()
+    ai_action_observed: str | None = None
+    ambiguity: str | None = None
+    confidence: Literal["high", "medium", "low", "unknown"]
+    schema_version: str | None = None
+    evidence: tuple[_ObservationEvidence, ...]
+
+
+_STAGE_OBSERVATION_MODEL: dict[str, type] = {
+    "capability_extraction": _CapabilityObservation,
+    "task_extraction": _TaskObservation,
+}
+
+# Fixed field_value allowlists (scalar/enum only). Excluded: identity/context and
+# parent-link fields, evidence, and every array (never stringified).
+_CAPABILITY_FIELD_ALLOWLIST = (
+    "capability", "availability_status", "confidence",
+    "stable_capability_id", "normalized_capability", "ambiguity", "schema_version",
+)
+_TASK_FIELD_ALLOWLIST = (
+    "task", "customer_need", "availability_status", "confidence",
+    "stable_task_id", "task_role", "target_customer", "monetization_model",
+    "ai_action_observed", "ambiguity", "schema_version",
+)
+
+
+def _build_collections(payload: Any, evaluation_stage: str) -> dict[str, Any]:
+    if evaluation_stage == "capability_extraction":
+        owner = payload.capability_observation_id
+        entities = [
+            {"entity_kind": "capability", "entity_ref": payload.capability_observation_id},
+            {"entity_kind": "product", "entity_ref": payload.product_observation_id},
+        ]
+        allowlist = _CAPABILITY_FIELD_ALLOWLIST
+    else:  # task_extraction (only implemented stages reach here)
+        owner = payload.task_observation_id
+        entities = [{"entity_kind": "task", "entity_ref": payload.task_observation_id}]
+        allowlist = _TASK_FIELD_ALLOWLIST
+    field_values = []
+    for name in allowlist:
+        value = getattr(payload, name, None)
+        # Emit iff present, non-null, and a string; nullable/absent → skipped;
+        # arrays are excluded by allowlist and never stringified.
+        if isinstance(value, str):
+            field_values.append(
+                {"entity_ref": owner, "field_name": name, "field_value": value})
+    evidence = [
+        {"entity_ref": owner, "source_id": e.source_id,
+         "passage_id": e.passage_id, "quote": e.quote}
+        for e in payload.evidence
+    ]
+    entities.sort(key=lambda d: (d["entity_kind"], d["entity_ref"]))
+    field_values.sort(key=lambda d: (d["entity_ref"], d["field_name"], d["field_value"]))
+    evidence.sort(key=lambda d: (d["entity_ref"], d["source_id"], d["passage_id"], d["quote"]))
     return {
         "entity_collection": {"completeness": "complete", "entities": entities},
         "field_value_collection": {"completeness": "complete", "field_values": field_values},
@@ -378,7 +419,7 @@ def _has_non_finite(payload: Any) -> bool:
     return False
 
 
-def _parse_effective_payload(raw: bytes, *, kind: str) -> _RawExtractionPayload:
+def _parse_effective_payload(raw: bytes, evaluation_stage: str, *, kind: str) -> Any:
     decode_code = f"{kind}_decode"
     malformed_code = f"{kind}_malformed"
     top_level_code = f"{kind}_top_level_type"
@@ -411,11 +452,12 @@ def _parse_effective_payload(raw: bytes, *, kind: str) -> _RawExtractionPayload:
         raise SemanticAdapterError(
             "raw payload top-level value must be a JSON object", reason_code=top_level_code
         )
+    model = _STAGE_OBSERVATION_MODEL[evaluation_stage]
     try:
-        return _RawExtractionPayload.model_validate(payload)
+        return model.model_validate(payload)
     except PydanticValidationError as exc:
         raise SemanticAdapterError(
-            "raw payload does not match the strict stage payload contract",
+            "raw payload does not match the strict stage observation contract",
             reason_code=malformed_code,
         ) from exc
 
@@ -526,7 +568,7 @@ def apply_semantic_adapter(
     else:
         payload_kind = "raw_artifact"
 
-    payload = _parse_effective_payload(effective, kind=payload_kind)
+    payload = _parse_effective_payload(effective, evaluation_stage, kind=payload_kind)
     observation_cutoff = _observation_cutoff(case)
     collections = _build_collections(payload, evaluation_stage)
 

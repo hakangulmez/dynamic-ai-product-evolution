@@ -1,0 +1,18 @@
+{
+  "case_id": "SYNTH-CASE-FULL-0002",
+  "company_id": "SYNTH-CO-0001",
+  "contract": {
+    "contract_hash": "70b197b6154f87d4bcdb37e92e3e354b7ed5714987cb067149abfbfa37f606ea",
+    "contract_id": "parent_observation_snapshot",
+    "contract_version": "0.1.0"
+  },
+  "members": [
+    {
+      "reference": "members/product_parent.json",
+      "role": "product_parent",
+      "sha256": "eecb70eb9f31f8773b2f09824933560ce2539bc464884258cc044014999558b7"
+    }
+  ],
+  "observation_cutoff": "2025-12-31",
+  "snapshot_version": "synth-parent-snapshot-v1"
+}

@@ -25,7 +25,12 @@ from dynamic_ai_products.evaluation.references import CaseResolution
 from dynamic_ai_products.evaluation.semantic_assertions import (
     SemanticAssertionEvaluationError,
     SemanticAssertionEvaluationResult,
+    build_extraction_resolved_assertion_evaluations,
     build_resolved_assertion_evaluations,
+)
+from dynamic_ai_products.evaluation.observation_target_binding import (
+    LoadedObservationTargetBinding,
+    ObservationTargetBinding,
 )
 from dynamic_ai_products.evaluation.source_snapshot import load_source_passage_snapshot_manifest
 from dynamic_ai_products.evaluation.validation_snapshot import (
@@ -38,7 +43,12 @@ ROOT = Path(__file__).resolve().parents[2]
 FX = ROOT / "evals" / "fixtures" / "evaluation_harness"
 
 RUN = "synth-run-12h"
-STAGE = "capability_extraction"
+# The stage-general producer is binding-free and therefore rejects an extraction
+# stage (ADR-026: raw observation IDs and canonical target references live in
+# separate namespaces there, and only observation_target_binding@0.1.0 bridges
+# them). These Slice-12H cases exercise the stage-general path, so they carry a
+# non-extraction stage; the extraction path is covered separately below.
+STAGE = "universe_classification"
 CASE_ID = "SYNTH-CASE-12H"
 ARTIFACT = "art-0001"
 PSHA = "d" * 64
@@ -1039,6 +1049,7 @@ def test_type_guards():
 def test_public_surface():
     assert set(sa_mod.__all__) == {
         "SemanticAssertionEvaluationError", "SemanticAssertionEvaluationResult",
+        "build_extraction_resolved_assertion_evaluations",
         "build_resolved_assertion_evaluations",
     }
     assert "_PhaseAIssue" not in evaluation_pkg.__all__
@@ -1115,3 +1126,355 @@ def test_import_no_io_no_hash_no_clock():
     ])
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT)
     assert r.returncode == 0 and "OK" in r.stdout, r.stderr
+
+
+# =========================================================================
+# Xe-bind: the mutually exclusive, binding-aware extraction producer
+# =========================================================================
+#
+# At an extraction stage a gold ``canonical_target_reference`` is NOT an
+# ``entity_ref``: only observation_target_binding@0.1.0 maps between the two
+# namespaces. `C` is the resolved canonical set, `U` the present unresolved
+# observations, `T` the assertion's gold target set.
+
+XSTAGE = "capability_extraction"
+OBS_CAP = "OBS-CAP-1"
+OBS_CAP2 = "OBS-CAP-2"
+OBS_PROD = "OBS-PROD-1"
+CANON_A = "CANON.A"
+CANON_B = "CANON.B"
+
+
+def _xprov(canonical):
+    if canonical is None:
+        return {"resolution_method": "declared_unresolved",
+                "unresolved_reason_code": "no_registry_candidate",
+                "resolver_kind": "deterministic_rule", "resolver_ids": ["rule-v1"],
+                "verification_status": "provisional",
+                "verification_method": "deterministic_rule_review",
+                "decision_timestamps": [CREATED], "change_reason": "initial"}
+    return {"resolution_method": "stable_identity_field", "source_field_name": "stable_id",
+            "source_field_value": canonical, "registry_entry_reference_id": canonical,
+            "resolver_kind": "deterministic_rule", "resolver_ids": ["rule-v1"],
+            "verification_status": "provisional",
+            "verification_method": "deterministic_rule_review",
+            "decision_timestamps": [CREATED], "change_reason": "initial"}
+
+
+def _xdecision(obs, canonical, *, kind="capability", parent=False):
+    return {"observation_id": obs, "observation_kind": kind,
+            "resolution_status": "resolved" if canonical is not None else "unresolved",
+            "canonical_target_reference": canonical, "parent_referenced": parent,
+            "provenance": _xprov(canonical)}
+
+
+_STAGE_SUBJECT = {"capability_extraction": "capability", "task_extraction": "task"}
+
+
+def _binding(decisions, *, case_id=CASE_ID, stage=XSTAGE, psha=PSHA,
+             reg_v="reg-v1", reg_sha=H):
+    entries = sorted(decisions, key=lambda d: d["observation_id"])
+    for index, entry in enumerate(entries):
+        entry["parent_referenced"] = index != 0
+        entry["observation_kind"] = _STAGE_SUBJECT[stage] if index == 0 else "capability"
+    resolved = sum(1 for d in entries if d["resolution_status"] == "resolved")
+    payload = {
+        "contract": {"contract_id": "observation_target_binding", "contract_version": "0.1.0",
+                     "contract_hash": model_contract_hash(
+                         ObservationTargetBinding, "observation_target_binding", "0.1.0")},
+        "eval_run_id": RUN, "case_id": case_id, "company_id": "CO-1", "stage": stage,
+        "prediction_record_id": "pred-1", "raw_artifact_reference": "raw.json",
+        "raw_artifact_sha256": "c" * 64, "parsed_prediction_content_sha256": psha,
+        "parsed_prediction_content_artifact_reference": "p.json",
+        "target_registry_version": reg_v, "target_registry_sha256": reg_sha,
+        "resolved_observation_count": resolved,
+        "unresolved_observation_count": len(entries) - resolved,
+        "entries": entries,
+    }
+    # The persisted contract couples the parent-snapshot pins to the entry set:
+    # present exactly when some entry is parent-referenced, absent otherwise.
+    if any(e["parent_referenced"] for e in entries):
+        payload["parent_observation_snapshot_version"] = "parent-snapshot-v1"
+        payload["parent_observation_snapshot_sha256"] = "e" * 64
+    model = ObservationTargetBinding.model_validate(payload)
+    return LoadedObservationTargetBinding(
+        model=model, version="0.1.0", sha256="f" * 64, artifact_reference="b.json")
+
+
+def _xcase(assertion_dicts):
+    return _case(assertion_dicts, stage=XSTAGE)
+
+
+def _xparsed(**kw):
+    kw.setdefault("stage", XSTAGE)
+    return _parsed(**kw)
+
+
+def _xbuild(case, gold, bound, parsed, binding, *, resolution=None, validation=None,
+            findings=None, source=SOURCE):
+    return build_extraction_resolved_assertion_evaluations(
+        case=case, resolution=resolution if resolution is not None else _resolution(case),
+        parsed_content=parsed, gold=gold, bound_gold=bound, source_snapshot=source,
+        validation_snapshots=validation or _xsnapshot_validation(),
+        validator_findings=findings or _findings(), binding=binding)
+
+
+def _xsnapshot_validation(psha=PSHA):
+    snap = ValidationArtifactSnapshot.model_validate({
+        "eval_run_id": RUN, "artifact_id": ARTIFACT, "stage": XSTAGE, "artifact_sha256": H,
+        "parsed_prediction_content_sha256": psha, "created_at": CREATED, "case_id": CASE_ID,
+        "observations": _passing_obs(psha),
+        "coverage": [{"rule_id": r, "coverage_state": "fully_evaluated", "candidate_count": 1,
+                      "evaluated_observation_count": 1, "blocked_candidate_count": 0,
+                      "reason_counts": []} for r in VALIDATOR_RULE_ORDER],
+    })
+    model = build_validation_artifact_snapshot_set(
+        snapshot_set_version="vset-1", eval_run_id=RUN, evaluation_stage=XSTAGE,
+        snapshots=(snap,))
+    return LoadedValidationArtifactSnapshotSet(
+        model=model, version="vset-1", sha256=H, artifact_reference="v.json")
+
+
+# --- Mutual exclusion -------------------------------------------------------
+
+
+@pytest.mark.parametrize("stage", ["capability_extraction", "task_extraction"])
+def test_generic_producer_rejects_every_extraction_stage(stage):
+    gold, bound = _gold_and_bound([_gold_entry("A1", "expected_entity", CANON_A)])
+    case = _case([_assertion("A1", "expected_entity", targets=(CANON_A,))], stage=stage)
+    with pytest.raises(SemanticAssertionEvaluationError) as ei:
+        build_resolved_assertion_evaluations(
+            case=case, resolution=_resolution(case), parsed_content=_parsed(stage=stage),
+            gold=gold, bound_gold=bound, source_snapshot=SOURCE,
+            validation_snapshots=_validation(), validator_findings=_findings())
+    assert ei.value.reason_code == "extraction_stage_requires_binding"
+
+
+# ParsedPredictionContent's governed EvaluationStage literal admits only the four
+# implemented stages, so the non-extraction half of the vocabulary is exactly these.
+@pytest.mark.parametrize("stage", ["universe_classification", "universe_screen"])
+def test_extraction_producer_rejects_every_non_extraction_stage(stage):
+    gold, bound = _gold_and_bound([_gold_entry("A1", "expected_entity", CANON_A)])
+    case = _case([_assertion("A1", "expected_entity", targets=(CANON_A,))], stage=stage)
+    with pytest.raises(SemanticAssertionEvaluationError) as ei:
+        _xbuild(case, gold, bound, _parsed(stage=stage),
+                _binding([_xdecision(OBS_CAP, CANON_A)]))
+    assert ei.value.reason_code == "non_extraction_stage_rejected"
+
+
+def test_extraction_producer_requires_the_binding_wrapper_type():
+    gold, bound = _gold_and_bound([_gold_entry("A1", "expected_entity", CANON_A)])
+    case = _xcase([_assertion("A1", "expected_entity", targets=(CANON_A,))])
+    with pytest.raises(TypeError):
+        _xbuild(case, gold, bound, _xparsed(), object())
+
+
+# --- Truth table: expected_entity ------------------------------------------
+
+
+def _entity_case(kind, targets):
+    gold, bound = _gold_and_bound(
+        [_gold_entry("A1", kind, t) for t in targets])
+    return gold, bound, _xcase([_assertion("A1", kind, targets=targets)])
+
+
+def test_expected_entity_subset_of_C_is_satisfied_even_with_unresolved_present():
+    gold, bound, case = _entity_case("expected_entity", (CANON_A,))
+    parsed = _xparsed(entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP},
+                                {"entity_kind": "capability", "entity_ref": OBS_CAP2}])
+    binding = _binding([_xdecision(OBS_CAP, CANON_A), _xdecision(OBS_CAP2, None)])
+    assert _outcomes(_xbuild(case, gold, bound, parsed, binding))["A1"] == "satisfied"
+
+
+def test_expected_entity_not_subset_with_no_unresolved_is_unsatisfied():
+    gold, bound, case = _entity_case("expected_entity", (CANON_A,))
+    parsed = _xparsed(entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP}])
+    binding = _binding([_xdecision(OBS_CAP, CANON_B)])
+    assert _outcomes(_xbuild(case, gold, bound, parsed, binding))["A1"] == "unsatisfied"
+
+
+def test_expected_entity_not_subset_with_unresolved_is_indeterminate():
+    gold, bound, case = _entity_case("expected_entity", (CANON_A,))
+    parsed = _xparsed(entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP}])
+    binding = _binding([_xdecision(OBS_CAP, None)])
+    assert _outcomes(_xbuild(case, gold, bound, parsed, binding))["A1"] == "indeterminate"
+
+
+# --- Truth table: forbidden_entity -----------------------------------------
+
+
+def test_forbidden_entity_hit_is_unsatisfied_even_with_unresolved_present():
+    gold, bound, case = _entity_case("forbidden_entity", (CANON_A,))
+    parsed = _xparsed(entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP},
+                                {"entity_kind": "capability", "entity_ref": OBS_CAP2}])
+    binding = _binding([_xdecision(OBS_CAP, CANON_A), _xdecision(OBS_CAP2, None)])
+    assert _outcomes(_xbuild(case, gold, bound, parsed, binding))["A1"] == "unsatisfied"
+
+
+def test_forbidden_entity_clean_with_no_unresolved_is_satisfied():
+    gold, bound, case = _entity_case("forbidden_entity", (CANON_A,))
+    parsed = _xparsed(entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP}])
+    binding = _binding([_xdecision(OBS_CAP, CANON_B)])
+    assert _outcomes(_xbuild(case, gold, bound, parsed, binding))["A1"] == "satisfied"
+
+
+def test_forbidden_entity_clean_with_unresolved_is_indeterminate():
+    gold, bound, case = _entity_case("forbidden_entity", (CANON_A,))
+    parsed = _xparsed(entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP}])
+    binding = _binding([_xdecision(OBS_CAP, None)])
+    assert _outcomes(_xbuild(case, gold, bound, parsed, binding))["A1"] == "indeterminate"
+
+
+# --- Truth table: field_value ----------------------------------------------
+
+
+def _xfield_case(operator, value_type, expected):
+    gold, bound = _gold_and_bound([
+        _gold_entry("A1", "field_value", CANON_A,
+                    field_payload=_fv(operator, value_type, expected))])
+    return gold, bound, _xcase([_assertion("A1", "field_value", targets=(CANON_A,))])
+
+
+def test_field_value_with_unresolved_present_is_indeterminate():
+    gold, bound, case = _xfield_case("equals", "string", ["100"])
+    parsed = _xparsed(
+        entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP},
+                  {"entity_kind": "capability", "entity_ref": OBS_CAP2}],
+        field_values=[{"entity_ref": OBS_CAP, "field_name": "revenue", "field_value": "100"}])
+    binding = _binding([_xdecision(OBS_CAP, CANON_A), _xdecision(OBS_CAP2, None)])
+    assert _outcomes(_xbuild(case, gold, bound, parsed, binding))["A1"] == "indeterminate"
+
+
+def test_field_value_without_a_mapped_observation_is_unsatisfied():
+    gold, bound, case = _xfield_case("equals", "string", ["100"])
+    parsed = _xparsed(
+        entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP}],
+        field_values=[{"entity_ref": OBS_CAP, "field_name": "revenue", "field_value": "100"}])
+    binding = _binding([_xdecision(OBS_CAP, CANON_B)])
+    assert _outcomes(_xbuild(case, gold, bound, parsed, binding))["A1"] == "unsatisfied"
+
+
+def test_field_value_many_to_one_positive_any():
+    # Two observations map to ONE canonical target: a positive operator is
+    # satisfied when ANY mapped record satisfies it.
+    gold, bound, case = _xfield_case("equals", "string", ["100"])
+    parsed = _xparsed(
+        entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP},
+                  {"entity_kind": "capability", "entity_ref": OBS_CAP2}],
+        field_values=[
+            {"entity_ref": OBS_CAP, "field_name": "revenue", "field_value": "999"},
+            {"entity_ref": OBS_CAP2, "field_name": "revenue", "field_value": "100"}])
+    binding = _binding([_xdecision(OBS_CAP, CANON_A), _xdecision(OBS_CAP2, CANON_A)])
+    assert _outcomes(_xbuild(case, gold, bound, parsed, binding))["A1"] == "satisfied"
+
+
+def test_field_value_many_to_one_negative_all():
+    # A negative operator requires EVERY mapped record to satisfy it.
+    gold, bound, case = _xfield_case("not_equals", "string", ["100"])
+    parsed = _xparsed(
+        entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP},
+                  {"entity_kind": "capability", "entity_ref": OBS_CAP2}],
+        field_values=[
+            {"entity_ref": OBS_CAP, "field_name": "revenue", "field_value": "101"},
+            {"entity_ref": OBS_CAP2, "field_name": "revenue", "field_value": "100"}])
+    binding = _binding([_xdecision(OBS_CAP, CANON_A), _xdecision(OBS_CAP2, CANON_A)])
+    assert _outcomes(_xbuild(case, gold, bound, parsed, binding))["A1"] == "unsatisfied"
+
+
+# --- Truth table: evidence_provenance --------------------------------------
+
+
+def _xev_case():
+    gold, bound = _gold_and_bound([
+        _gold_entry("A1", "evidence_provenance", CANON_A,
+                    evidence_payload=_ev_payload("exact_passage"))])
+    return gold, bound, _case([_assertion("A1", "evidence_provenance", targets=(CANON_A,))],
+                              input_sources=("synth-source-0002",),
+                              input_passages=("synth-passage-0003",), stage=XSTAGE)
+
+
+def _xev(entity_ref, source, passage, quote):
+    return {"entity_ref": entity_ref, "source_id": source, "passage_id": passage, "quote": quote}
+
+
+def test_evidence_with_unresolved_present_is_indeterminate():
+    gold, bound, case = _xev_case()
+    parsed = _xparsed(
+        entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP},
+                  {"entity_kind": "capability", "entity_ref": OBS_CAP2}],
+        evidence=[_xev(OBS_CAP, "synth-source-0002", "synth-passage-0003", "alpha")])
+    binding = _binding([_xdecision(OBS_CAP, CANON_A), _xdecision(OBS_CAP2, None)])
+    assert _outcomes(_xbuild(case, gold, bound, parsed, binding))["A1"] == "indeterminate"
+
+
+def test_evidence_without_a_mapped_observation_is_unsatisfied():
+    gold, bound, case = _xev_case()
+    parsed = _xparsed(
+        entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP}],
+        evidence=[_xev(OBS_CAP, "synth-source-0002", "synth-passage-0003", "alpha")])
+    binding = _binding([_xdecision(OBS_CAP, CANON_B)])
+    assert _outcomes(_xbuild(case, gold, bound, parsed, binding))["A1"] == "unsatisfied"
+
+
+def test_evidence_many_to_one_requires_every_mapped_record_to_pass():
+    gold, bound, case = _xev_case()
+    ok = _xev(OBS_CAP, "synth-source-0002", "synth-passage-0003", "alpha")
+    bad = _xev(OBS_CAP2, "synth-source-0002", "synth-passage-0003", "not-in-passage")
+    binding = _binding([_xdecision(OBS_CAP, CANON_A), _xdecision(OBS_CAP2, CANON_A)])
+    good = _xparsed(entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP},
+                              {"entity_kind": "capability", "entity_ref": OBS_CAP2}],
+                    evidence=[ok, _xev(OBS_CAP2, "synth-source-0002", "synth-passage-0003",
+                                       "alpha")])
+    assert _outcomes(_xbuild(case, gold, bound, good, binding))["A1"] == "satisfied"
+    mixed = _xparsed(entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP},
+                               {"entity_kind": "capability", "entity_ref": OBS_CAP2}],
+                     evidence=[ok, bad])
+    assert _outcomes(_xbuild(case, gold, bound, mixed, binding))["A1"] == "unsatisfied"
+
+
+# --- Incomplete-collection precedence --------------------------------------
+
+
+def test_incomplete_collection_precedes_the_unresolved_rule():
+    gold, bound, case = _entity_case("expected_entity", (CANON_A,))
+    parsed = _xparsed(entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP}],
+                      entity_complete=False)
+    binding = _binding([_xdecision(OBS_CAP, CANON_A)])
+    assert _outcomes(_xbuild(case, gold, bound, parsed, binding))["A1"] == "indeterminate"
+
+
+# --- Phase-A binding reconciliation (defence in depth) ---------------------
+
+
+def _issue_codes(result):
+    return {i.issue_code for i in result.input_validity_issues}
+
+
+@pytest.mark.parametrize("kwargs,code", [
+    ({"case_id": "OTHER-CASE"}, "binding_case_mismatch"),
+    ({"stage": "task_extraction"}, "binding_stage_mismatch"),
+    ({"psha": "9" * 64}, "binding_parsed_content_mismatch"),
+    ({"reg_v": "reg-v9"}, "binding_target_registry_mismatch"),
+    ({"reg_sha": "9" * 64}, "binding_target_registry_mismatch"),
+])
+def test_phase_a_binding_reconciliation_codes(kwargs, code):
+    gold, bound, case = _entity_case("expected_entity", (CANON_A,))
+    parsed = _xparsed(entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP}])
+    binding = _binding([_xdecision(OBS_CAP, CANON_A)], **kwargs)
+    result = _xbuild(case, gold, bound, parsed, binding)
+    assert code in _issue_codes(result)
+    assert result.evaluations == ()
+    assert result.not_evaluated_assertion_ids == ("A1",)
+
+
+# --- Deterministic validation is binding-independent ----------------------
+
+
+def test_deterministic_validation_unaffected_by_the_binding():
+    gold, bound = _gold_and_bound([_gold_entry("UNREL", "expected_entity", CANON_A)])
+    case = _xcase([_assertion("A1", "deterministic_validation", targets=("CANON.DV",))])
+    parsed = _xparsed(entities=[{"entity_kind": "capability", "entity_ref": OBS_CAP}])
+    binding = _binding([_xdecision(OBS_CAP, None)])
+    result = _xbuild(case, gold, bound, parsed, binding,
+                     validation=_xsnapshot_validation())
+    assert _outcomes(result)["A1"] == "satisfied"

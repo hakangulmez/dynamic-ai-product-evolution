@@ -67,7 +67,22 @@ from dynamic_ai_products.evaluation.semantic_adapters import (
     resolve_semantic_adapter,
     semantic_adapter_registry_hash,
 )
-from dynamic_ai_products.evaluation.semantic_assertions import build_resolved_assertion_evaluations
+from dynamic_ai_products.evaluation.observation_target_binding import (
+    ObservationTargetResolutionDecision,
+    build_observation_target_binding,
+    load_observation_target_binding,
+    observations_by_canonical_target,
+    persist_observation_target_binding,
+)
+from dynamic_ai_products.evaluation.parent_observation_snapshot import (
+    load_parent_observation_snapshot,
+)
+from dynamic_ai_products.evaluation.output_manifest import EvaluationOutputManifestError
+from dynamic_ai_products.evaluation.semantic_assertions import (
+    SemanticAssertionEvaluationError,
+    build_extraction_resolved_assertion_evaluations,
+    build_resolved_assertion_evaluations,
+)
 from dynamic_ai_products.evaluation.source_snapshot import (
     load_source_passage_snapshot_manifest,
     resolve_case_source_passages,
@@ -108,6 +123,31 @@ ROOT = Path(__file__).resolve().parents[2]
 FX = ROOT / "evals" / "fixtures" / "evaluation_harness" / "substrate_integration"
 RID = "substrate-integration-run"
 CREATED = "2026-07-25T00:00:00+00:00"
+COMPANY = "SYNTH-CO-0001"
+CAP_OBS = "SYNTH-CAPABILITY-OBS-0001"
+PROD_OBS = "SYNTH-PRODUCT-OBS-0001"
+CANON_CAP = "SYNTH.PRODUCT.ALPHA.CAPABILITY"
+CANON_PROD = "SYNTH.PRODUCT.ALPHA"
+
+
+def _resolution_decision(observation_id, kind, canonical, *, parent):
+    """One adjudicated raw-observation -> canonical-target decision (typed, governed)."""
+    return ObservationTargetResolutionDecision.model_validate({
+        "observation_id": observation_id, "observation_kind": kind,
+        "resolution_status": "resolved", "canonical_target_reference": canonical,
+        "parent_referenced": parent,
+        "provenance": {
+            "resolution_method": "stable_identity_field",
+            "source_field_name": (
+                "stable_capability_id" if kind == "capability" else "product_observation_id"),
+            "source_field_value": canonical,
+            "registry_entry_reference_id": canonical,
+            "resolver_kind": "deterministic_rule", "resolver_ids": ["substrate-rule-v1"],
+            "verification_status": "provisional",
+            "verification_method": "deterministic_rule_review",
+            "decision_timestamps": [CREATED], "change_reason": "substrate integration proof",
+        },
+    })
 _OBS = TypeAdapter(ValidatorObservation)
 
 # Canonical run-relative locations of the six output-manifest artifacts.
@@ -293,6 +333,37 @@ def test_semantic_substrate_integration(tmp_path: Path) -> None:
     resolution = resolve_case_references(case, registry=reg, scoring_config=sc)
     assert resolution.target_registry_sha256 == reg_hash
 
+    # --- 6b. Observation-target binding: the ONLY bridge between the raw
+    # observation namespace and the canonical target namespace (ADR-026). The
+    # parent product observation is verified against the committed snapshot.
+    parents = load_parent_observation_snapshot(
+        "parent_observation_snapshot.json", source_root=FX)
+    binding_model = build_observation_target_binding(
+        eval_run_id=RID, case=case, company_id=COMPANY, resolution=resolution,
+        parsed_prediction_content=loaded_parsed, target_registry=reg,
+        resolution_entries=(
+            _resolution_decision(CAP_OBS, "capability", CANON_CAP, parent=False),
+            _resolution_decision(PROD_OBS, "product", CANON_PROD, parent=True)),
+        parent_snapshot=parents)
+    loaded_binding = persist_observation_target_binding(
+        binding_model, eval_root=root, eval_run_id=RID)
+    reloaded_binding = load_observation_target_binding(
+        loaded_binding.artifact_reference, eval_root=root,
+        expected_sha256=loaded_binding.sha256)
+    assert reloaded_binding.sha256 == loaded_binding.sha256 == _reread_sha(
+        root / RID / "snapshots" / "observation_target_binding.json")
+    mapped = observations_by_canonical_target(reloaded_binding.model)
+    # The three namespaces stay distinct: at least one raw observation ID differs
+    # from the canonical target reference it resolves to, and the two ID sets are
+    # disjoint across the whole committed bundle.
+    assert mapped[CANON_CAP] == (CAP_OBS,) and CAP_OBS != CANON_CAP
+    assert mapped[CANON_PROD] == (PROD_OBS,) and PROD_OBS != CANON_PROD
+    raw_ids = {e.entity_ref for e in parsed.entity_collection.entities} | set(
+        parents.product_parent_ids) | set(parents.capability_parent_ids)
+    canonical_ids = {e.reference_id for e in reg.registry.entries} | {
+        alias for e in reg.registry.entries for alias in e.aliases}
+    assert not (raw_ids & canonical_ids)
+
     # --- 7-8. Real Rules 1-11 observations; Rule 12 produced internally ---------
     observations = _rule_1_11_observations(parsed, case, resolved)
     coverage = _coverage_1_11()
@@ -324,11 +395,19 @@ def test_semantic_substrate_integration(tmp_path: Path) -> None:
     # --- 11. Bind gold; real semantic evaluations; public dispatch glue ---------
     bound_gold = bind_gold_assertion_set(
         gold, registry=reg, cases={case.case_id: case}, resolutions={case.case_id: resolution})
-    semantic = build_resolved_assertion_evaluations(
+    semantic = build_extraction_resolved_assertion_evaluations(
         case=case, resolution=resolution, parsed_content=loaded_parsed, gold=gold,
         bound_gold=bound_gold, source_snapshot=snap, validation_snapshots=reloaded_vset,
-        validator_findings=reloaded_findings)
+        validator_findings=reloaded_findings, binding=reloaded_binding)
+    assert semantic.input_validity_issues == ()
     assert len(semantic.evaluations) == len(case.assertions)
+    # The stage-general producer refuses this extraction case outright.
+    with pytest.raises(SemanticAssertionEvaluationError) as stage_gate:
+        build_resolved_assertion_evaluations(
+            case=case, resolution=resolution, parsed_content=loaded_parsed, gold=gold,
+            bound_gold=bound_gold, source_snapshot=snap, validation_snapshots=reloaded_vset,
+            validator_findings=reloaded_findings)
+    assert stage_gate.value.reason_code == "extraction_stage_requires_binding"
     refs_by_id = {a.assertion_id: a for a in resolution.assertions}
     dispatches = tuple(
         ResolvedAssertionDispatch(status="resolved", resolution=refs_by_id[e.assertion_id],
@@ -363,8 +442,14 @@ def test_semantic_substrate_integration(tmp_path: Path) -> None:
     # predicted value is the parsed capability entity and whose gold value +
     # verification status come from the matching bound gold assertion entry.
     axis = tax.model.axes[0]
-    predicted_capability = next(
+    predicted_observation = next(
         e.entity_ref for e in parsed.entity_collection.entities if e.entity_kind == "capability")
+    # Axis labels are canonical target references, never raw observation IDs: the
+    # binding is what makes the predicted observation comparable to them.
+    predicted_capability = next(
+        canonical for canonical, observations in mapped.items()
+        if predicted_observation in observations and canonical in axis.labels)
+    assert predicted_capability != predicted_observation
     # Gold values come from the resolved BoundGoldAssertionSet entry; the
     # verification status comes from the corresponding loaded gold entry's
     # provenance. Their canonical target references must agree.
@@ -423,24 +508,40 @@ def test_semantic_substrate_integration(tmp_path: Path) -> None:
     assert not (root / RID / "results").exists()
     assert not (root / RID / "results" / "evaluation_result.json").exists()
 
-    # --- 16. Output manifest binds all six read-back persisted-byte hashes ------
+    # --- 16. Terminal output manifest v0.2: six v0.1 hashes, the derived stage,
+    # and the conditional seventh binding hash, all at the ONE canonical path ----
     from dynamic_ai_products.evaluation.output_manifest import (
-        build_evaluation_output_manifest,
+        build_evaluation_output_manifest_v2,
         load_evaluation_output_manifest,
-        persist_evaluation_output_manifest,
+        load_evaluation_output_manifest_v2,
+        persist_evaluation_output_manifest_v2,
     )
-    manifest = build_evaluation_output_manifest(
-        eval_root=root, eval_run_id=RID, validator_findings=persisted_findings,
-        parsed_prediction_content=loaded_parsed, assertion_outcomes=persisted_outcomes,
+    manifest = build_evaluation_output_manifest_v2(
+        eval_root=root, eval_run_id=RID, stage_profile_registry=sp,
+        validator_findings=persisted_findings, parsed_prediction_content=loaded_parsed,
+        observation_target_binding=loaded_binding, assertion_outcomes=persisted_outcomes,
         validation_artifact_snapshot_set=loaded_vset, metric_input_snapshot=persisted_mis,
         metric_report=persisted_report)
+    # The stage was never supplied: it is reverse-resolved from the run manifest's
+    # selected stage-profile entry hash.
+    assert manifest.derived_evaluation_stage == "capability_extraction"
     dumped = manifest.model_dump(mode="json", exclude_unset=True)
     for field, (subdir, filename) in OUTPUT_ARTIFACTS.items():
         assert dumped[field] == _reread_sha(root / RID / subdir / filename)
-    persisted_manifest = persist_evaluation_output_manifest(manifest, eval_root=root, eval_run_id=RID)
-    reloaded_manifest = load_evaluation_output_manifest(RID, eval_root=root)
+    assert dumped["observation_target_binding_sha256"] == _reread_sha(
+        root / RID / "snapshots" / "observation_target_binding.json")
+    persisted_manifest = persist_evaluation_output_manifest_v2(
+        manifest, eval_root=root, eval_run_id=RID)
+    reloaded_manifest = load_evaluation_output_manifest_v2(
+        RID, eval_root=root, stage_profile_registry=sp)
     assert reloaded_manifest.model == manifest
     assert reloaded_manifest.sha256 == persisted_manifest.sha256
+    # One terminal manifest per run, at the single canonical path.
+    out_dir = root / RID / "output_manifest"
+    assert [q.name for q in sorted(out_dir.iterdir())] == ["evaluation_output_manifest.json"]
+    with pytest.raises(EvaluationOutputManifestError) as v1_reader:
+        load_evaluation_output_manifest(RID, eval_root=root)
+    assert v1_reader.value.reason_code == "unsupported_contract_version"
 
 
 def test_fixture_bundle_is_self_consistent() -> None:

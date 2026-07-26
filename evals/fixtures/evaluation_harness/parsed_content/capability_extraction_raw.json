@@ -1,24 +1,12 @@
 {
-  "predicted_entities": [
+  "capability_observation_id": "SYNTH-CAPABILITY-OBS-0001",
+  "stable_capability_id": "SYNTH.PRODUCT.ALPHA.CAPABILITY",
+  "product_observation_id": "SYNTH-PRODUCT-OBS-0001",
+  "capability": "Alpha capability",
+  "availability_status": "ga",
+  "confidence": "high",
+  "evidence": [
     {
-      "entity_kind": "capability",
-      "entity_ref": "SYNTH.PRODUCT.ALPHA.CAPABILITY"
-    },
-    {
-      "entity_kind": "product",
-      "entity_ref": "SYNTH.PRODUCT.ALPHA"
-    }
-  ],
-  "predicted_fields": [
-    {
-      "entity_ref": "SYNTH.PRODUCT.ALPHA.CAPABILITY",
-      "field_name": "maturity",
-      "field_value": "ga"
-    }
-  ],
-  "cited_evidence": [
-    {
-      "entity_ref": "SYNTH.PRODUCT.ALPHA.CAPABILITY",
       "source_id": "synth-source-0002",
       "passage_id": "synth-passage-0003",
       "quote": "alpha ships"

@@ -143,8 +143,35 @@ def test_apply_capability_happy():
     assert content.raw_artifact_sha256 == sha256_bytes(CAP_BYTES)
     assert content.raw_output_preserved is True
     assert content.repair_applied is False
+    # The parsed entity_ref is the governed transform of the observation ID
+    # (distinct from the dot-form canonical/stable semantic identity).
     assert [(e.entity_kind, e.entity_ref) for e in content.entity_collection.entities] == [
-        ("capability", "SYNTH.PRODUCT.ALPHA.CAPABILITY"), ("product", "SYNTH.PRODUCT.ALPHA")]
+        ("capability", "SYNTH-CAPABILITY-OBS-0001"), ("product", "SYNTH-PRODUCT-OBS-0001")]
+    # Field values are derived from the observation via the fixed capability
+    # allowlist (scalar/enum only), each attributed to the capability owner. The
+    # canonical/stable identity travels as a field value (separate namespace),
+    # never as the matched entity_ref.
+    assert [(f.entity_ref, f.field_name, f.field_value)
+            for f in content.field_value_collection.field_values] == [
+        ("SYNTH-CAPABILITY-OBS-0001", "availability_status", "ga"),
+        ("SYNTH-CAPABILITY-OBS-0001", "capability", "Alpha capability"),
+        ("SYNTH-CAPABILITY-OBS-0001", "confidence", "high"),
+        ("SYNTH-CAPABILITY-OBS-0001", "stable_capability_id", "SYNTH.PRODUCT.ALPHA.CAPABILITY")]
+
+
+def test_apply_capability_field_allowlist_skips_null_and_arrays():
+    reg = registry()
+    doc = json.loads(CAP_BYTES)
+    doc["stable_capability_id"] = None        # nullable present-null → skipped
+    doc["normalized_capability"] = "norm"     # allowlisted string → emitted
+    doc["input_types"] = ["text"]             # array → never stringified / excluded
+    doc["schema_version"] = "1.0.0"           # allowlisted string → emitted
+    content = apply_semantic_adapter(
+        reg, case=case(), envelope=envelope("capability_extraction", (CAP_REF,)),
+        raw_artifact_reference=CAP_REF, raw_artifact_bytes=json.dumps(doc).encode())
+    names = [f.field_name for f in content.field_value_collection.field_values]
+    assert names == ["availability_status", "capability", "confidence",
+                     "normalized_capability", "schema_version"]
 
 
 def test_apply_task_preserves_before_equal_after():
@@ -247,14 +274,16 @@ def test_apply_extra_field_rejected():
     assert ei.value.reason_code == "raw_artifact_malformed"
 
 
-def test_apply_wrong_stage_payload():
+def test_apply_task_observation_rejected_by_capability_adapter():
     reg = registry()
-    # a task payload (entity_kind "task") fed to the capability adapter
+    # A task-observation payload fed to the capability adapter violates the strict
+    # capability-observation contract (missing capability_observation_id, extra
+    # task-only fields) → malformed, not a distinct wrong-stage code.
     with pytest.raises(SemanticAdapterError) as ei:
         apply_semantic_adapter(reg, case=case(stage="capability_extraction"),
                                envelope=envelope("capability_extraction", (TASK_REF,)),
                                raw_artifact_reference=TASK_REF, raw_artifact_bytes=TASK_BYTES)
-    assert ei.value.reason_code == "wrong_stage_payload"
+    assert ei.value.reason_code == "raw_artifact_malformed"
 
 
 # --- apply: governed cutoff -----------------------------------------------

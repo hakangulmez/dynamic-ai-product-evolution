@@ -1,26 +1,28 @@
 {
-  "predicted_entities": [
-    {
-      "entity_kind": "task",
-      "entity_ref": "SYNTH.TASK.ONE"
-    }
+  "task_observation_id": "SYNTH-TASK-OBS-0001",
+  "stable_task_id": "SYNTH.PRODUCT.CAPABILITY.TASK",
+  "company_id": "SYNTH.CORP",
+  "observation_cutoff": "2025-12-31",
+  "product_observation_id": "SYNTH-PRODUCT-OBS-0001",
+  "capability_observation_ids": [
+    "SYNTH-CAPABILITY-OBS-0001"
   ],
-  "predicted_fields": [],
-  "cited_evidence": [
+  "task": "Do the one task",
+  "customer_need": "need one",
+  "availability_status": "ga",
+  "confidence": "high",
+  "evidence": [
     {
-      "entity_ref": "SYNTH.TASK.ONE",
       "source_id": "synth-source-0001",
       "passage_id": "synth-passage-0001",
       "quote": "before"
     },
     {
-      "entity_ref": "SYNTH.TASK.ONE",
       "source_id": "synth-source-0002",
       "passage_id": "synth-passage-0003",
       "quote": "equal"
     },
     {
-      "entity_ref": "SYNTH.TASK.ONE",
       "source_id": "synth-source-0003",
       "passage_id": "synth-passage-0004",
       "quote": "after"

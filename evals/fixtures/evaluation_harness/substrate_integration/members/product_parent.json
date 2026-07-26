@@ -1,0 +1,15 @@
+{
+  "availability_status": "ga",
+  "company_id": "SYNTH-CO-0001",
+  "confidence": "high",
+  "evidence": [
+    {
+      "passage_id": "synth-passage-0003",
+      "quote": "alpha ships",
+      "source_id": "synth-source-0002"
+    }
+  ],
+  "observation_cutoff": "2025-12-31",
+  "product_name": "Alpha",
+  "product_observation_id": "SYNTH-PRODUCT-OBS-0001"
+}
