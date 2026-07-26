@@ -677,15 +677,50 @@ paths add exactly 3 to whatever manifest count its own baseline HEAD carries. Pr
 
 ### Slice P2 — Deterministic validator observation/coverage producer
 
-- Objective: a pure public producer for Rules 1–11 `ValidatorObservation`
-  values and their `ValidatorRuleCoverage`, derived from parsed content,
-  resolved sources, rule parameters, and (at an extraction stage) the binding.
-  No persisted artifact of its own: the output is embedded in the persisted
-  `ValidationArtifactSnapshotSet`, which `evaluation_output_manifest@0.2.0`
-  already hash-binds. Rule 12 stays where it is.
-- Governing: SPEC-023, ADR-024, ADR-027.
+P2 is delivered as three separately reviewed and committed steps, because the
+producer cannot be written truthfully until the governed parameter contract can
+express Rule 11's extraction inapplicability and Rule 10's real dependency.
+
+**P2-pre-a — Rule 11 static permission (complete).** Extends
+`_STAGE_OPTIONAL_INAPPLICABLE` in `validators.py` to permit
+`customer_task_outcome_and_evidence` as inapplicable at `capability_extraction`
+and `task_extraction`. That table is a direct-construction permission gate, not
+an effect: nothing here makes a rule inapplicable, and `evaluate` still binds
+every coverage record to the loaded parameters' exact stage entry. The change is
+therefore hash-neutral and behaviourally inert under v0.1 parameters, which
+continue to declare Rule 11 applicable at both extraction stages. Two paths;
+no fixture, export, or manifest change.
+
+**P2-pre-b — `validator_rule_parameters@0.2.0` successor.** Adds
+`ValidatorRuleParametersV2` (generated contract version `0.2.0`, hash
+`a15556e5935c3ba26a966aaac18f84267a3b3dbedca43c7a9bc360e49e00df08`) and the
+strict loader `load_validator_rule_parameters_v2`, with closed version dispatch
+in both directions and no untyped escape hatch. Exactly three governed
+differences from v0.1: Rule 11 extraction-stage inapplicability; the Rule-10
+active/roadmap availability-status vocabularies; and Rule 10's additional
+`source_id_resolution` dependency with the already-governed
+`blocked_source_unresolved` code. The v0.1 tree, its hash
+`f9c20ba936e1c0541c721ac6c3c34bec183b4b360dfa177516c57b0bd0945822`, and every
+v0.1 fixture are preserved; Rule 2's corrected values stay inside the existing
+stage payload's `required_fields`. Package exports move 560 → 562; the tracked
+manifest count stays 390 because no new tracked path is added.
+- Governing: SPEC-023, ADR-024, ADR-028.
+
+**P2 — the producer.** Objective: a pure public producer for Rules 1–11
+`ValidatorObservation` values and their `ValidatorRuleCoverage`, derived from
+parsed content, raw artifact bytes, resolved sources, v0.2 rule parameters,
+and (at an extraction stage) the binding. No persisted artifact of its own: the
+output is embedded in the persisted `ValidationArtifactSnapshotSet`, which
+`evaluation_output_manifest@0.2.0` already hash-binds. Rule 12 stays where it
+is. Because the Rule-10 and Rule-11 entries change under v0.2, this step adds a
+v0.2 parameter fixture together with its reconciled v0.2 bundle fixture — a
+v0.2 parameter set cannot be loaded against the v0.1 bundle — while
+`validator_bundle_artifact@0.1.0` is preserved.
+- Governing: SPEC-023, ADR-024, ADR-027, ADR-028.
 - Deferred/forbidden: a separate persisted observation-set artifact would
   require a new output-manifest version; adding fields to v0.2 is forbidden.
+  Mutating the v0.1 parameter or bundle fixture is forbidden; corrections
+  create new versioned artifacts at new paths.
 
 ### Slice P3 — Deterministic axis-record producer
 

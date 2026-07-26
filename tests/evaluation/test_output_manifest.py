@@ -756,7 +756,8 @@ def test_six_new_exports_present():
 
 
 def test_export_list_sorted_unique_and_count():
-    assert len(evaluation_pkg.__all__) == 560
+    # 562 = 560 + ValidatorRuleParametersV2 + load_validator_rule_parameters_v2 (ADR-028).
+    assert len(evaluation_pkg.__all__) == 562
     assert evaluation_pkg.__all__ == sorted(evaluation_pkg.__all__)
     assert len(set(evaluation_pkg.__all__)) == len(evaluation_pkg.__all__)
 

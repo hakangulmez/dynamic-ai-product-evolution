@@ -466,7 +466,7 @@ def test_public_surface():
     for name in ("MetricFamilyApplicabilityEntry", "MetricReportV2",
                  "compute_metric_report_v2", "load_metric_report_v2"):
         assert name in evaluation_pkg.__all__
-    assert len(evaluation_pkg.__all__) == 560
+    assert len(evaluation_pkg.__all__) == 562
     assert evaluation_pkg.__all__ == sorted(evaluation_pkg.__all__)
     assert len(set(evaluation_pkg.__all__)) == len(evaluation_pkg.__all__)
     # v0.2 loaded/persisted wrappers stay module-private.

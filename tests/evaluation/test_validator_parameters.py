@@ -15,8 +15,10 @@ from dynamic_ai_products.evaluation.validator_parameters import (
     LoadedValidatorRuleParameters,
     ValidatorRuleParameters,
     ValidatorRuleParametersError,
+    ValidatorRuleParametersV2,
     complete_rule_parameter_hash,
     load_validator_rule_parameters,
+    load_validator_rule_parameters_v2,
     persist_validator_rule_parameters,
     validator_rule_parameters_aggregate_hash,
 )
@@ -365,3 +367,378 @@ def test_import_no_io_no_hash_no_clock():
     ])
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT)
     assert r.returncode == 0 and "OK" in r.stdout, r.stderr
+
+
+# --- validator_rule_parameters@0.2.0 successor (ADR-028) -------------------
+
+V2_MODEL_HASH = "a15556e5935c3ba26a966aaac18f84267a3b3dbedca43c7a9bc360e49e00df08"
+V2_SET_VERSION = "synth-validator-params-v2"
+RULE_10 = "active_record_non_roadmap_evidence"
+RULE_11 = "customer_task_outcome_and_evidence"
+EXTRACTION_STAGES = ("capability_extraction", "task_extraction")
+ACTIVE_VALUES = ("generally_available", "limited_availability")
+ROADMAP_VALUES = ("announced", "planned")
+
+
+def _v2_dict(*, active=ACTIVE_VALUES, roadmap=ROADMAP_VALUES, rule11_inapplicable=True):
+    """Derive a governed v0.2 document from the committed v0.1 fixture.
+
+    Only the three governed deltas are applied; every other cell is carried over
+    verbatim, so a drift anywhere else would surface as a hash failure.
+    """
+    doc = _fixture_dict()
+    doc["contract"] = {
+        "contract_id": "validator_rule_parameters",
+        "contract_version": "0.2.0",
+        "contract_hash": model_contract_hash(
+            ValidatorRuleParametersV2, "validator_rule_parameters", "0.2.0"
+        ),
+    }
+    doc["parameter_set_version"] = V2_SET_VERSION
+    for entry in doc["entries"]:
+        if entry["rule_id"] == RULE_10:
+            entry["dependency_rule_ids"] = ["required_field_presence", "source_id_resolution"]
+            entry["blocking_reason_codes"] = [
+                "blocked_required_field_missing",
+                "blocked_source_unresolved",
+            ]
+            for sp in entry["stage_parameters"]:
+                if sp["applicability"] == "applicable":
+                    sp["payload"]["active_status_values"] = list(active)
+                    sp["payload"]["roadmap_status_values"] = list(roadmap)
+        elif entry["rule_id"] == RULE_11 and rule11_inapplicable:
+            entry["stage_parameters"] = [
+                {
+                    "applicability": "inapplicable",
+                    "stage": sp["stage"],
+                    "reason_code": "stage_emits_no_customer_facing_task",
+                }
+                if sp["stage"] in EXTRACTION_STAGES
+                else sp
+                for sp in entry["stage_parameters"]
+            ]
+        entry["complete_rule_parameter_hash"] = _recompute_entry_hash(entry)
+    return doc
+
+
+def _write_v2(tmp_path, doc=None, name="validator_rule_parameters.v2.json"):
+    path = tmp_path / name
+    path.write_bytes(canonical_contract_bytes(doc if doc is not None else _v2_dict()) + b"\n")
+    return name
+
+
+def _load_v2(tmp_path, doc=None):
+    return load_validator_rule_parameters_v2(_write_v2(tmp_path, doc), eval_root=tmp_path)
+
+
+# --- v0.1 preservation -----------------------------------------------------
+
+
+def test_v01_contract_hash_and_load_unchanged_by_successor():
+    assert model_contract_hash(
+        ValidatorRuleParameters, "validator_rule_parameters", "0.1.0"
+    ) == MODEL_HASH
+    loaded = load_validator_rule_parameters(REL, eval_root=FX)
+    assert type(loaded.model) is ValidatorRuleParameters
+    assert loaded.model.parameter_set_version == "synth-validator-params-v1"
+
+
+def test_v01_rule10_and_rule11_matrix_cells_unchanged():
+    spec = vp_mod._RULE_SPEC
+    assert spec[RULE_10]["deps"] == ("required_field_presence",)
+    assert spec[RULE_10]["blocking"] == ("blocked_required_field_missing",)
+    for stage in EXTRACTION_STAGES:
+        assert spec[RULE_11]["stages"][stage] == ("applicable", "rule11_customer_task")
+    loaded = load_validator_rule_parameters(REL, eval_root=FX)
+    by_rule = {e.rule_id: e for e in loaded.model.entries}
+    assert by_rule[RULE_10].dependency_rule_ids == ("required_field_presence",)
+    assert by_rule[RULE_10].blocking_reason_codes == ("blocked_required_field_missing",)
+
+
+def test_v01_loader_rejects_a_v2_document(tmp_path):
+    name = _write_v2(tmp_path)
+    with pytest.raises(ValidatorRuleParametersError) as exc:
+        load_validator_rule_parameters(name, eval_root=tmp_path)
+    assert exc.value.reason_code == "model_validation"
+
+
+def test_rule_spec_v2_differs_in_exactly_the_governed_cells():
+    diffs = {
+        (rule_id, field)
+        for rule_id in vp_mod._RULE_SPEC
+        for field in ("deps", "blocking", "stages")
+        if vp_mod._RULE_SPEC[rule_id][field] != vp_mod._RULE_SPEC_V2[rule_id][field]
+    }
+    assert diffs == {(RULE_10, "deps"), (RULE_10, "blocking"), (RULE_11, "stages")}
+
+
+# --- v0.2 contract identity + loader ---------------------------------------
+
+
+def test_v2_contract_hash_locked_and_distinct():
+    v2 = model_contract_hash(ValidatorRuleParametersV2, "validator_rule_parameters", "0.2.0")
+    assert v2 == V2_MODEL_HASH
+    assert v2 != MODEL_HASH
+    assert ValidatorRuleParametersV2._contract_version == "0.2.0"
+    assert ValidatorRuleParametersV2._contract_id == "validator_rule_parameters"
+
+
+def test_v2_loader_accepts_governed_v2_document(tmp_path):
+    loaded = _load_v2(tmp_path)
+    assert isinstance(loaded, LoadedValidatorRuleParameters)
+    assert type(loaded.model) is ValidatorRuleParametersV2
+    assert loaded.model.parameter_set_version == V2_SET_VERSION
+    assert loaded.version == V2_SET_VERSION
+    assert tuple(e.rule_id for e in loaded.model.entries) == VALIDATOR_RULE_ORDER
+
+
+def test_v2_parameter_set_version_is_not_the_contract_version(tmp_path):
+    loaded = _load_v2(tmp_path)
+    assert loaded.model.contract.contract_version == "0.2.0"
+    assert loaded.model.parameter_set_version != "0.2.0"
+
+
+def test_v2_loader_rejects_v01_document():
+    with pytest.raises(ValidatorRuleParametersError) as exc:
+        load_validator_rule_parameters_v2(REL, eval_root=FX)
+    assert exc.value.reason_code == "parameters_version_unsupported"
+
+
+def test_v2_loader_honours_expected_sha256(tmp_path):
+    name = _write_v2(tmp_path)
+    good = sha256_bytes((tmp_path / name).read_bytes())
+    assert load_validator_rule_parameters_v2(
+        name, eval_root=tmp_path, expected_sha256=good
+    ).sha256 == good
+    with pytest.raises(ValidatorRuleParametersError) as exc:
+        load_validator_rule_parameters_v2(name, eval_root=tmp_path, expected_sha256="0" * 64)
+    assert exc.value.reason_code == "expected_hash_mismatch"
+
+
+# --- v0.2 Rule 11 inapplicability -----------------------------------------
+
+
+def test_v2_rule11_inapplicable_at_both_extraction_stages(tmp_path):
+    loaded = _load_v2(tmp_path)
+    entry = {e.rule_id: e for e in loaded.model.entries}[RULE_11]
+    by_stage = {sp.stage: sp for sp in entry.stage_parameters}
+    for stage in STAGES:
+        assert by_stage[stage].applicability == "inapplicable"
+        assert by_stage[stage].reason_code == "stage_emits_no_customer_facing_task"
+
+
+def test_v2_rejects_rule11_still_applicable_at_extraction(tmp_path):
+    doc = _v2_dict(rule11_inapplicable=False)
+    with pytest.raises(ValidatorRuleParametersError) as exc:
+        _load_v2(tmp_path, doc)
+    assert exc.value.reason_code == "model_validation"
+
+
+# --- v0.2 Rule 10 payload invariants --------------------------------------
+
+
+def test_v2_rule10_payload_carries_governed_vocabularies(tmp_path):
+    loaded = _load_v2(tmp_path)
+    entry = {e.rule_id: e for e in loaded.model.entries}[RULE_10]
+    applicable = [sp for sp in entry.stage_parameters if sp.applicability == "applicable"]
+    assert [sp.stage for sp in applicable] == list(EXTRACTION_STAGES)
+    for sp in applicable:
+        assert sp.payload.payload_kind == "rule10_active_roadmap"
+        assert sp.payload.active_status_values == ACTIVE_VALUES
+        assert sp.payload.roadmap_status_values == ROADMAP_VALUES
+
+
+@pytest.mark.parametrize(
+    ("active", "roadmap"),
+    [
+        ((), ROADMAP_VALUES),                              # empty active
+        (ACTIVE_VALUES, ()),                               # empty roadmap
+        (("b_second", "a_first"), ROADMAP_VALUES),          # unsorted
+        (("dup", "dup"), ROADMAP_VALUES),                   # duplicate
+        ((" pad",), ROADMAP_VALUES),                        # blank-padded
+        (ACTIVE_VALUES, ACTIVE_VALUES),                     # not disjoint
+        (("announced", "generally_available"), ROADMAP_VALUES),  # overlapping literal
+    ],
+)
+def test_v2_rule10_payload_invariants_fail_closed(tmp_path, active, roadmap):
+    doc = _v2_dict(active=active, roadmap=roadmap)
+    with pytest.raises(ValidatorRuleParametersError) as exc:
+        _load_v2(tmp_path, doc)
+    assert exc.value.reason_code == "model_validation"
+
+
+def test_v2_rule10_payload_requires_the_new_fields(tmp_path):
+    doc = _v2_dict()
+    for entry in doc["entries"]:
+        if entry["rule_id"] == RULE_10:
+            for sp in entry["stage_parameters"]:
+                if sp["applicability"] == "applicable":
+                    del sp["payload"]["active_status_values"]
+            entry["complete_rule_parameter_hash"] = _recompute_entry_hash(entry)
+    with pytest.raises(ValidatorRuleParametersError):
+        _load_v2(tmp_path, doc)
+
+
+# --- v0.2 Rule 10 dependency truthfulness ---------------------------------
+
+
+def test_v2_rule10_dependency_and_blocking_tuples(tmp_path):
+    loaded = _load_v2(tmp_path)
+    entry = {e.rule_id: e for e in loaded.model.entries}[RULE_10]
+    assert entry.dependency_rule_ids == ("required_field_presence", "source_id_resolution")
+    assert entry.blocking_reason_codes == (
+        "blocked_required_field_missing",
+        "blocked_source_unresolved",
+    )
+    # No vocabulary widening: both codes already exist in the v0.1 literal set.
+    assert set(entry.blocking_reason_codes) <= set(vp_mod._BlockingReasonCode.__args__)
+
+
+def test_v2_rejects_rule10_with_v01_dependency_tuples(tmp_path):
+    doc = _v2_dict()
+    for entry in doc["entries"]:
+        if entry["rule_id"] == RULE_10:
+            entry["dependency_rule_ids"] = ["required_field_presence"]
+            entry["blocking_reason_codes"] = ["blocked_required_field_missing"]
+            entry["complete_rule_parameter_hash"] = _recompute_entry_hash(entry)
+    with pytest.raises(ValidatorRuleParametersError) as exc:
+        _load_v2(tmp_path, doc)
+    assert exc.value.reason_code == "model_validation"
+
+
+# --- Rule 2 stays inside the existing stage payload ------------------------
+
+
+def test_v2_rule2_uses_existing_stage_payload_required_fields(tmp_path):
+    loaded = _load_v2(tmp_path)
+    entry = {e.rule_id: e for e in loaded.model.entries}["required_field_presence"]
+    for sp in entry.stage_parameters:
+        assert sp.applicability == "applicable"
+        assert sp.payload.required_fields
+    # No new top-level extraction-required-fields field was introduced.
+    assert set(ValidatorRuleParametersV2.model_fields) == {
+        "contract", "parameter_set_version", "entries",
+    }
+
+
+# --- Hash helpers accept both governed types ------------------------------
+
+
+def test_per_rule_and_aggregate_hashes_accept_both_model_types(tmp_path):
+    v1 = load_validator_rule_parameters(REL, eval_root=FX)
+    v2 = _load_v2(tmp_path)
+    agg_v1 = validator_rule_parameters_aggregate_hash(v1.model)
+    agg_v2 = validator_rule_parameters_aggregate_hash(v2.model)
+    assert len(agg_v1) == len(agg_v2) == 64
+    assert agg_v1 != agg_v2  # the governed deltas move the aggregate
+    for entry in v2.model.entries:
+        assert complete_rule_parameter_hash(entry) == entry.complete_rule_parameter_hash
+
+
+def test_v01_canonical_hash_results_unchanged_by_widening():
+    loaded = load_validator_rule_parameters(REL, eval_root=FX)
+    doc = _fixture_dict()
+    stored = {e["rule_id"]: e["complete_rule_parameter_hash"] for e in doc["entries"]}
+    for entry in loaded.model.entries:
+        assert complete_rule_parameter_hash(entry) == stored[entry.rule_id]
+    assert validator_rule_parameters_aggregate_hash(loaded.model) == sha256_bytes(
+        canonical_contract_bytes([e for e in doc["entries"]])
+    )
+
+
+def test_hash_helper_still_rejects_a_non_entry():
+    with pytest.raises(TypeError):
+        complete_rule_parameter_hash({"rule_id": "output_json_schema_validity"})
+
+
+def test_aggregate_hash_still_rejects_a_non_model():
+    with pytest.raises(TypeError):
+        validator_rule_parameters_aggregate_hash({"parameter_set_version": "x"})
+
+
+# --- Exports --------------------------------------------------------------
+
+
+def test_successor_names_are_exported_once_and_sorted():
+    for name in ("ValidatorRuleParametersV2", "load_validator_rule_parameters_v2"):
+        assert name in evaluation_pkg.__all__
+        assert evaluation_pkg.__all__.count(name) == 1
+        assert getattr(evaluation_pkg, name) is getattr(vp_mod, name)
+    assert evaluation_pkg.__all__ == sorted(evaluation_pkg.__all__)
+    assert len(set(evaluation_pkg.__all__)) == len(evaluation_pkg.__all__)
+    assert vp_mod.__all__ == sorted(vp_mod.__all__)
+
+
+# --- v0.1-only persistence boundary ---------------------------------------
+
+
+def test_v2_hash_helpers_remain_union_capable(tmp_path):
+    # The pure helpers stay version-agnostic; only persistence is narrowed.
+    loaded = _load_v2(tmp_path)
+    assert len(validator_rule_parameters_aggregate_hash(loaded.model)) == 64
+    for entry in loaded.model.entries:
+        assert complete_rule_parameter_hash(entry) == entry.complete_rule_parameter_hash
+
+
+def test_persist_rejects_v2_model_before_any_write(tmp_path):
+    run_dir = tmp_path / "run-v2"
+    run_dir.mkdir()
+    loaded = _load_v2(tmp_path)
+    with pytest.raises(TypeError, match="validator_rule_parameters@0.1.0"):
+        persist_validator_rule_parameters(
+            loaded.model, eval_root=tmp_path, eval_run_id="run-v2"
+        )
+    # Rejected before any filesystem effect: no snapshots directory, no artifact.
+    assert not (run_dir / "snapshots").exists()
+    assert list(run_dir.iterdir()) == []
+
+
+def test_persist_rejects_v2_before_touching_an_absent_run_directory(tmp_path):
+    # The version guard precedes run-directory validation, so a v0.2 set is a
+    # TypeError rather than a run_directory_missing ValidatorRuleParametersError.
+    loaded = _load_v2(tmp_path)
+    with pytest.raises(TypeError):
+        persist_validator_rule_parameters(
+            loaded.model, eval_root=tmp_path, eval_run_id="run-absent"
+        )
+    assert not (tmp_path / "run-absent").exists()
+
+
+def test_v01_persistence_bytes_and_round_trip_unchanged(tmp_path):
+    (tmp_path / "run-p").mkdir()
+    loaded = load_validator_rule_parameters(REL, eval_root=FX)
+    persisted = persist_validator_rule_parameters(
+        loaded.model, eval_root=tmp_path, eval_run_id="run-p"
+    )
+    artifact = tmp_path / "run-p" / "snapshots" / "validator_rule_parameters.json"
+    raw = artifact.read_bytes()
+    # Canonical bytes plus exactly one terminal newline, hash-bound to the return.
+    expected = canonical_contract_bytes(
+        loaded.model.model_dump(mode="json", exclude_unset=True)
+    ) + b"\n"
+    assert raw == expected
+    assert raw.endswith(b"\n") and not raw.endswith(b"\n\n")
+    assert persisted.sha256 == sha256_bytes(raw)
+    assert persisted.artifact_reference == "run-p/snapshots/validator_rule_parameters.json"
+    assert persisted.version == loaded.model.parameter_set_version
+    reloaded = load_validator_rule_parameters(
+        "run-p/snapshots/validator_rule_parameters.json", eval_root=tmp_path
+    )
+    assert reloaded.model == loaded.model
+    assert type(reloaded.model) is ValidatorRuleParameters
+
+
+def test_v01_persistence_still_write_once(tmp_path):
+    (tmp_path / "run-q").mkdir()
+    loaded = load_validator_rule_parameters(REL, eval_root=FX)
+    persist_validator_rule_parameters(loaded.model, eval_root=tmp_path, eval_run_id="run-q")
+    with pytest.raises(ValidatorRuleParametersError) as exc:
+        persist_validator_rule_parameters(loaded.model, eval_root=tmp_path, eval_run_id="run-q")
+    assert exc.value.reason_code == "snapshot_exists"
+
+
+def test_persist_still_rejects_a_non_model():
+    with pytest.raises(TypeError):
+        persist_validator_rule_parameters(
+            {"parameter_set_version": "x"}, eval_root=".", eval_run_id="run-1"
+        )

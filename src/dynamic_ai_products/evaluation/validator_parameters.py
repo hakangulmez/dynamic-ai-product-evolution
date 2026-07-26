@@ -10,6 +10,15 @@ all four stage entries while excluding its own field, and equals the bundle's
 ``ValidatorRuleConfig.rule_params_hash``; an aggregate parameter-set hash binds
 the twelve entries in canonical order and equals the v0.2 run-manifest pin.
 
+``validator_rule_parameters@0.2.0`` (ADR-028) is an additive successor carried by
+``ValidatorRuleParametersV2`` and ``load_validator_rule_parameters_v2``. It differs
+from v0.1 in exactly three governed ways: Rule 11 is inapplicable at both
+extraction stages; Rule 10 carries the governed active/roadmap availability-status
+vocabularies; and Rule 10 additionally depends on ``source_id_resolution`` with the
+already-governed ``blocked_source_unresolved`` code. The v0.1 tree is untouched, so
+its model-contract hash and every v0.1 artifact byte remain valid, and neither
+loader accepts the other's declared version.
+
 The ``universe_screen`` static-output contract ``universe_screen_output@0.1.0``
 is a module-private ``ContractStampedModel`` whose canonical generated
 model-contract hash is bound (fail-closed) by the applicable universe_screen
@@ -48,14 +57,17 @@ __all__ = [
     "LoadedValidatorRuleParameters",
     "ValidatorRuleParameters",
     "ValidatorRuleParametersError",
+    "ValidatorRuleParametersV2",
     "complete_rule_parameter_hash",
     "load_validator_rule_parameters",
+    "load_validator_rule_parameters_v2",
     "persist_validator_rule_parameters",
     "validator_rule_parameters_aggregate_hash",
 ]
 
 _CONTRACT_ID = "validator_rule_parameters"
 _CONTRACT_VERSION = "0.1.0"
+_CONTRACT_VERSION_V2 = "0.2.0"
 _SNAPSHOTS_DIR = "snapshots"
 _SNAPSHOT_FILENAME = "validator_rule_parameters.json"
 _SHA256_HEX = {"min_length": 64, "max_length": 64, "pattern": r"^[0-9a-f]{64}$"}
@@ -297,6 +309,35 @@ class _Rule10ActiveRoadmapPayload(EvaluationStrictModel):
     policy: Literal["active_requires_nonroadmap_evidence"]
 
 
+class _Rule10ActiveRoadmapPayloadV2(EvaluationStrictModel):
+    """v0.2 Rule-10 payload: the governed availability-status vocabularies.
+
+    Neither extraction output schema constrains ``availability_status`` (both
+    declare a bare string), so the active/roadmap vocabulary cannot be derived
+    from the schema and must be governed here. The two sets are disjoint so a
+    single status can never be classified both ways, and a status outside their
+    union is a governance defect rather than a silent "inactive" default.
+    """
+
+    payload_kind: Literal["rule10_active_roadmap"]
+    policy: Literal["active_requires_nonroadmap_evidence"]
+    active_status_values: tuple[str, ...]
+    roadmap_status_values: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def _invariants(self) -> "_Rule10ActiveRoadmapPayloadV2":
+        for field_name in ("active_status_values", "roadmap_status_values"):
+            values = getattr(self, field_name)
+            if not values:
+                raise ValueError(f"{field_name} must not be empty")
+            _require_sorted_unique_nonblank(values, field_name)
+        if set(self.active_status_values) & set(self.roadmap_status_values):
+            raise ValueError(
+                "active_status_values and roadmap_status_values must be disjoint"
+            )
+        return self
+
+
 class _Rule11CustomerTaskPayload(EvaluationStrictModel):
     payload_kind: Literal["rule11_customer_task"]
     policy: Literal["customer_task_requires_outcome_and_evidence"]
@@ -452,6 +493,75 @@ _RULE_SPEC: dict[str, dict[str, Any]] = {
 # --- Entry + set contract --------------------------------------------------
 
 
+def _validate_rule_entry(entry: Any, rule_spec: dict[str, dict[str, Any]]) -> Any:
+    """Shared, spec-parameterized rule-entry invariants.
+
+    One implementation serves every governed contract version; the caller supplies
+    the governed matrix (``_RULE_SPEC`` for v0.1, ``_RULE_SPEC_V2`` for v0.2). The
+    logic is version-independent by construction, so a v0.1 entry validates
+    exactly as before and its canonical per-rule hash is unchanged.
+    """
+    spec = rule_spec[entry.rule_id]
+    # Dependencies: exactly the governed set, canonical order, no self.
+    if entry.dependency_rule_ids != spec["deps"]:
+        raise ValueError(
+            f"dependency_rule_ids for {entry.rule_id!r} must equal the governed set"
+        )
+    if entry.rule_id in entry.dependency_rule_ids:
+        raise ValueError("a rule may not depend on itself")
+    # Blocking reasons: exactly the governed set, canonical order.
+    if entry.blocking_reason_codes != spec["blocking"]:
+        raise ValueError(
+            f"blocking_reason_codes for {entry.rule_id!r} must equal the governed set"
+        )
+    # Exactly four stage entries in canonical stage order.
+    observed_stages = tuple(sp.stage for sp in entry.stage_parameters)
+    if observed_stages != _STAGE_ORDER:
+        raise ValueError(
+            "stage_parameters must cover the four stages in canonical order"
+        )
+    for sp in entry.stage_parameters:
+        expected_kind, expected_value = spec["stages"][sp.stage]
+        if expected_kind == "applicable":
+            if sp.applicability != "applicable":
+                raise ValueError(
+                    f"{entry.rule_id!r} at {sp.stage!r} must be applicable"
+                )
+            if sp.payload.payload_kind != expected_value:
+                raise ValueError(
+                    f"{entry.rule_id!r} at {sp.stage!r} must carry payload "
+                    f"{expected_value!r}"
+                )
+            if sp.payload.payload_kind == "rule1_static_schema":
+                triple = (
+                    sp.payload.output_schema_id,
+                    sp.payload.output_schema_reference,
+                    sp.payload.output_schema_sha256,
+                )
+                if triple != _STAGE_STATIC_ANCHORS.get(sp.stage):
+                    raise ValueError(
+                        f"static-schema anchor at {sp.stage!r} must equal the approved "
+                        "stage-specific anchor"
+                    )
+        else:
+            if sp.applicability != "inapplicable":
+                raise ValueError(
+                    f"{entry.rule_id!r} at {sp.stage!r} must be inapplicable"
+                )
+            if sp.reason_code != expected_value:
+                raise ValueError(
+                    f"{entry.rule_id!r} inapplicable reason at {sp.stage!r} must be "
+                    f"{expected_value!r}"
+                )
+    # Complete per-rule hash binds everything except its own field.
+    expected_hash = _complete_rule_parameter_hash_from_dump(entry)
+    if entry.complete_rule_parameter_hash != expected_hash:
+        raise ValueError(
+            "complete_rule_parameter_hash does not match the canonical per-rule hash"
+        )
+    return entry
+
+
 class _ValidatorRuleParameterEntry(EvaluationStrictModel):
     rule_id: ValidatorRuleId
     dependency_rule_ids: tuple[ValidatorRuleId, ...]
@@ -461,65 +571,7 @@ class _ValidatorRuleParameterEntry(EvaluationStrictModel):
 
     @model_validator(mode="after")
     def _entry_invariants(self) -> "_ValidatorRuleParameterEntry":
-        spec = _RULE_SPEC[self.rule_id]
-        # Dependencies: exactly the governed set, canonical order, no self.
-        if self.dependency_rule_ids != spec["deps"]:
-            raise ValueError(
-                f"dependency_rule_ids for {self.rule_id!r} must equal the governed set"
-            )
-        if self.rule_id in self.dependency_rule_ids:
-            raise ValueError("a rule may not depend on itself")
-        # Blocking reasons: exactly the governed set, canonical order.
-        if self.blocking_reason_codes != spec["blocking"]:
-            raise ValueError(
-                f"blocking_reason_codes for {self.rule_id!r} must equal the governed set"
-            )
-        # Exactly four stage entries in canonical stage order.
-        observed_stages = tuple(sp.stage for sp in self.stage_parameters)
-        if observed_stages != _STAGE_ORDER:
-            raise ValueError(
-                "stage_parameters must cover the four stages in canonical order"
-            )
-        for sp in self.stage_parameters:
-            expected_kind, expected_value = spec["stages"][sp.stage]
-            if expected_kind == "applicable":
-                if sp.applicability != "applicable":
-                    raise ValueError(
-                        f"{self.rule_id!r} at {sp.stage!r} must be applicable"
-                    )
-                if sp.payload.payload_kind != expected_value:
-                    raise ValueError(
-                        f"{self.rule_id!r} at {sp.stage!r} must carry payload "
-                        f"{expected_value!r}"
-                    )
-                if sp.payload.payload_kind == "rule1_static_schema":
-                    triple = (
-                        sp.payload.output_schema_id,
-                        sp.payload.output_schema_reference,
-                        sp.payload.output_schema_sha256,
-                    )
-                    if triple != _STAGE_STATIC_ANCHORS.get(sp.stage):
-                        raise ValueError(
-                            f"static-schema anchor at {sp.stage!r} must equal the approved "
-                            "stage-specific anchor"
-                        )
-            else:
-                if sp.applicability != "inapplicable":
-                    raise ValueError(
-                        f"{self.rule_id!r} at {sp.stage!r} must be inapplicable"
-                    )
-                if sp.reason_code != expected_value:
-                    raise ValueError(
-                        f"{self.rule_id!r} inapplicable reason at {sp.stage!r} must be "
-                        f"{expected_value!r}"
-                    )
-        # Complete per-rule hash binds everything except its own field.
-        expected_hash = _complete_rule_parameter_hash_from_dump(self)
-        if self.complete_rule_parameter_hash != expected_hash:
-            raise ValueError(
-                "complete_rule_parameter_hash does not match the canonical per-rule hash"
-            )
-        return self
+        return _validate_rule_entry(self, _RULE_SPEC)
 
 
 def _complete_rule_parameter_hash_from_dump(entry: _ValidatorRuleParameterEntry) -> str:
@@ -528,8 +580,13 @@ def _complete_rule_parameter_hash_from_dump(entry: _ValidatorRuleParameterEntry)
 
 
 def complete_rule_parameter_hash(entry: Any) -> str:
-    """The canonical per-rule hash binding a rule entry, excluding its own field."""
-    if not isinstance(entry, _ValidatorRuleParameterEntry):
+    """The canonical per-rule hash binding a rule entry, excluding its own field.
+
+    Accepts either governed entry type. The canonical dump algorithm is shared and
+    version-independent, so a v0.1 entry yields exactly the byte-identical hash it
+    yielded before the v0.2 successor existed.
+    """
+    if not isinstance(entry, (_ValidatorRuleParameterEntry, _ValidatorRuleParameterEntryV2)):
         raise TypeError(
             f"complete_rule_parameter_hash requires a rule parameter entry, "
             f"got {type(entry).__name__}"
@@ -557,10 +614,135 @@ class ValidatorRuleParameters(ContractStampedModel):
         return self
 
 
-class LoadedValidatorRuleParameters(EvaluationStrictModel):
-    """A validated parameter set plus its raw-byte binding material."""
+# --- validator_rule_parameters@0.2.0 successor (SPEC-023 / ADR-028) --------
+#
+# A parallel, additive class tree. The v0.1 tree above is untouched, so its
+# generated model-contract hash stays f9c20ba9...945822 and every v0.1 fixture
+# keeps loading byte-identically. The v0.2 tree exists because three governed
+# facts cannot be expressed in v0.1 without mutating an accepted contract:
+#
+#   1. Rule 11 is not derivable at either extraction stage (neither extraction
+#      schema carries is_customer_facing_task or customer_outcome), so it is
+#      inapplicable there;
+#   2. Rule 10 needs the governed availability-status vocabularies;
+#   3. Rule 10 truthfully depends on source_id_resolution, because its
+#      per-evidence temporal classification requires resolved source documents.
+#
+# Difference (2) is carried by _RulePayloadV2 rather than by the matrix, because
+# the matrix pins payload_kind and Rule 10's payload_kind is unchanged.
 
-    model: ValidatorRuleParameters
+
+_RulePayloadV2 = Annotated[
+    _Rule1StaticSchemaPayload
+    | _Rule1UniverseScreenPayload
+    | _Rule2RequiredFieldsPayload
+    | _Rule2UniverseScreenPayload
+    | _Rule3SourceResolutionPayload
+    | _Rule4PassageResolutionPayload
+    | _Rule5QuoteContainmentPayload
+    | _Rule6PublicationCutoffPayload
+    | _Rule7ParentResolutionPayload
+    | _Rule8UniqueIdsPayload
+    | _Rule9ProhibitedLegacyPayload
+    | _Rule10ActiveRoadmapPayloadV2
+    | _Rule11CustomerTaskPayload
+    | _Rule12RawPreservationPayload,
+    Field(discriminator="payload_kind"),
+]
+
+
+class _ApplicableStageParameterV2(EvaluationStrictModel):
+    applicability: Literal["applicable"]
+    stage: EvaluationStage
+    payload: _RulePayloadV2
+
+
+_StageParameterEntryV2 = Annotated[
+    _ApplicableStageParameterV2 | _InapplicableStageParameter,
+    Field(discriminator="applicability"),
+]
+
+
+def _build_rule_spec_v2() -> dict[str, dict[str, Any]]:
+    """The v0.2 governed matrix: _RULE_SPEC plus exactly the governed deltas.
+
+    Built by copy so ``_RULE_SPEC`` is never mutated; the per-stage dictionaries
+    are copied too, since only their entries differ.
+    """
+    spec: dict[str, dict[str, Any]] = {
+        rule_id: {
+            "deps": entry["deps"],
+            "blocking": entry["blocking"],
+            "stages": dict(entry["stages"]),
+        }
+        for rule_id, entry in _RULE_SPEC.items()
+    }
+    # (1) Rule 11 is inapplicable at both extraction stages. The universe stages
+    # already carry this reason code in v0.1; no reason vocabulary is widened.
+    for stage in ("capability_extraction", "task_extraction"):
+        spec["customer_task_outcome_and_evidence"]["stages"][stage] = (
+            "inapplicable",
+            "stage_emits_no_customer_facing_task",
+        )
+    # (3) Rule 10 additionally depends on source_id_resolution and declares the
+    # already-governed blocked_source_unresolved code, positionally aligned with
+    # its dependency tuple. The blocking-reason vocabulary is not widened.
+    spec["active_record_non_roadmap_evidence"]["deps"] = (
+        "required_field_presence",
+        "source_id_resolution",
+    )
+    spec["active_record_non_roadmap_evidence"]["blocking"] = (
+        "blocked_required_field_missing",
+        "blocked_source_unresolved",
+    )
+    return spec
+
+
+_RULE_SPEC_V2: dict[str, dict[str, Any]] = _build_rule_spec_v2()
+
+
+class _ValidatorRuleParameterEntryV2(EvaluationStrictModel):
+    rule_id: ValidatorRuleId
+    dependency_rule_ids: tuple[ValidatorRuleId, ...]
+    blocking_reason_codes: tuple[_BlockingReasonCode, ...]
+    stage_parameters: tuple[_StageParameterEntryV2, ...]
+    complete_rule_parameter_hash: str = Field(**_SHA256_HEX)
+
+    @model_validator(mode="after")
+    def _entry_invariants(self) -> "_ValidatorRuleParameterEntryV2":
+        return _validate_rule_entry(self, _RULE_SPEC_V2)
+
+
+class ValidatorRuleParametersV2(ContractStampedModel):
+    # Docstring intentionally omitted so the generated JSON Schema (and thus the
+    # governed model-contract hash) carries no description.
+    _contract_id: ClassVar[str] = _CONTRACT_ID
+    _contract_version: ClassVar[str] = _CONTRACT_VERSION_V2
+
+    parameter_set_version: str
+    entries: tuple[_ValidatorRuleParameterEntryV2, ...]
+
+    @model_validator(mode="after")
+    def _set_invariants(self) -> "ValidatorRuleParametersV2":
+        _require_non_blank(self.parameter_set_version, "parameter_set_version")
+        observed = tuple(entry.rule_id for entry in self.entries)
+        if observed != VALIDATOR_RULE_ORDER:
+            raise ValueError(
+                "entries must be exactly the twelve rules in canonical order"
+            )
+        return self
+
+
+class LoadedValidatorRuleParameters(EvaluationStrictModel):
+    """A validated parameter set plus its raw-byte binding material.
+
+    ``model`` carries either governed contract version. The nested contract stamp
+    discriminates them (a 0.1.0 document can never validate as v0.2 and vice
+    versa), so widening this wrapper adds no ambiguity. The wrapper is not
+    contract-stamped, so no governed hash depends on this union.
+    """
+
+    model: ValidatorRuleParameters | ValidatorRuleParametersV2
     version: str
     sha256: str
     artifact_reference: str
@@ -569,8 +751,10 @@ class LoadedValidatorRuleParameters(EvaluationStrictModel):
 # --- Aggregate hash + fail-closed revalidation ----------------------------
 
 
-def _revalidate(model: ValidatorRuleParameters) -> ValidatorRuleParameters:
-    if not isinstance(model, ValidatorRuleParameters):
+def _revalidate(
+    model: ValidatorRuleParameters | ValidatorRuleParametersV2,
+) -> ValidatorRuleParameters | ValidatorRuleParametersV2:
+    if not isinstance(model, (ValidatorRuleParameters, ValidatorRuleParametersV2)):
         raise TypeError(f"expected a ValidatorRuleParameters, got {type(model).__name__}")
     try:
         payload = model.model_dump(mode="json", exclude_unset=True)
@@ -580,7 +764,9 @@ def _revalidate(model: ValidatorRuleParameters) -> ValidatorRuleParameters:
             reason_code="model_validation",
         ) from exc
     try:
-        return ValidatorRuleParameters.model_validate(payload)
+        # Revalidate against the model's own governed version, never a widened
+        # union: a v0.1 set must still be rejected by v0.1 rules and vice versa.
+        return type(model).model_validate(payload)
     except PydanticValidationError as exc:
         raise ValidatorRuleParametersError(
             "validator rule parameters failed fail-closed revalidation",
@@ -588,7 +774,9 @@ def _revalidate(model: ValidatorRuleParameters) -> ValidatorRuleParameters:
         ) from exc
 
 
-def validator_rule_parameters_aggregate_hash(model: ValidatorRuleParameters) -> str:
+def validator_rule_parameters_aggregate_hash(
+    model: ValidatorRuleParameters | ValidatorRuleParametersV2,
+) -> str:
     """Canonical aggregate hash over the twelve ordered entries (the v0.2 pin)."""
     validated = _revalidate(model)
     payload = [entry.model_dump(mode="json") for entry in validated.entries]
@@ -788,13 +976,10 @@ def _read_contained(reference: str, resolved_root: Path) -> tuple[bytes, str, st
 # --- Loader ---------------------------------------------------------------
 
 
-def load_validator_rule_parameters(
-    path: str | Path,
-    *,
-    eval_root: str | Path,
-    expected_sha256: str | None = None,
-) -> LoadedValidatorRuleParameters:
-    """Load, hash-bind, and strictly validate a validator-rule-parameters set."""
+def _read_parameters_document(
+    path: str | Path, eval_root: str | Path, expected_sha256: str | None
+) -> tuple[Any, str, str]:
+    """Shared read/hash-bind/strict-parse step for both governed loaders."""
     resolved_root = _validate_eval_root(eval_root)
     raw, text, reference = _read_contained(str(path), resolved_root)
     observed = sha256_bytes(raw)
@@ -810,9 +995,60 @@ def load_validator_rule_parameters(
                 reason_code="expected_hash_mismatch",
                 artifact_reference=reference,
             )
-    payload = _strict_json_object(text, reference)
+    return _strict_json_object(text, reference), observed, reference
+
+
+def _declared_contract_version(payload: Any) -> Any:
+    contract = payload.get("contract") if isinstance(payload, dict) else None
+    return contract.get("contract_version") if isinstance(contract, dict) else None
+
+
+def load_validator_rule_parameters(
+    path: str | Path,
+    *,
+    eval_root: str | Path,
+    expected_sha256: str | None = None,
+) -> LoadedValidatorRuleParameters:
+    """Load, hash-bind, and strictly validate a validator-rule-parameters set."""
+    payload, observed, reference = _read_parameters_document(path, eval_root, expected_sha256)
     try:
         model = ValidatorRuleParameters.model_validate(payload)
+    except PydanticValidationError as exc:
+        raise ValidatorRuleParametersError(
+            "validator rule parameters failed strict contract validation",
+            reason_code="model_validation",
+            artifact_reference=reference,
+        ) from exc
+    return LoadedValidatorRuleParameters(
+        model=model,
+        version=model.parameter_set_version,
+        sha256=observed,
+        artifact_reference=reference,
+    )
+
+
+def load_validator_rule_parameters_v2(
+    path: str | Path,
+    *,
+    eval_root: str | Path,
+    expected_sha256: str | None = None,
+) -> LoadedValidatorRuleParameters:
+    """Load, hash-bind, and strictly validate a ``@0.2.0`` parameter set.
+
+    Version dispatch is explicit and closed: the declared contract version must be
+    exactly ``0.2.0``. Anything else — including the still-supported ``0.1.0`` —
+    fails with ``parameters_version_unsupported`` rather than being coerced. The
+    v0.1 loader remains strict in the same way and continues to reject ``0.2.0``.
+    """
+    payload, observed, reference = _read_parameters_document(path, eval_root, expected_sha256)
+    if _declared_contract_version(payload) != _CONTRACT_VERSION_V2:
+        raise ValidatorRuleParametersError(
+            "validator rule parameters artifact does not declare contract version 0.2.0",
+            reason_code="parameters_version_unsupported",
+            artifact_reference=reference,
+        )
+    try:
+        model = ValidatorRuleParametersV2.model_validate(payload)
     except PydanticValidationError as exc:
         raise ValidatorRuleParametersError(
             "validator rule parameters failed strict contract validation",
@@ -836,7 +1072,20 @@ def persist_validator_rule_parameters(
     eval_root: str | Path,
     eval_run_id: str,
 ) -> LoadedValidatorRuleParameters:
-    """Write the canonical parameters JSON (plus one terminal newline) write-once."""
+    """Write the canonical parameters JSON (plus one terminal newline) write-once.
+
+    This persister is **v0.1-only**. Its snapshot filename is version-agnostic, so
+    accepting a v0.2 set would write it to the v0.1 path and hand ``@0.2.0`` an
+    ungoverned persistence route. ``_revalidate`` and the two pure hash helpers are
+    deliberately union-capable, so the boundary is enforced here, before any
+    revalidation or filesystem access. Persisting a v0.2 set is not an authorized
+    route: no v0.2 persistence API, filename, or path exists yet.
+    """
+    if type(model) is not ValidatorRuleParameters:
+        raise TypeError(
+            "persist_validator_rule_parameters persists validator_rule_parameters@0.1.0 "
+            f"only, got {type(model).__name__}"
+        )
     validated = _revalidate(model)
     resolved_root = _validate_eval_root(eval_root)
     run_id = _validate_run_id(eval_run_id)
