@@ -52,6 +52,7 @@ from dynamic_ai_products.evaluation.gates import (
 from dynamic_ai_products.evaluation.metric_inputs import build_metric_input_snapshot
 from dynamic_ai_products.evaluation.models import (
     AssertionOutcome,
+    EvaluationResultV2,
     EvaluationRunManifest,
     EvaluationRunManifestV2,
     ValidatorFinding,
@@ -1345,3 +1346,226 @@ def test_applicability_error_public_wrappers_private():
     assert issubclass(GateApplicabilityBindingError, GateEvaluationError)
     # v0.2 loaded wrapper stays module-private.
     assert "_LoadedMetricReportV2" not in evaluation_pkg.__all__
+
+
+# --- ADR-027: run-manifest v0.1 | v0.2 gate dispatch -----------------------
+#
+# The gate layer accepts either governed run-manifest version across its whole
+# build/persist/load path, reading only the five fields the versions share. Every
+# v0.1 path, behaviour, and error code is preserved.
+
+
+def _v2_rm_matching(rm, *, stage="universe_classification"):
+    """A v0.2 manifest sharing another manifest's run/case-set/scoring identity."""
+    entry = resolve_metric_applicability(SP_REG.registry, stage)
+    ev = _stage_evidence(stage, unsafe_min=1, audited_missed=(False,), pop=100)
+    return _v2_rm(
+        eval_run_id=rm.eval_run_id, case_set_version=rm.case_set_version,
+        case_set_hash=rm.case_set_hash, scoring_version=rm.scoring_gate_config_version,
+        scoring_hash=rm.scoring_gate_config_hash, stage=stage, entry_hash=entry.entry_hash,
+        ev_ver=ev.model.set_version if ev is not None else None,
+        ev_hash=stage_metric_evidence_set_hash(ev.model) if ev is not None else None)
+
+
+def _bump_version(m, version):
+    """Same concrete model class, disagreeing declared contract version."""
+    return m.model_copy(
+        update={"contract": m.contract.model_copy(update={"contract_version": version})})
+
+
+def test_v2_assess_completed_accepts_a_v2_manifest(tmp_path):
+    loaded, rm2 = _public_v2_loaded(tmp_path)
+    assert type(rm2) is EvaluationRunManifestV2
+    assert isinstance(loaded.report, met.MetricReportV2)
+    result = assess_completed_evaluation(
+        stage="task_extraction", run_manifest=rm2, case_set_manifest=CASE_SET,
+        scoring_config=exec_config(rm2, ()), metric_report=loaded,
+        findings=loaded_findings())
+    assert result.execution_status == "completed"
+    assert result.gate_verdict == "pass"
+    assert result.eval_run_id == rm2.eval_run_id
+    assert result.dataset_version == rm2.case_set_version
+
+
+def test_v2_build_invalid_and_errored_accept_a_v2_manifest(tmp_path):
+    _loaded, rm2 = _public_v2_loaded(tmp_path)
+    invalid = build_invalid_evaluation(
+        stage="task_extraction", run_manifest=rm2,
+        issues=(EvaluationIssue(issue_code="artifact_missing", message="m"),))
+    assert invalid.execution_status == "invalid"
+    assert invalid.gate_verdict is None
+    assert invalid.dataset_version == rm2.case_set_version
+    errored = build_errored_evaluation(
+        stage="task_extraction", run_manifest=rm2,
+        issues=(EvaluationIssue(issue_code="runtime_failure", message="m"),))
+    assert errored.execution_status == "errored"
+
+
+def test_v2_persist_and_load_round_trip(tmp_path):
+    """Persistence and loading both bind to a v0.2 run directory on disk."""
+    _loaded, rm2 = _public_v2_loaded(tmp_path)
+    result = build_invalid_evaluation(
+        stage="task_extraction", run_manifest=rm2,
+        issues=(EvaluationIssue(issue_code="artifact_missing", message="m"),))
+    persisted = persist_evaluation_result(result, eval_root=tmp_path, eval_run_id=rm2.eval_run_id)
+    assert persisted.artifact_reference == "results/evaluation_result.json"
+    reloaded = load_evaluation_result(rm2.eval_run_id, eval_root=tmp_path)
+    assert reloaded.result == result
+    assert reloaded.sha256 == persisted.sha256
+    assert reloaded.result.dataset_version == rm2.case_set_version
+
+
+def test_v2_projection_mismatch_rejected_on_persist(tmp_path):
+    _loaded, rm2 = _public_v2_loaded(tmp_path)
+    result = build_invalid_evaluation(
+        stage="task_extraction", run_manifest=rm2,
+        issues=(EvaluationIssue(issue_code="artifact_missing", message="m"),))
+    tampered = result.model_copy(update={"dataset_version": "not-the-case-set-version"})
+    with pytest.raises(EvaluationResultBindingError, match="dataset_version"):
+        persist_evaluation_result(tampered, eval_root=tmp_path, eval_run_id=rm2.eval_run_id)
+
+
+# --- Declared-version / concrete-class inconsistency ----------------------
+
+
+def test_v2_class_declaring_v01_version_is_rejected(tmp_path):
+    _loaded, rm2 = _public_v2_loaded(tmp_path)
+    bad = _bump_version(rm2, "0.1.0")
+    assert type(bad) is EvaluationRunManifestV2
+    with pytest.raises(GateRunBindingError, match="run_manifest_version_inconsistent"):
+        build_invalid_evaluation(
+            stage="task_extraction", run_manifest=bad,
+            issues=(EvaluationIssue(issue_code="artifact_missing", message="m"),))
+
+
+def test_v01_class_declaring_v2_version_is_rejected(ctx):
+    """The mirror case: a v0.1 model declaring 0.2.0."""
+    _tmp, rm, _report = ctx
+    bad = _bump_version(rm, "0.2.0")
+    assert type(bad) is EvaluationRunManifest
+    with pytest.raises(GateRunBindingError, match="run_manifest_version_inconsistent"):
+        build_errored_evaluation(
+            stage="task_extraction", run_manifest=bad,
+            issues=(EvaluationIssue(issue_code="runtime_failure", message="m"),))
+
+
+def test_inconsistent_version_rejected_by_assess(tmp_path):
+    loaded, rm2 = _public_v2_loaded(tmp_path)
+    bad = _bump_version(rm2, "0.1.0")
+    with pytest.raises(GateRunBindingError, match="run_manifest_version_inconsistent"):
+        assess_completed_evaluation(
+            stage="task_extraction", run_manifest=bad, case_set_manifest=CASE_SET,
+            scoring_config=exec_config(rm2, ()), metric_report=loaded,
+            findings=loaded_findings())
+
+
+def test_unsupported_run_manifest_type_is_a_type_error():
+    with pytest.raises(TypeError, match="EvaluationRunManifest or EvaluationRunManifestV2"):
+        build_invalid_evaluation(
+            stage="task_extraction", run_manifest={"eval_run_id": "run1"},
+            issues=(EvaluationIssue(issue_code="artifact_missing", message="m"),))
+
+
+class _SubclassedRunManifestV2(EvaluationRunManifestV2):
+    """A concrete subclass of a governed manifest, used only by the test below."""
+
+
+def test_manifest_subclass_is_rejected_by_the_controlled_type_error(tmp_path):
+    """A subclass must not reach the version table.
+
+    ``isinstance`` would accept it while ``_RUN_MANIFEST_MODEL_VERSIONS`` has no
+    exact key for it, which would surface as an uncontrolled ``KeyError`` instead
+    of the locked fail-closed boundary.
+    """
+    _loaded, rm2 = _public_v2_loaded(tmp_path)
+    # A subclass has its own generated contract hash, so it cannot be built through
+    # model_validate. model_construct is the real bypass vector this boundary must
+    # contain: it yields a subclass instance that satisfies isinstance.
+    sub = _SubclassedRunManifestV2.model_construct(
+        **{name: getattr(rm2, name) for name in type(rm2).model_fields})
+    assert isinstance(sub, EvaluationRunManifestV2)          # passes isinstance
+    assert type(sub) is not EvaluationRunManifestV2          # but is not an exact key
+    assert type(sub) not in gate_mod._RUN_MANIFEST_MODEL_VERSIONS
+    issues = (EvaluationIssue(issue_code="artifact_missing", message="m"),)
+    with pytest.raises(TypeError, match="EvaluationRunManifest or EvaluationRunManifestV2"):
+        build_invalid_evaluation(stage="task_extraction", run_manifest=sub, issues=issues)
+    # Specifically not a KeyError, and the same holds for the assess path.
+    try:
+        build_invalid_evaluation(stage="task_extraction", run_manifest=sub, issues=issues)
+    except KeyError:  # pragma: no cover - would be the regression
+        raise AssertionError("subclass reached the version table and raised KeyError") from None
+    except TypeError:
+        pass
+    with pytest.raises(TypeError, match="EvaluationRunManifest or EvaluationRunManifestV2"):
+        assess_completed_evaluation(
+            stage="task_extraction", run_manifest=sub, case_set_manifest=CASE_SET,
+            scoring_config=exec_config(rm2, ()), metric_report=_loaded,
+            findings=loaded_findings())
+
+
+def test_acceptance_table_and_version_table_are_the_same_authority():
+    """Acceptance and version lookup must be driven by one table."""
+    assert set(gate_mod._RUN_MANIFEST_MODEL_VERSIONS) == {
+        EvaluationRunManifest, EvaluationRunManifestV2}
+    assert gate_mod._RUN_MANIFEST_MODEL_VERSIONS[EvaluationRunManifest] == "0.1.0"
+    assert gate_mod._RUN_MANIFEST_MODEL_VERSIONS[EvaluationRunManifestV2] == "0.2.0"
+
+
+# --- Metric-report version gating ----------------------------------------
+
+
+def test_v2_run_rejects_a_v01_metric_report(ctx):
+    """A v0.2 run may bind only metric_report@0.2.0."""
+    _tmp, rm, v1_report = ctx
+    assert not isinstance(v1_report.report, met.MetricReportV2)
+    v2_rm = _v2_rm_matching(rm)
+    with pytest.raises(GateMetricReportBindingError, match="metric_report_version_mismatch"):
+        assess_completed_evaluation(
+            stage="task_extraction", run_manifest=v2_rm, case_set_manifest=CASE_SET,
+            scoring_config=exec_config(v2_rm, ()), metric_report=v1_report,
+            findings=loaded_findings())
+
+
+def test_v2_run_accepts_a_v2_metric_report(tmp_path):
+    loaded, rm2 = _public_v2_loaded(tmp_path)
+    out = assess_completed_evaluation(
+        stage="task_extraction", run_manifest=rm2, case_set_manifest=CASE_SET,
+        scoring_config=exec_config(rm2, ()), metric_report=loaded,
+        findings=loaded_findings())
+    assert out.execution_status == "completed"
+
+
+def test_v01_run_still_accepts_a_v01_report(ctx):
+    """v0.1 behaviour is unchanged for a v0.1 report."""
+    assert assess(ctx, gates=()).execution_status == "completed"
+
+
+def test_v01_run_still_accepts_a_v2_report(tmp_path):
+    """v0.1 keeps accepting either report version: no new restriction."""
+    loaded, rm2 = _public_v2_loaded(tmp_path)
+    v1 = _v1_rm(rm2)
+    assert type(v1) is EvaluationRunManifest
+    out = assess_completed_evaluation(
+        stage="task_extraction", run_manifest=v1, case_set_manifest=CASE_SET,
+        scoring_config=exec_config(v1, ()), metric_report=loaded,
+        findings=loaded_findings())
+    assert out.execution_status == "completed"
+
+
+# --- Shared-field discipline and contract stability ----------------------
+
+
+def test_gate_layer_reads_only_the_five_shared_fields():
+    """The five fields the gate layer may read exist in both governed versions."""
+    shared = ("eval_run_id", "case_set_version", "case_set_hash",
+              "scoring_gate_config_version", "scoring_gate_config_hash")
+    for model in (EvaluationRunManifest, EvaluationRunManifestV2):
+        for field in shared:
+            assert field in model.model_fields, (model.__name__, field)
+
+
+def test_evaluation_result_contract_and_private_wrapper_unchanged():
+    assert model_contract_hash(EvaluationResultV2, "evaluation_result", "0.2.0") == \
+        "1f741b59e3b741560064409a59b43b3343b85efc9a6a4336c557a5a748c00105"
+    assert "_LoadedMetricReportV2" not in evaluation_pkg.__all__
+    assert len(evaluation_pkg.__all__) == 567

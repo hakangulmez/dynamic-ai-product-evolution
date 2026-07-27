@@ -60,9 +60,10 @@ from .models import (
     CaseSetManifest,
     EvaluationResultV2,
     EvaluationRunManifest,
+    EvaluationRunManifestV2,
     GateVerdict,
 )
-from .runs import load_evaluation_run_manifest
+from .runs import _load_run_manifest_any_supported_version
 from .schemas import load_schema
 from .scoring_config import GateDefinition, LoadedScoringGateConfig, ScoringGateConfig
 from .validators import LoadedValidatorFindings
@@ -678,10 +679,80 @@ def _derive_verdict(critical_finding_ids: tuple[str, ...],
     return "pass"
 
 
+# --- Run-manifest version dispatch (ADR-027) ------------------------------
+#
+# The gate layer accepts either governed run-manifest version across its whole
+# build/persist/load path. It reads only the five fields v0.1 and v0.2 share --
+# eval_run_id, case_set_version, case_set_hash, scoring_gate_config_version, and
+# scoring_gate_config_hash -- so the projection, EvaluationResultV2, and
+# evaluation_result.v2.schema.json are untouched and every v0.1 path, behaviour,
+# and error code is preserved exactly.
+
+_AnyRunManifest = EvaluationRunManifest | EvaluationRunManifestV2
+_RUN_MANIFEST_MODEL_VERSIONS: dict[type, str] = {
+    EvaluationRunManifest: "0.1.0",
+    EvaluationRunManifestV2: "0.2.0",
+}
+# Stable message identifiers. The general gate error classes carry no
+# reason_code field, so these ride their existing classes verbatim in the
+# message and callers match on the identifier.
+_RUN_MANIFEST_VERSION_INCONSISTENT = "run_manifest_version_inconsistent"
+_METRIC_REPORT_VERSION_MISMATCH = "metric_report_version_mismatch"
+
+
+def _require_supported_run_manifest(name: str, run_manifest: Any) -> _AnyRunManifest:
+    """Accept exactly one of the two governed manifest classes.
+
+    The concrete class must be an exact key of ``_RUN_MANIFEST_MODEL_VERSIONS`` --
+    the same table the declared-version check indexes -- so acceptance and lookup
+    cannot diverge. ``isinstance`` would admit a subclass that has no exact key and
+    would surface as an uncontrolled ``KeyError`` instead of this boundary.
+    """
+    if type(run_manifest) not in _RUN_MANIFEST_MODEL_VERSIONS:
+        raise TypeError(
+            f"{name} must be an EvaluationRunManifest or EvaluationRunManifestV2, "
+            f"got {type(run_manifest).__name__}"
+        )
+    return run_manifest
+
+
+def _require_run_manifest_version_consistency(m: _AnyRunManifest) -> None:
+    """The concrete model class and the declared contract version must agree.
+
+    ``model_copy(update=...)`` and ``model_construct`` can produce an instance
+    whose declared ``contract.contract_version`` disagrees with its own class, so
+    the gate layer refuses to read shared fields off such an object.
+    """
+    expected = _RUN_MANIFEST_MODEL_VERSIONS[type(m)]
+    if m.contract.contract_version != expected:
+        raise GateRunBindingError(
+            f"{_RUN_MANIFEST_VERSION_INCONSISTENT}: run manifest model "
+            f"{type(m).__name__} declares contract version "
+            f"{m.contract.contract_version!r}, expected {expected!r}",
+            eval_run_id=m.eval_run_id,
+        )
+
+
+def _require_metric_report_version_for_run(
+    loaded: "LoadedMetricReport | _LoadedMetricReportV2", m: _AnyRunManifest
+) -> None:
+    """A v0.2 run may bind only metric_report@0.2.0.
+
+    A v0.1 run keeps accepting either report version, exactly as before.
+    """
+    if isinstance(m, EvaluationRunManifestV2) and not isinstance(loaded.report, MetricReportV2):
+        raise GateMetricReportBindingError(
+            f"{_METRIC_REPORT_VERSION_MISMATCH}: an evaluation_run_manifest@0.2.0 run "
+            "may bind only metric_report@0.2.0",
+            eval_run_id=m.eval_run_id,
+            artifact_reference=loaded.artifact_reference,
+        )
+
+
 # --- Binding checks -------------------------------------------------------
 
 
-def _bind_scoring_config(config: LoadedScoringGateConfig, m: EvaluationRunManifest) -> None:
+def _bind_scoring_config(config: LoadedScoringGateConfig, m: _AnyRunManifest) -> None:
     inner = config.config
     if inner.config_version != m.scoring_gate_config_version:
         raise GateScoringConfigBindingError("scoring config version does not match the run manifest",
@@ -694,7 +765,7 @@ def _bind_scoring_config(config: LoadedScoringGateConfig, m: EvaluationRunManife
                                             eval_run_id=m.eval_run_id)
 
 
-def _bind_case_set(case_set: CaseSetManifest, m: EvaluationRunManifest) -> None:
+def _bind_case_set(case_set: CaseSetManifest, m: _AnyRunManifest) -> None:
     if case_set.case_set_version != m.case_set_version:
         raise GateCaseSetBindingError("case-set manifest version does not match the run manifest",
                                       eval_run_id=m.eval_run_id)
@@ -703,7 +774,7 @@ def _bind_case_set(case_set: CaseSetManifest, m: EvaluationRunManifest) -> None:
                                       eval_run_id=m.eval_run_id)
 
 
-def _bind_metric_report(loaded: LoadedMetricReport, m: EvaluationRunManifest) -> None:
+def _bind_metric_report(loaded: LoadedMetricReport, m: _AnyRunManifest) -> None:
     report = loaded.report
     # Run-identity anchor: the loaded wrapper declares which run the artifact
     # belongs to; that declared run must equal the run-manifest anchor. This
@@ -729,7 +800,7 @@ def _bind_metric_report(loaded: LoadedMetricReport, m: EvaluationRunManifest) ->
                                            eval_run_id=m.eval_run_id)
 
 
-def _bind_findings(findings: LoadedValidatorFindings, m: EvaluationRunManifest) -> tuple[str, ...]:
+def _bind_findings(findings: LoadedValidatorFindings, m: _AnyRunManifest) -> tuple[str, ...]:
     if findings.eval_run_id != m.eval_run_id:
         raise GateFindingsBindingError("findings wrapper eval_run_id does not match the run",
                                        eval_run_id=m.eval_run_id)
@@ -751,7 +822,7 @@ def _bind_findings(findings: LoadedValidatorFindings, m: EvaluationRunManifest) 
 # --- Result assembly ------------------------------------------------------
 
 
-def _provenance(m: EvaluationRunManifest, metric_report_sha256: str | None) -> dict[str, Any]:
+def _provenance(m: _AnyRunManifest, metric_report_sha256: str | None) -> dict[str, Any]:
     return {
         "case_set_version": m.case_set_version,
         "case_set_hash": m.case_set_hash,
@@ -776,7 +847,7 @@ def _validate_stage(stage: str) -> str:
 def assess_completed_evaluation(
     *,
     stage: str,
-    run_manifest: EvaluationRunManifest,
+    run_manifest: _AnyRunManifest,
     case_set_manifest: CaseSetManifest,
     scoring_config: LoadedScoringGateConfig,
     metric_report: "LoadedMetricReport | _LoadedMetricReportV2",
@@ -789,8 +860,8 @@ def assess_completed_evaluation(
     is a ``MetricReportV2``) carries the applicability ledger that gates a
     metric-family binding check.
     """
+    _require_supported_run_manifest("run_manifest", run_manifest)
     for name, obj, typ in (
-        ("run_manifest", run_manifest, EvaluationRunManifest),
         ("case_set_manifest", case_set_manifest, CaseSetManifest),
         ("scoring_config", scoring_config, LoadedScoringGateConfig),
         ("findings", findings, LoadedValidatorFindings),
@@ -803,6 +874,8 @@ def assess_completed_evaluation(
             f"got {type(metric_report).__name__}")
     stage = _validate_stage(stage)
     m = run_manifest
+    _require_run_manifest_version_consistency(m)
+    _require_metric_report_version_for_run(metric_report, m)
     _bind_case_set(case_set_manifest, m)
     _bind_scoring_config(scoring_config, m)
     _bind_metric_report(metric_report, m)
@@ -862,10 +935,10 @@ def assess_completed_evaluation(
 
 
 def _build_terminal(status: str, allowed_codes: frozenset[str], *, stage: str,
-                    run_manifest: EvaluationRunManifest, issues: tuple[EvaluationIssue, ...],
+                    run_manifest: _AnyRunManifest, issues: tuple[EvaluationIssue, ...],
                     metric_report_sha256: str | None) -> EvaluationResultV2:
-    if not isinstance(run_manifest, EvaluationRunManifest):
-        raise TypeError("run_manifest must be an EvaluationRunManifest")
+    _require_supported_run_manifest("run_manifest", run_manifest)
+    _require_run_manifest_version_consistency(run_manifest)
     stage = _validate_stage(stage)
     run_id = run_manifest.eval_run_id
     if not issues:
@@ -904,7 +977,7 @@ def _build_terminal(status: str, allowed_codes: frozenset[str], *, stage: str,
 
 
 def build_invalid_evaluation(
-    *, stage: str, run_manifest: EvaluationRunManifest,
+    *, stage: str, run_manifest: _AnyRunManifest,
     issues: tuple[EvaluationIssue, ...], metric_report_sha256: str | None = None,
 ) -> EvaluationResultV2:
     """Construct an invalid EvaluationResultV2 from a valid in-memory run manifest."""
@@ -914,7 +987,7 @@ def build_invalid_evaluation(
 
 
 def build_errored_evaluation(
-    *, stage: str, run_manifest: EvaluationRunManifest,
+    *, stage: str, run_manifest: _AnyRunManifest,
     issues: tuple[EvaluationIssue, ...], metric_report_sha256: str | None = None,
 ) -> EvaluationResultV2:
     """Construct an errored EvaluationResultV2 from a valid in-memory run manifest."""
@@ -926,7 +999,7 @@ def build_errored_evaluation(
 # --- Internal projection validation ---------------------------------------
 
 
-def _validate_projection(result: EvaluationResultV2, m: EvaluationRunManifest,
+def _validate_projection(result: EvaluationResultV2, m: _AnyRunManifest,
                          *, reference: str | None, eval_run_id: str) -> None:
     if result.eval_run_id != m.eval_run_id:
         raise EvaluationResultBindingError("result eval_run_id does not match the run manifest",
@@ -1061,8 +1134,9 @@ def persist_evaluation_result(
     if not isinstance(result, EvaluationResultV2):
         raise TypeError(f"result must be an EvaluationResultV2, got {type(result).__name__}")
     resolved_root = _validate_root(eval_root)
-    loaded = load_evaluation_run_manifest(eval_run_id, eval_root=resolved_root)
+    loaded = _load_run_manifest_any_supported_version(eval_run_id, eval_root=resolved_root)
     m = loaded.manifest
+    _require_run_manifest_version_consistency(m)
     reference = _ARTIFACT_REFERENCE
     if result.eval_run_id != m.eval_run_id:
         raise EvaluationResultBindingError("result eval_run_id does not match the run manifest",
@@ -1155,8 +1229,9 @@ def load_evaluation_result(
 ) -> LoadedEvaluationResult:
     """Load an evaluation result from the fixed run-directory path."""
     resolved_root = _validate_root(eval_root)
-    loaded_run = load_evaluation_run_manifest(eval_run_id, eval_root=resolved_root)
+    loaded_run = _load_run_manifest_any_supported_version(eval_run_id, eval_root=resolved_root)
     m = loaded_run.manifest
+    _require_run_manifest_version_consistency(m)
     run_dir = resolved_root / eval_run_id
     results_dir = run_dir / _RESULTS_DIR
     reference = _ARTIFACT_REFERENCE
