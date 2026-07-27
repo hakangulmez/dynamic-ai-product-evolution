@@ -145,6 +145,11 @@ from .validator_parameters import (
     persist_validator_rule_parameters,
     validator_rule_parameters_aggregate_hash,
 )
+from .validation_inputs import (
+    ExtractionEvaluationStage,
+    ExtractionValidationInputs,
+    build_extraction_validation_inputs,
+)
 from .validator_bundle_artifact import (
     LoadedValidatorBundleArtifact,
     ValidatorBundleArtifact,
@@ -838,6 +843,8 @@ __all__ = [
     "EvidenceClassification",
     "EvidenceQuoteContainmentObservation",
     "EvidenceResolvability",
+    "ExtractionEvaluationStage",
+    "ExtractionValidationInputs",
     "FindingDisposition",
     "FindingRunBindingError",
     "GOLD_FIELD_VALUE_OPERATORS",
@@ -1109,6 +1116,7 @@ __all__ = [
     "build_evaluation_output_manifest",
     "build_evaluation_output_manifest_v2",
     "build_extraction_resolved_assertion_evaluations",
+    "build_extraction_validation_inputs",
     "build_invalid_comparison",
     "build_invalid_evaluation",
     "build_metric_input_snapshot",

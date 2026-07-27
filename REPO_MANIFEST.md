@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **390**
+Total tracked/scaffold files listed: **394**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -160,7 +160,9 @@ Total tracked/scaffold files listed: **390**
 - `evals/fixtures/evaluation_harness/taxonomy/axis_taxonomy.json`
 - `evals/fixtures/evaluation_harness/validation/validation_artifact_snapshot_set.json`
 - `evals/fixtures/evaluation_harness/validator_bundle/validator_bundle_artifact.json`
+- `evals/fixtures/evaluation_harness/validator_bundle_v2/validator_bundle_artifact.v2.json`
 - `evals/fixtures/evaluation_harness/validator_parameters/validator_rule_parameters.json`
+- `evals/fixtures/evaluation_harness/validator_parameters_v2/validator_rule_parameters.v2.json`
 - `evals/fixtures/universe_sentinel/adjudications.json`
 - `evals/fixtures/universe_sentinel/classification_outputs.json`
 - `evals/fixtures/universe_sentinel/evidence_packets.json`
@@ -320,6 +322,7 @@ Total tracked/scaffold files listed: **390**
 - `src/dynamic_ai_products/evaluation/stage_evidence.py`
 - `src/dynamic_ai_products/evaluation/stage_profiles.py`
 - `src/dynamic_ai_products/evaluation/taxonomy.py`
+- `src/dynamic_ai_products/evaluation/validation_inputs.py`
 - `src/dynamic_ai_products/evaluation/validation_snapshot.py`
 - `src/dynamic_ai_products/evaluation/validator_bundle_artifact.py`
 - `src/dynamic_ai_products/evaluation/validator_parameters.py`
@@ -375,6 +378,7 @@ Total tracked/scaffold files listed: **390**
 - `tests/evaluation/test_stage_evidence.py`
 - `tests/evaluation/test_stage_profiles.py`
 - `tests/evaluation/test_taxonomy.py`
+- `tests/evaluation/test_validation_inputs.py`
 - `tests/evaluation/test_validation_snapshot.py`
 - `tests/evaluation/test_validator_bundle_artifact.py`
 - `tests/evaluation/test_validator_parameters.py`

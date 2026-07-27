@@ -757,16 +757,27 @@ def test_six_new_exports_present():
 
 def test_export_list_sorted_unique_and_count():
     # 562 = 560 + ValidatorRuleParametersV2 + load_validator_rule_parameters_v2 (ADR-028).
-    assert len(evaluation_pkg.__all__) == 562
+    assert len(evaluation_pkg.__all__) == 565
     assert evaluation_pkg.__all__ == sorted(evaluation_pkg.__all__)
     assert len(set(evaluation_pkg.__all__)) == len(evaluation_pkg.__all__)
 
 
 def test_repo_manifest_count_and_paths():
     text = (ROOT / "REPO_MANIFEST.md").read_text()
-    assert "Total tracked/scaffold files listed: **390**" in text
+    # 394 = 390 + the P2 producer, its test, and the two v0.2 fixtures (ADR-028).
+    assert "Total tracked/scaffold files listed: **394**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
+    assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text
+    assert "`tests/evaluation/test_validation_inputs.py`" in text
+    assert (
+        "`evals/fixtures/evaluation_harness/validator_parameters_v2/"
+        "validator_rule_parameters.v2.json`"
+    ) in text
+    assert (
+        "`evals/fixtures/evaluation_harness/validator_bundle_v2/"
+        "validator_bundle_artifact.v2.json`"
+    ) in text
 
 
 def test_protected_contract_hashes_unchanged():

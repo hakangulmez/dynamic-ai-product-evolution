@@ -21,8 +21,11 @@ from dynamic_ai_products.evaluation.validator_bundle_artifact import (
     validator_bundle_artifact_hash,
 )
 from dynamic_ai_products.evaluation.validator_parameters import (
+    ValidatorRuleParameters,
+    ValidatorRuleParametersV2,
     complete_rule_parameter_hash,
     load_validator_rule_parameters,
+    load_validator_rule_parameters_v2,
     validator_rule_parameters_aggregate_hash,
 )
 from dynamic_ai_products.evaluation.validators import (
@@ -336,3 +339,101 @@ def test_model_contract_hash_preserved_with_conversion_method():
         ValidatorBundleArtifact, "validator_bundle_artifact", "0.1.0") == MODEL_HASH
     # The public conversion is a model method, not a new package export.
     assert "to_validator_bundle" not in evaluation_pkg.__all__
+
+
+# --- v0.2 reconciled pair (ADR-028) ---------------------------------------
+
+V2_PARAMS_REL = "validator_parameters_v2/validator_rule_parameters.v2.json"
+V2_BUNDLE_REL = "validator_bundle_v2/validator_bundle_artifact.v2.json"
+
+
+def _v2_pair():
+    params = load_validator_rule_parameters_v2(V2_PARAMS_REL, eval_root=FX)
+    bundle = load_validator_bundle_artifact(
+        V2_BUNDLE_REL, eval_root=FX, rule_parameters=params)
+    return params, bundle
+
+
+def test_v2_fixtures_load_as_a_reconciled_pair():
+    params, bundle = _v2_pair()
+    assert isinstance(params.model, ValidatorRuleParametersV2)
+    assert isinstance(bundle, LoadedValidatorBundleArtifact)
+    assert bundle.model.bundle_version == "synth-validator-bundle-v2"
+
+
+def test_v2_parameter_set_version_equality():
+    params, bundle = _v2_pair()
+    assert bundle.model.parameter_set_version == params.model.parameter_set_version
+    assert params.model.parameter_set_version == "synth-validator-params-v2"
+
+
+def test_v2_aggregate_hash_equality():
+    params, bundle = _v2_pair()
+    assert bundle.model.parameter_set_aggregate_hash == \
+        validator_rule_parameters_aggregate_hash(params.model)
+
+
+def test_v2_all_twelve_per_rule_hashes_reconcile():
+    params, bundle = _v2_pair()
+    entries = {e.rule_id: e for e in params.model.entries}
+    assert len(bundle.model.rule_entries) == 12
+    assert tuple(r.rule_id for r in bundle.model.rule_entries) == VALIDATOR_RULE_ORDER
+    for rule_entry in bundle.model.rule_entries:
+        assert rule_entry.rule_params_hash == complete_rule_parameter_hash(
+            entries[rule_entry.rule_id])
+
+
+def test_v2_bundle_hash_reconciles_with_the_reconstructed_bundle():
+    _, bundle = _v2_pair()
+    assert bundle.model.bundle_hash == validator_bundle_hash(
+        bundle.model.to_validator_bundle())
+
+
+def test_v01_bundle_artifact_contract_hash_unchanged_by_the_v2_pair():
+    _v2_pair()
+    assert model_contract_hash(
+        ValidatorBundleArtifact, "validator_bundle_artifact", "0.1.0") == MODEL_HASH
+    assert ValidatorBundleArtifact._contract_version == "0.1.0"
+
+
+def test_v2_and_v01_hashes_are_distinct():
+    params_v2, bundle_v2 = _v2_pair()
+    bundle_v1 = load_bundle(REL, eval_root=FX)
+    assert bundle_v2.model.parameter_set_version != bundle_v1.model.parameter_set_version
+    assert bundle_v2.model.parameter_set_aggregate_hash != \
+        bundle_v1.model.parameter_set_aggregate_hash
+    assert bundle_v2.model.bundle_hash != bundle_v1.model.bundle_hash
+    assert validator_rule_parameters_aggregate_hash(params_v2.model) != \
+        validator_rule_parameters_aggregate_hash(PARAMS.model)
+
+
+def test_cross_version_pairing_fails_closed():
+    params_v2 = load_validator_rule_parameters_v2(V2_PARAMS_REL, eval_root=FX)
+    # v0.1 bundle against v0.2 parameters, and the reverse: both must fail.
+    with pytest.raises(ValidatorBundleArtifactError) as exc:
+        load_validator_bundle_artifact(REL, eval_root=FX, rule_parameters=params_v2)
+    assert exc.value.reason_code
+    with pytest.raises(ValidatorBundleArtifactError):
+        load_validator_bundle_artifact(V2_BUNDLE_REL, eval_root=FX, rule_parameters=PARAMS)
+
+
+def test_v01_pair_still_reconciles_unchanged():
+    bundle_v1 = load_bundle(REL, eval_root=FX)
+    assert isinstance(PARAMS.model, ValidatorRuleParameters)
+    assert bundle_v1.model.parameter_set_aggregate_hash == \
+        validator_rule_parameters_aggregate_hash(PARAMS.model)
+    for rule_entry in bundle_v1.model.rule_entries:
+        assert rule_entry.rule_params_hash == complete_rule_parameter_hash(
+            ENTRIES[rule_entry.rule_id])
+
+
+def test_v2_builder_regenerates_the_committed_fixture_bytes():
+    from dynamic_ai_products.evaluation.contracts import canonical_contract_bytes
+    params, bundle = _v2_pair()
+    rebuilt = build_validator_bundle_artifact(
+        params, bundle_version=bundle.model.bundle_version,
+        severities=SEVERITIES, repairables=REPAIRABLES)
+    committed = (FX / "validator_bundle_v2" / "validator_bundle_artifact.v2.json").read_bytes()
+    assert canonical_contract_bytes(
+        rebuilt.model_dump(mode="json", exclude_unset=True)) + b"\n" == committed
+    assert bundle.sha256 == sha256_bytes(committed)

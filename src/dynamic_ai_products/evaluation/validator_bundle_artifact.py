@@ -2,11 +2,20 @@
 
 ``validator_bundle_artifact@0.1.0`` is the persisted, contract-stamped
 counterpart of the non-persisted ``ValidatorBundle``. It is generated as a
-reconciled pair from ``validator_rule_parameters@0.1.0``: each rule's
+reconciled pair from a governed validator-rule parameter set: each rule's
 ``rule_params_hash`` equals that rule's ``complete_rule_parameter_hash`` and the
 artifact's ``bundle_hash`` equals ``validator_bundle_hash`` of the reconstructed
 bundle. It also records the parameter-set version and the aggregate
 parameter-set hash (the v0.2 run-manifest pin).
+
+Both governed parameter versions pair with this contract. ``@0.1.0`` and
+``@0.2.0`` differ in Rule 2's required-field values and in Rule 10's and Rule 11's
+entries, so they produce different per-rule hashes and a different aggregate; a
+bundle artifact therefore reconciles with exactly the parameter set it was
+generated from and cross-version pairing fails closed on the version, the
+aggregate, and every per-rule hash. This module reads only the fields the two
+parameter versions share, so ``validator_bundle_artifact@0.1.0`` itself is
+unchanged and no v0.1 behaviour or error code moves (ADR-028).
 
 Read-side plus pure validation and explicit persistence only. Importing this
 module performs no filesystem access, hashing, environment inspection, clock
