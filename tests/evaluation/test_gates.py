@@ -1568,4 +1568,4 @@ def test_evaluation_result_contract_and_private_wrapper_unchanged():
     assert model_contract_hash(EvaluationResultV2, "evaluation_result", "0.2.0") == \
         "1f741b59e3b741560064409a59b43b3343b85efc9a6a4336c557a5a748c00105"
     assert "_LoadedMetricReportV2" not in evaluation_pkg.__all__
-    assert len(evaluation_pkg.__all__) == 567
+    assert len(evaluation_pkg.__all__) == 577

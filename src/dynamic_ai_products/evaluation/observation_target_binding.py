@@ -32,6 +32,16 @@ Unresolved decisions are first-class: ``canonical_target_reference`` is a
 ``resolution_status == "unresolved"``. It is never omitted, and it is never
 silently upgraded to a resolved reference.
 
+``observation_target_binding@0.2.0`` (ADR-029) is the explicit task-stage
+successor: identical field set except the two parent-snapshot pins are
+**required**, because task-stage Rule 7 consumes a parent snapshot that a
+parent-entry-free binding could otherwise never durably identify. The sanctioned
+builder dispatches by stage — ``capability_extraction`` keeps producing v0.1
+byte-for-byte, ``task_extraction`` produces v0.2 — and every revalidation,
+persistence, and loading path discriminates fail-closed on the declared
+contract stamp. ``observation_target_binding@0.1.0`` keeps its fields,
+generated schema, governed contract hash, and behaviour unchanged.
+
 Importing this module performs no filesystem access, hashing, clock read, or
 network call; all loading and persistence is explicit.
 """
@@ -84,6 +94,7 @@ __all__ = [
     "LoadedObservationTargetBinding",
     "ObservationTargetBinding",
     "ObservationTargetBindingError",
+    "ObservationTargetBindingV2",
     "ObservationTargetResolutionDecision",
     "ObservationTargetResolutionProvenance",
     "build_observation_target_binding",
@@ -95,6 +106,8 @@ __all__ = [
 
 _CONTRACT_ID = "observation_target_binding"
 _CONTRACT_VERSION = "0.1.0"
+_CONTRACT_VERSION_V2 = "0.2.0"
+_TASK_EXTRACTION_STAGE = "task_extraction"
 _SNAPSHOTS_DIR = "snapshots"
 _SNAPSHOT_FILENAME = "observation_target_binding.json"
 _SHA256_HEX_PATTERN = r"^[0-9a-f]{64}$"
@@ -267,10 +280,82 @@ class ObservationTargetBinding(ContractStampedModel):
         return self
 
 
-class LoadedObservationTargetBinding(EvaluationStrictModel):
-    """A validated binding plus its raw-byte binding material."""
+class ObservationTargetBindingV2(ContractStampedModel):
+    # Docstring intentionally omitted so the generated JSON Schema (and thus the
+    # governed model-contract hash) carries no description.
+    #
+    # Explicit task-stage successor (ADR-029): identical field set to v0.1 except
+    # the two parent-snapshot pins are REQUIRED, so the exact snapshot identity
+    # task-stage Rule 7 consumed is durably represented in the persisted chain.
+    _contract_id: ClassVar[str] = _CONTRACT_ID
+    _contract_version: ClassVar[str] = _CONTRACT_VERSION_V2
 
-    model: ObservationTargetBinding
+    eval_run_id: str
+    case_id: str
+    company_id: str
+    stage: str
+    prediction_record_id: str
+    raw_artifact_reference: str
+    raw_artifact_sha256: str = Field(**_HEX)
+    parsed_prediction_content_sha256: str = Field(**_HEX)
+    parsed_prediction_content_artifact_reference: str
+    target_registry_version: str
+    target_registry_sha256: str = Field(**_HEX)
+    parent_observation_snapshot_version: str
+    parent_observation_snapshot_sha256: str = Field(**_HEX)
+    resolved_observation_count: int = Field(ge=0)
+    unresolved_observation_count: int = Field(ge=0)
+    entries: tuple[ObservationTargetResolutionDecision, ...]
+
+    @model_validator(mode="after")
+    def _binding_invariants_v2(self) -> "ObservationTargetBindingV2":
+        for name in (
+            "eval_run_id", "case_id", "company_id", "stage", "prediction_record_id",
+            "parsed_prediction_content_artifact_reference", "target_registry_version",
+            "parent_observation_snapshot_version",
+        ):
+            _require_non_blank(getattr(self, name), name)
+        if self.stage != _TASK_EXTRACTION_STAGE:
+            raise ValueError(
+                "observation_target_binding@0.2.0 binds only the task_extraction stage"
+            )
+        for name in ("raw_artifact_reference", "parsed_prediction_content_artifact_reference"):
+            if not _is_safe_reference(getattr(self, name)):
+                raise ValueError(f"{name} must be a safe relative reference")
+        if not self.entries:
+            raise ValueError("entries must not be empty")
+        ids = [entry.observation_id for entry in self.entries]
+        if ids != sorted(ids):
+            raise ValueError("entries must be sorted canonically by observation_id")
+        if len(set(ids)) != len(ids):
+            raise ValueError("entries must not contain a duplicate observation_id")
+        resolved = sum(1 for e in self.entries if e.resolution_status == "resolved")
+        unresolved = len(self.entries) - resolved
+        if self.resolved_observation_count != resolved:
+            raise ValueError("resolved_observation_count must equal the resolved entry count")
+        if self.unresolved_observation_count != unresolved:
+            raise ValueError("unresolved_observation_count must equal the unresolved entry count")
+        subjects = [e for e in self.entries if not e.parent_referenced]
+        if len(subjects) != 1:
+            raise ValueError("exactly one entry must be the owning subject")
+        if subjects[0].observation_kind != _STAGE_SUBJECT_KIND[self.stage]:
+            raise ValueError("the owning subject kind must match the stage subject kind")
+        for entry in self.entries:
+            if entry.parent_referenced and entry.observation_kind not in _PARENT_KIND_FIELD:
+                raise ValueError("a task observation must not be a parent reference")
+        return self
+
+
+class LoadedObservationTargetBinding(EvaluationStrictModel):
+    """A validated binding plus its raw-byte binding material.
+
+    ``model`` carries either governed contract version. The nested contract
+    stamp discriminates them (a 0.1.0 document can never validate as v0.2 and
+    vice versa), so widening this wrapper adds no ambiguity. The wrapper is not
+    contract-stamped, so no governed hash depends on this union.
+    """
+
+    model: ObservationTargetBinding | ObservationTargetBindingV2
     version: str
     sha256: str
     artifact_reference: str
@@ -311,8 +396,16 @@ def _revalidate_decision(
         ) from exc
 
 
-def _revalidate_binding(binding: ObservationTargetBinding) -> ObservationTargetBinding:
-    if not isinstance(binding, ObservationTargetBinding):
+def _revalidate_binding(
+    binding: "ObservationTargetBinding | ObservationTargetBindingV2",
+) -> "ObservationTargetBinding | ObservationTargetBindingV2":
+    # Fail-closed version dispatch: a v0.2 instance is never revalidated through
+    # the v0.1 model and vice versa; the concrete class is the authority.
+    if isinstance(binding, ObservationTargetBindingV2):
+        model_cls: type = ObservationTargetBindingV2
+    elif isinstance(binding, ObservationTargetBinding):
+        model_cls = ObservationTargetBinding
+    else:
         raise TypeError(f"expected an ObservationTargetBinding, got {type(binding).__name__}")
     try:
         payload = binding.model_dump(mode="json", exclude_unset=True)
@@ -321,7 +414,7 @@ def _revalidate_binding(binding: ObservationTargetBinding) -> ObservationTargetB
             "binding could not be serialized for revalidation", reason_code="model_validation"
         ) from exc
     try:
-        return ObservationTargetBinding.model_validate(payload)
+        return model_cls.model_validate(payload)
     except PydanticValidationError as exc:
         raise ObservationTargetBindingError(
             "binding failed fail-closed revalidation", reason_code="model_validation"
@@ -351,11 +444,21 @@ def _contract_metadata() -> dict[str, str]:
     }
 
 
+def _contract_metadata_v2() -> dict[str, str]:
+    return {
+        "contract_id": _CONTRACT_ID,
+        "contract_version": _CONTRACT_VERSION_V2,
+        "contract_hash": model_contract_hash(
+            ObservationTargetBindingV2, _CONTRACT_ID, _CONTRACT_VERSION_V2
+        ),
+    }
+
+
 # --- Pure accessors --------------------------------------------------------
 
 
 def observations_by_canonical_target(
-    binding: ObservationTargetBinding,
+    binding: "ObservationTargetBinding | ObservationTargetBindingV2",
 ) -> dict[str, tuple[str, ...]]:
     """Map each resolved canonical target to its ascending mapped observation IDs.
 
@@ -372,7 +475,9 @@ def observations_by_canonical_target(
     return {key: tuple(sorted(value)) for key, value in sorted(index.items())}
 
 
-def unresolved_observation_ids(binding: ObservationTargetBinding) -> tuple[str, ...]:
+def unresolved_observation_ids(
+    binding: "ObservationTargetBinding | ObservationTargetBindingV2",
+) -> tuple[str, ...]:
     """The ascending observation IDs of every present unresolved decision."""
     validated = _revalidate_binding(binding)
     return tuple(
@@ -394,8 +499,14 @@ def build_observation_target_binding(
     resolution_entries: tuple[ObservationTargetResolutionDecision, ...] | None = None,
     resolution_decision_set: LoadedObservationTargetResolutionDecisionSet | None = None,
     parent_snapshot: LoadedParentObservationSnapshot | None = None,
-) -> ObservationTargetBinding:
-    """Reconcile adjudicated decisions into an ``observation_target_binding@0.1.0``.
+) -> "ObservationTargetBinding | ObservationTargetBindingV2":
+    """Reconcile adjudicated decisions into the stage's governed binding contract.
+
+    ``capability_extraction`` produces ``observation_target_binding@0.1.0``
+    byte-for-byte as before; ``task_extraction`` produces the
+    ``observation_target_binding@0.2.0`` successor, which additionally requires
+    the committed parent-observation snapshot and records its exact
+    version/raw-byte identity as required pins (ADR-029).
 
     Pure with respect to network/clock/provider state; hashing supplied bytes and
     reading the supplied wrappers' already-verified material is permitted. Every
@@ -623,13 +734,19 @@ def build_observation_target_binding(
             )
 
     # --- Mandatory committed parent-snapshot verification ---
+    # A parent-referenced entry always requires the snapshot (v0.1, unchanged).
+    # The task stage additionally requires it even with zero parent entries
+    # (ADR-029): task-stage Rule 7 consumes the snapshot, so its exact identity
+    # must be durably recorded by the v0.2 successor binding.
     snapshot_version: str | None = None
     snapshot_sha256: str | None = None
-    if parents:
+    if parents or stage == _TASK_EXTRACTION_STAGE:
         if parent_snapshot is None:
             raise ObservationTargetBindingError(
                 "a parent-referenced observation requires the committed parent-observation "
-                "snapshot",
+                "snapshot"
+                if parents
+                else "a task-stage binding requires the committed parent-observation snapshot",
                 reason_code="parent_snapshot_required",
             )
         try:
@@ -676,7 +793,11 @@ def build_observation_target_binding(
 
     resolved_count = sum(1 for d in decisions if d.resolution_status == "resolved")
     document: dict[str, Any] = {
-        "contract": _contract_metadata(),
+        "contract": (
+            _contract_metadata_v2()
+            if stage == _TASK_EXTRACTION_STAGE
+            else _contract_metadata()
+        ),
         "eval_run_id": run_id,
         "case_id": case.case_id,
         "company_id": company_id,
@@ -699,8 +820,13 @@ def build_observation_target_binding(
     if snapshot_version is not None:
         document["parent_observation_snapshot_version"] = snapshot_version
         document["parent_observation_snapshot_sha256"] = snapshot_sha256
+    model_cls: type = (
+        ObservationTargetBindingV2
+        if stage == _TASK_EXTRACTION_STAGE
+        else ObservationTargetBinding
+    )
     try:
-        return ObservationTargetBinding.model_validate(document)
+        return model_cls.model_validate(document)
     except PydanticValidationError as exc:
         raise ObservationTargetBindingError(
             "the assembled binding failed contract validation", reason_code="model_validation"
@@ -998,8 +1124,22 @@ def load_observation_target_binding(
             "the binding top-level value must be a JSON object",
             reason_code="top_level_type", artifact_reference=reference,
         )
+    # Strict declared-contract-version peek: a 0.2.0 stamp validates through the
+    # successor model; every other document keeps the exact v0.1 validation
+    # surface (an unknown stamp still fails v0.1 contract validation).
+    declared_contract = payload.get("contract")
+    declared_version = (
+        declared_contract.get("contract_version")
+        if isinstance(declared_contract, dict)
+        else None
+    )
+    loaded_model_cls: type = (
+        ObservationTargetBindingV2
+        if declared_version == _CONTRACT_VERSION_V2
+        else ObservationTargetBinding
+    )
     try:
-        model = ObservationTargetBinding.model_validate(payload)
+        model = loaded_model_cls.model_validate(payload)
     except PydanticValidationError as exc:
         raise ObservationTargetBindingError(
             "the binding failed strict contract validation",

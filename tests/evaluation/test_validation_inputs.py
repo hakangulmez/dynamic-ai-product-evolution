@@ -19,12 +19,23 @@ from dynamic_ai_products.evaluation.case_sets import (
     load_case_set_manifest,
 )
 from dynamic_ai_products.evaluation.cases import load_case
-from dynamic_ai_products.evaluation.contracts import canonical_contract_bytes
+from dynamic_ai_products.evaluation.contracts import (
+    canonical_contract_bytes,
+    model_contract_hash,
+)
+from dynamic_ai_products.evaluation.models import (
+    CaseSetManifest,
+    EvaluationCase,
+    PredictionEnvelope,
+)
 from dynamic_ai_products.evaluation.observation_target_binding import (
+    ObservationTargetBindingV2,
     build_observation_target_binding,
+    load_observation_target_binding,
     persist_observation_target_binding,
 )
 from dynamic_ai_products.evaluation.parent_observation_snapshot import (
+    ParentObservationSnapshot,
     ParentObservationSnapshotError,
     load_parent_observation_snapshot,
 )
@@ -691,7 +702,7 @@ def test_public_surface():
                  "build_extraction_validation_inputs"):
         assert name in evaluation_pkg.__all__
         assert evaluation_pkg.__all__.count(name) == 1
-    assert len(evaluation_pkg.__all__) == 567
+    assert len(evaluation_pkg.__all__) == 577
     assert evaluation_pkg.__all__ == sorted(evaluation_pkg.__all__)
     assert len(set(evaluation_pkg.__all__)) == len(evaluation_pkg.__all__)
 
@@ -703,3 +714,236 @@ def test_extraction_stage_alias_matches_the_governed_tuple():
         EXTRACTION_EVALUATION_STAGES,
     )
     assert set(get_args(vi_mod.ExtractionEvaluationStage)) == set(EXTRACTION_EVALUATION_STAGES)
+
+
+# --- Task-stage successor path (ADR-029) -----------------------------------
+
+
+TASK_CASE_ID = "SYNTH-CASE-TASK-0001"
+TASK_OBS = "SYNTH-TASK-OBS-0001"
+CANON_TASK = "SYNTH.PRODUCT.CAPABILITY.TASK"
+TASK_RAW_REF = "task_prediction_source.json"
+TASK_STAGE = "task_extraction"
+
+
+def _stamp(model_cls, contract_id):
+    return {"contract_id": contract_id, "contract_version": "0.1.0",
+            "contract_hash": model_contract_hash(model_cls, contract_id, "0.1.0")}
+
+
+class _TaskCtx:
+    """A genuine task-stage P2 context: real persisted v0.2 binding, no stand-ins."""
+
+    def __init__(self, root, *, run_id="p2-task-successor-run"):
+        self.reg = load_target_registry("target_registry.json", eval_root=FX)
+        self.sc = load_scoring_gate_config("scoring_gate_config.json", eval_root=FX)
+        self.sp = load_stage_profile_registry("stage_profile_registry.json", eval_root=FX)
+        self.adapters = load_semantic_adapter_registry(
+            "semantic_adapter_registry.json", eval_root=FX)
+        self.snap = load_source_passage_snapshot_manifest(
+            "source_passage_snapshot_manifest.json", eval_root=FX)
+        self.params = load_validator_rule_parameters_v2(V2_PARAMS, eval_root=EFX)
+        self.bundle = load_validator_bundle_artifact(
+            V2_BUNDLE, eval_root=EFX, rule_parameters=self.params)
+
+        self.case = EvaluationCase.model_validate({
+            "case_id": TASK_CASE_ID, "stage": TASK_STAGE,
+            "stage_context": {"observation_window": {"start": "2025-01-01",
+                                                     "end": "2025-12-31"}},
+            "input_source_ids": ["synth-source-0001", "synth-source-0002",
+                                 "synth-source-0003"],
+            "input_passage_ids": ["synth-passage-0001", "synth-passage-0003",
+                                  "synth-passage-0004"],
+            "assertions": [{"assertion_id": f"{TASK_CASE_ID}-A1",
+                            "kind": "expected_entity", "semantic_version": "0.1.0",
+                            "target_references": [CANON_TASK],
+                            "scoring_gate_config_references":
+                                ["synth-scoring-gate-ref-0001"]}],
+            "failure_tags": [], "notes": "task successor P2 proof",
+            "created_by": "synthetic-researcher",
+            "created_at": "2026-07-27T08:00:00+00:00",
+            "guideline_version": "draft-v0.1"})
+
+        probe = json.loads(
+            (EFX / "parsed_content" / "task_extraction_cutoff_probe.json").read_bytes())
+        probe["company_id"] = COMPANY
+        self.raw_bytes = canonical_contract_bytes(probe)
+        self.schema_bytes = (ROOT / "schemas" / "task_observation.schema.json").read_bytes()
+
+        cs = CaseSetManifest.model_validate({
+            "contract": _stamp(CaseSetManifest, "case_set_manifest"),
+            "case_set_version": "p2-task-case-set-v1", "lifecycle": "draft",
+            "registry_snapshot_version": self.reg.version,
+            "registry_snapshot_hash": self.reg.sha256,
+            "entries": [{"case_id": TASK_CASE_ID, "partition": "dev",
+                         "suites": ["regression"], "input_packet_hash": "2" * 64}]})
+        envelope = PredictionEnvelope.model_validate({
+            "contract": _stamp(PredictionEnvelope, "prediction_envelope"),
+            "prediction_record_id": "SYNTH-PRED-TASK-0001", "stage": TASK_STAGE,
+            "source_references": [TASK_RAW_REF],
+            "prompt_model_metadata": {"synthetic_model_label": "synth-model-v0"},
+            "input_packet_hash": "2" * 64,
+            "prediction_run_manifest_reference": "prediction_run_manifest.json"})
+
+        # Task parent snapshot: committed product parent plus the committed
+        # capability raw material as the capability-parent member.
+        parents_dir = root / "parents"
+        (parents_dir / "members").mkdir(parents=True)
+        product_member = (FX / "members" / "product_parent.json").read_bytes()
+        capability_member = (
+            EFX / "parsed_content" / "capability_extraction_raw.json").read_bytes()
+        (parents_dir / "members" / "product_parent.json").write_bytes(product_member)
+        (parents_dir / "members" / "capability_parent.json").write_bytes(capability_member)
+        self._parents_dir = parents_dir
+        self._parents_payload = {
+            "contract": _stamp(ParentObservationSnapshot, "parent_observation_snapshot"),
+            "snapshot_version": "p2-task-parent-snapshot-v1",
+            "case_id": TASK_CASE_ID, "company_id": COMPANY,
+            "observation_cutoff": "2025-12-31",
+            "members": [
+                {"role": "capability_parent",
+                 "reference": "members/capability_parent.json",
+                 "sha256": sha256_bytes(capability_member)},
+                {"role": "product_parent", "reference": "members/product_parent.json",
+                 "sha256": sha256_bytes(product_member)}]}
+        (parents_dir / "parent_observation_snapshot.json").write_bytes(
+            canonical_contract_bytes(self._parents_payload) + b"\n")
+        self.parents = load_parent_observation_snapshot(
+            "parent_observation_snapshot.json", source_root=parents_dir)
+
+        initialize_evaluation_run_v2(
+            eval_root=root, eval_run_id=run_id,
+            prediction_run_id="SYNTH-PRED-RUN-TASK-0001",
+            prediction_run_manifest_hash="3" * 64, case_set=cs, registry=self.reg,
+            validator_bundle_version=self.bundle.model.bundle_version,
+            validator_bundle_hash=self.bundle.model.bundle_hash,
+            scoring_config=self.sc, code_commit="p2-task-commit",
+            config_snapshot_source_root=FX, evaluation_created_at=CREATED,
+            evaluation_stage=TASK_STAGE, stage_profile_registry=self.sp,
+            semantic_adapter_registry_version=self.adapters.version,
+            semantic_adapter_registry_hash=semantic_adapter_registry_hash(
+                self.adapters.registry),
+            selected_semantic_adapter_entry_hash=sha256_bytes(canonical_contract_bytes(
+                resolve_semantic_adapter(
+                    self.adapters.registry, TASK_STAGE).model_dump(mode="json"))),
+            source_passage_snapshot_version=self.snap.version,
+            source_passage_snapshot_hash=source_passage_snapshot_manifest_hash(
+                self.snap.manifest),
+            gold_assertion_set_version="p2-task-gold-v1",
+            gold_assertion_set_hash="4" * 64,
+            axis_taxonomy_version="p2-task-axis-v1", axis_taxonomy_hash="5" * 64,
+            validator_rule_parameters_version=self.params.model.parameter_set_version,
+            validator_rule_parameters_hash=validator_rule_parameters_aggregate_hash(
+                self.params.model))
+        self.run_manifest = load_evaluation_run_manifest_v2(
+            run_id, eval_root=root).manifest
+
+        parsed_model = apply_semantic_adapter(
+            self.adapters.registry, case=self.case, envelope=envelope,
+            raw_artifact_reference=TASK_RAW_REF, raw_artifact_bytes=self.raw_bytes)
+        persisted = persist_parsed_prediction_content(
+            parsed_model, eval_root=root, eval_run_id=run_id)
+        self.parsed = load_parsed_prediction_content(
+            persisted.artifact_reference, eval_root=root,
+            expected_sha256=persisted.sha256)
+
+        resolution = resolve_case_references(
+            self.case, registry=self.reg, scoring_config=self.sc)
+        binding_model = build_observation_target_binding(
+            eval_run_id=run_id, case=self.case, company_id=COMPANY,
+            resolution=resolution, parsed_prediction_content=self.parsed,
+            target_registry=self.reg,
+            resolution_entries=(_resolution_decision(
+                TASK_OBS, "task", CANON_TASK, parent=False),),
+            parent_snapshot=self.parents)
+        assert type(binding_model) is ObservationTargetBindingV2
+        persisted_binding = persist_observation_target_binding(
+            binding_model, eval_root=root, eval_run_id=run_id)
+        # The REAL successor path: reload and use only the reloaded wrapper.
+        self.binding = load_observation_target_binding(
+            persisted_binding.artifact_reference, eval_root=root,
+            expected_sha256=persisted_binding.sha256)
+        assert type(self.binding.model) is ObservationTargetBindingV2
+
+    def build(self, **over):
+        base = dict(
+            case=self.case, evaluation_stage=TASK_STAGE,
+            parsed_prediction_content=self.parsed,
+            raw_artifact_bytes=self.raw_bytes, output_schema_bytes=self.schema_bytes,
+            source_snapshot=self.snap, rule_parameters=self.params,
+            validator_bundle_artifact=self.bundle, run_manifest=self.run_manifest,
+            observation_target_binding=self.binding, parent_snapshot=self.parents)
+        base.update(over)
+        return build_extraction_validation_inputs(**base)
+
+    def foreign_snapshot(self, *, version=None):
+        """A context-matching snapshot whose persisted identity differs.
+
+        Same case/company/cutoff and member set, but different raw bytes (and
+        optionally a different declared version), so only the binding's pin
+        equality can reject it.
+        """
+        payload = dict(self._parents_payload)
+        if version is not None:
+            payload["snapshot_version"] = version
+        alt = self._parents_dir / "foreign_parent_observation_snapshot.json"
+        alt.write_bytes(json.dumps(payload, indent=2).encode() + b"\n")
+        return load_parent_observation_snapshot(
+            "foreign_parent_observation_snapshot.json", source_root=self._parents_dir)
+
+
+@pytest.fixture
+def task_ctx(tmp_path):
+    return _TaskCtx(tmp_path)
+
+
+def test_task_stage_positive_path_through_the_v2_binding(task_ctx):
+    result = task_ctx.build()
+    assert isinstance(result, ExtractionValidationInputs)
+    assert result.evaluation_stage == TASK_STAGE
+    assert tuple(c.rule_id for c in result.coverage) == RULES_1_11
+    # The task probe cites one post-cutoff source: Rule 6 evaluates it truthfully.
+    rule6 = [o for o in result.observations if o.rule_id == "publication_date_cutoff"]
+    assert len(rule6) == 3
+    assert result.output_schema_reference == "schemas/task_observation.schema.json"
+    # Rule 7 verified both raw parent links against the snapshot role sets.
+    rule7 = [o for o in result.observations
+             if o.rule_id == "product_capability_task_parent_resolution"]
+    assert {(o.child_id, o.parent_id) for o in rule7} == {
+        (TASK_OBS, "SYNTH-PRODUCT-OBS-0001"), (TASK_OBS, "SYNTH-CAPABILITY-OBS-0001")}
+    # The pins P2 verified are the persisted v0.2 binding's, not a transient.
+    assert task_ctx.binding.model.parent_observation_snapshot_version == \
+        task_ctx.parents.version
+    assert task_ctx.binding.model.parent_observation_snapshot_sha256 == \
+        task_ctx.parents.sha256
+
+
+def test_task_foreign_snapshot_same_context_different_bytes_rejected(task_ctx):
+    foreign = task_ctx.foreign_snapshot()
+    assert foreign.version == task_ctx.parents.version
+    assert foreign.sha256 != task_ctx.parents.sha256
+    assert foreign.model.case_id == task_ctx.parents.model.case_id
+    with pytest.raises(ValueError, match="parent snapshot sha256"):
+        task_ctx.build(parent_snapshot=foreign)
+
+
+def test_task_foreign_snapshot_different_version_rejected(task_ctx):
+    foreign = task_ctx.foreign_snapshot(version="p2-task-parent-snapshot-v9")
+    with pytest.raises(ValueError, match="parent snapshot version"):
+        task_ctx.build(parent_snapshot=foreign)
+
+
+def test_task_v01_pinless_binding_is_rejected_by_the_equality_check(task_ctx):
+    # A hypothetical pin-less v0.1-stamped task binding (valid v0.1) can never
+    # satisfy P2: the equality check fails closed. Nothing weakened silently.
+    from dynamic_ai_products.evaluation.observation_target_binding import (
+        ObservationTargetBinding,
+    )
+    payload = task_ctx.binding.model.model_dump(mode="json", exclude_unset=True)
+    payload.pop("parent_observation_snapshot_version")
+    payload.pop("parent_observation_snapshot_sha256")
+    payload["contract"] = _stamp(ObservationTargetBinding, "observation_target_binding")
+    v1_model = ObservationTargetBinding.model_validate(payload)
+    pinless = task_ctx.binding.model_copy(update={"model": v1_model, "version": "0.1.0"})
+    with pytest.raises(ValueError, match="parent snapshot version"):
+        task_ctx.build(observation_target_binding=pinless)

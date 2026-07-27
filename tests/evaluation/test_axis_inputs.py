@@ -773,6 +773,6 @@ def test_public_surface():
         assert name in evaluation_pkg.__all__
         assert evaluation_pkg.__all__.count(name) == 1
         assert getattr(evaluation_pkg, name) is getattr(ai_mod, name)
-    assert len(evaluation_pkg.__all__) == 567
+    assert len(evaluation_pkg.__all__) == 577
     assert evaluation_pkg.__all__ == sorted(evaluation_pkg.__all__)
     assert len(set(evaluation_pkg.__all__)) == len(evaluation_pkg.__all__)

@@ -1165,3 +1165,188 @@ def test_genuine_loader_set_and_tuple_path_both_still_pass(tmp_path):
         persisted.artifact_reference, source_root=tmp_path,
         expected_sha256=persisted.sha256)
     assert _bind_with_set(from_loader, content) == build(content=content)
+
+
+# --- observation_target_binding@0.2.0 task-stage successor (ADR-029) --------
+
+
+TASK_OBS = "SYNTH-TASK-OBS-0001"
+BINDING_HASH_V2 = model_contract_hash(
+    otb_mod.ObservationTargetBindingV2, "observation_target_binding", "0.2.0")
+
+
+def task_parsed(**over):
+    return parsed(entities=[("task", TASK_OBS)], stage="task_extraction", **over)
+
+
+def build_task(*, snapshot=SNAP, content=None, entries=None):
+    if entries is None:
+        entries = (decision(TASK_OBS, "task", CANON_TASK),)
+    return build_observation_target_binding(
+        eval_run_id=RUN, case=_case(stage="task_extraction"), company_id=COMPANY,
+        resolution=resolution(), parsed_prediction_content=content or task_parsed(),
+        target_registry=REGISTRY, resolution_entries=entries, parent_snapshot=snapshot)
+
+
+def test_protected_v01_contract_hash_unchanged():
+    # Frozen literal: the capability contract identity must never drift.
+    assert BINDING_HASH == \
+        "f3ec0e0f2db9185333c667a6d7a52bf64a3b2a21b65bf1cbd90fa582ed67acd2"
+
+
+def test_v2_contract_stamp_hash_and_required_pins():
+    b = build_task()
+    assert type(b) is otb_mod.ObservationTargetBindingV2
+    assert b.contract.contract_id == "observation_target_binding"
+    assert b.contract.contract_version == "0.2.0"
+    assert b.contract.contract_hash == BINDING_HASH_V2
+    assert BINDING_HASH_V2 == \
+        "658f2050a5ecf768ee8ee7384a8892bbe52209b122f4ca15f78d34ad31b924a1"
+    assert BINDING_HASH_V2 != BINDING_HASH
+    # The pins are REQUIRED fields carrying the exact supplied snapshot identity.
+    assert b.parent_observation_snapshot_version == SNAP.version
+    assert b.parent_observation_snapshot_sha256 == SNAP.sha256
+    assert otb_mod.ObservationTargetBindingV2.model_fields[
+        "parent_observation_snapshot_version"].is_required()
+    assert otb_mod.ObservationTargetBindingV2.model_fields[
+        "parent_observation_snapshot_sha256"].is_required()
+
+
+def test_capability_builder_still_emits_v01_byte_identically():
+    b = build()
+    assert type(b) is ObservationTargetBinding
+    assert b.contract.contract_version == "0.1.0"
+    assert b.contract.contract_hash == BINDING_HASH
+    # v0.1 keeps its invariant pair untouched: pins present iff parents exist.
+    from dynamic_ai_products.evaluation.contracts import canonical_contract_bytes
+    dumped = canonical_contract_bytes(b.model_dump(mode="json", exclude_unset=True))
+    assert b'"contract_version":"0.1.0"' in dumped
+    assert BINDING_HASH.encode() in dumped
+
+
+def test_task_builder_requires_the_parent_snapshot():
+    with pytest.raises(ObservationTargetBindingError) as ei:
+        build_task(snapshot=None)
+    assert ei.value.reason_code == "parent_snapshot_required"
+
+
+def test_task_builder_verifies_case_context_against_the_snapshot():
+    bad_model = SNAP.model.model_copy(update={"case_id": "SYNTH-CASE-OTHER"})
+    bad = SNAP.model_copy(update={"model": bad_model})
+    with pytest.raises(ObservationTargetBindingError) as ei:
+        build_task(snapshot=bad)
+    assert ei.value.reason_code == "case_context_mismatch"
+
+
+def test_v2_rejects_capability_stage():
+    payload = build_task().model_dump(mode="json", exclude_unset=True)
+    payload["stage"] = "capability_extraction"
+    with pytest.raises(PydanticValidationError) as ei:
+        otb_mod.ObservationTargetBindingV2.model_validate(payload)
+    assert "binds only the task_extraction stage" in str(ei.value)
+
+
+@pytest.mark.parametrize(
+    "field", ["parent_observation_snapshot_version", "parent_observation_snapshot_sha256"])
+def test_v2_pins_cannot_be_omitted_or_null(field):
+    payload = build_task().model_dump(mode="json", exclude_unset=True)
+    missing = {k: v for k, v in payload.items() if k != field}
+    with pytest.raises(PydanticValidationError) as omitted:
+        otb_mod.ObservationTargetBindingV2.model_validate(missing)
+    assert any(e["type"] == "missing" for e in omitted.value.errors())
+    with pytest.raises(PydanticValidationError):
+        otb_mod.ObservationTargetBindingV2.model_validate({**payload, field: None})
+
+
+def test_v01_task_document_without_pins_stays_valid_v01():
+    # v0.1 semantics are untouched: a pin-less task-stage v0.1 document remains a
+    # valid v0.1 artifact. P2's parent-pin equality rejects it downstream
+    # (covered in test_validation_inputs), so nothing weakens silently.
+    b = build_task()
+    payload = b.model_dump(mode="json", exclude_unset=True)
+    payload.pop("parent_observation_snapshot_version")
+    payload.pop("parent_observation_snapshot_sha256")
+    payload["contract"] = {
+        "contract_id": "observation_target_binding", "contract_version": "0.1.0",
+        "contract_hash": BINDING_HASH}
+    v1 = ObservationTargetBinding.model_validate(payload)
+    assert type(v1) is ObservationTargetBinding
+    assert v1.parent_observation_snapshot_version is None
+    # And a v0.1 stamp carrying pins with no parent entry stays forbidden.
+    with pytest.raises(PydanticValidationError) as ei:
+        ObservationTargetBinding.model_validate({
+            **b.model_dump(mode="json", exclude_unset=True),
+            "contract": payload["contract"]})
+    assert "parent_snapshot_pins_forbidden" in str(ei.value)
+
+
+def test_v2_persist_load_revalidate_roundtrip(tmp_path):
+    # The REAL successor path: task builder -> v0.2 persist -> v0.2 load ->
+    # fail-closed v0.2 revalidation, with no model_construct stand-ins.
+    root = _run(tmp_path)
+    b = build_task()
+    persisted = persist_observation_target_binding(b, eval_root=root, eval_run_id=RUN)
+    assert isinstance(persisted, LoadedObservationTargetBinding)
+    assert persisted.version == "0.2.0"
+    dest = root / RUN / "snapshots" / "observation_target_binding.json"
+    assert persisted.sha256 == sha256_bytes(dest.read_bytes())
+    reloaded = load_observation_target_binding(
+        persisted.artifact_reference, eval_root=root, expected_sha256=persisted.sha256)
+    assert type(reloaded.model) is otb_mod.ObservationTargetBindingV2
+    assert reloaded.version == "0.2.0"
+    assert reloaded.model == b
+    assert reloaded.model.parent_observation_snapshot_sha256 == SNAP.sha256
+    # The reloaded v0.2 model passes fail-closed revalidation in the accessors.
+    mapped = observations_by_canonical_target(reloaded.model)
+    assert mapped == {CANON_TASK: (TASK_OBS,)}
+    assert unresolved_observation_ids(reloaded.model) == ()
+    # Write-once holds for the successor exactly as for v0.1.
+    with pytest.raises(ObservationTargetBindingError) as ei:
+        persist_observation_target_binding(b, eval_root=root, eval_run_id=RUN)
+    assert ei.value.reason_code == "artifact_exists"
+
+
+def test_v2_wrapper_union_accepts_both_versions(tmp_path):
+    root = _run(tmp_path)
+    v2 = persist_observation_target_binding(build_task(), eval_root=root, eval_run_id=RUN)
+    assert isinstance(v2.model, otb_mod.ObservationTargetBindingV2)
+    wrapped = LoadedObservationTargetBinding(
+        model=build(), version="0.1.0", sha256="d" * 64, artifact_reference="x/y.json")
+    assert isinstance(wrapped.model, ObservationTargetBinding)
+
+
+def test_v2_construct_tamper_fails_closed_everywhere(tmp_path):
+    root = _run(tmp_path)
+    b = build_task()
+    tampered = b.model_construct(**{**dict(b), "stage": "capability_extraction"})
+    with pytest.raises(ObservationTargetBindingError) as by_accessor:
+        observations_by_canonical_target(tampered)
+    assert by_accessor.value.reason_code == "model_validation"
+    with pytest.raises(ObservationTargetBindingError) as by_persist:
+        persist_observation_target_binding(tampered, eval_root=root, eval_run_id=RUN)
+    assert by_persist.value.reason_code == "model_validation"
+    blanked = b.model_construct(**{**dict(b), "parent_observation_snapshot_version": " "})
+    with pytest.raises(ObservationTargetBindingError):
+        observations_by_canonical_target(blanked)
+
+
+def test_v2_persisted_byte_tamper_detected(tmp_path):
+    root = _run(tmp_path)
+    persisted = persist_observation_target_binding(
+        build_task(), eval_root=root, eval_run_id=RUN)
+    dest = root / RUN / "snapshots" / "observation_target_binding.json"
+    doc = json.loads(dest.read_text())
+    doc["parent_observation_snapshot_sha256"] = "0" * 64
+    dest.write_bytes((json.dumps(doc) + "\n").encode())
+    with pytest.raises(ObservationTargetBindingError) as ei:
+        load_observation_target_binding(
+            persisted.artifact_reference, eval_root=root,
+            expected_sha256=persisted.sha256)
+    assert ei.value.reason_code == "expected_hash_mismatch"
+
+
+def test_v2_export_and_count():
+    assert "ObservationTargetBindingV2" in evaluation_pkg.__all__
+    assert evaluation_pkg.__all__.count("ObservationTargetBindingV2") == 1
+    assert evaluation_pkg.ObservationTargetBindingV2 is otb_mod.ObservationTargetBindingV2
+    assert len(evaluation_pkg.__all__) == 577
