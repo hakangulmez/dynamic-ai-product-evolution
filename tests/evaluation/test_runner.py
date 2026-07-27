@@ -1153,7 +1153,7 @@ def test_public_surface_exactly_nine_new_names():
         assert evaluation_pkg.__all__.count(name) == 1
     assert "PlannedArtifactRole" not in evaluation_pkg.__all__
     assert "PlannedArtifactRole" not in runner_mod.__all__  # internal alias only
-    assert len(evaluation_pkg.__all__) == 577
+    assert len(evaluation_pkg.__all__) == 579
     assert evaluation_pkg.__all__ == sorted(evaluation_pkg.__all__)
     assert len(set(evaluation_pkg.__all__)) == len(evaluation_pkg.__all__)
     assert isinstance(PlannedArtifactReference.model_fields, dict)
@@ -1164,7 +1164,7 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     text = (ROOT / "REPO_MANIFEST.md").read_text(encoding="utf-8")
     declared = int(re.search(r"listed:\s*\*\*(\d+)\*\*", text).group(1))
     paths = re.findall(r"^- `([^`]+)`$", text, flags=re.MULTILINE)
-    assert declared == len(paths) == 399
+    assert declared == len(paths) == 400
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

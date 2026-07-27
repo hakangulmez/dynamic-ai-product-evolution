@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **399**
+Total tracked/scaffold files listed: **400**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -84,6 +84,7 @@ Total tracked/scaffold files listed: **399**
 - `docs/architecture/SYSTEM_ARCHITECTURE.md`
 - `docs/implementation/COMPANY_UNIVERSE_SENTINEL_V0.md`
 - `docs/implementation/EVAL_HARNESS_BUILD_PLAN.md`
+- `docs/implementation/EVAL_HARNESS_USAGE.md`
 - `docs/implementation/NON_DEVELOPER_LOCAL_WORKFLOW.md`
 - `docs/implementation/OBSIDIAN_AND_STREAMLIT_SETUP.md`
 - `docs/literature/COMPREHENSIVE_LITERATURE_REVIEW.md`

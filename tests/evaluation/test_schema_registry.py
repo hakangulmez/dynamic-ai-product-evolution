@@ -4,17 +4,30 @@ Tamper scenarios copy schemas into ``tmp_path``; repository schema files are
 never modified.
 """
 
+import ast
 import hashlib
+import importlib
+import inspect
 import json
+import pkgutil
 import shutil
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError as PydanticValidationError
 
+import dynamic_ai_products.evaluation as evaluation_pkg
+from dynamic_ai_products.evaluation import compat as compat_mod
+from dynamic_ai_products.evaluation import parent_observation_snapshot as pos_mod
 from dynamic_ai_products.evaluation import schemas as registry
+from dynamic_ai_products.evaluation import validator_parameters as vp_mod
+from dynamic_ai_products.evaluation.contracts import model_contract_hash
+from dynamic_ai_products.evaluation.models import ContractStampedModel
 from dynamic_ai_products.evaluation.schemas import (
     EVALUATION_SCHEMA_CONTRACTS,
+    RELEASED_EVALUATION_CONTRACTS,
     ReadOnlyContractError,
+    ReleasedContractBinding,
     SchemaContract,
     SchemaFileInvalidError,
     SchemaFileMissingError,
@@ -23,6 +36,7 @@ from dynamic_ai_products.evaluation.schemas import (
     UnknownContractError,
     load_schema,
 )
+from dynamic_ai_products.universe.io_utils import sha256_bytes
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -153,3 +167,184 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
     assert contract.expected_sha256 == expected_hash_before
     assert EVALUATION_SCHEMA_CONTRACTS == registry.EVALUATION_SCHEMA_CONTRACTS
+
+
+# --- Slice 14: released-contract binding (RELEASED_EVALUATION_CONTRACTS) ----
+
+
+SCHEMA_VERSION_MANIFEST_SHA256 = (
+    "32e0a18a72f656a8a74c707eb0b15a4e8346dd8711ae7729f7d8888bbf2432a2"
+)
+
+
+def _released(kind):
+    return tuple(e for e in RELEASED_EVALUATION_CONTRACTS if e.kind == kind)
+
+
+def _generated_model_classes():
+    """Every committed contract-stamped identity -> its class, package-wide."""
+    classes = {}
+    for _, module_name, _ in pkgutil.iter_modules(evaluation_pkg.__path__):
+        module = importlib.import_module(
+            f"dynamic_ai_products.evaluation.{module_name}")
+        for obj in vars(module).values():
+            if (inspect.isclass(obj) and hasattr(obj, "_contract_id")
+                    and hasattr(obj, "model_json_schema")):
+                cid = getattr(obj, "_contract_id", None)
+                ver = getattr(obj, "_contract_version", None)
+                if isinstance(cid, str) and isinstance(ver, str):
+                    classes.setdefault((cid, ver), obj)
+    return classes
+
+
+def _entry_payload(**over):
+    payload = {
+        "contract_id": "evaluation_case", "contract_version": "0.1.0",
+        "kind": "static_schema",
+        "relative_path": "schemas/evaluation_case.schema.json",
+        "expected_sha256": "a" * 64,
+    }
+    payload.update(over)
+    return {k: v for k, v in payload.items() if v is not ...}
+
+
+def test_release_registry_sorted_unique_and_counts():
+    keys = [(e.contract_id, e.contract_version) for e in RELEASED_EVALUATION_CONTRACTS]
+    assert keys == sorted(keys)
+    assert len(set(keys)) == len(keys)
+    assert len(_released("static_schema")) == 9
+    assert len(_released("generated_model")) == 34
+    assert len(RELEASED_EVALUATION_CONTRACTS) == 43
+
+
+def test_release_static_entries_hash_to_the_committed_files():
+    for entry in _released("static_schema"):
+        assert entry.relative_path is not None
+        assert entry.relative_path.startswith("schemas/")
+        path = ROOT / entry.relative_path
+        assert path.is_file(), entry.relative_path
+        assert sha256_bytes(path.read_bytes()) == entry.expected_sha256, (
+            entry.contract_id, entry.contract_version)
+
+
+def test_release_generated_entries_match_the_committed_models_exactly():
+    classes = _generated_model_classes()
+    released = {(e.contract_id, e.contract_version): e.expected_sha256
+                for e in _released("generated_model")}
+    # Set equality in BOTH directions: no new contract identity, no omission.
+    assert set(released) == set(classes)
+    for (cid, ver), expected in released.items():
+        assert model_contract_hash(classes[(cid, ver)], cid, ver) == expected, (cid, ver)
+
+
+def test_release_registry_agrees_with_every_runtime_anchor_table():
+    static = {(e.contract_id, e.contract_version): (e.relative_path, e.expected_sha256)
+              for e in _released("static_schema")}
+    anchored = set()
+    for contract in EVALUATION_SCHEMA_CONTRACTS:
+        key = (contract.contract_id, contract.contract_version)
+        assert static[key] == (contract.relative_path, contract.expected_sha256), key
+        anchored.add(key)
+    for key, (path, sha) in compat_mod._HISTORICAL_ROUTES.items():
+        assert static[key] == (path, sha), key
+        anchored.add(key)
+    for schema_id, path, sha in vp_mod._STAGE_STATIC_ANCHORS.values():
+        key = (schema_id, "0.1.0")
+        assert static[key] == (path, sha), key
+        anchored.add(key)
+    for path, sha, _owner in pos_mod._ROLE_SCHEMA.values():
+        schema_id = path.rsplit("/", 1)[1].removesuffix(".schema.json")
+        key = (schema_id, "0.1.0")
+        assert static[key] == (path, sha), key
+        anchored.add(key)
+    # Reverse direction: every released static entry is anchored by at least
+    # one runtime authority table — the registry never invents a binding.
+    assert anchored == set(static)
+
+
+def test_release_entry_static_discriminant_rules():
+    ReleasedContractBinding.model_validate(_entry_payload())
+    with pytest.raises(PydanticValidationError, match="requires relative_path"):
+        ReleasedContractBinding.model_validate(_entry_payload(relative_path=...))
+    for bad_path in ("", "  ", "docs/x.schema.json", "/schemas/x.schema.json",
+                     "schemas/../x.schema.json", "schemas\\x.schema.json",
+                     "schemas/"):
+        with pytest.raises(PydanticValidationError):
+            ReleasedContractBinding.model_validate(
+                _entry_payload(relative_path=bad_path))
+
+
+def test_release_entry_generated_discriminant_rules():
+    ReleasedContractBinding.model_validate(
+        _entry_payload(kind="generated_model", relative_path=...))
+    with pytest.raises(PydanticValidationError, match="must omit relative_path"):
+        ReleasedContractBinding.model_validate(
+            _entry_payload(kind="generated_model"))
+    with pytest.raises(PydanticValidationError, match="must not be explicit JSON null"):
+        ReleasedContractBinding.model_validate(
+            _entry_payload(kind="generated_model", relative_path=None))
+    dumped = ReleasedContractBinding.model_validate(
+        _entry_payload(kind="generated_model", relative_path=...)
+    ).model_dump(mode="json", exclude_unset=True)
+    assert "relative_path" not in dumped
+
+
+@pytest.mark.parametrize("bad_sha", ["A" * 64, "a" * 63, "a" * 65, "g" * 64, ""])
+def test_release_entry_sha_must_be_64_lower_hex(bad_sha):
+    with pytest.raises(PydanticValidationError):
+        ReleasedContractBinding.model_validate(_entry_payload(expected_sha256=bad_sha))
+
+
+def test_release_entry_model_is_never_contract_stamped():
+    assert not issubclass(ReleasedContractBinding, ContractStampedModel)
+    assert not hasattr(ReleasedContractBinding, "_contract_id")
+    # No 35th generated identity: the binding model itself is absent from the
+    # committed contract-stamped inventory and from the release tuple.
+    assert ("released_contract_binding", "0.1.0") not in _generated_model_classes()
+    assert all(e.contract_id != "released_contract_binding"
+               for e in RELEASED_EVALUATION_CONTRACTS)
+
+
+def test_release_hashes_are_reviewed_source_literals():
+    source = Path(registry.__file__).read_text()
+    tree = ast.parse(source)
+    assignment = next(
+        node for node in tree.body
+        if isinstance(node, ast.AnnAssign)
+        and getattr(node.target, "id", None) == "RELEASED_EVALUATION_CONTRACTS")
+    calls = [n for n in ast.walk(assignment.value) if isinstance(n, ast.Call)]
+    sha_keywords = [kw for call in calls for kw in call.keywords
+                    if kw.arg == "expected_sha256"]
+    assert len(sha_keywords) == 43
+    for keyword in sha_keywords:
+        assert isinstance(keyword.value, ast.Constant), ast.dump(keyword.value)
+        assert isinstance(keyword.value.value, str)
+        assert len(keyword.value.value) == 64
+
+
+def test_schema_version_manifest_untouched_by_release_binding():
+    manifest_path = ROOT / "schemas" / "schema_version_manifest.json"
+    assert sha256_bytes(manifest_path.read_bytes()) == SCHEMA_VERSION_MANIFEST_SHA256
+
+
+def test_universe_manifest_v2_stays_compat_read_only():
+    contract = next(
+        c for c in EVALUATION_SCHEMA_CONTRACTS
+        if (c.contract_id, c.contract_version) == ("universe_run_manifest", "0.2.0"))
+    assert contract.mode == "compat_read"
+    released = next(
+        e for e in _released("static_schema")
+        if (e.contract_id, e.contract_version) == ("universe_run_manifest", "0.2.0"))
+    assert released.expected_sha256 == contract.expected_sha256
+    with pytest.raises(ReadOnlyContractError):
+        load_schema("universe_run_manifest", "0.2.0", purpose="write")
+
+
+def test_release_binding_public_surface():
+    for name in ("RELEASED_EVALUATION_CONTRACTS", "ReleasedContractBinding"):
+        assert name in evaluation_pkg.__all__
+        assert evaluation_pkg.__all__.count(name) == 1
+        assert getattr(evaluation_pkg, name) is getattr(registry, name)
+    assert len(evaluation_pkg.__all__) == 579
+    assert evaluation_pkg.__all__ == sorted(evaluation_pkg.__all__)
+    assert len(set(evaluation_pkg.__all__)) == len(evaluation_pkg.__all__)

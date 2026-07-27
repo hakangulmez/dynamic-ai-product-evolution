@@ -1349,4 +1349,4 @@ def test_v2_export_and_count():
     assert "ObservationTargetBindingV2" in evaluation_pkg.__all__
     assert evaluation_pkg.__all__.count("ObservationTargetBindingV2") == 1
     assert evaluation_pkg.ObservationTargetBindingV2 is otb_mod.ObservationTargetBindingV2
-    assert len(evaluation_pkg.__all__) == 577
+    assert len(evaluation_pkg.__all__) == 579
