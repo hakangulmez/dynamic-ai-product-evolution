@@ -691,7 +691,7 @@ def test_public_surface():
                  "build_extraction_validation_inputs"):
         assert name in evaluation_pkg.__all__
         assert evaluation_pkg.__all__.count(name) == 1
-    assert len(evaluation_pkg.__all__) == 565
+    assert len(evaluation_pkg.__all__) == 567
     assert evaluation_pkg.__all__ == sorted(evaluation_pkg.__all__)
     assert len(set(evaluation_pkg.__all__)) == len(evaluation_pkg.__all__)
 

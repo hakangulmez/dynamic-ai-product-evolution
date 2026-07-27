@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **394**
+Total tracked/scaffold files listed: **396**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -295,6 +295,7 @@ Total tracked/scaffold files listed: **394**
 - `src/dynamic_ai_products/config.py`
 - `src/dynamic_ai_products/evaluation/__init__.py`
 - `src/dynamic_ai_products/evaluation/assertions.py`
+- `src/dynamic_ai_products/evaluation/axis_inputs.py`
 - `src/dynamic_ai_products/evaluation/case_sets.py`
 - `src/dynamic_ai_products/evaluation/cases.py`
 - `src/dynamic_ai_products/evaluation/comparator.py`
@@ -347,6 +348,7 @@ Total tracked/scaffold files listed: **394**
 - `tests/README.md`
 - `tests/contamination/test_no_legacy_contamination.py`
 - `tests/evaluation/test_assertions.py`
+- `tests/evaluation/test_axis_inputs.py`
 - `tests/evaluation/test_case_sets.py`
 - `tests/evaluation/test_cases.py`
 - `tests/evaluation/test_comparator.py`

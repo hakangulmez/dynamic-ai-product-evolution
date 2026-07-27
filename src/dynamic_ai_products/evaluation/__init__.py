@@ -145,6 +145,10 @@ from .validator_parameters import (
     persist_validator_rule_parameters,
     validator_rule_parameters_aggregate_hash,
 )
+from .axis_inputs import (
+    ExtractionAxisEvaluationInputs,
+    build_extraction_axis_evaluation_records,
+)
 from .validation_inputs import (
     ExtractionEvaluationStage,
     ExtractionValidationInputs,
@@ -843,6 +847,7 @@ __all__ = [
     "EvidenceClassification",
     "EvidenceQuoteContainmentObservation",
     "EvidenceResolvability",
+    "ExtractionAxisEvaluationInputs",
     "ExtractionEvaluationStage",
     "ExtractionValidationInputs",
     "FindingDisposition",
@@ -1115,6 +1120,7 @@ __all__ = [
     "build_errored_evaluation",
     "build_evaluation_output_manifest",
     "build_evaluation_output_manifest_v2",
+    "build_extraction_axis_evaluation_records",
     "build_extraction_resolved_assertion_evaluations",
     "build_extraction_validation_inputs",
     "build_invalid_comparison",
