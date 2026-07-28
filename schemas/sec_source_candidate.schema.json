@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sec_source_candidate.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "candidate_id",
+    "company_id",
+    "source_family",
+    "source_type",
+    "accession",
+    "document_filename",
+    "publication_date",
+    "observation_cutoff_date",
+    "content_sha256",
+    "temporal_validity",
+    "official_status",
+    "coverage_state"
+  ],
+  "properties": {
+    "candidate_id": { "type": "string" },
+    "company_id": { "type": "string" },
+    "source_family": { "type": "string" },
+    "source_type": { "type": "string" },
+    "form": { "type": ["string", "null"] },
+    "accession": { "type": "string" },
+    "document_filename": { "type": "string" },
+    "publication_date": { "type": "string", "format": "date" },
+    "period_of_report": { "type": ["string", "null"], "format": "date" },
+    "observation_cutoff_date": { "type": "string", "format": "date" },
+    "requested_url": { "type": ["string", "null"] },
+    "final_url": { "type": ["string", "null"] },
+    "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "byte_count": { "type": ["integer", "null"], "minimum": 0 },
+    "retrieval_timestamp": { "type": ["string", "null"] },
+    "temporal_validity": { "enum": ["valid", "invalid", "uncertain"] },
+    "official_status": {
+      "enum": ["official", "official_archive", "rejected", "uncertain"]
+    },
+    "coverage_state": {
+      "enum": [
+        "available_and_retrieved",
+        "available_but_failed",
+        "not_found",
+        "not_applicable",
+        "temporally_invalid",
+        "duplicate",
+        "robots_or_access_blocked",
+        "not_attempted"
+      ]
+    },
+    "schema_version": { "type": "string" }
+  }
+}

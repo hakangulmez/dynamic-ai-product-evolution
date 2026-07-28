@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **403**
+Total tracked/scaffold files listed: **426**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -238,9 +238,13 @@ Total tracked/scaffold files listed: **403**
 - `schemas/firm_lineage.schema.json`
 - `schemas/firm_year_eligibility.schema.json`
 - `schemas/frontier_baseline.schema.json`
+- `schemas/ingestion_preflight_manifest.schema.json`
 - `schemas/product_observation.schema.json`
 - `schemas/schema_version_manifest.json`
+- `schemas/sec_source_candidate.schema.json`
+- `schemas/snapshot_manifest.schema.json`
 - `schemas/source_document.schema.json`
+- `schemas/source_family_coverage.schema.json`
 - `schemas/source_passage.schema.json`
 - `schemas/task_measurement.schema.json`
 - `schemas/task_observation.schema.json`
@@ -332,6 +336,15 @@ Total tracked/scaffold files listed: **403**
 - `src/dynamic_ai_products/evaluation/validator_bundle_artifact.py`
 - `src/dynamic_ai_products/evaluation/validator_parameters.py`
 - `src/dynamic_ai_products/evaluation/validators.py`
+- `src/dynamic_ai_products/ingestion/__init__.py`
+- `src/dynamic_ai_products/ingestion/adoption.py`
+- `src/dynamic_ai_products/ingestion/errors.py`
+- `src/dynamic_ai_products/ingestion/family_coverage.py`
+- `src/dynamic_ai_products/ingestion/manifests.py`
+- `src/dynamic_ai_products/ingestion/normalize.py`
+- `src/dynamic_ai_products/ingestion/parquet_io.py`
+- `src/dynamic_ai_products/ingestion/preflight.py`
+- `src/dynamic_ai_products/ingestion/publication.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/universe/__init__.py`
 - `src/dynamic_ai_products/universe/audit.py`
@@ -391,7 +404,16 @@ Total tracked/scaffold files listed: **403**
 - `tests/evaluation/test_validator_bundle_artifact.py`
 - `tests/evaluation/test_validator_parameters.py`
 - `tests/evaluation/test_validators.py`
+- `tests/ingestion/ingestion_test_helpers.py`
+- `tests/ingestion/test_adoption.py`
+- `tests/ingestion/test_family_coverage.py`
+- `tests/ingestion/test_ingestion_boundaries.py`
+- `tests/ingestion/test_normalize.py`
+- `tests/ingestion/test_parquet_determinism.py`
+- `tests/ingestion/test_preflight.py`
+- `tests/ingestion/test_publication_atomicity.py`
 - `tests/notebook/test_master_notebook.py`
+- `tests/provenance/test_write_bytes_once.py`
 - `tests/schema/test_schemas_are_valid.py`
 - `tests/temporal/test_temporal_rule.py`
 - `tests/ui/test_local_ui_scaffold.py`
@@ -407,3 +429,4 @@ Total tracked/scaffold files listed: **403**
 - `tests/universe/test_universe_design.py`
 - `tests/universe/universe_test_helpers.py`
 - `tests/workflow/test_pipeline_registry.py`
+- `tests/workflow/test_stage_registry_templates.py`

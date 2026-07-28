@@ -60,6 +60,8 @@ stages:
   phase: A — Universe and corpus
   script: pipelines/03_snapshot_sources.py
   spec: specs/SPEC-005-web-snapshotting.md
+  co_specs:
+  - specs/SPEC-003-sec-ingestion.md
   description: Store immutable raw copies, retrieval metadata, content hashes, and
     archive provenance.
   inputs:

@@ -96,6 +96,9 @@ def validate_stage_registry(repo_root: str | Path, registry: dict[str, Any] | No
         for key in ("script", "spec"):
             if not (root / stage[key]).exists():
                 findings.append({"severity": "error", "code": f"missing_{key}", "message": f"Stage {stage_id}: missing {stage[key]}"})
+        for co_spec in stage.get("co_specs", []) or []:
+            if not (root / str(co_spec)).exists():
+                findings.append({"severity": "error", "code": "missing_co_spec", "message": f"Stage {stage_id}: missing {co_spec}"})
     return findings
 
 

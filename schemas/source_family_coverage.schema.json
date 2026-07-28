@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "source_family_coverage.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "company_id",
+    "observation_cutoff_date",
+    "required_families",
+    "optional_families"
+  ],
+  "$defs": {
+    "coverage_state": {
+      "enum": [
+        "available_and_retrieved",
+        "available_but_failed",
+        "not_found",
+        "not_applicable",
+        "temporally_invalid",
+        "duplicate",
+        "robots_or_access_blocked",
+        "not_attempted"
+      ]
+    },
+    "family_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_family", "membership", "coverage_state"],
+      "properties": {
+        "source_family": { "type": "string" },
+        "membership": { "enum": ["required", "out_of_required_set"] },
+        "coverage_state": { "$ref": "#/$defs/coverage_state" }
+      }
+    }
+  },
+  "properties": {
+    "contract": { "const": "source_family_coverage@0.1.0" },
+    "schema_version": { "type": "string" },
+    "company_id": { "type": "string" },
+    "observation_cutoff_date": { "type": "string", "format": "date" },
+    "required_families": {
+      "type": "array",
+      "minItems": 5,
+      "items": { "$ref": "#/$defs/family_entry" }
+    },
+    "optional_families": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/family_entry" }
+    },
+    "errors": {
+      "type": "array",
+      "items": { "type": "object" }
+    }
+  }
+}

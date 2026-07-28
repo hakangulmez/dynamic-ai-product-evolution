@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from dynamic_ai_products.provenance import WriteOnceError
 from dynamic_ai_products.universe import pilot_packet as pp
 from dynamic_ai_products.universe.pilot_packet import (
     AnchorSelection,
@@ -715,3 +716,59 @@ def test_module_carries_no_network_client_and_requires_injected_transport(tmp_pa
     assert excinfo.value.reason_code == "transport_required"
     raw = tmp_path / "sec" / "CIK0001404655" / "0000950170-25-018873"
     assert not any(raw.glob("*"))  # nothing written before the refusal
+
+
+# --- Write-once translation boundary (ADR-031) --------------------------------
+
+# The shared primitive owns persistence and raises the neutral WriteOnceError.
+# That type must never escape this module's public API, and the committed
+# reason codes and message text must stay exactly as they were.
+
+
+def test_write_once_translates_destination_exists_to_pilot_packet_error(tmp_path):
+    target = tmp_path / "already-there.json"
+    target.write_bytes(b"pre-existing")
+    with pytest.raises(PilotPacketError) as excinfo:
+        pp._write_once(target, b"new bytes", what="pilot universe packet")
+    assert excinfo.value.reason_code == "destination_exists"
+    assert str(excinfo.value) == "pilot universe packet already exists; files are write-once"
+    assert isinstance(excinfo.value.__cause__, WriteOnceError)
+    assert excinfo.value.__cause__.category == "destination_exists"
+    # Non-ownership: the pre-existing file survives untouched.
+    assert target.read_bytes() == b"pre-existing"
+
+
+def test_write_once_translates_write_failure_to_write_error(tmp_path, monkeypatch):
+    target = tmp_path / "artifact.json"
+
+    def boom(self):
+        raise OSError("injected re-read failure")
+
+    monkeypatch.setattr(Path, "read_bytes", boom, raising=True)
+    with pytest.raises(PilotPacketError) as excinfo:
+        pp._write_once(target, b"payload", what="collection receipt")
+    monkeypatch.undo()
+    assert excinfo.value.reason_code == "write_error"
+    assert str(excinfo.value) == "failed to re-read collection receipt for verification"
+    assert isinstance(excinfo.value.__cause__, WriteOnceError)
+    assert excinfo.value.__cause__.category == "write_verification_failed"
+    # Strengthened error path: no partial file is left to block a retry.
+    assert not target.exists()
+
+
+def test_write_once_success_path_is_unchanged(tmp_path):
+    target = tmp_path / "artifact.json"
+    payload = b'{"pilot":0}\n'
+    digest = pp._write_once(target, payload, what="pilot universe packet")
+    assert digest == hashlib.sha256(payload).hexdigest()
+    assert target.read_bytes() == payload
+
+
+def test_neutral_write_once_error_never_escapes_pilot_packet(tmp_path, monkeypatch):
+    """Every public failure surface raises PilotPacketError, never WriteOnceError."""
+    target = tmp_path / "artifact.json"
+    target.write_bytes(b"x")
+    with pytest.raises(PilotPacketError):
+        pp._write_once(target, b"y", what="thing")
+    with pytest.raises(PilotPacketError):
+        pp._write_once(tmp_path / "missing-dir" / "a.json", b"y", what="thing")

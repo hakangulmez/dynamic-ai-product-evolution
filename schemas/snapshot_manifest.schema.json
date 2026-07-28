@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "snapshot_manifest.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "company_id",
+    "accession",
+    "document_filename",
+    "content_sha256",
+    "collection_receipt_sha256",
+    "adoption_mode",
+    "recollected"
+  ],
+  "properties": {
+    "contract": { "const": "snapshot_manifest@0.1.0" },
+    "schema_version": { "type": "string" },
+    "company_id": { "type": "string" },
+    "accession": { "type": "string" },
+    "retrieval_key": { "type": "string" },
+    "document_filename": { "type": "string" },
+    "requested_url": { "type": ["string", "null"] },
+    "final_url": { "type": ["string", "null"] },
+    "http_status": { "type": ["integer", "null"] },
+    "retry_count": { "type": ["integer", "null"], "minimum": 0 },
+    "byte_count": { "type": ["integer", "null"], "minimum": 0 },
+    "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "retrieval_timestamp": { "type": ["string", "null"] },
+    "raw_directory": { "type": "string" },
+    "collection_receipt_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "adoption_mode": { "const": "existing_raw_bytes_reverified" },
+    "recollected": { "const": false }
+  }
+}

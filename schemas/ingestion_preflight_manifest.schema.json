@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ingestion_preflight_manifest.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "run_id",
+    "code_commit",
+    "run_created_at",
+    "company_id",
+    "observation_cutoff_date",
+    "publication_model",
+    "artifact_bindings",
+    "transform_ledger",
+    "collection_receipt_sha256",
+    "packet_sha256",
+    "prompt_hash",
+    "model_route",
+    "verdict"
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "properties": {
+    "contract": { "const": "ingestion_preflight_manifest@0.1.0" },
+    "schema_version": { "type": "string" },
+    "spec_versions": { "type": "object" },
+    "run_id": { "type": "string", "pattern": "^ing-[0-9a-f]{32}$" },
+    "code_commit": { "type": "string", "minLength": 1 },
+    "run_created_at": { "type": "string", "minLength": 1 },
+    "company_id": { "type": "string" },
+    "observation_cutoff_date": { "type": "string", "format": "date" },
+    "publication_model": { "const": "staging_root_atomic_rename" },
+    "artifact_bindings": {
+      "type": "object",
+      "comment": "Six bindings: the manifest is written last and cannot bind itself.",
+      "minProperties": 6,
+      "additionalProperties": { "$ref": "#/$defs/sha256" }
+    },
+    "parquet_writer_metadata": { "type": "object" },
+    "transform_ledger": {
+      "type": "object",
+      "required": ["normalizer_version", "transform_chain", "input_span"],
+      "properties": {
+        "normalizer_version": { "const": "sec_html_item_span_v1" },
+        "transform_chain": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "input_span": { "type": "object" }
+      }
+    },
+    "collection_receipt_sha256": { "$ref": "#/$defs/sha256" },
+    "packet_sha256": { "$ref": "#/$defs/sha256" },
+    "retry_count": { "type": "integer", "minimum": 0 },
+    "prompt_hash": { "type": "null" },
+    "model_route": { "type": "null" },
+    "verdict": { "enum": ["ready_for_extraction", "stopped"] }
+  }
+}

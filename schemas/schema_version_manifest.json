@@ -1,9 +1,13 @@
 {
-  "manifest_version": "0.2.0",
+  "manifest_version": "0.3.0",
   "schemas": {
     "company": "0.1.0",
     "source_document": "0.1.0",
     "source_passage": "0.1.0",
+    "sec_source_candidate": "0.1.0",
+    "source_family_coverage": "0.1.0",
+    "snapshot_manifest": "0.1.0",
+    "ingestion_preflight_manifest": "0.1.0",
     "product_observation": "0.1.0",
     "capability_observation": "0.1.0",
     "task_observation": "0.1.0",

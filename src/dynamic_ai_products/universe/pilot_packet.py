@@ -40,13 +40,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from ..provenance import WriteOnceError, write_bytes_once
 from .identifiers import IdentifierError, company_id_for_cik, normalize_cik
 
 __all__ = [
@@ -181,43 +181,24 @@ def _canonical_json_bytes(payload: Any) -> bytes:
 
 
 def _write_once(path: Path, data: bytes, *, what: str) -> str:
-    if path.is_symlink() or path.exists():
-        raise PilotPacketError(
-            f"{what} already exists; files are write-once",
-            reason_code="destination_exists",
-        )
+    """Translate the neutral write-once primitive into this module's boundary.
+
+    The shared primitive (ADR-031) owns the persistence semantics and raises
+    ``WriteOnceError``; that neutral type never escapes this module. Success
+    and pre-existing-path refusal stay compatible with the committed Pilot 0
+    API: same returned hash, same bytes, same ``reason_code`` values, and the
+    same message text. The one intended difference is the strengthened error
+    path — a failed write now removes the destination this call created
+    instead of leaving a partial file that would block every retry.
+    """
     try:
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-    except FileExistsError as exc:
-        raise PilotPacketError(
-            f"{what} already exists; files are write-once",
-            reason_code="destination_exists",
-        ) from exc
-    except OSError as exc:
-        raise PilotPacketError(
-            f"failed to create {what}", reason_code="write_error"
-        ) from exc
-    try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except OSError as exc:
-        raise PilotPacketError(
-            f"failed to write {what}", reason_code="write_error"
-        ) from exc
-    try:
-        observed = _sha256(path.read_bytes())
-    except OSError as exc:
-        raise PilotPacketError(
-            f"failed to re-read {what} for verification", reason_code="write_error"
-        ) from exc
-    if observed != _sha256(data):
-        raise PilotPacketError(
-            f"persisted {what} re-read to a different hash",
-            reason_code="write_error",
-        )
-    return observed
+        return write_bytes_once(path, data, what=what)
+    except WriteOnceError as exc:
+        if exc.category == "destination_exists":
+            raise PilotPacketError(
+                str(exc), reason_code="destination_exists"
+            ) from exc
+        raise PilotPacketError(str(exc), reason_code="write_error") from exc
 
 
 def _default_clock() -> str:
