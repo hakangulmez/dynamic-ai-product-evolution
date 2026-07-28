@@ -1,7 +1,14 @@
 {
-  "manifest_version": "0.3.0",
+  "manifest_version": "0.4.0",
   "schemas": {
     "company": "0.1.0",
+    "web_collection_request_plan": "0.1.0",
+    "official_web_candidate": "0.1.0",
+    "web_discovery_manifest": "0.1.0",
+    "web_snapshot_manifest": "0.1.0",
+    "web_collection_receipt": "0.1.0",
+    "source_family_coverage_v2": "0.2.0",
+    "official_web_collection_manifest": "0.1.0",
     "source_document": "0.1.0",
     "source_passage": "0.1.0",
     "sec_source_candidate": "0.1.0",

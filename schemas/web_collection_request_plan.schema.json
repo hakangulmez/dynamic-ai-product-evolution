@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "web_collection_request_plan.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "company_id", "observation_cutoff_date", "entries"],
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "content_family",
+        "access_channel",
+        "source_url",
+        "purpose",
+        "expected_temporal_route",
+        "evidence_target"
+      ],
+      "properties": {
+        "content_family": {
+          "enum": ["official_ir", "product_pages", "developer_docs", "newsroom"]
+        },
+        "access_channel": { "enum": ["live", "archive"] },
+        "source_url": { "type": "string", "pattern": "^https?://" },
+        "archive_url": {
+          "type": ["string", "null"],
+          "comment": "Closed Pilot 0 archive grammar: a web.archive.org Wayback capture whose embedded original must canonicalize to source_url (checked in code).",
+          "pattern": "^https://web\\.archive\\.org/web/[0-9]{4,14}([a-z]{2}_)?/https?://.+$"
+        },
+        "purpose": { "type": "string", "minLength": 1 },
+        "expected_temporal_route": { "enum": ["dated_document", "archive"] },
+        "evidence_target": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "properties": {
+    "contract": { "const": "web_collection_request_plan@0.1.0" },
+    "company_id": { "type": "string", "pattern": "^CIK[0-9]{10}$" },
+    "observation_cutoff_date": { "type": "string", "format": "date" },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  }
+}

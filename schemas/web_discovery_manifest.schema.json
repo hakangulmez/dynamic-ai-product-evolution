@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "web_discovery_manifest.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "spec_version",
+    "code_commit",
+    "run_created_at",
+    "company_id",
+    "observation_cutoff_date",
+    "official_domain_apex",
+    "request_plan_sha256",
+    "candidate_count",
+    "discovery_mode",
+    "prompt_hash",
+    "model_route"
+  ],
+  "properties": {
+    "contract": { "const": "web_discovery_manifest@0.1.0" },
+    "schema_version": { "type": "string" },
+    "spec_version": { "const": "SPEC-004" },
+    "code_commit": { "type": "string", "minLength": 1 },
+    "run_created_at": { "type": "string", "minLength": 1 },
+    "company_id": { "type": "string", "pattern": "^CIK[0-9]{10}$" },
+    "observation_cutoff_date": { "type": "string", "format": "date" },
+    "official_domain_apex": { "const": "hubspot.com" },
+    "apex_derivation_pins": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+    },
+    "canonicalization_version": { "const": "canonical_url_v1" },
+    "request_plan_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "candidate_count": { "type": "integer", "minimum": 0 },
+    "discovery_mode": { "const": "request_plan_only" },
+    "retry_count": { "type": "integer", "minimum": 0 },
+    "prompt_hash": { "type": "null" },
+    "model_route": { "type": "null" },
+    "exclusions": { "type": "array", "items": { "type": "object" } }
+  }
+}

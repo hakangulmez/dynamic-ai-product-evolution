@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "official_web_candidate.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "candidate_id",
+    "company_id",
+    "content_family",
+    "access_channel",
+    "source_url",
+    "source_host",
+    "official_apex",
+    "expected_temporal_route",
+    "observation_cutoff_date",
+    "canonicalization_version",
+    "discovery_source"
+  ],
+  "properties": {
+    "contract": { "const": "official_web_candidate@0.1.0" },
+    "schema_version": { "type": "string" },
+    "candidate_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "company_id": { "type": "string", "pattern": "^CIK[0-9]{10}$" },
+    "content_family": {
+      "enum": ["official_ir", "product_pages", "developer_docs", "newsroom"]
+    },
+    "access_channel": { "enum": ["live", "archive"] },
+    "source_url": { "type": "string", "pattern": "^https?://" },
+    "source_host": { "type": "string" },
+    "archive_url": { "type": ["string", "null"] },
+    "archive_host": { "type": ["string", "null"] },
+    "official_apex": { "const": "hubspot.com" },
+    "expected_temporal_route": { "enum": ["dated_document", "archive"] },
+    "purpose": { "type": "string" },
+    "evidence_target": { "type": "string" },
+    "observation_cutoff_date": { "type": "string", "format": "date" },
+    "canonicalization_version": { "const": "canonical_url_v1" },
+    "discovery_source": { "const": "request_plan" }
+  }
+}

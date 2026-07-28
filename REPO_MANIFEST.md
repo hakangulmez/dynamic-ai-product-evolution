@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **426**
+Total tracked/scaffold files listed: **457**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -239,18 +239,25 @@ Total tracked/scaffold files listed: **426**
 - `schemas/firm_year_eligibility.schema.json`
 - `schemas/frontier_baseline.schema.json`
 - `schemas/ingestion_preflight_manifest.schema.json`
+- `schemas/official_web_candidate.schema.json`
+- `schemas/official_web_collection_manifest.schema.json`
 - `schemas/product_observation.schema.json`
 - `schemas/schema_version_manifest.json`
 - `schemas/sec_source_candidate.schema.json`
 - `schemas/snapshot_manifest.schema.json`
 - `schemas/source_document.schema.json`
 - `schemas/source_family_coverage.schema.json`
+- `schemas/source_family_coverage.v2.schema.json`
 - `schemas/source_passage.schema.json`
 - `schemas/task_measurement.schema.json`
 - `schemas/task_observation.schema.json`
 - `schemas/task_transition.schema.json`
 - `schemas/universe_run_manifest.schema.json`
 - `schemas/universe_run_manifest.v2.schema.json`
+- `schemas/web_collection_receipt.schema.json`
+- `schemas/web_collection_request_plan.schema.json`
+- `schemas/web_discovery_manifest.schema.json`
+- `schemas/web_snapshot_manifest.schema.json`
 - `scripts/run_research_console.sh`
 - `scripts/setup_local.sh`
 - `skills-lock.json`
@@ -298,6 +305,17 @@ Total tracked/scaffold files listed: **426**
 - `src/README.md`
 - `src/dynamic_ai_products/__init__.py`
 - `src/dynamic_ai_products/cli.py`
+- `src/dynamic_ai_products/collection/__init__.py`
+- `src/dynamic_ai_products/collection/canonical_url.py`
+- `src/dynamic_ai_products/collection/coverage_v2.py`
+- `src/dynamic_ai_products/collection/discovery.py`
+- `src/dynamic_ai_products/collection/domains.py`
+- `src/dynamic_ai_products/collection/errors.py`
+- `src/dynamic_ai_products/collection/manifests.py`
+- `src/dynamic_ai_products/collection/publication.py`
+- `src/dynamic_ai_products/collection/request_plan.py`
+- `src/dynamic_ai_products/collection/transport.py`
+- `src/dynamic_ai_products/collection/web_snapshot.py`
 - `src/dynamic_ai_products/config.py`
 - `src/dynamic_ai_products/evaluation/__init__.py`
 - `src/dynamic_ai_products/evaluation/assertions.py`
@@ -364,6 +382,19 @@ Total tracked/scaffold files listed: **426**
 - `src/dynamic_ai_products/validation.py`
 - `src/dynamic_ai_products/workflow.py`
 - `tests/README.md`
+- `tests/collection/collection_test_helpers.py`
+- `tests/collection/test_canonical_url.py`
+- `tests/collection/test_collection_boundaries.py`
+- `tests/collection/test_collection_publication_atomicity.py`
+- `tests/collection/test_coverage_v2.py`
+- `tests/collection/test_discovery.py`
+- `tests/collection/test_domains.py`
+- `tests/collection/test_manifests.py`
+- `tests/collection/test_no_supported_case.py`
+- `tests/collection/test_request_plan.py`
+- `tests/collection/test_temporal_admission.py`
+- `tests/collection/test_transport_contract.py`
+- `tests/collection/test_web_snapshot.py`
 - `tests/contamination/test_no_legacy_contamination.py`
 - `tests/evaluation/test_assertions.py`
 - `tests/evaluation/test_axis_inputs.py`

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "official_web_collection_manifest.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "collection_run_id",
+    "code_commit",
+    "run_created_at",
+    "company_id",
+    "observation_cutoff_date",
+    "publication_model",
+    "parent_ingestion_manifest_sha256",
+    "pilot_input_pins",
+    "request_plan_sha256",
+    "collection_client_contract_hash",
+    "artifact_bindings",
+    "prompt_hash",
+    "model_route",
+    "verdict"
+  ],
+  "$defs": { "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } },
+  "properties": {
+    "contract": { "const": "official_web_collection_manifest@0.1.0" },
+    "schema_version": { "type": "string" },
+    "spec_versions": { "type": "object" },
+    "collection_run_id": { "type": "string", "pattern": "^owc-[0-9a-f]{32}$" },
+    "code_commit": { "type": "string", "minLength": 1 },
+    "run_created_at": { "type": "string", "minLength": 1 },
+    "company_id": { "type": "string", "pattern": "^CIK[0-9]{10}$" },
+    "observation_cutoff_date": { "type": "string", "format": "date" },
+    "publication_model": { "const": "staging_root_atomic_rename" },
+    "parent_ingestion_manifest_sha256": { "$ref": "#/$defs/sha256" },
+    "pilot_input_pins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packet_sha256",
+        "collection_receipt_sha256",
+        "submissions_sha256",
+        "filing_index_sha256",
+        "primary_document_sha256"
+      ],
+      "properties": {
+        "packet_sha256": { "$ref": "#/$defs/sha256" },
+        "collection_receipt_sha256": { "$ref": "#/$defs/sha256" },
+        "submissions_sha256": { "$ref": "#/$defs/sha256" },
+        "filing_index_sha256": { "$ref": "#/$defs/sha256" },
+        "primary_document_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "request_plan_sha256": { "$ref": "#/$defs/sha256" },
+    "collection_client_contract_hash": { "$ref": "#/$defs/sha256" },
+    "canonicalization_version": { "const": "canonical_url_v1" },
+    "robots_policy_version": { "type": "string" },
+    "rate_limit_policy_version": { "type": "string" },
+    "official_domain_apex": { "const": "hubspot.com" },
+    "artifact_bindings": {
+      "type": "object",
+      "comment": "Six bindings: the manifest is written last and cannot bind itself.",
+      "minProperties": 6,
+      "additionalProperties": { "$ref": "#/$defs/sha256" }
+    },
+    "retry_count": { "type": "integer", "minimum": 0 },
+    "prompt_hash": { "type": "null" },
+    "model_route": { "type": "null" },
+    "verdict": { "enum": ["official_packet_ready", "no_supported_case"] }
+  }
+}

@@ -752,7 +752,7 @@ def test_no_static_schema_added_and_schema_manifest_unchanged():
     # rebaselined (ADR-031: 0.2.0 -> 0.3.0, four ingestion contracts added).
     assert not (ROOT / "schemas" / "evaluation_run_manifest.v2.schema.json").exists()
     got = sha256_bytes((ROOT / "schemas" / "schema_version_manifest.json").read_bytes())
-    assert got == "69e68bb458e07f4a16faf056acb81201d11587f33b48fd4d96b3336c81a2536a"
+    assert got == "03b94494d244020892c7d91f9db63de2582d89100543bf3ef34eba374be53ed6"
 
 
 def test_protected_identities_unchanged():

@@ -175,7 +175,7 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 SCHEMA_VERSION_MANIFEST_SHA256 = (
     # Rebaselined by ADR-031: manifest_version 0.2.0 -> 0.3.0 with the four
     # ingestion contracts added. The guard's meaning is unchanged.
-    "69e68bb458e07f4a16faf056acb81201d11587f33b48fd4d96b3336c81a2536a"
+    "03b94494d244020892c7d91f9db63de2582d89100543bf3ef34eba374be53ed6"
 )
 
 

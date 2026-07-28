@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "source_family_coverage.v2.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "company_id",
+    "observation_cutoff_date",
+    "content_families",
+    "access_channels",
+    "inherited",
+    "legacy_bridge"
+  ],
+  "$defs": {
+    "coverage_state": {
+      "enum": [
+        "available_and_retrieved",
+        "available_but_failed",
+        "not_found",
+        "not_applicable",
+        "temporally_invalid",
+        "duplicate",
+        "robots_or_access_blocked",
+        "not_attempted"
+      ]
+    },
+    "terminal_state": {
+      "enum": [
+        "available_and_retrieved",
+        "available_but_failed",
+        "not_found",
+        "not_applicable",
+        "temporally_invalid",
+        "duplicate",
+        "robots_or_access_blocked"
+      ]
+    }
+  },
+  "properties": {
+    "contract": { "const": "source_family_coverage@0.2.0" },
+    "schema_version": { "type": "string" },
+    "company_id": { "type": "string", "pattern": "^CIK[0-9]{10}$" },
+    "observation_cutoff_date": { "type": "string", "format": "date" },
+    "content_families": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["content_family", "membership", "coverage_state"],
+        "properties": {
+          "content_family": {
+            "enum": ["official_ir", "product_pages", "developer_docs", "newsroom"]
+          },
+          "membership": { "enum": ["required", "optional"] },
+          "coverage_state": { "$ref": "#/$defs/coverage_state" },
+          "reason_code": { "type": "string" },
+          "admitted_count": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "access_channels": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["access_channel", "admitted_count", "temporally_valid_count"],
+        "properties": {
+          "access_channel": { "enum": ["live", "archive"] },
+          "admitted_count": { "type": "integer", "minimum": 0 },
+          "temporally_valid_count": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "inherited": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_family", "coverage_state", "inherited_from_manifest_sha256"],
+        "properties": {
+          "source_family": { "const": "sec_edgar" },
+          "coverage_state": { "$ref": "#/$defs/coverage_state" },
+          "inherited_from_manifest_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "legacy_bridge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_family", "membership", "coverage_state", "derived_from"],
+      "properties": {
+        "source_family": { "const": "web_archives" },
+        "membership": { "const": "required_legacy" },
+        "coverage_state": { "$ref": "#/$defs/terminal_state" },
+        "reason_code": { "type": "string" },
+        "derived_from": {
+          "const": "access_channel=archive admitted, temporally_valid"
+        },
+        "temporally_valid_archive_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "errors": { "type": "array", "items": { "type": "object" } }
+  }
+}
