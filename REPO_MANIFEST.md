@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **400**
+Total tracked/scaffold files listed: **403**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -59,6 +59,7 @@ Total tracked/scaffold files listed: **400**
 - `data/processed/.gitkeep`
 - `data/raw/.gitkeep`
 - `data/registry/.gitkeep`
+- `data/registry/pilot_universe_packet_CIK0001404655.json`
 - `data/runs/.gitkeep`
 - `data/snapshots/.gitkeep`
 - `docs/CONCEPTUAL_FRAMEWORK.md`
@@ -341,6 +342,7 @@ Total tracked/scaffold files listed: **400**
 - `src/dynamic_ai_products/universe/issuer_filters.py`
 - `src/dynamic_ai_products/universe/models.py`
 - `src/dynamic_ai_products/universe/packets.py`
+- `src/dynamic_ai_products/universe/pilot_packet.py`
 - `src/dynamic_ai_products/universe/review.py`
 - `src/dynamic_ai_products/universe/rules.py`
 - `src/dynamic_ai_products/universe/runner.py`
@@ -396,6 +398,7 @@ Total tracked/scaffold files listed: **400**
 - `tests/universe/test_evidence_packets.py`
 - `tests/universe/test_identifiers.py`
 - `tests/universe/test_issuer_filters.py`
+- `tests/universe/test_pilot_packet.py`
 - `tests/universe/test_repo_hygiene.py`
 - `tests/universe/test_review_and_audit.py`
 - `tests/universe/test_screening_and_classification.py`

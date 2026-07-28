@@ -765,7 +765,7 @@ def test_export_list_sorted_unique_and_count():
 def test_repo_manifest_count_and_paths():
     text = (ROOT / "REPO_MANIFEST.md").read_text()
     # 394 = 390 + the P2 producer, its test, and the two v0.2 fixtures (ADR-028).
-    assert "Total tracked/scaffold files listed: **400**" in text
+    assert "Total tracked/scaffold files listed: **403**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text
