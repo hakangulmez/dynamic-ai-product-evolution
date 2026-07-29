@@ -422,6 +422,45 @@ fallback_model:
 
 No run directory may be overwritten. A repair creates a new record or a new run.
 
+### Extraction prompt-hash binding
+
+For Stage 05-07 extraction runs, prompt identity is fixed by digest, not by a
+label:
+
+- `prompt_hash` is **SHA-256 over the exact bytes of the resolved prompt
+  artifact** used for that run. No normalization, no whitespace folding, and
+  no template expansion occurs before hashing.
+- **That digest is the prompt identity.** A human-readable version label is
+  optional; when used it lives in the extraction prompt registry, **never as
+  an in-file edit to a frozen prompt**, preserving the rule in
+  `prompts/README.md` that a frozen prompt is superseded by a new version
+  rather than edited in place.
+- The files under `prompts/extraction/` are not modified in order to acquire
+  identity. Only their digest is computed.
+
+### Contract over prose for Stage 05-07 extraction runs
+
+**For Stage 05-07 extraction runs only**, the generic required-field list above
+is a planning and protocol superset. The released and binding contract for
+those extraction runs is `schemas/extraction_run.schema.json` at version
+`0.1.0`, which is strict (`additionalProperties: false`) and carries exactly
+fifteen properties: `run_id`, `stage`, `started_at`, `completed_at`, `status`,
+`code_commit`, `spec_version`, `schema_hash`, `prompt_hash`,
+`source_manifest_hash`, `model_provider`, `model_name`, `model_parameters`,
+`fallbacks`, and `error_count`.
+
+It does **not** carry `prompt_version`, `schema_version`, `input_manifest_hash`,
+`retry_count`, `fallback_model`, or `model_label`. Where this document and the
+schema disagree **for a Stage 05-07 extraction run**, the schema governs. No
+increment may widen, rename, or version `extraction_run@0.1.0` in order to
+match this prose; doing so would mutate a released contract to satisfy a wish
+list. See ADR-033.
+
+This narrowing applies to Stage 05-07 extraction runs and to nothing else. The
+generic required run-manifest field list above **remains normative for every
+other run type governed by this protocol**, and is not weakened by the
+existence of a narrower released contract for one stage block.
+
 ## Prompt release states
 
 Prompts use the following lifecycle:
