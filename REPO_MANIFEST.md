@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **457**
+Total tracked/scaffold files listed: **489**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -234,7 +234,11 @@ Total tracked/scaffold files listed: **457**
 - `schemas/evaluation_case.schema.json`
 - `schemas/evaluation_result.schema.json`
 - `schemas/evaluation_result.v2.schema.json`
+- `schemas/extraction_candidate_collection.schema.json`
+- `schemas/extraction_input_packet.schema.json`
+- `schemas/extraction_non_run_record.schema.json`
 - `schemas/extraction_run.schema.json`
+- `schemas/extraction_validation_decision_set.schema.json`
 - `schemas/firm_lineage.schema.json`
 - `schemas/firm_year_eligibility.schema.json`
 - `schemas/frontier_baseline.schema.json`
@@ -354,6 +358,19 @@ Total tracked/scaffold files listed: **457**
 - `src/dynamic_ai_products/evaluation/validator_bundle_artifact.py`
 - `src/dynamic_ai_products/evaluation/validator_parameters.py`
 - `src/dynamic_ai_products/evaluation/validators.py`
+- `src/dynamic_ai_products/extraction/__init__.py`
+- `src/dynamic_ai_products/extraction/candidates.py`
+- `src/dynamic_ai_products/extraction/errors.py`
+- `src/dynamic_ai_products/extraction/input_packet.py`
+- `src/dynamic_ai_products/extraction/manifests.py`
+- `src/dynamic_ai_products/extraction/parent_snapshots.py`
+- `src/dynamic_ai_products/extraction/prediction_manifest.py`
+- `src/dynamic_ai_products/extraction/prompts.py`
+- `src/dynamic_ai_products/extraction/provider_adapter.py`
+- `src/dynamic_ai_products/extraction/raw_artifacts.py`
+- `src/dynamic_ai_products/extraction/run_extraction.py`
+- `src/dynamic_ai_products/extraction/source_snapshot_bridge.py`
+- `src/dynamic_ai_products/extraction/validation.py`
 - `src/dynamic_ai_products/ingestion/__init__.py`
 - `src/dynamic_ai_products/ingestion/adoption.py`
 - `src/dynamic_ai_products/ingestion/errors.py`
@@ -435,6 +452,21 @@ Total tracked/scaffold files listed: **457**
 - `tests/evaluation/test_validator_bundle_artifact.py`
 - `tests/evaluation/test_validator_parameters.py`
 - `tests/evaluation/test_validators.py`
+- `tests/extraction/test_boundaries.py`
+- `tests/extraction/test_candidates.py`
+- `tests/extraction/test_contract_pins.py`
+- `tests/extraction/test_errors.py`
+- `tests/extraction/test_extraction_manifests.py`
+- `tests/extraction/test_input_packet.py`
+- `tests/extraction/test_parent_context.py`
+- `tests/extraction/test_parent_snapshots.py`
+- `tests/extraction/test_prediction_manifest.py`
+- `tests/extraction/test_prompts.py`
+- `tests/extraction/test_provider_adapter.py`
+- `tests/extraction/test_raw_artifacts.py`
+- `tests/extraction/test_run_extraction.py`
+- `tests/extraction/test_source_snapshot_bridge.py`
+- `tests/extraction/test_validation.py`
 - `tests/ingestion/ingestion_test_helpers.py`
 - `tests/ingestion/test_adoption.py`
 - `tests/ingestion/test_family_coverage.py`

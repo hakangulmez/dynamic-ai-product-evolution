@@ -336,6 +336,77 @@ This decision supplements ADR-026, ADR-027, ADR-029, ADR-031, and ADR-032, amend
 
 **Rejected alternatives:** Adding a provider-client-contract field to `extraction_run@0.1.0` was rejected because it is strict and released. Adding `corpus_scope` to the parent snapshot, prediction envelope, or output manifest was rejected because all three are strict extra-forbid models. Inventing a third unnamed scope artifact was rejected as redundant with the existing coverage artifact. Treating the ingestion Parquet as either harness input role was rejected because neither role accepts it. Duplicating the released source-snapshot persister was rejected under ADR-027 anti-drift. Appending `candidate_id` to an observation object was rejected because both observation schemas are strict. Splitting candidate and decision-set contracts per kind was rejected as near-identical schemas that would drift. Deriving parent IDs from a caller-supplied list or from prose was rejected as unverifiable. Relying on `observation_target_binding@0.1.0` to detect a wrong snapshot at Stage 06 was rejected because its pins are deliberately forbidden. Running E1 only at Stage 06 was rejected because E2–E5 are triple-internal and cannot detect a self-consistent forged A. Pinning an input-packet digest whose bytes are never persisted was rejected as unauditable. Writing a stopped `extraction_run` on a non-run route was rejected as asserting a run that never began. Shipping the four schema files ahead of their producers in E-0 was rejected under the repository's own convention and because it would rebaseline the manifest and count guards twice.
 
+### ADR-033 addendum — E-A implementation corrections
+
+**Status:** applied in the E-A increment. This addendum records rules that
+ADR-033 did not state and that the E-A test tranche established were necessary.
+It adds no contract version and changes no released model.
+
+**Schema registration completed.** The four contracts ratified in text by
+ADR-033 now ship with their producers: `extraction_input_packet@0.1.0`,
+`extraction_candidate_collection@0.1.0`,
+`extraction_validation_decision_set@0.1.0`, and
+`extraction_non_run_record@0.1.0`. `schema_version_manifest.json` moves
+`0.4.0` -> `0.5.0`, 26 -> 30 entries, and the two schema-manifest SHA guards and
+three repository-count guards (457 -> 489) are rebaselined accordingly.
+
+**A capability member disproves Snapshot A; its absence proves nothing.**
+ADR-033 fixed routing by pinned identity and forbade role presence as a
+discriminator. That prohibition is correct in one direction only. E1 compares
+`product_parent` triples, and Snapshot B carries A's product members
+byte-for-byte by construction (E3), so E1 alone accepts a Snapshot B supplied
+where Snapshot A was expected. Stage 06 and Stage 07 therefore refuse any
+snapshot-A input carrying a non-`product_parent` member, with
+`parent_context_wrong_snapshot`. This is not the forbidden inference: absence of
+capability members still never proves a snapshot is an A, because a legal
+Snapshot B may carry zero of them, and a zero-capability B substituted for A
+remains indistinguishable by shape and is caught only by E1. The guard is
+deliberately one-directional and its limit is pinned by test.
+
+**Every emitted parent snapshot is validated at the single emission point.**
+Extraction cannot import `evaluation.parent_observation_snapshot`, so the
+locally enforceable invariants of the released model are enforced directly:
+canonical `YYYY-MM-DD` `observation_cutoff` by `date.fromisoformat` round-trip
+equality; non-empty members; per-member allowed role, safe relative reference,
+and lowercase 64-hex digest; and, after canonical sorting, uniqueness by
+`(role, reference)` **and** uniqueness of `reference` across roles. A shared
+reference would otherwise make one artifact both a product and a capability
+parent. Member-reference grammar rejects each empty, `.`, and `..` segment of
+the original string rather than `Path.parts`, which silently normalises `a//b`
+and `a/.` away. Snapshot A refuses an empty accepted-product set before
+emitting, because the released model rejects empty members. Decision sets
+hydrated by these builders must declare
+`extraction_validation_decision_set@0.1.0`; this is inbound validation of a
+governed artifact and is outside the `contract_metadata_forbidden` rule, which
+guards only caller channels into an emitted artifact's own root stamp.
+
+**Absence and explicit null are distinct in the harness bridge.**
+`SourceDocumentRecord` rejects explicit null for `url`, `mime_type`,
+`temporal_validity`, `access_status`, and `schema_version`, and
+`SourcePassageRecord` for `heading_path` and `normalizer_version`, while
+absence stays legal. Selecting Parquet columns with `row.get()` materialised a
+null for every absent column and made an ordinary ingestion row
+unrepresentable; rewriting a null into absence would have laundered it. The
+bridge copies only the keys a row actually carries and lets the released model
+refuse a genuine null. Records are serialised with
+`model_dump(mode="json", exclude_unset=True)` for the same reason: a plain
+`model_dump()` emits a null for every unset optional, which the released static
+corpus schemas reject, leaving the transcoded corpus unloadable by the harness
+the bridge exists to feed.
+
+**Rejected alternatives:** Treating the Snapshot B-for-A substitution as
+acceptable because the derived product context is identical was rejected: the
+packet would then record B as the Stage 06 parent snapshot, which is false
+provenance. Adding a new failure code for it was rejected because the ADR-033
+code list is fixed and `parent_context_wrong_snapshot` already carries exactly
+that meaning. Using `Path.parts` for member-reference grammar was rejected
+because normalisation hides the malformed input instead of refusing it.
+Rewriting an explicit null into absence in the bridge was rejected as silent
+repair under CLAUDE.md rule 9. Emitting corpus records with a plain
+`model_dump()` and relaxing the corpus schemas to accept nulls was rejected
+because it would weaken a released contract to accommodate a producer.
+
+
 ## Open decisions
 
 - Exact baseline cutoff, first-release form scope, and final Tier A/Tier B thresholds after the universe sentinel.

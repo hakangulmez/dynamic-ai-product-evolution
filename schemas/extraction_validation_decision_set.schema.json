@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "extraction_validation_decision_set.schema.json",
+  "title": "Extraction validation decision set",
+  "description": "A human accept/reject judgement over one candidate collection (ADR-033). No deterministic producer and no provider may synthesise one. It pins the raw artifact, the candidate collection, the stage input packet, the coverage artifact, and - for the capability kind only - Snapshot A. Each accepted candidate names its own persisted observation artifact by reference and SHA-256, which is how a snapshot's expected member set becomes derivable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "schema_version",
+    "observation_kind",
+    "decision_set_version",
+    "raw_artifact_reference",
+    "raw_artifact_sha256",
+    "candidate_collection_reference",
+    "candidate_collection_sha256",
+    "input_packet_reference",
+    "input_packet_sha256",
+    "coverage_artifact_reference",
+    "coverage_artifact_sha256",
+    "snapshot_a_reference",
+    "snapshot_a_sha256",
+    "decisions",
+    "accepted_count",
+    "rejected_count"
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "properties": {
+    "contract": { "const": "extraction_validation_decision_set@0.1.0" },
+    "schema_version": { "const": "0.1.0" },
+    "observation_kind": { "enum": ["product", "capability"] },
+    "decision_set_version": { "type": "string", "minLength": 1 },
+    "raw_artifact_reference": { "type": "string", "minLength": 1 },
+    "raw_artifact_sha256": { "$ref": "#/$defs/sha256" },
+    "candidate_collection_reference": { "type": "string", "minLength": 1 },
+    "candidate_collection_sha256": { "$ref": "#/$defs/sha256" },
+    "input_packet_reference": { "type": "string", "minLength": 1 },
+    "input_packet_sha256": { "$ref": "#/$defs/sha256" },
+    "coverage_artifact_reference": { "type": "string", "minLength": 1 },
+    "coverage_artifact_sha256": { "$ref": "#/$defs/sha256" },
+    "snapshot_a_reference": { "type": ["string", "null"], "minLength": 1 },
+    "snapshot_a_sha256": {
+      "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "candidate_id",
+          "decision",
+          "reason",
+          "accepted_artifact_reference",
+          "accepted_artifact_sha256"
+        ],
+        "properties": {
+          "candidate_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+          "decision": { "enum": ["accept", "reject"] },
+          "reason": { "type": "string" },
+          "accepted_artifact_reference": { "type": ["string", "null"] },
+          "accepted_artifact_sha256": {
+            "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+          }
+        },
+        "allOf": [
+          {
+            "comment": "An accepted candidate must name its persisted observation artifact; a snapshot member set is otherwise underivable.",
+            "if": { "properties": { "decision": { "const": "accept" } } },
+            "then": {
+              "properties": {
+                "accepted_artifact_reference": { "type": "string", "minLength": 1 },
+                "accepted_artifact_sha256": { "$ref": "#/$defs/sha256" }
+              }
+            }
+          },
+          {
+            "comment": "A rejected candidate must not name an accepted artifact.",
+            "if": { "properties": { "decision": { "const": "reject" } } },
+            "then": {
+              "properties": {
+                "accepted_artifact_reference": { "type": "null" },
+                "accepted_artifact_sha256": { "type": "null" }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "accepted_count": { "type": "integer", "minimum": 0 },
+    "rejected_count": { "type": "integer", "minimum": 0 }
+  },
+  "allOf": [
+    {
+      "comment": "A capability decision set must pin the Snapshot A it was judged against (equality E2).",
+      "if": { "properties": { "observation_kind": { "const": "capability" } } },
+      "then": {
+        "properties": {
+          "snapshot_a_reference": { "type": "string", "minLength": 1 },
+          "snapshot_a_sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    {
+      "comment": "A product decision set predates Snapshot A and must not pin one.",
+      "if": { "properties": { "observation_kind": { "const": "product" } } },
+      "then": {
+        "properties": {
+          "snapshot_a_reference": { "type": "null" },
+          "snapshot_a_sha256": { "type": "null" }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "extraction_candidate_collection.schema.json",
+  "title": "Extraction candidate collection",
+  "description": "Deterministic, schema-valid candidates parsed from one raw provider artifact (ADR-033). Entries are wrappers because product_observation@0.1.0 and capability_observation@0.1.0 are strict and cannot carry an appended candidate_id; the nested observation validates independently against the unchanged released schema. One parameterized contract carries both kinds, discriminated by observation_kind, rather than two near-identical schemas that would drift.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "schema_version",
+    "observation_kind",
+    "raw_artifact_reference",
+    "raw_artifact_sha256",
+    "entries",
+    "rejected",
+    "accepted_candidate_count",
+    "rejected_candidate_count"
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "properties": {
+    "contract": { "const": "extraction_candidate_collection@0.1.0" },
+    "schema_version": { "const": "0.1.0" },
+    "observation_kind": { "enum": ["product", "capability"] },
+    "raw_artifact_reference": { "type": "string", "minLength": 1 },
+    "raw_artifact_sha256": { "$ref": "#/$defs/sha256" },
+    "entries": {
+      "type": "array",
+      "comment": "Canonical order is ascending ordinal.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "ordinal", "observation_kind", "observation"],
+        "properties": {
+          "candidate_id": {
+            "comment": "sha256(raw_artifact_sha256 || 0x00 || ordinal || 0x00 || canonical_json_bytes(observation))[:32]. Non-transferable across raw artifacts.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "ordinal": { "type": "integer", "minimum": 0 },
+          "observation_kind": { "enum": ["product", "capability"] },
+          "observation": { "type": "object" }
+        }
+      }
+    },
+    "rejected": {
+      "type": "array",
+      "comment": "Rejects are counted and explained, never silently dropped.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ordinal", "reason"],
+        "properties": {
+          "ordinal": { "type": "integer", "minimum": 0 },
+          "reason": { "enum": ["not_an_object", "schema_invalid"] },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "accepted_candidate_count": { "type": "integer", "minimum": 0 },
+    "rejected_candidate_count": { "type": "integer", "minimum": 0 }
+  }
+}

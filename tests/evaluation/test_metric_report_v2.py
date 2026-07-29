@@ -479,7 +479,7 @@ def test_manifest_count():
     txt = (ROOT / "REPO_MANIFEST.md").read_text().splitlines()
     declared = int(re.search(r"listed:\s*\*\*(\d+)\*\*", "\n".join(txt)).group(1))
     paths = [re.match(r"- `([^`]+)`", ln).group(1) for ln in txt if re.match(r"- `[^`]+`\s*$", ln)]
-    assert declared == len(paths) == 457
+    assert declared == len(paths) == 489
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 
