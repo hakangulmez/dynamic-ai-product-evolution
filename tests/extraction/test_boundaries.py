@@ -25,7 +25,7 @@ PACKAGE = ROOT / "src" / "dynamic_ai_products" / "extraction"
 PERMITTED_EVALUATION_EDGE = {"source_snapshot_bridge.py": {"evaluation.source_snapshot"}}
 FOREIGN_PACKAGE_TOKENS = ("evaluation", "universe", "ingestion", "collection")
 
-MODULES = sorted(PACKAGE.glob("*.py"))
+MODULES = sorted(p for p in PACKAGE.rglob("*.py") if "__pycache__" not in p.parts)
 _SCOPES = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 
 
@@ -60,6 +60,32 @@ def _docstring_ids(tree: ast.AST) -> set[int]:
     return ids
 
 
+def _detector_literals(tree: ast.AST) -> set[str]:
+    """String constants assigned to a ``_CREDENTIAL_*`` detector constant.
+
+    These literals exist precisely to refuse credential material, so matching
+    them would make a module that defends against leaks look like a leak.
+    """
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        # Annotated constants are AnnAssign, not Assign; the detector tuples in
+        # manifests.py are annotated, so both forms must be recognised.
+        if isinstance(node, ast.Assign):
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            value = node.value
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names = [node.target.id]
+            value = node.value
+        else:
+            continue
+        if value is None or not any(n.startswith("_CREDENTIAL_") for n in names):
+            continue
+        for child in ast.walk(value):
+            if isinstance(child, ast.Constant) and isinstance(child.value, str):
+                out.add(child.value)
+    return out
+
+
 def _code_tokens(tree: ast.AST) -> tuple[set[str], list[str]]:
     """Executable identifiers and non-docstring string literals.
 
@@ -89,6 +115,15 @@ def test_package_is_enumerable_and_complete():
     assert (PACKAGE / "__init__.py") in MODULES
 
 
+def test_the_package_stays_flat_so_the_recursive_scan_has_nothing_to_miss():
+    """A subpackage would be scanned by rglob, but a flat package is simpler to
+    reason about and keeps the module count a meaningful invariant."""
+    subdirectories = [
+        d for d in PACKAGE.iterdir() if d.is_dir() and d.name != "__pycache__"
+    ]
+    assert subdirectories == []
+
+
 def test_only_one_module_holds_the_evaluation_edge():
     observed: dict[str, set[str]] = {}
     for module in MODULES:
@@ -109,6 +144,14 @@ def test_no_reverse_edge_from_any_other_package():
             assert "dynamic_ai_products.extraction" not in text, module
             assert "from ..extraction" not in text, module
             assert "from .extraction" not in text, module
+
+
+def test_extraction_never_imports_the_provider_package():
+    """The single permitted edge runs providers -> extraction.provider_adapter."""
+    for module in MODULES:
+        text = module.read_text(encoding="utf-8")
+        assert "dynamic_ai_products.providers" not in text, module
+        assert "from ..providers" not in text, module
 
 
 FORBIDDEN_NETWORK_ROOTS = frozenset(
@@ -223,15 +266,25 @@ def test_no_url_literal_reaches_executable_code():
 
 
 def test_no_credential_or_environment_secret_read():
+    """No environment read, and no embedded credential *value*.
+
+    The literal check matches credential **signatures**, not the word
+    "credential": a module whose job is refusing credentials necessarily names
+    them in its error prose, and flagging that would punish the defence rather
+    than the leak. Detector constants are exempted for the same reason.
+    """
     forbidden_identifiers = {"environ", "getenv", "putenv", "expandvars"}
-    forbidden_fragments = ("api_key", "secret", "bearer", "authorization", "credential")
+    credential_signatures = ("ya29.", "AIza", "-----BEGIN", "Bearer ")
     for module in MODULES:
-        identifiers, literals = _code_tokens(_tree(module))
+        tree = _tree(module)
+        identifiers, literals = _code_tokens(tree)
+        exempt = _detector_literals(tree)
         assert not (identifiers & forbidden_identifiers), module.name
         for literal in literals:
-            lowered = literal.lower()
-            for fragment in forbidden_fragments:
-                assert fragment not in lowered, f"{module.name}: {literal!r}"
+            if literal in exempt:
+                continue
+            for signature in credential_signatures:
+                assert signature not in literal, f"{module.name}: {literal!r}"
 
 
 def test_no_clock_and_no_vcs_read():
@@ -280,7 +333,12 @@ def test_no_provider_is_constructed_inside_the_package():
     functions = {
         node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
     }
-    assert functions == {"require_provider", "complete"}
+    assert functions == {
+        "require_provider",
+        "assert_run_permitted",
+        "client_contract",
+        "complete",
+    }
     assert "Protocol" in text and "runtime_checkable" in text
 
 

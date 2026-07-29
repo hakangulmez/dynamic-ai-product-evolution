@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "extraction_provider_error_record.schema.json",
+  "title": "Extraction provider error record",
+  "description": "The terminal-failure companion to extraction_run@0.1.0 (ADR-034). extraction_run is strict and released and carries status and error_count but no error_reason, so an errored run alone would lose the terminal cause. That contract is not widened; the reason is bound here instead and pins the four artifacts of the failed run by reference and SHA-256. There is no free-text property anywhere in this schema, so an upstream exception message, response body, header, token, or credential has no channel into the record — a structural guarantee rather than a redaction pass. This record is written only when at least one provider attempt began; live_call_not_authorized is a pre-run refusal that produces no artifact at all and never appears in reason_code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "schema_version",
+    "extraction_run_id",
+    "stage",
+    "company_id",
+    "code_commit",
+    "input_packet_reference",
+    "input_packet_sha256",
+    "resolved_prompt_reference",
+    "resolved_prompt_sha256",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "extraction_run_reference",
+    "extraction_run_sha256",
+    "reason_code",
+    "attempt_count",
+    "provider_called",
+    "harness_run"
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "reference": { "type": "string", "minLength": 1 }
+  },
+  "properties": {
+    "contract": { "const": "extraction_provider_error_record@0.1.0" },
+    "schema_version": { "const": "0.1.0" },
+    "extraction_run_id": { "type": "string", "minLength": 1 },
+    "stage": {
+      "enum": ["product_extraction", "capability_extraction", "task_extraction"]
+    },
+    "company_id": { "type": "string", "pattern": "^CIK[0-9]{10}$" },
+    "code_commit": {
+      "comment": "Caller-injected. This package reads no VCS.",
+      "type": "string",
+      "minLength": 1
+    },
+    "input_packet_reference": { "$ref": "#/$defs/reference" },
+    "input_packet_sha256": { "$ref": "#/$defs/sha256" },
+    "resolved_prompt_reference": { "$ref": "#/$defs/reference" },
+    "resolved_prompt_sha256": { "$ref": "#/$defs/sha256" },
+    "provider_client_contract_reference": { "$ref": "#/$defs/reference" },
+    "provider_client_contract_sha256": { "$ref": "#/$defs/sha256" },
+    "extraction_run_reference": { "$ref": "#/$defs/reference" },
+    "extraction_run_sha256": { "$ref": "#/$defs/sha256" },
+    "reason_code": {
+      "comment": "Closed enum. live_call_not_authorized is deliberately absent: it is refused before any attempt begins.",
+      "enum": [
+        "provider_timeout",
+        "vertex_quota_exhausted",
+        "vertex_unavailable",
+        "vertex_permission_denied",
+        "vertex_model_not_found",
+        "vertex_project_invalid",
+        "vertex_location_invalid",
+        "adc_not_configured",
+        "adc_refresh_failed",
+        "adc_expired",
+        "provider_response_unusable"
+      ]
+    },
+    "attempt_count": {
+      "comment": "Equals extraction_run.error_count: the number of failed provider attempts.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "provider_called": { "const": true },
+    "harness_run": { "const": false }
+  }
+}

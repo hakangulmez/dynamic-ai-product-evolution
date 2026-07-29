@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **489**
+Total tracked/scaffold files listed: **505**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -237,6 +237,8 @@ Total tracked/scaffold files listed: **489**
 - `schemas/extraction_candidate_collection.schema.json`
 - `schemas/extraction_input_packet.schema.json`
 - `schemas/extraction_non_run_record.schema.json`
+- `schemas/extraction_provider_client_contract.schema.json`
+- `schemas/extraction_provider_error_record.schema.json`
 - `schemas/extraction_run.schema.json`
 - `schemas/extraction_validation_decision_set.schema.json`
 - `schemas/firm_lineage.schema.json`
@@ -381,6 +383,11 @@ Total tracked/scaffold files listed: **489**
 - `src/dynamic_ai_products/ingestion/preflight.py`
 - `src/dynamic_ai_products/ingestion/publication.py`
 - `src/dynamic_ai_products/provenance.py`
+- `src/dynamic_ai_products/providers/__init__.py`
+- `src/dynamic_ai_products/providers/client_contract.py`
+- `src/dynamic_ai_products/providers/errors.py`
+- `src/dynamic_ai_products/providers/retry_policy.py`
+- `src/dynamic_ai_products/providers/vertex_gemini.py`
 - `src/dynamic_ai_products/universe/__init__.py`
 - `src/dynamic_ai_products/universe/audit.py`
 - `src/dynamic_ai_products/universe/classification.py`
@@ -463,6 +470,7 @@ Total tracked/scaffold files listed: **489**
 - `tests/extraction/test_prediction_manifest.py`
 - `tests/extraction/test_prompts.py`
 - `tests/extraction/test_provider_adapter.py`
+- `tests/extraction/test_provider_error_publication.py`
 - `tests/extraction/test_raw_artifacts.py`
 - `tests/extraction/test_run_extraction.py`
 - `tests/extraction/test_source_snapshot_bridge.py`
@@ -477,6 +485,14 @@ Total tracked/scaffold files listed: **489**
 - `tests/ingestion/test_publication_atomicity.py`
 - `tests/notebook/test_master_notebook.py`
 - `tests/provenance/test_write_bytes_once.py`
+- `tests/providers/test_client_contract.py`
+- `tests/providers/test_credential_non_disclosure.py`
+- `tests/providers/test_error_translation_seam.py`
+- `tests/providers/test_live_refusal_surface.py`
+- `tests/providers/test_provider_boundaries.py`
+- `tests/providers/test_real_sdk_compatibility.py`
+- `tests/providers/test_request_config_mapping.py`
+- `tests/providers/test_retry_and_timeout_policy.py`
 - `tests/schema/test_schemas_are_valid.py`
 - `tests/temporal/test_temporal_rule.py`
 - `tests/ui/test_local_ui_scaffold.py`

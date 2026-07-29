@@ -17,6 +17,9 @@ from jsonschema import Draft202012Validator
 from dynamic_ai_products.extraction.errors import ExtractionError
 from dynamic_ai_products.extraction.manifests import (
     EXTRACTION_RUN_PROPERTIES,
+    PROVIDER_ERROR_CONTRACT,
+    PROVIDER_ERROR_REASONS,
+    build_provider_error_record,
     NON_RUN_CONTRACT,
     NON_RUN_REASONS,
     STAGE_OUTPUT_SCHEMA,
@@ -228,3 +231,127 @@ def test_the_non_run_record_conforms_to_its_released_schema():
 def test_serialization_is_deterministic():
     assert record_bytes(_non_run()) == record_bytes(_non_run())
     assert record_bytes(_run()).endswith(b"\n")
+
+
+# --- extraction_provider_error_record@0.1.0 -----------------------------------
+
+
+PROVIDER_ERROR_SCHEMA = json.loads(
+    (SCHEMAS / "extraction_provider_error_record.schema.json").read_text()
+)
+
+
+def _error_record(**overrides):
+    kwargs = {
+        "extraction_run_id": "ext-0001",
+        "stage": "product_extraction",
+        "company_id": "CIK0001404655",
+        "code_commit": "d9c954aaa7dd344987aadffce76387f06c9fa52f",
+        "input_packet_reference": "inputs/extraction_input_packet.json",
+        "input_packet_sha256": "1" * 64,
+        "resolved_prompt_reference": "inputs/resolved_prompt.md",
+        "resolved_prompt_sha256": "2" * 64,
+        "provider_client_contract_reference": "inputs/provider_client_contract.json",
+        "provider_client_contract_sha256": "3" * 64,
+        "extraction_run_reference": "manifests/extraction_run.json",
+        "extraction_run_sha256": "4" * 64,
+        "reason_code": "vertex_unavailable",
+        "attempt_count": 3,
+    }
+    kwargs.update(overrides)
+    return build_provider_error_record(**kwargs)
+
+
+def test_the_error_record_declares_its_contract_and_const_flags():
+    record = _error_record()
+    assert record["contract"] == PROVIDER_ERROR_CONTRACT
+    assert record["provider_called"] is True
+    assert record["harness_run"] is False
+
+
+def test_the_error_record_conforms_to_its_released_schema():
+    Draft202012Validator(PROVIDER_ERROR_SCHEMA).validate(_error_record())
+
+
+def test_the_record_carries_no_free_text_property():
+    """Structural: an upstream message has no channel into the artifact."""
+    assert set(_error_record()) == set(PROVIDER_ERROR_SCHEMA["required"])
+    assert PROVIDER_ERROR_SCHEMA["additionalProperties"] is False
+
+
+def test_the_enum_matches_the_released_schema_exactly():
+    assert list(PROVIDER_ERROR_REASONS) == PROVIDER_ERROR_SCHEMA["properties"]["reason_code"]["enum"]
+    assert "live_call_not_authorized" not in PROVIDER_ERROR_REASONS
+
+
+@pytest.mark.parametrize("reason", PROVIDER_ERROR_REASONS)
+def test_every_declared_terminal_reason_is_accepted(reason):
+    assert _error_record(reason_code=reason)["reason_code"] == reason
+
+
+@pytest.mark.parametrize("reason", ["live_call_not_authorized", "invented", "", None])
+def test_an_undeclared_reason_is_refused(reason):
+    with pytest.raises(ExtractionError) as excinfo:
+        _error_record(reason_code=reason)
+    assert excinfo.value.reason_code == "provider_error_reason_unknown"
+
+
+@pytest.mark.parametrize("attempts", [0, -1, "3", 1.5, None])
+def test_a_non_positive_attempt_count_is_refused(attempts):
+    with pytest.raises(ExtractionError) as excinfo:
+        _error_record(attempt_count=attempts)
+    assert excinfo.value.reason_code == "provider_error_attempt_count_invalid"
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "input_packet_sha256",
+        "resolved_prompt_sha256",
+        "provider_client_contract_sha256",
+        "extraction_run_sha256",
+    ],
+)
+def test_every_pin_must_be_a_well_formed_digest(field):
+    with pytest.raises(ExtractionError) as excinfo:
+        _error_record(**{field: "nope"})
+    assert excinfo.value.reason_code == "pin_invalid"
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "input_packet_reference",
+        "resolved_prompt_reference",
+        "provider_client_contract_reference",
+        "extraction_run_reference",
+    ],
+)
+def test_every_reference_must_be_non_blank(field):
+    with pytest.raises(ExtractionError) as excinfo:
+        _error_record(**{field: "  "})
+    assert excinfo.value.reason_code == "pin_invalid"
+
+
+def test_an_unknown_stage_is_refused_for_the_error_record():
+    with pytest.raises(ExtractionError) as excinfo:
+        _error_record(stage="marketing_extraction")
+    assert excinfo.value.reason_code == "packet_stage_invalid"
+
+
+def test_extraction_run_is_not_widened_to_carry_a_reason():
+    """The companion record exists precisely so this stays true."""
+    assert "error_reason" not in EXTRACTION_RUN_PROPERTIES
+    assert len(EXTRACTION_RUN_PROPERTIES) == 15
+
+
+def test_the_module_export_list_is_sorted_unique_and_resolvable():
+    """The shared boundary guard checks uniqueness and resolvability; this
+    module additionally holds its export list in alphabetical order."""
+    from dynamic_ai_products.extraction import manifests
+
+    exported = manifests.__all__
+    assert exported == sorted(exported)
+    assert len(set(exported)) == len(exported)
+    for name in exported:
+        assert hasattr(manifests, name), name

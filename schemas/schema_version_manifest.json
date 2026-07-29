@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.5.0",
+  "manifest_version": "0.6.0",
   "schemas": {
     "company": "0.1.0",
     "web_collection_request_plan": "0.1.0",
@@ -26,6 +26,8 @@
     "extraction_candidate_collection": "0.1.0",
     "extraction_validation_decision_set": "0.1.0",
     "extraction_non_run_record": "0.1.0",
+    "extraction_provider_client_contract": "0.1.0",
+    "extraction_provider_error_record": "0.1.0",
     "evaluation_result": "0.1.0",
     "company_universe_classification": "0.1.0",
     "firm_year_eligibility": "0.1.0",

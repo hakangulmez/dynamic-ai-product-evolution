@@ -22,6 +22,7 @@ from dynamic_ai_products.extraction.provider_adapter import (
 )
 from dynamic_ai_products.extraction.raw_artifacts import sha256_bytes
 from dynamic_ai_products.extraction.run_extraction import (
+    CLIENT_CONTRACT_REFERENCE,
     ENVELOPES_REFERENCE,
     EXTRACTION_RUN_REFERENCE,
     NON_RUN_REFERENCE,
@@ -31,6 +32,7 @@ from dynamic_ai_products.extraction.run_extraction import (
     RAW_REFERENCE,
     run_extraction_stage,
 )
+from dynamic_ai_products.providers.client_contract import build_client_contract
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMAS = REPO_ROOT / "schemas"
@@ -38,10 +40,6 @@ CUTOFF = "2024-12-31"
 COMPANY = "CIK0001404655"
 COVERAGE = {"reference": "coverage/source_family_coverage.json", "sha256": "d" * 64}
 SOURCE_MANIFEST = {"reference": "snapshots/manifest.json", "sha256": "e" * 64}
-CLIENT_CONTRACT = {
-    "reference": "inputs/provider_client_contract.json",
-    "sha256": "f" * 64,
-}
 DATES = {"sec-1": "2024-02-14", "sec-late": "2025-06-01"}
 RAW_OUTPUT = b'{"observations":[]}'
 
@@ -51,6 +49,15 @@ class _FakeProvider:
 
     def __init__(self) -> None:
         self.requests: list[ProviderRequest] = []
+        self.permit_calls = 0
+        self.contract_calls = 0
+
+    def assert_run_permitted(self) -> None:
+        self.permit_calls += 1
+
+    def client_contract(self) -> dict:
+        self.contract_calls += 1
+        return build_client_contract(vertex_project="my-research-project")
 
     def complete(self, request: ProviderRequest) -> ProviderResponse:
         self.requests.append(request)
@@ -67,6 +74,14 @@ class _FakeProvider:
 
 
 class _ExplodingProvider:
+    """Every member must stay unreached on a non-run route."""
+
+    def assert_run_permitted(self) -> None:
+        raise AssertionError("the non-run route must not ask for permission")
+
+    def client_contract(self) -> dict:
+        raise AssertionError("the non-run route must not request a contract")
+
     def complete(self, request: ProviderRequest) -> ProviderResponse:
         raise AssertionError("the provider must not be called on a non-run route")
 
@@ -98,7 +113,6 @@ def _run(tmp_path: Path, **overrides):
         "prediction_run_id": "pred-0001",
         "schema_root": str(SCHEMAS),
         "provider": _FakeProvider(),
-        "provider_client_contract": dict(CLIENT_CONTRACT),
     }
     kwargs.update(overrides)
     return run_extraction_stage(**kwargs)
@@ -111,12 +125,13 @@ def _files(root: Path) -> set[str]:
 # --- the provider route -------------------------------------------------------
 
 
-def test_a_provider_run_publishes_the_six_expected_artifacts(tmp_path: Path):
+def test_a_provider_run_publishes_the_seven_expected_artifacts(tmp_path: Path):
     outcome = _run(tmp_path)
     assert outcome.verdict == "provider_run_complete"
     assert _files(outcome.run_root) == {
         PACKET_REFERENCE,
         PROMPT_REFERENCE,
+        CLIENT_CONTRACT_REFERENCE,
         RAW_REFERENCE,
         EXTRACTION_RUN_REFERENCE,
         ENVELOPES_REFERENCE,
@@ -156,7 +171,7 @@ def test_the_prediction_manifest_is_the_single_reachable_root(tmp_path: Path):
     assert pinned[RAW_REFERENCE] == outcome.artifacts[RAW_REFERENCE]
     assert pinned[PACKET_REFERENCE] == outcome.packet_sha256
     assert pinned[EXTRACTION_RUN_REFERENCE] == outcome.artifacts[EXTRACTION_RUN_REFERENCE]
-    assert pinned[CLIENT_CONTRACT["reference"]] == CLIENT_CONTRACT["sha256"]
+    assert pinned[CLIENT_CONTRACT_REFERENCE] == outcome.artifacts[CLIENT_CONTRACT_REFERENCE]
     assert pinned[COVERAGE["reference"]] == COVERAGE["sha256"]
 
 
@@ -245,8 +260,15 @@ def test_the_non_run_record_conforms_to_its_released_schema(tmp_path: Path):
 
 
 def test_no_provider_is_needed_on_the_non_run_route(tmp_path: Path):
-    outcome = _non_run(tmp_path, provider=None, provider_client_contract=None)
+    outcome = _non_run(tmp_path, provider=None)
     assert outcome.verdict == "no_run"
+
+
+def test_the_non_run_route_never_asks_the_provider_anything(tmp_path: Path):
+    """No provider will be called, so requiring one would be theatre."""
+    outcome = _non_run(tmp_path, provider=_ExplodingProvider())
+    assert outcome.verdict == "no_run"
+    assert len(_files(outcome.run_root)) == 2
 
 
 # --- refusals ------------------------------------------------------------------
@@ -258,10 +280,25 @@ def test_a_provider_run_without_a_provider_is_refused(tmp_path: Path):
     assert excinfo.value.reason_code == "provider_required"
 
 
-def test_a_provider_run_without_a_client_contract_is_refused(tmp_path: Path):
+@pytest.mark.parametrize(
+    "pin",
+    [None, {}, {"reference": "x.json", "sha256": "f" * 64}, "anything", 7],
+)
+def test_a_caller_supplied_contract_pin_is_refused_with_zero_artifacts(
+    tmp_path: Path, pin
+):
+    """The channel is closed, but the reason code stays reachable."""
     with pytest.raises(ExtractionError) as excinfo:
-        _run(tmp_path, provider_client_contract=None)
-    assert excinfo.value.reason_code == "source_artifact_missing"
+        _run(tmp_path, provider_client_contract=pin)
+    assert excinfo.value.reason_code == "contract_pin_forbidden"
+    assert not (tmp_path / "run").exists()
+
+
+def test_a_contract_pin_is_refused_on_the_non_run_route_too(tmp_path: Path):
+    with pytest.raises(ExtractionError) as excinfo:
+        _non_run(tmp_path, provider_client_contract=None)
+    assert excinfo.value.reason_code == "contract_pin_forbidden"
+    assert not (tmp_path / "run").exists()
 
 
 def test_an_existing_run_root_is_never_overwritten(tmp_path: Path):

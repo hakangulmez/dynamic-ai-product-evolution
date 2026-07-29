@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "extraction_provider_client_contract.schema.json",
+  "title": "Extraction provider client contract",
+  "description": "The declared, non-secret execution contract of a model-execution provider connector (ADR-034). extraction_run@0.1.0 is strict and released and carries no provider-client-contract field, so this document is bound instead as a byte-referenced entry in prediction_artifact_manifest@0.1.0's source_artifacts tuple. It must never carry a credential, key, token, header, or account identifier: identity is Application Default Credentials, resolved by the SDK itself, and never passes through the connector.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "schema_version",
+    "client_module",
+    "client_version",
+    "provider_protocol_version",
+    "sdk_name",
+    "sdk_version",
+    "model_provider",
+    "model_name",
+    "model_parameters",
+    "vertex_project",
+    "vertex_location",
+    "auth_method",
+    "api_version",
+    "timeout_sdk_parameter",
+    "timeout_duration",
+    "timeout_unit",
+    "sdk_retry_disabled",
+    "sdk_retry_attempts",
+    "retry_owner",
+    "retry_max_attempts",
+    "retry_trigger_status_codes",
+    "retry_trigger_transport_timeout",
+    "retry_delays_seconds",
+    "retry_jitter",
+    "retry_policy_version",
+    "rate_limit_policy_version",
+    "fallback_policy"
+  ],
+  "properties": {
+    "contract": { "const": "extraction_provider_client_contract@0.1.0" },
+    "schema_version": { "const": "0.1.0" },
+    "client_module": { "type": "string", "minLength": 1 },
+    "client_version": { "type": "string", "minLength": 1 },
+    "provider_protocol_version": { "type": "string", "minLength": 1 },
+    "sdk_name": { "type": "string", "minLength": 1 },
+    "sdk_version": {
+      "comment": "Exact pin. A range would let a resolved runtime differ from the audited one.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "model_provider": { "type": "string", "minLength": 1 },
+    "model_name": { "type": "string", "minLength": 1 },
+    "model_parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "temperature",
+        "top_p",
+        "candidate_count",
+        "max_output_tokens",
+        "response_mime_type"
+      ],
+      "properties": {
+        "temperature": { "type": "number", "minimum": 0 },
+        "top_p": { "type": "number", "minimum": 0, "maximum": 1 },
+        "candidate_count": { "type": "integer", "minimum": 1 },
+        "max_output_tokens": { "type": "integer", "minimum": 1 },
+        "response_mime_type": { "type": "string", "minLength": 1 }
+      }
+    },
+    "vertex_project": {
+      "comment": "Caller-injected. Never a repository literal.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+    },
+    "vertex_location": { "type": "string", "minLength": 1 },
+    "auth_method": { "const": "application_default_credentials" },
+    "api_version": { "type": "string", "minLength": 1 },
+    "timeout_sdk_parameter": {
+      "comment": "Resolved by the E-P0 gate against the installed SDK source, network-free.",
+      "type": "string",
+      "minLength": 1
+    },
+    "timeout_duration": { "type": "integer", "minimum": 1 },
+    "timeout_unit": {
+      "comment": "google.genai.types.HttpOptions.timeout is milliseconds; _api_client divides by 1000.0 before httpx.",
+      "const": "milliseconds"
+    },
+    "sdk_retry_disabled": {
+      "comment": "The SDK defaults to five attempts; leaving retry_options unset would enable a second retry layer.",
+      "const": true
+    },
+    "sdk_retry_attempts": { "const": 1 },
+    "retry_owner": { "const": "tenacity" },
+    "retry_max_attempts": { "type": "integer", "minimum": 1 },
+    "retry_trigger_status_codes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "integer" }
+    },
+    "retry_trigger_transport_timeout": { "type": "boolean" },
+    "retry_delays_seconds": {
+      "type": "array",
+      "items": { "type": "number", "minimum": 0 }
+    },
+    "retry_jitter": {
+      "comment": "Deterministic backoff: a run's retry timing is reproducible.",
+      "const": false
+    },
+    "retry_policy_version": { "type": "string", "minLength": 1 },
+    "rate_limit_policy_version": { "type": "string", "minLength": 1 },
+    "fallback_policy": {
+      "comment": "Any model, endpoint, or route substitution is route contamination.",
+      "const": "none"
+    }
+  }
+}

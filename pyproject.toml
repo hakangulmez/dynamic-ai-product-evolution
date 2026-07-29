@@ -27,6 +27,11 @@ dev = [
   "jsonschema>=4.23",
   "rfc3339-validator>=0.1.4",
 ]
+provider = [
+  # E-P only. Deliberately NOT a base dependency: the default install and CI
+  # stay SDK-free, so "src/ imports zero google.*" remains measurable.
+  "google-genai==2.13.0",
+]
 notebook = [
   "jupyterlab>=4.2",
   "ipykernel>=6.29",

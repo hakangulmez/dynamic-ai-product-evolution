@@ -26,6 +26,13 @@ class _FakeProvider:
 
     def __init__(self) -> None:
         self.calls: list[ProviderRequest] = []
+        self.permitted = 0
+
+    def assert_run_permitted(self) -> None:
+        self.permitted += 1
+
+    def client_contract(self) -> dict:
+        return {"contract": "extraction_provider_client_contract@0.1.0"}
 
     def complete(self, request: ProviderRequest) -> ProviderResponse:
         self.calls.append(request)
@@ -43,8 +50,30 @@ class _WrongShape:
         raise AssertionError("must not be called")
 
 
+class _PartialShape:
+    """Satisfies only part of v2: a pre-v2 provider must not slip through."""
+
+    def complete(self, request):  # pragma: no cover - never invoked
+        raise AssertionError("must not be called")
+
+
 def test_protocol_version_is_declared():
-    assert PROVIDER_PROTOCOL_VERSION == "extraction_provider_protocol_v1"
+    assert PROVIDER_PROTOCOL_VERSION == "extraction_provider_protocol_v2"
+
+
+def test_the_protocol_declares_all_three_v2_members():
+    assert set(ExtractionProvider.__protocol_attrs__) == {
+        "assert_run_permitted",
+        "client_contract",
+        "complete",
+    }
+
+
+def test_a_pre_v2_provider_is_refused():
+    """A provider with only complete() no longer satisfies the surface."""
+    with pytest.raises(ExtractionError) as excinfo:
+        require_provider(_PartialShape())
+    assert excinfo.value.reason_code == "provider_protocol_invalid"
 
 
 def test_request_and_response_are_frozen_dataclasses():
@@ -87,6 +116,13 @@ def test_an_injected_fake_satisfies_the_protocol_and_is_returned_unchanged():
     provider = _FakeProvider()
     assert isinstance(provider, ExtractionProvider)
     assert require_provider(provider) is provider
+
+
+def test_a_fake_may_permit_a_run_so_the_terminal_path_stays_testable():
+    provider = _FakeProvider()
+    provider.assert_run_permitted()
+    assert provider.permitted == 1
+    assert provider.client_contract()["contract"].startswith("extraction_provider")
 
 
 def test_the_fake_round_trips_a_request_without_touching_the_network():

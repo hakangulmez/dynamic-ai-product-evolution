@@ -6,7 +6,9 @@ credential handling, no environment-secret read, no transport construction,
 and no call. The concrete connector, model label, parameters, credentials,
 and client-contract identity belong to the separately locked E-P increment.
 
-Offline tests satisfy this protocol with an injected fake.
+Offline tests satisfy this protocol with an injected fake. The E-P Vertex
+connector satisfies it too, but refuses unconditionally in both
+``assert_run_permitted`` and ``complete``.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ __all__ = [
     "require_provider",
 ]
 
-PROVIDER_PROTOCOL_VERSION = "extraction_provider_protocol_v1"
+PROVIDER_PROTOCOL_VERSION = "extraction_provider_protocol_v2"
 
 
 @dataclass(frozen=True)
@@ -51,7 +53,22 @@ class ProviderResponse:
 
 @runtime_checkable
 class ExtractionProvider(Protocol):
-    """The only provider surface extraction knows about."""
+    """The only provider surface extraction knows about.
+
+    ``assert_run_permitted`` exists so a refused run costs nothing: the
+    orchestrator calls it **before** creating a run root, so an unauthorized
+    run leaves no directory and no artifact behind.
+
+    ``client_contract`` returns a plain mapping. Serialization and write-once
+    persistence stay with the orchestrator, so the connector cannot assert a
+    digest for bytes it did not have written.
+    """
+
+    def assert_run_permitted(self) -> None:  # pragma: no cover
+        ...
+
+    def client_contract(self) -> dict[str, Any]:  # pragma: no cover
+        ...
 
     def complete(self, request: ProviderRequest) -> ProviderResponse:  # pragma: no cover
         ...
