@@ -43,6 +43,7 @@ REQUIRED_SOURCE_ARTIFACT_ROLES: tuple[str, ...] = (
     "coverage_artifact",
     "resolved_prompt",
     "provider_client_contract",
+    "live_call_authorization",
     "extraction_run",
 )
 

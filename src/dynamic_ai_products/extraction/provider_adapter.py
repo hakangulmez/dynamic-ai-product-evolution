@@ -22,11 +22,13 @@ __all__ = [
     "PROVIDER_PROTOCOL_VERSION",
     "ProviderRequest",
     "ProviderResponse",
+    "BudgetMeter",
     "ExtractionProvider",
+    "require_budget_meter",
     "require_provider",
 ]
 
-PROVIDER_PROTOCOL_VERSION = "extraction_provider_protocol_v2"
+PROVIDER_PROTOCOL_VERSION = "extraction_provider_protocol_v6"
 
 
 @dataclass(frozen=True)
@@ -57,14 +59,43 @@ class ExtractionProvider(Protocol):
 
     ``assert_run_permitted`` exists so a refused run costs nothing: the
     orchestrator calls it **before** creating a run root, so an unauthorized
-    run leaves no directory and no artifact behind.
+    run leaves no directory and no artifact behind. It carries both the verified
+    authorization digest and both verified endpoint allowlists, so the authorized
+    endpoints are execution-bound rather than merely recorded: a connector
+    configured for a broader or different allowlist fails closed even with the
+    correct digest.
+
+    The two lists are forwarded rather than compared here on purpose. Endpoint
+    normalization is provider-side grammar, and ``extraction`` may not import
+    ``providers``; duplicating the grammar would create a second set of rules
+    that could drift from the one the capture client actually applies. The
+    connector enforces ``enablement ⊇ authorization == connector``.
+
+    ``revoke_run_permission`` exists because a permit granted by
+    ``assert_run_permitted`` outlives several later checks — the client contract,
+    the qualification's execution contract, the prompt, the meter, the budget,
+    the run root, and the artifact writes all come after it. Any of those may
+    refuse, and without an explicit revocation the permit would stay live and a
+    later ``complete`` could spend it. The orchestrator therefore revokes on
+    every exit from the post-handshake region. Revocation must be **idempotent
+    and infallible**: it performs no SDK, factory, credential, or network work,
+    so a conforming provider has nothing that can fail.
 
     ``client_contract`` returns a plain mapping. Serialization and write-once
     persistence stay with the orchestrator, so the connector cannot assert a
     digest for bytes it did not have written.
     """
 
-    def assert_run_permitted(self) -> None:  # pragma: no cover
+    def assert_run_permitted(
+        self,
+        *,
+        authorization_sha256: str | None = None,
+        endpoint_allowlist: tuple[str, ...] | None = None,
+        enablement_endpoint_allowlist: tuple[str, ...] | None = None,
+    ) -> None:  # pragma: no cover
+        ...
+
+    def revoke_run_permission(self) -> None:  # pragma: no cover
         ...
 
     def client_contract(self) -> dict[str, Any]:  # pragma: no cover
@@ -72,6 +103,57 @@ class ExtractionProvider(Protocol):
 
     def complete(self, request: ProviderRequest) -> ProviderResponse:  # pragma: no cover
         ...
+
+
+@runtime_checkable
+class BudgetMeter(Protocol):
+    """The budget-enforcement seam (SPEC-027 canonical runner).
+
+    ``assert_within_budget`` receives the **exact** :class:`ProviderRequest`
+    object that will be handed to the provider, so the prompt text, prompt
+    digest, packet payload, and stage it meters are byte-for-byte the ones that
+    are sent. Metering a copy would let the two drift.
+
+    ``meter_identity`` returns ``{"meter_identity", "meter_version"}``. The
+    runner compares it against the identity the authorization artifact pins.
+    That enforces the expected operational identity; it does **not**
+    structurally prevent an in-process implementation from imitating those
+    values — see ``providers.authorization`` for the same limit stated for the
+    connector handshake.
+    """
+
+    def meter_identity(self) -> dict[str, str]:  # pragma: no cover
+        ...
+
+    def assert_within_budget(
+        self,
+        *,
+        request: ProviderRequest,
+        max_output_tokens: int,
+        budget: dict[str, Any],
+    ) -> None:  # pragma: no cover
+        ...
+
+
+def require_budget_meter(meter: object) -> BudgetMeter:
+    """Fail closed unless an injected object satisfies the meter protocol.
+
+    Default-deny: with no meter, ``budget_max_input_tokens`` and
+    ``budget_max_estimated_cost_micros`` cannot be checked at all, so the run is
+    refused rather than run unmetered.
+    """
+    if meter is None:
+        raise ExtractionError(
+            "a budget meter must be injected; input-token and estimated-cost "
+            "limits cannot be enforced without one",
+            reason_code="budget_meter_unavailable",
+        )
+    if not isinstance(meter, BudgetMeter):
+        raise ExtractionError(
+            "injected budget meter does not satisfy the meter protocol",
+            reason_code="budget_meter_protocol_invalid",
+        )
+    return meter
 
 
 def require_provider(provider: object) -> ExtractionProvider:

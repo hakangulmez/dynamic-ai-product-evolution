@@ -335,9 +335,15 @@ def test_no_provider_is_constructed_inside_the_package():
     }
     assert functions == {
         "require_provider",
+        "require_budget_meter",
         "assert_run_permitted",
+        "revoke_run_permission",
         "client_contract",
         "complete",
+        # The budget-enforcement seam lives on this same typed surface so that
+        # no new extraction module is needed and the 13-module count holds.
+        "meter_identity",
+        "assert_within_budget",
     }
     assert "Protocol" in text and "runtime_checkable" in text
 
@@ -357,3 +363,106 @@ def test_every_module_declares_a_unique_resolvable_export_list():
         assert len(set(exported)) == len(exported), f"{module.name} __all__ duplicates"
         for name in exported:
             assert hasattr(imported, name), f"{module.name} exports missing {name}"
+
+
+# ---------------------------------------------------------------------------
+# Production modules must not rely on ``assert`` (ADR-035, E-L v4.6.2).
+#
+# ``python -O`` strips every ``assert`` statement from the bytecode. Three had
+# reached this package: two of the form
+# ``assert write_artifact(root, PACKET_REFERENCE, payload) == packet_sha``, which
+# under ``-O`` removed the *write itself* so no packet artifact was persisted at
+# all, and one ``assert contract_sha == contract_sha_expected``, which removed a
+# fail-closed integrity check. A conditional guarantee is not a guarantee, so the
+# rule here is total rather than heuristic: zero ``ast.Assert`` nodes in either
+# production package. Tests are free to use ``assert``; only ``src/`` is scanned.
+# ---------------------------------------------------------------------------
+
+PROVIDER_PACKAGE = ROOT / "src" / "dynamic_ai_products" / "providers"
+PRODUCTION_MODULES = sorted(
+    module
+    for package in (PACKAGE, PROVIDER_PACKAGE)
+    for module in package.rglob("*.py")
+    if "__pycache__" not in module.parts
+)
+
+
+def test_the_production_assert_scan_covers_both_packages():
+    """A guard that scanned an empty list would pass without proving anything."""
+    scanned = {module.parent.name for module in PRODUCTION_MODULES}
+    assert scanned == {"extraction", "providers"}
+    assert len(PRODUCTION_MODULES) >= 20
+
+
+@pytest.mark.parametrize("module", PRODUCTION_MODULES, ids=lambda m: m.name)
+def test_no_production_module_relies_on_an_assert_statement(module):
+    offenders = [
+        f"{module.name}:{node.lineno}"
+        for node in ast.walk(_tree(module))
+        if isinstance(node, ast.Assert)
+    ]
+    assert not offenders, f"assert is stripped by -O: {offenders}"
+
+
+def test_the_assert_scan_would_catch_a_reintroduced_call_bearing_assert():
+    """The guard is proven against the exact defect it exists to prevent."""
+    reintroduced = ast.parse(
+        "def run():\n"
+        "    assert write_artifact(root, REF, payload) == packet_sha\n"
+    )
+    found = [n for n in ast.walk(reintroduced) if isinstance(n, ast.Assert)]
+    assert len(found) == 1
+    # ...and the stripped form really does lose the call.
+    calls = [n for n in ast.walk(found[0]) if isinstance(n, ast.Call)]
+    assert [c.func.id for c in calls if isinstance(c.func, ast.Name)] == ["write_artifact"]
+
+
+def test_the_zero_passage_packet_write_executes_under_dash_O():
+    """Executed in a child interpreter with -O, where ``__debug__`` is False.
+
+    This is the only way to prove the defect is gone: this process cannot observe
+    ``-O`` bytecode, and asserting on source text would prove only that the word
+    ``assert`` is absent, not that the write still happens. The child reuses the
+    existing non-run helper rather than a new probe module, so the scope stays at
+    the authorized path set.
+    """
+    import json
+    import subprocess
+    import sys
+    import tempfile
+
+    program = """
+import json, sys, tempfile
+from pathlib import Path
+from dynamic_ai_products.extraction.run_extraction import PACKET_REFERENCE
+from tests.extraction.test_run_extraction import _non_run
+
+with tempfile.TemporaryDirectory() as work:
+    outcome = _non_run(Path(work))
+    packet = Path(outcome.run_root) / PACKET_REFERENCE
+    print(json.dumps({
+        "debug": __debug__,
+        "packet_exists": packet.is_file(),
+        "packet_bytes": packet.stat().st_size if packet.is_file() else 0,
+        "written": sorted(
+            str(f.relative_to(outcome.run_root))
+            for f in Path(outcome.run_root).rglob("*")
+            if f.is_file()
+        ),
+    }))
+"""
+    with tempfile.TemporaryDirectory():
+        completed = subprocess.run(
+            [sys.executable, "-O", "-c", program],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    assert completed.returncode == 0, completed.stderr[-3000:]
+    observed = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert observed["debug"] is False, "the child was not running under -O"
+    assert observed["packet_exists"] is True, "-O removed the packet write"
+    assert observed["packet_bytes"] > 0
+    # The non-run route's artifact count is unchanged under -O.
+    assert len(observed["written"]) == 2

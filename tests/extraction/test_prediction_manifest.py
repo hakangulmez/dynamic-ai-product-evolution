@@ -33,7 +33,11 @@ SOURCE_ARTIFACTS = {
         "reference": "inputs/provider_client_contract.json",
         "sha256": "5" * 64,
     },
-    "extraction_run": {"reference": "manifests/extraction_run.json", "sha256": "6" * 64},
+    "live_call_authorization": {
+        "reference": "inputs/live_call_authorization.json",
+        "sha256": "6" * 64,
+    },
+    "extraction_run": {"reference": "manifests/extraction_run.json", "sha256": "7" * 64},
 }
 
 
@@ -41,7 +45,7 @@ def _manifest(**overrides):
     kwargs = {
         "prediction_run_id": "pred-0001",
         "envelopes_reference": "predictions/prediction_envelopes.jsonl",
-        "envelopes_sha256": "7" * 64,
+        "envelopes_sha256": "8" * 64,
         "record_count": 1,
         "source_artifacts": {k: dict(v) for k, v in SOURCE_ARTIFACTS.items()},
     }
@@ -49,13 +53,19 @@ def _manifest(**overrides):
     return build_prediction_artifact_manifest(**kwargs)
 
 
-def test_six_roles_are_required():
+def test_seven_roles_are_required():
+    """E-L adds the live-call authorization as the seventh role (ADR-035).
+
+    The released model's ``source_artifacts`` is an unbounded tuple, so this
+    does not widen ``prediction_artifact_manifest@0.1.0``.
+    """
     assert REQUIRED_SOURCE_ARTIFACT_ROLES == (
         "raw_prediction",
         "extraction_input_packet",
         "coverage_artifact",
         "resolved_prompt",
         "provider_client_contract",
+        "live_call_authorization",
         "extraction_run",
     )
 
@@ -65,6 +75,7 @@ def test_the_provider_client_contract_is_bound_here_not_in_extraction_run():
     manifest = _manifest()
     references = {entry["reference"] for entry in manifest["source_artifacts"]}
     assert "inputs/provider_client_contract.json" in references
+    assert "inputs/live_call_authorization.json" in references
     assert "manifests/extraction_run.json" in references
 
 
@@ -81,7 +92,7 @@ def test_the_contract_stamp_comes_only_from_the_closed_pin():
 def test_source_artifacts_are_emitted_in_canonical_order():
     entries = _manifest()["source_artifacts"]
     assert entries == sorted(entries, key=lambda e: (e["reference"], e["sha256"]))
-    assert len(entries) == 6
+    assert len(entries) == 7
 
 
 @pytest.mark.parametrize("role", REQUIRED_SOURCE_ARTIFACT_ROLES)
@@ -95,7 +106,7 @@ def test_a_missing_role_fails_closed(role):
 
 def test_an_undeclared_role_fails_closed():
     artifacts = {k: dict(v) for k, v in SOURCE_ARTIFACTS.items()}
-    artifacts["mystery_artifact"] = {"reference": "x.json", "sha256": "8" * 64}
+    artifacts["mystery_artifact"] = {"reference": "x.json", "sha256": "9" * 64}
     with pytest.raises(ExtractionError) as excinfo:
         _manifest(source_artifacts=artifacts)
     assert excinfo.value.reason_code == "source_artifact_unknown"

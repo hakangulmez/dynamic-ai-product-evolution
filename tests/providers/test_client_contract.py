@@ -51,6 +51,7 @@ def test_the_property_set_matches_the_released_schema_exactly():
 def test_the_protocol_version_pin_does_not_drift():
     """providers may not import the constant, so the pin is re-derived here."""
     assert PROVIDER_PROTOCOL_VERSION_PIN == PROVIDER_PROTOCOL_VERSION
+    assert PROVIDER_PROTOCOL_VERSION == "extraction_provider_protocol_v6"
     assert _contract()["provider_protocol_version"] == PROVIDER_PROTOCOL_VERSION
 
 

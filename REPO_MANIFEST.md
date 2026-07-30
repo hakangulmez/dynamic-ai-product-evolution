@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **505**
+Total tracked/scaffold files listed: **518**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -228,6 +228,8 @@ Total tracked/scaffold files listed: **505**
 - `prompts/measurement/frontier_replicability.md`
 - `prompts/measurement/task_defensibility.md`
 - `pyproject.toml`
+- `schemas/adapter_enablement_record.schema.json`
+- `schemas/adapter_qualification_record.schema.json`
 - `schemas/capability_observation.schema.json`
 - `schemas/company.schema.json`
 - `schemas/company_universe_classification.schema.json`
@@ -245,6 +247,7 @@ Total tracked/scaffold files listed: **505**
 - `schemas/firm_year_eligibility.schema.json`
 - `schemas/frontier_baseline.schema.json`
 - `schemas/ingestion_preflight_manifest.schema.json`
+- `schemas/live_call_authorization.schema.json`
 - `schemas/official_web_candidate.schema.json`
 - `schemas/official_web_collection_manifest.schema.json`
 - `schemas/product_observation.schema.json`
@@ -384,9 +387,12 @@ Total tracked/scaffold files listed: **505**
 - `src/dynamic_ai_products/ingestion/publication.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/providers/__init__.py`
+- `src/dynamic_ai_products/providers/authorization.py`
 - `src/dynamic_ai_products/providers/client_contract.py`
 - `src/dynamic_ai_products/providers/errors.py`
+- `src/dynamic_ai_products/providers/response_capture.py`
 - `src/dynamic_ai_products/providers/retry_policy.py`
+- `src/dynamic_ai_products/providers/sdk_factory.py`
 - `src/dynamic_ai_products/providers/vertex_gemini.py`
 - `src/dynamic_ai_products/universe/__init__.py`
 - `src/dynamic_ai_products/universe/audit.py`
@@ -465,6 +471,9 @@ Total tracked/scaffold files listed: **505**
 - `tests/extraction/test_errors.py`
 - `tests/extraction/test_extraction_manifests.py`
 - `tests/extraction/test_input_packet.py`
+- `tests/extraction/test_live_authorization_validation.py`
+- `tests/extraction/test_live_budget_enforcement.py`
+- `tests/extraction/test_live_run_publication.py`
 - `tests/extraction/test_parent_context.py`
 - `tests/extraction/test_parent_snapshots.py`
 - `tests/extraction/test_prediction_manifest.py`
@@ -485,14 +494,18 @@ Total tracked/scaffold files listed: **505**
 - `tests/ingestion/test_publication_atomicity.py`
 - `tests/notebook/test_master_notebook.py`
 - `tests/provenance/test_write_bytes_once.py`
+- `tests/providers/test_authorization.py`
 - `tests/providers/test_client_contract.py`
 - `tests/providers/test_credential_non_disclosure.py`
 - `tests/providers/test_error_translation_seam.py`
+- `tests/providers/test_live_activation.py`
 - `tests/providers/test_live_refusal_surface.py`
 - `tests/providers/test_provider_boundaries.py`
 - `tests/providers/test_real_sdk_compatibility.py`
 - `tests/providers/test_request_config_mapping.py`
+- `tests/providers/test_response_capture.py`
 - `tests/providers/test_retry_and_timeout_policy.py`
+- `tests/providers/test_sdk_factory.py`
 - `tests/schema/test_schemas_are_valid.py`
 - `tests/temporal/test_temporal_rule.py`
 - `tests/ui/test_local_ui_scaffold.py`

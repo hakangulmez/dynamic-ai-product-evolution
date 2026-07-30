@@ -34,6 +34,7 @@ from .raw_artifacts import canonical_json_bytes, sha256_bytes
 
 __all__ = [
     "CORPUS_SCOPE_SEC_ONLY",
+    "hydrate_pinned_artifact",
     "PACKET_CONTRACT",
     "STAGES",
     "build_extraction_input_packet",
@@ -144,6 +145,26 @@ def _hydrate(
     if not isinstance(payload, dict):
         raise ExtractionError(f"{what} is not an object", reason_code=sha_code)
     return payload
+
+
+def hydrate_pinned_artifact(
+    artifact_root: str | Path,
+    pin: Any,
+    *,
+    what: str,
+    unsafe_code: str,
+    sha_code: str,
+) -> dict[str, Any]:
+    """Public pin hydration for callers outside this module.
+
+    Governance artifacts (ADR-035) are read from their own explicitly injected
+    root through exactly this containment and hash discipline: safe relative
+    reference, symlink refusal, escape refusal, SHA-256 re-read. No second
+    loader exists, so no second set of rules can drift from these.
+    """
+    return _hydrate(
+        artifact_root, pin, what=what, unsafe_code=unsafe_code, sha_code=sha_code
+    )
 
 
 def hydrate_snapshot(artifact_root: str | Path, pin: Any) -> dict[str, Any]:

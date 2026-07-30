@@ -16,6 +16,7 @@ from jsonschema import Draft202012Validator
 from dynamic_ai_products.extraction.errors import ExtractionError
 from dynamic_ai_products.extraction.input_packet import (
     CORPUS_SCOPE_SEC_ONLY,
+    hydrate_pinned_artifact,
     PACKET_CONTRACT,
     STAGES,
     build_extraction_input_packet,
@@ -387,3 +388,65 @@ def test_snapshot_a_and_b_must_be_distinct_pinned_identities(pin_b):
             snapshot_b_pin=pin_b,
         )
     assert excinfo.value.reason_code == "parent_context_wrong_snapshot"
+
+
+# --- the public governance hydrator (ADR-035) ---------------------------------
+
+
+def test_the_public_hydrator_shares_the_containment_and_hash_discipline(tmp_path: Path):
+    """Governance artifacts are read through exactly this loader, so no second
+    set of containment rules can drift from these."""
+    pin = _persist(tmp_path, "governance/authorization.json", {"a": 1})
+    loaded = hydrate_pinned_artifact(
+        tmp_path,
+        pin,
+        what="live call authorization",
+        unsafe_code="authorization_chain_broken",
+        sha_code="authorization_chain_broken",
+    )
+    assert loaded == {"a": 1}
+
+
+@pytest.mark.parametrize(
+    "reference",
+    ["../escape.json", "/etc/passwd", "C:/x.json", "a\\b.json", "", "  "],
+)
+def test_the_public_hydrator_refuses_an_unsafe_reference(tmp_path: Path, reference):
+    with pytest.raises(ExtractionError) as excinfo:
+        hydrate_pinned_artifact(
+            tmp_path,
+            {"reference": reference, "sha256": "0" * 64},
+            what="live call authorization",
+            unsafe_code="authorization_chain_broken",
+            sha_code="authorization_chain_broken",
+        )
+    assert excinfo.value.reason_code == "authorization_chain_broken"
+
+
+def test_the_public_hydrator_refuses_a_drifted_digest(tmp_path: Path):
+    pin = _persist(tmp_path, "governance/authorization.json", {"a": 1})
+    with pytest.raises(ExtractionError) as excinfo:
+        hydrate_pinned_artifact(
+            tmp_path,
+            {**pin, "sha256": "0" * 64},
+            what="live call authorization",
+            unsafe_code="authorization_chain_broken",
+            sha_code="authorization_chain_broken",
+        )
+    assert excinfo.value.reason_code == "authorization_chain_broken"
+
+
+def test_the_public_hydrator_refuses_a_symlink(tmp_path: Path):
+    outside = tmp_path.parent / "outside-governance.json"
+    outside.write_bytes(b"{}")
+    (tmp_path / "governance").mkdir()
+    (tmp_path / "governance" / "authorization.json").symlink_to(outside)
+    with pytest.raises(ExtractionError) as excinfo:
+        hydrate_pinned_artifact(
+            tmp_path,
+            {"reference": "governance/authorization.json", "sha256": "0" * 64},
+            what="live call authorization",
+            unsafe_code="authorization_chain_broken",
+            sha_code="authorization_chain_broken",
+        )
+    assert excinfo.value.reason_code == "authorization_chain_broken"

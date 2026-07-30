@@ -18,6 +18,7 @@ from dynamic_ai_products.ingestion import publication as ingestion_publication
 from dynamic_ai_products.extraction.errors import ExtractionError
 from dynamic_ai_products.extraction.raw_artifacts import (
     PREDICTION_ENVELOPE_CONTRACT,
+    RAW_CAPTURE_REPRESENTATION,
     build_prediction_envelope,
     canonical_json_bytes,
     canonical_jsonl_bytes,
@@ -123,7 +124,10 @@ def _envelope(**overrides):
         "prediction_record_id": "run-0",
         "stage": "product_extraction",
         "source_references": ["predictions/raw_prediction.json"],
-        "prompt_model_metadata": {"model_name": "fake"},
+        "prompt_model_metadata": {
+            "model_name": "fake",
+            "raw_capture_representation": RAW_CAPTURE_REPRESENTATION,
+        },
         "input_packet_hash": "a" * 64,
         "prediction_run_manifest_reference": "predictions/prediction_run_manifest.json",
         "input_packet_reference": "inputs/extraction_input_packet.json",
@@ -169,6 +173,27 @@ def test_no_caller_channel_can_override_the_envelope_contract_stamp():
     with pytest.raises(ExtractionError) as excinfo:
         _envelope(prompt_model_metadata={"contract": {"contract_hash": "f" * 64}})
     assert excinfo.value.reason_code == "contract_metadata_forbidden"
+
+
+def test_the_envelope_must_declare_the_capture_representation():
+    """Archived bytes are meaningless without knowing which representation
+    they are, and the envelope is the one hash-bound per-record home for it."""
+    with pytest.raises(ExtractionError) as excinfo:
+        _envelope(prompt_model_metadata={"model_name": "fake"})
+    assert excinfo.value.reason_code == "capture_representation_missing"
+
+    with pytest.raises(ExtractionError) as excinfo:
+        _envelope(prompt_model_metadata={"raw_capture_representation": "wire_bytes"})
+    assert excinfo.value.reason_code == "capture_representation_missing"
+
+
+def test_the_capture_representation_is_the_post_content_encoding_entity_body():
+    assert RAW_CAPTURE_REPRESENTATION == "post_content_encoding_entity_body"
+    envelope = _envelope()
+    assert (
+        envelope["prompt_model_metadata"]["raw_capture_representation"]
+        == RAW_CAPTURE_REPRESENTATION
+    )
 
 
 def test_envelope_serializes_deterministically(tmp_path: Path):

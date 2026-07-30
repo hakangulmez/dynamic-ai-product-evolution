@@ -1,9 +1,14 @@
 """Environment-specific regression for the installed SDK (ADR-034, E-P0).
 
-This is the **only** optional file in the provider suite. Behavioural coverage
-lives elsewhere and runs with no SDK installed, so nothing disappears when this
-is skipped — it re-checks that the E-P0 finding still holds, it does not
-reproduce it.
+This is the **only** module-level-optional file in the provider suite.
+Behavioural coverage lives elsewhere and runs with no SDK installed, so nothing
+disappears when this is skipped — it re-checks that the surface E-P0 and E-L
+measured still holds, it does not reproduce it.
+
+E-L adds a second drift risk here. Its entire capture strategy rests on
+``HttpOptions.httpx_client`` being a public field that the SDK honours verbatim.
+If that field were removed, renamed, or retyped, capture would silently stop
+being byte-identical, so it is guarded alongside the timeout unit.
 
 Nothing here builds a client, resolves Application Default Credentials, or
 makes a network call. Only import and signature/field introspection.
@@ -12,6 +17,7 @@ makes a network call. Only import and signature/field introspection.
 from __future__ import annotations
 
 import inspect
+import typing
 
 import pytest
 
@@ -26,6 +32,7 @@ from dynamic_ai_products.providers.retry_policy import (
 
 genai = pytest.importorskip("google.genai", reason="the 'provider' extra is not installed")
 genai_types = pytest.importorskip("google.genai.types")
+_api_client = pytest.importorskip("google.genai._api_client")
 
 
 def test_the_installed_version_matches_the_exact_pin():
@@ -86,3 +93,47 @@ def test_the_locked_http_options_are_constructible_without_a_client():
     assert options.timeout == 300000
     assert options.api_version == "v1"
     assert options.retry_options.attempts == 1
+
+
+# --- E-L: the public transport hook capture depends on -----------------------
+
+
+def test_the_public_httpx_client_hook_still_exists_and_is_typed():
+    """Capture is only byte-identical because this hook is public and honoured."""
+    import httpx
+
+    field = genai_types.HttpOptions.model_fields["httpx_client"]
+    assert field.annotation == typing.Optional[httpx.Client]
+    assert field.default is None
+
+
+def test_the_sdk_uses_a_supplied_client_verbatim():
+    """It must not wrap or replace ours, or the captured bytes would not be the
+    bytes the SDK decodes."""
+    source = inspect.getsource(_api_client.BaseApiClient.__init__)
+    assert "self._httpx_client = self._http_options.httpx_client" in source
+
+
+def test_the_sdk_does_not_close_a_client_it_did_not_create():
+    """Closing is therefore the factory's obligation, done in ``finally``."""
+    source = inspect.getsource(_api_client.BaseApiClient)
+    assert "if not self._http_options.httpx_client" in source
+
+
+def test_the_non_streaming_path_still_discards_the_raw_bytes():
+    """The reason capture exists: the SDK keeps only the decoded text.
+
+    If a future version began exposing real bytes, this guard fails loudly and
+    the capture client can be reconsidered rather than kept out of habit.
+    """
+    # The construction lives in _request_once; _request delegates to it.
+    source = inspect.getsource(_api_client.BaseApiClient._request_once)
+    assert "response.text" in source
+    assert genai_types.HttpResponse.model_fields["body"].annotation == typing.Optional[str]
+
+
+def test_the_sdk_default_follows_redirects_so_ours_must_say_otherwise():
+    """Our capture client sets follow_redirects=False explicitly because the
+    SDK's own client defaults it to True."""
+    source = inspect.getsource(_api_client.SyncHttpxClient.__init__)
+    assert "follow_redirects" in source and "True" in source

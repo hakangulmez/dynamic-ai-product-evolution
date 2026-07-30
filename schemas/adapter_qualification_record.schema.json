@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter_qualification_record.schema.json",
+  "title": "Adapter qualification record",
+  "description": "Ring 1 of the SPEC-027 model-execution chain (ADR-035): the adapter passed its gates under a specific execution contract. Pinned by reference and SHA-256 from the enablement record; it pins nothing above itself. No free-text property and no credential-shaped property: an authorization chain must not become a channel for secret material.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "adapter_family",
+    "adapter_identity",
+    "adapter_version",
+    "contract",
+    "execution_contract_id",
+    "execution_contract_sha256",
+    "qualification_id",
+    "qualification_scope",
+    "qualification_status",
+    "qualified_at",
+    "schema_version",
+    "stage_output_contract_id",
+    "stage_output_contract_sha256"
+  ],
+  "properties": {
+    "adapter_family": {
+      "const": "model_execution"
+    },
+    "adapter_identity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "adapter_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contract": {
+      "const": "adapter_qualification_record@0.1.0"
+    },
+    "execution_contract_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "execution_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "qualification_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "qualification_scope": {
+      "type": "string",
+      "minLength": 1
+    },
+    "qualification_status": {
+      "enum": [
+        "qualified",
+        "superseded",
+        "revoked"
+      ]
+    },
+    "qualified_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "stage_output_contract_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stage_output_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

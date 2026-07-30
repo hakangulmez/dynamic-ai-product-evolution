@@ -22,6 +22,7 @@ from dynamic_ai_products.extraction.provider_adapter import (
 )
 from dynamic_ai_products.extraction.raw_artifacts import sha256_bytes
 from dynamic_ai_products.extraction.run_extraction import (
+    AUTHORIZATION_REFERENCE,
     CLIENT_CONTRACT_REFERENCE,
     ENVELOPES_REFERENCE,
     EXTRACTION_RUN_REFERENCE,
@@ -32,6 +33,11 @@ from dynamic_ai_products.extraction.run_extraction import (
     RAW_REFERENCE,
     run_extraction_stage,
 )
+from dynamic_ai_products.extraction.manifests import (
+    STAGE_OUTPUT_SCHEMA_SHA256 as _STAGE_OUTPUT_SCHEMA_SHA256,
+    validate_provider_client_contract,
+)
+from dynamic_ai_products.extraction.raw_artifacts import canonical_json_bytes
 from dynamic_ai_products.providers.client_contract import build_client_contract
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -51,14 +57,25 @@ class _FakeProvider:
         self.requests: list[ProviderRequest] = []
         self.permit_calls = 0
         self.contract_calls = 0
-
-    def assert_run_permitted(self) -> None:
-        self.permit_calls += 1
+        self.seen_digest = None
 
     def client_contract(self) -> dict:
         self.contract_calls += 1
         return build_client_contract(vertex_project="my-research-project")
 
+    def assert_run_permitted(
+        self,
+        *,
+        authorization_sha256: str | None = None,
+        endpoint_allowlist: tuple[str, ...] | None = None,
+        enablement_endpoint_allowlist: tuple[str, ...] | None = None,
+    ) -> None:
+        self.permit_calls += 1
+        self.seen_digest = authorization_sha256
+
+
+    def revoke_run_permission(self) -> None:
+        self.revoked = getattr(self, 'revoked', 0) + 1
     def complete(self, request: ProviderRequest) -> ProviderResponse:
         self.requests.append(request)
         return ProviderResponse(
@@ -69,6 +86,7 @@ class _FakeProvider:
             prompt_model_metadata={
                 "model_name": "fake-offline",
                 "prompt_sha256": request.prompt_sha256,
+                "raw_capture_representation": "post_content_encoding_entity_body",
             },
         )
 
@@ -76,9 +94,18 @@ class _FakeProvider:
 class _ExplodingProvider:
     """Every member must stay unreached on a non-run route."""
 
-    def assert_run_permitted(self) -> None:
+    def assert_run_permitted(
+        self,
+        *,
+        authorization_sha256: str | None = None,
+        endpoint_allowlist: tuple[str, ...] | None = None,
+        enablement_endpoint_allowlist: tuple[str, ...] | None = None,
+    ) -> None:
         raise AssertionError("the non-run route must not ask for permission")
 
+
+    def revoke_run_permission(self) -> None:
+        self.revoked = getattr(self, 'revoked', 0) + 1
     def client_contract(self) -> dict:
         raise AssertionError("the non-run route must not request a contract")
 
@@ -97,8 +124,12 @@ def _passage(passage_id: str, text: str, source_id: str = "sec-1"):
 
 
 def _run(tmp_path: Path, **overrides):
+    governance_root = tmp_path / "governance-root"
     kwargs = {
         "run_root": tmp_path / "run",
+        "governance_artifact_root": governance_root,
+        "live_call_authorization_pin": write_governance_chain(governance_root),
+        "budget_meter": FakeMeter(),
         "repo_root": REPO_ROOT,
         "stage": "product_extraction",
         "company_id": COMPANY,
@@ -125,13 +156,14 @@ def _files(root: Path) -> set[str]:
 # --- the provider route -------------------------------------------------------
 
 
-def test_a_provider_run_publishes_the_seven_expected_artifacts(tmp_path: Path):
+def test_a_provider_run_publishes_the_eight_expected_artifacts(tmp_path: Path):
     outcome = _run(tmp_path)
     assert outcome.verdict == "provider_run_complete"
     assert _files(outcome.run_root) == {
         PACKET_REFERENCE,
         PROMPT_REFERENCE,
         CLIENT_CONTRACT_REFERENCE,
+        AUTHORIZATION_REFERENCE,
         RAW_REFERENCE,
         EXTRACTION_RUN_REFERENCE,
         ENVELOPES_REFERENCE,
@@ -328,3 +360,158 @@ def test_run_identity_must_be_injected(tmp_path: Path, field):
     with pytest.raises(ExtractionError) as excinfo:
         _non_run(tmp_path, **{field: "  "})
     assert excinfo.value.reason_code == "run_identity_invalid"
+
+
+# --- governance chain fixture (ADR-035) --------------------------------------
+#
+# Built locally in each test module rather than in a shared helper file: the E-L
+# increment is scope-locked to a fixed path set, and a new helper module is not
+# in it. The duplication is deliberate and small.
+
+GOV_AUTH_REFERENCE = "governance/live_call_authorization.json"
+GOV_ENABLEMENT_REFERENCE = "governance/adapter_enablement_record.json"
+GOV_QUALIFICATION_REFERENCE = "governance/adapter_qualification_record.json"
+STAGE_OUTPUT_SHA = _STAGE_OUTPUT_SCHEMA_SHA256["product_extraction"]
+METER_IDENTITY = "e-m-reference-meter"
+METER_VERSION = "0.1.0"
+ENDPOINT_ALLOWLIST = ["https://us-central1-aiplatform.googleapis.com/v1/projects"]
+
+
+class FakeMeter:
+    """Conforming offline meter. It counts nothing; it only records and refuses.
+
+    E-M supplies the real tokenizer, pricing table, and monotonic clock behind
+    this same seam. This stand-in exists so the authorized path is testable
+    without either, and it is never used in E-B.
+    """
+
+    def __init__(self, *, refuse: str | None = None, identity=METER_IDENTITY,
+                 version=METER_VERSION, run_root=None):
+        self._refuse = refuse
+        self._identity = identity
+        self._version = version
+        self._run_root = run_root
+        self.seen_request = None
+        self.seen_max_output_tokens = None
+        self.root_existed_at_call = None
+
+    def meter_identity(self):
+        return {"meter_identity": self._identity, "meter_version": self._version}
+
+    def assert_within_budget(self, *, request, max_output_tokens, budget):
+        self.seen_request = request
+        self.seen_max_output_tokens = max_output_tokens
+        if self._run_root is not None:
+            self.root_existed_at_call = self._run_root.exists()
+        if self._refuse:
+            raise _MeterRefusal(self._refuse)
+
+
+class _MeterRefusal(Exception):
+    def __init__(self, reason_code):
+        super().__init__(reason_code)
+        self.reason_code = reason_code
+
+
+def _client_contract_digest(project="my-research-project"):
+    contract = validate_provider_client_contract(
+        build_client_contract(vertex_project=project)
+    )
+    return sha256_bytes(canonical_json_bytes(contract))
+
+
+def write_governance_chain(root: Path, **overrides):
+    """Persist the three-ring chain and return the authorization pin.
+
+    Unknown override keys raise: silently ignoring one would let a test think it
+    had weakened a record when it had not, and pass for the wrong reason.
+    """
+    unknown = sorted(set(overrides) - {"qualification", "enablement", "authorization"})
+    if unknown:
+        raise AssertionError(f"unknown governance overrides: {unknown}")
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "governance").mkdir(parents=True, exist_ok=True)
+
+    qualification = {
+        "contract": "adapter_qualification_record@0.1.0",
+        "schema_version": "0.1.0",
+        "qualification_id": "qual-0001",
+        "adapter_identity": "dynamic_ai_products.providers.vertex_gemini",
+        "adapter_version": "0.1.0",
+        "adapter_family": "model_execution",
+        # Qualified under the contract this run actually executes, and against
+        # the released stage-output schema the run validates against.
+        "execution_contract_id": "extraction_provider_client_contract@0.1.0",
+        "execution_contract_sha256": _client_contract_digest(),
+        "stage_output_contract_id": "product_observation@0.1.0",
+        "stage_output_contract_sha256": STAGE_OUTPUT_SHA,
+        "qualification_scope": "live_dev",
+        "qualification_status": "qualified",
+        "qualified_at": "2026-07-01T00:00:00Z",
+    }
+    qualification.update(overrides.pop("qualification", {}))
+    qual_bytes = canonical_json_bytes(qualification)
+    (root / GOV_QUALIFICATION_REFERENCE).write_bytes(qual_bytes)
+
+    enablement = {
+        "contract": "adapter_enablement_record@0.1.0",
+        "schema_version": "0.1.0",
+        "enablement_id": "enab-0001",
+        "adapter_qualification_record_reference": GOV_QUALIFICATION_REFERENCE,
+        "adapter_qualification_record_sha256": sha256_bytes(qual_bytes),
+        "prompt_qualification_reference": "governance/prompt_qualification.json",
+        "prompt_qualification_sha256": "3" * 64,
+        "stage": "product_extraction",
+        "stage_output_contract_id": "product_observation@0.1.0",
+        "stage_output_contract_sha256": STAGE_OUTPUT_SHA,
+        "routing_contract_id": "vertex_gemini_route@0.1.0",
+        "routing_contract_sha256": "4" * 64,
+        "deployment_environment_id": "dev-local",
+        "rollout_state": "live_dev",
+        "endpoint_allowlist": list(ENDPOINT_ALLOWLIST),
+        "enablement_status": "enabled_live_dev",
+        "approver": "methodology-owner",
+        "effective_at": "2026-07-01T00:00:00Z",
+        "expires_at": "2027-07-01T00:00:00Z",
+    }
+    enablement.update(overrides.pop("enablement", {}))
+    enab_bytes = canonical_json_bytes(enablement)
+    (root / GOV_ENABLEMENT_REFERENCE).write_bytes(enab_bytes)
+
+    authorization = {
+        "contract": "live_call_authorization@0.1.0",
+        "schema_version": "0.1.0",
+        "authorization_id": "auth-0001",
+        "authorized_by": "methodology-owner",
+        "effective_at": "2026-07-01T00:00:00Z",
+        "expires_at": "2027-07-01T00:00:00Z",
+        "deployment_environment_id": "dev-local",
+        "rollout_state": "live_dev",
+        "adapter_enablement_record_reference": GOV_ENABLEMENT_REFERENCE,
+        "adapter_enablement_record_sha256": sha256_bytes(enab_bytes),
+        "provider_client_contract_reference": CLIENT_CONTRACT_REFERENCE,
+        "provider_client_contract_sha256": _client_contract_digest(),
+        "budget_meter_identity": METER_IDENTITY,
+        "budget_meter_version": METER_VERSION,
+        "stage": "product_extraction",
+        "company_id": "CIK0001404655",
+        "observation_cutoff_date": "2024-12-31",
+        "corpus_scope": "sec_only_partial",
+        "budget_max_records": 1,
+        "budget_max_requests": 3,
+        "budget_max_input_tokens": 100000,
+        "budget_max_output_tokens": 8192,
+        "budget_max_estimated_cost_micros": 500000,
+        "budget_max_wall_clock_seconds": 903,
+        "budget_policy_version": "budget_policy_v1",
+        "retry_policy_version": "extraction_provider_retry_policy_v1",
+        "rate_limit_policy_version": "extraction_provider_rate_limit_policy_v1",
+        "endpoint_allowlist": list(ENDPOINT_ALLOWLIST),
+        "circuit_breaker_max_consecutive_failures": 1,
+        "provider_called": True,
+        "harness_run": False,
+    }
+    authorization.update(overrides.pop("authorization", {}))
+    auth_bytes = canonical_json_bytes(authorization)
+    (root / GOV_AUTH_REFERENCE).write_bytes(auth_bytes)
+    return {"reference": GOV_AUTH_REFERENCE, "sha256": sha256_bytes(auth_bytes)}

@@ -20,6 +20,7 @@ from .errors import ExtractionError, translate_write_once_error
 
 __all__ = [
     "PREDICTION_ENVELOPE_CONTRACT",
+    "RAW_CAPTURE_REPRESENTATION",
     "build_prediction_envelope",
     "canonical_json_bytes",
     "canonical_jsonl_bytes",
@@ -39,6 +40,14 @@ PREDICTION_ENVELOPE_CONTRACT: dict[str, str] = {
 }
 
 _SHA256_HEX = 64
+
+# The archival unit of a captured raw prediction, recorded in the envelope's
+# open prompt_model_metadata mapping. That mapping is hash-bound through
+# envelopes_sha256 in the prediction manifest, so the representation is
+# auditable in the run artifact chain rather than only in an ADR. The released
+# extraction_provider_client_contract@0.1.0 is deliberately left unchanged
+# (ADR-035).
+RAW_CAPTURE_REPRESENTATION = "post_content_encoding_entity_body"
 
 
 def reject_contract_metadata(forbidden: dict[str, Any], *mappings: Any) -> None:
@@ -164,8 +173,21 @@ def build_prediction_envelope(
     ``source_references`` must include the stage input-packet artifact, which
     is how corpus scope and inherited coverage reach the harness without any
     field being added to the frozen envelope contract.
+
+    ``prompt_model_metadata`` must declare ``raw_capture_representation``: the
+    archived bytes are meaningless without knowing which representation they
+    are, and the envelope is the one hash-bound, per-prediction-record home for
+    that fact.
     """
     reject_contract_metadata(forbidden, prompt_model_metadata)
+    if prompt_model_metadata.get("raw_capture_representation") != (
+        RAW_CAPTURE_REPRESENTATION
+    ):
+        raise ExtractionError(
+            "prompt_model_metadata must declare raw_capture_representation="
+            f"{RAW_CAPTURE_REPRESENTATION!r}",
+            reason_code="capture_representation_missing",
+        )
     if not input_packet_reference:
         raise ExtractionError(
             "an envelope must reference the stage input packet",

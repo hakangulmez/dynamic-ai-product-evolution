@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter_enablement_record.schema.json",
+  "title": "Adapter enablement record",
+  "description": "Ring 2 of the SPEC-027 model-execution chain (ADR-035). It pins ring 1 and, because Stage 05-07 is prompt-bearing, it is also where the SPEC-024 prompt/execution/routing/stage-contract qualification reference lives -- SPEC-027 places that reference on enablement, not on the authorization. Execution-affecting contract changes never inherit enablement.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "adapter_qualification_record_reference",
+    "adapter_qualification_record_sha256",
+    "approver",
+    "contract",
+    "deployment_environment_id",
+    "effective_at",
+    "enablement_id",
+    "enablement_status",
+    "endpoint_allowlist",
+    "expires_at",
+    "prompt_qualification_reference",
+    "prompt_qualification_sha256",
+    "rollout_state",
+    "routing_contract_id",
+    "routing_contract_sha256",
+    "schema_version",
+    "stage",
+    "stage_output_contract_id",
+    "stage_output_contract_sha256"
+  ],
+  "properties": {
+    "adapter_qualification_record_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "adapter_qualification_record_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "approver": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contract": {
+      "const": "adapter_enablement_record@0.1.0"
+    },
+    "deployment_environment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "effective_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "enablement_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "enablement_status": {
+      "enum": [
+        "disabled",
+        "enabled_live_dev",
+        "enabled_pilot",
+        "enabled_release",
+        "suspended",
+        "expired",
+        "revoked"
+      ]
+    },
+    "endpoint_allowlist": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "expires_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "prompt_qualification_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "prompt_qualification_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rollout_state": {
+      "enum": [
+        "mock_only",
+        "live_dev",
+        "controlled_pilot",
+        "release_or_research_production",
+        "full_scale"
+      ]
+    },
+    "routing_contract_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "routing_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "stage": {
+      "enum": [
+        "product_extraction",
+        "capability_extraction",
+        "task_extraction"
+      ]
+    },
+    "stage_output_contract_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stage_output_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

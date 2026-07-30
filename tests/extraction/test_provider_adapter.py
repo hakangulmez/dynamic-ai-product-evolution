@@ -27,10 +27,21 @@ class _FakeProvider:
     def __init__(self) -> None:
         self.calls: list[ProviderRequest] = []
         self.permitted = 0
+        self.seen_digest: str | None = None
 
-    def assert_run_permitted(self) -> None:
+    def assert_run_permitted(
+        self,
+        *,
+        authorization_sha256: str | None = None,
+        endpoint_allowlist: tuple[str, ...] | None = None,
+        enablement_endpoint_allowlist: tuple[str, ...] | None = None,
+    ) -> None:
         self.permitted += 1
+        self.seen_digest = authorization_sha256
 
+
+    def revoke_run_permission(self) -> None:
+        self.revoked = getattr(self, 'revoked', 0) + 1
     def client_contract(self) -> dict:
         return {"contract": "extraction_provider_client_contract@0.1.0"}
 
@@ -58,12 +69,13 @@ class _PartialShape:
 
 
 def test_protocol_version_is_declared():
-    assert PROVIDER_PROTOCOL_VERSION == "extraction_provider_protocol_v2"
+    assert PROVIDER_PROTOCOL_VERSION == "extraction_provider_protocol_v6"
 
 
-def test_the_protocol_declares_all_three_v2_members():
+def test_the_protocol_declares_all_four_members():
     assert set(ExtractionProvider.__protocol_attrs__) == {
         "assert_run_permitted",
+        "revoke_run_permission",
         "client_contract",
         "complete",
     }
@@ -120,8 +132,9 @@ def test_an_injected_fake_satisfies_the_protocol_and_is_returned_unchanged():
 
 def test_a_fake_may_permit_a_run_so_the_terminal_path_stays_testable():
     provider = _FakeProvider()
-    provider.assert_run_permitted()
+    provider.assert_run_permitted(authorization_sha256="a" * 64)
     assert provider.permitted == 1
+    assert provider.seen_digest == "a" * 64
     assert provider.client_contract()["contract"].startswith("extraction_provider")
 
 

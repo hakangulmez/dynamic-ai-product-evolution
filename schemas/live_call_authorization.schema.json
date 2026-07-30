@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "live_call_authorization.schema.json",
+  "title": "Live call authorization",
+  "description": "Ring 3 of the SPEC-027 model-execution chain (ADR-035): one authorized external-call run with a predeclared budget and scope. It pins the enablement record, the provider client contract, and the budget meter identity, so changing the client contract or swapping the meter invalidates the authorization. budget_max_records, budget_max_requests and budget_max_output_tokens are enforced pre-call by the runner; budget_max_wall_clock_seconds is a compatibility floor against the retry policy's theoretical ceiling, while real elapsed enforcement belongs to the injected budget meter; budget_max_input_tokens and budget_max_estimated_cost_micros are verifiable only through that meter and the run is refused when none is injected. No free-text property exists anywhere in this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "adapter_enablement_record_reference",
+    "adapter_enablement_record_sha256",
+    "authorization_id",
+    "authorized_by",
+    "budget_max_estimated_cost_micros",
+    "budget_max_input_tokens",
+    "budget_max_output_tokens",
+    "budget_max_records",
+    "budget_max_requests",
+    "budget_max_wall_clock_seconds",
+    "budget_meter_identity",
+    "budget_meter_version",
+    "budget_policy_version",
+    "circuit_breaker_max_consecutive_failures",
+    "company_id",
+    "contract",
+    "corpus_scope",
+    "deployment_environment_id",
+    "effective_at",
+    "endpoint_allowlist",
+    "expires_at",
+    "harness_run",
+    "observation_cutoff_date",
+    "provider_called",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "rate_limit_policy_version",
+    "retry_policy_version",
+    "rollout_state",
+    "schema_version",
+    "stage"
+  ],
+  "properties": {
+    "adapter_enablement_record_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "adapter_enablement_record_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorized_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "budget_max_estimated_cost_micros": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_input_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_output_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_records": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_requests": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_wall_clock_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_meter_identity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "budget_meter_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "budget_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "circuit_breaker_max_consecutive_failures": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "company_id": {
+      "type": "string",
+      "pattern": "^CIK[0-9]{10}$"
+    },
+    "contract": {
+      "const": "live_call_authorization@0.1.0"
+    },
+    "corpus_scope": {
+      "enum": [
+        "sec_only_partial"
+      ]
+    },
+    "deployment_environment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "effective_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "endpoint_allowlist": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "expires_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "harness_run": {
+      "const": false
+    },
+    "observation_cutoff_date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "provider_called": {
+      "const": true
+    },
+    "provider_client_contract_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_client_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rate_limit_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "retry_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rollout_state": {
+      "enum": [
+        "live_dev",
+        "controlled_pilot",
+        "release_or_research_production",
+        "full_scale"
+      ]
+    },
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "stage": {
+      "enum": [
+        "product_extraction",
+        "capability_extraction",
+        "task_extraction"
+      ]
+    }
+  }
+}

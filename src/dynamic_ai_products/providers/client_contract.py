@@ -55,7 +55,7 @@ CLIENT_VERSION = "0.1.0"
 # Closed static pin of the protocol constant. This package may import only the
 # Protocol and the two payload types from provider_adapter, so the version
 # string is pinned here and a drift test re-derives it.
-PROVIDER_PROTOCOL_VERSION_PIN = "extraction_provider_protocol_v2"
+PROVIDER_PROTOCOL_VERSION_PIN = "extraction_provider_protocol_v6"
 
 SDK_NAME = "google-genai"
 SDK_VERSION = "2.13.0"

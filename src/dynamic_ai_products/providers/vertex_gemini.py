@@ -1,16 +1,16 @@
 """Vertex AI Gemini connector — default-deny in E-P (ADR-034).
 
-**This increment cannot make a live call, and that is a code path rather than a
-claim.** Both public entry points refuse unconditionally:
+**Default-deny remains the default.** With no authorization the connector is
+exactly what E-P shipped: ``assert_run_permitted`` refuses before the
+orchestrator opens a run root, so a refused run leaves zero artifacts, and
+``complete`` refuses before reaching the SDK factory.
 
-- :meth:`VertexGeminiProvider.assert_run_permitted` raises before the
-  orchestrator opens a run root, so a refused run leaves zero artifacts;
-- :meth:`VertexGeminiProvider.complete` raises as its first statement.
-
-No SDK is imported anywhere in this package. ``google.genai`` is reached only
-by the optional compatibility test under ``tests/providers``. E-L introduces the
-authorized execution path, the SDK factory, and the schema-bearing
-authorization artifact; E-P defines none of them.
+E-L adds the *authorized* path (ADR-035). It opens only on the two-key
+handshake: the constructor holds the authorization digest this connector was
+built for, and the runner supplies the digest it verified. Neither half alone
+suffices. The SDK is imported lazily and solely by
+:mod:`~dynamic_ai_products.providers.sdk_factory`, reached only after the
+handshake passes.
 
 The internal seams below are pure and duck-typed so the whole adapter surface
 is testable offline with a fake, without the SDK installed and without any
@@ -31,6 +31,12 @@ from tenacity import (
 )
 
 from ..extraction.provider_adapter import ProviderRequest, ProviderResponse
+from .authorization import (
+    require_authorization_digest,
+    require_endpoint_allowlist_match,
+    require_endpoint_allowlist_subset,
+    require_request_cap,
+)
 from .client_contract import MODEL_NAME, MODEL_PARAMETERS, VERTEX_LOCATION, build_client_contract
 from .errors import ProviderError
 from .retry_policy import (
@@ -43,7 +49,9 @@ from .retry_policy import (
 )
 
 __all__ = [
+    "RAW_CAPTURE_REPRESENTATION",
     "VertexGeminiProvider",
+    "adapt_captured_bytes",
     "adapt_response",
     "build_http_options_kwargs",
     "build_request_config",
@@ -60,6 +68,11 @@ _ADC_ERROR_NAMES: dict[str, str] = {
     "RefreshError": "adc_refresh_failed",
     "ReauthFailError": "adc_expired",
 }
+# The archival unit: the HTTP entity body after transfer Content-Encoding is
+# undone. Recorded in the envelope's prompt_model_metadata so it is hash-bound
+# through envelopes_sha256, not merely asserted in an ADR.
+RAW_CAPTURE_REPRESENTATION = "post_content_encoding_entity_body"
+
 _STATUS_REASON: dict[int, str] = {
     403: "vertex_permission_denied",
     404: "vertex_model_not_found",
@@ -136,6 +149,11 @@ def adapt_response(sdk_response: Any, *, prompt_sha256: str) -> ProviderResponse
     to E-L; E-P refuses rather than guesses.
     """
     raw = getattr(sdk_response, "raw_bytes", None)
+    return adapt_captured_bytes(raw, prompt_sha256=prompt_sha256)
+
+
+def adapt_captured_bytes(raw: Any, *, prompt_sha256: str) -> ProviderResponse:
+    """Wrap captured entity-body bytes. Only real bytes are accepted."""
     if not isinstance(raw, (bytes, bytearray)):
         raise ProviderError("provider_response_unusable")
     return ProviderResponse(
@@ -147,6 +165,7 @@ def adapt_response(sdk_response: Any, *, prompt_sha256: str) -> ProviderResponse
             "model_name": MODEL_NAME,
             "prompt_sha256": prompt_sha256,
             "api_version": API_VERSION,
+            "raw_capture_representation": RAW_CAPTURE_REPRESENTATION,
         },
     )
 
@@ -168,7 +187,10 @@ def is_retryable(exc: BaseException) -> bool:
 
 
 def execute_with_retry(
-    call: Callable[[], Any], *, sleep: Callable[[float], None] | None = None
+    call: Callable[[], Any],
+    *,
+    sleep: Callable[[float], None] | None = None,
+    max_attempts: int | None = None,
 ) -> Any:
     """Run ``call`` under the declared retry policy, driven by ``tenacity``.
 
@@ -176,10 +198,17 @@ def execute_with_retry(
     ``attempts=1`` so the two can never compound. The wait chain is fixed at
     1s then 2s with no jitter, so a run's retry timing is reproducible.
 
+    ``max_attempts`` is the budget-derived cap. It can only lower
+    ``RETRY_MAX_ATTEMPTS``; a caller cannot buy extra attempts with it.
+
     On exhaustion the raised :class:`ProviderError` carries ``attempt_count`` —
     the number of failed attempts, which is what ``extraction_run.error_count``
     records.
     """
+    # The cap may only LOWER the E-P policy, never raise it.
+    cap = RETRY_MAX_ATTEMPTS if max_attempts is None else min(max_attempts, RETRY_MAX_ATTEMPTS)
+    if cap < 1:
+        raise ProviderError("live_call_not_authorized")
     attempts = 0
 
     def attempt() -> Any:
@@ -188,7 +217,7 @@ def execute_with_retry(
         return call()
 
     options: dict[str, Any] = {
-        "stop": stop_after_attempt(RETRY_MAX_ATTEMPTS),
+        "stop": stop_after_attempt(cap),
         "wait": wait_chain(*(wait_fixed(delay) for delay in RETRY_DELAYS_SECONDS)),
         "retry": retry_if_exception(is_retryable),
         # The original failure is re-raised rather than wrapped in RetryError,
@@ -205,28 +234,147 @@ def execute_with_retry(
 
 
 class VertexGeminiProvider:
-    """Default-deny Vertex Gemini provider.
+    """Vertex Gemini provider, default-deny until the two-key handshake passes.
 
-    Satisfies ``ExtractionProvider`` but performs no call in this increment.
+    ``expected_authorization_sha256`` and ``max_provider_requests`` are the
+    connector's half of the handshake and are **explicit caller arguments** —
+    neither is read from a file, an environment variable, or any ambient source.
+    Both default to ``None``, so a connector built without them behaves exactly
+    as E-P's did: it refuses.
+
+    ``client_factory`` exists so the authorized path is testable offline. Its
+    default is the real lazy SDK factory; tests inject a fake and no test in
+    this repository builds a real ``genai.Client``, resolves ADC, or opens a
+    socket.
     """
 
     def __init__(
-        self, *, vertex_project: str, vertex_location: str = VERTEX_LOCATION
+        self,
+        *,
+        vertex_project: str,
+        vertex_location: str = VERTEX_LOCATION,
+        expected_authorization_sha256: str | None = None,
+        max_provider_requests: int | None = None,
+        endpoint_allowlist: tuple[str, ...] = (),
+        client_factory: Any = None,
     ) -> None:
         # Validated eagerly and purely: a malformed project or location is a
         # configuration error, not a runtime surprise.
         self._contract = build_client_contract(
             vertex_project=vertex_project, vertex_location=vertex_location
         )
+        self._vertex_project = vertex_project
+        self._vertex_location = vertex_location
+        self._expected_authorization_sha256 = expected_authorization_sha256
+        self._max_provider_requests = max_provider_requests
+        self._endpoint_allowlist = tuple(endpoint_allowlist)
+        self._client_factory = client_factory
+        self._activated_digest: str | None = None
 
-    def assert_run_permitted(self) -> None:
-        """Refuse before the orchestrator creates anything on disk."""
-        raise ProviderError("live_call_not_authorized")
+    def assert_run_permitted(
+        self,
+        *,
+        authorization_sha256: str | None = None,
+        endpoint_allowlist: tuple[str, ...] | None = None,
+        enablement_endpoint_allowlist: tuple[str, ...] | None = None,
+    ) -> None:
+        """Match the runner's verified digest **and** both endpoint allowlists.
+
+        Called before the orchestrator creates anything and before any prompt
+        load, meter call, SDK import, factory construction, or network, so a
+        refusal leaves zero artifacts.
+
+        The allowlists are the third key. Validating them as artifact content is
+        not enough: a connector holding the right digest and cap could still
+        carry a broader or different allowlist, and every per-request check would
+        then be measured against the wrong set. Enforcement lives here because
+        endpoint normalization is provider-side grammar and there must be exactly
+        one of it.
+
+        The permit granted here is **one-shot**: it authorizes exactly one
+        :meth:`complete` call and is revoked at the start of every further
+        handshake attempt.
+        """
+        # Revoke any prior permit before this attempt is judged. Otherwise a
+        # failed handshake would leave an earlier success standing, and a
+        # rejected authorization could still be spent.
+        self._activated_digest = None
+        if self._expected_authorization_sha256 is None:
+            raise ProviderError("live_call_not_authorized")
+        digest = require_authorization_digest(
+            self._expected_authorization_sha256, authorization_sha256
+        )
+        # The cap is required for an authorized run: an uncapped run could
+        # exceed the request budget the runner validated.
+        require_request_cap(self._max_provider_requests, policy_maximum=RETRY_MAX_ATTEMPTS)
+        # Three-level narrowing, in one grammar:
+        #   enablement ⊇ authorization == connector
+        # The authorization may use less than the enablement allows but never
+        # more; the connector must be configured for exactly what was authorized.
+        # Either step also rejects an empty, malformed, non-sequence, or
+        # duplicate-bearing list on either side.
+        require_endpoint_allowlist_subset(
+            enablement_endpoint_allowlist, endpoint_allowlist
+        )
+        require_endpoint_allowlist_match(self._endpoint_allowlist, endpoint_allowlist)
+        self._activated_digest = digest
+
+    def revoke_run_permission(self) -> None:
+        """Drop any live permit. Idempotent, and cannot fail.
+
+        Clearing a field is the whole operation: no SDK import, no factory, no
+        client, no credential, and no network. That is what lets the orchestrator
+        call it unconditionally on every exit from the post-handshake region,
+        including while an exception is already propagating.
+        """
+        self._activated_digest = None
 
     def client_contract(self) -> dict[str, Any]:
         """Return the declared contract. Pure; performs no I/O."""
         return dict(self._contract)
 
     def complete(self, request: ProviderRequest) -> ProviderResponse:
-        """Refuse unconditionally. E-P reaches no SDK, client, or credential."""
-        raise ProviderError("live_call_not_authorized")
+        """Execute one authorized call, or refuse without touching the SDK.
+
+        The permit is **consumed** here, before any factory, SDK, credential, or
+        network work. One authorization buys one call: a success, a terminal
+        provider error, a capture failure, and a factory failure all spend it
+        alike, so none of them can be replayed into a second call.
+        """
+        activated = self._activated_digest
+        self._activated_digest = None
+        if activated is None:
+            raise ProviderError("live_call_not_authorized")
+        cap = require_request_cap(
+            self._max_provider_requests, policy_maximum=RETRY_MAX_ATTEMPTS
+        )
+        if not isinstance(request, ProviderRequest):
+            raise ProviderError("provider_response_unusable")
+        config = build_request_config(request)
+        factory = self._client_factory
+        if factory is None:
+            # Imported here, not at module scope: an unauthorized run never
+            # reaches this line and therefore never pulls in the vendor SDK.
+            from .sdk_factory import build_vertex_client
+
+            factory = build_vertex_client
+        with factory(
+            vertex_project=self._vertex_project,
+            vertex_location=self._vertex_location,
+            endpoint_allowlist=self._endpoint_allowlist,
+            http_options_kwargs=build_http_options_kwargs(),
+        ) as (client, capture):
+
+            def call() -> Any:
+                return client.models.generate_content(
+                    model=config["model"],
+                    contents=request.prompt_text,
+                    config=config["config"],
+                )
+
+            execute_with_retry(call, max_attempts=cap)
+            # The archived bytes are the captured entity body, never a re-encode
+            # of the SDK's decoded text.
+            return adapt_captured_bytes(
+                capture.captured_bytes(), prompt_sha256=request.prompt_sha256
+            )

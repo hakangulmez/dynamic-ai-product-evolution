@@ -16,9 +16,15 @@ from jsonschema import Draft202012Validator
 
 from dynamic_ai_products.extraction.errors import ExtractionError
 from dynamic_ai_products.extraction.manifests import (
+    AUTHORIZATION_PROPERTIES,
+    ENABLEMENT_CONTRACT,
+    ENABLEMENT_PROPERTIES,
     EXTRACTION_RUN_PROPERTIES,
+    LIVE_AUTHORIZATION_CONTRACT,
     PROVIDER_ERROR_CONTRACT,
     PROVIDER_ERROR_REASONS,
+    QUALIFICATION_CONTRACT,
+    QUALIFICATION_PROPERTIES,
     build_provider_error_record,
     NON_RUN_CONTRACT,
     NON_RUN_REASONS,
@@ -355,3 +361,95 @@ def test_the_module_export_list_is_sorted_unique_and_resolvable():
     assert len(set(exported)) == len(exported)
     for name in exported:
         assert hasattr(manifests, name), name
+
+
+# --- the seven-role manifest and live_call_authorization (ADR-035) ------------
+
+
+def test_the_error_record_does_not_pin_the_authorization():
+    """The six-artifact route writes the authorization but the error record's
+    released field set is unchanged: it pins exactly four artifacts.
+
+    The authorization is reachable from the run root and, on a successful run,
+    from the prediction manifest as the seventh role. Adding a fifth pin here
+    would widen a released contract for provenance that already exists.
+    """
+    record = _error_record()
+    assert len(record) == 18
+    assert not any(key.startswith("live_call_authorization") for key in record)
+    assert not any("authorization" in key for key in record)
+
+
+def test_the_seventh_manifest_role_is_the_authorization():
+    """Bound in the prediction manifest, not in extraction_run or this record."""
+    from dynamic_ai_products.extraction.prediction_manifest import (
+        REQUIRED_SOURCE_ARTIFACT_ROLES,
+    )
+
+    assert len(REQUIRED_SOURCE_ARTIFACT_ROLES) == 7
+    assert REQUIRED_SOURCE_ARTIFACT_ROLES[-2] == "live_call_authorization"
+    # extraction_run@0.1.0 is still strict and unwidened.
+    assert len(EXTRACTION_RUN_PROPERTIES) == 15
+    assert "live_call_authorization" not in EXTRACTION_RUN_PROPERTIES
+
+
+@pytest.mark.parametrize(
+    "stem,contract,properties,count",
+    [
+        (
+            "adapter_qualification_record",
+            QUALIFICATION_CONTRACT,
+            QUALIFICATION_PROPERTIES,
+            13,
+        ),
+        ("adapter_enablement_record", ENABLEMENT_CONTRACT, ENABLEMENT_PROPERTIES, 19),
+        (
+            "live_call_authorization",
+            LIVE_AUTHORIZATION_CONTRACT,
+            AUTHORIZATION_PROPERTIES,
+            31,
+        ),
+    ],
+)
+def test_each_governance_property_set_matches_its_released_schema(
+    stem, contract, properties, count
+):
+    schema = json.loads((SCHEMAS / f"{stem}.schema.json").read_text())
+    assert len(properties) == count
+    assert set(schema["required"]) == set(properties)
+    assert set(schema["properties"]) == set(properties)
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["contract"]["const"] == contract
+
+
+def test_the_governance_contract_identities_are_versioned_zero_one_zero():
+    for contract in (
+        QUALIFICATION_CONTRACT,
+        ENABLEMENT_CONTRACT,
+        LIVE_AUTHORIZATION_CONTRACT,
+    ):
+        assert contract.endswith("@0.1.0")
+
+
+def test_the_authorization_carries_the_budget_meter_identity_pin():
+    """E-B's gate rests on this pin, so it is required, not optional."""
+    assert "budget_meter_identity" in AUTHORIZATION_PROPERTIES
+    assert "budget_meter_version" in AUTHORIZATION_PROPERTIES
+
+
+def test_the_enablement_record_carries_the_spec_024_reference():
+    """SPEC-027 places the prompt qualification on enablement, not authorization."""
+    assert "prompt_qualification_reference" in ENABLEMENT_PROPERTIES
+    assert "prompt_qualification_sha256" in ENABLEMENT_PROPERTIES
+    assert "prompt_qualification_reference" not in AUTHORIZATION_PROPERTIES
+
+
+def test_no_governance_property_set_admits_a_free_text_field():
+    """An upstream message must have no channel into an authorization chain."""
+    for properties in (
+        QUALIFICATION_PROPERTIES,
+        ENABLEMENT_PROPERTIES,
+        AUTHORIZATION_PROPERTIES,
+    ):
+        for forbidden in ("message", "detail", "note", "comment", "error"):
+            assert not any(forbidden in name for name in properties), forbidden

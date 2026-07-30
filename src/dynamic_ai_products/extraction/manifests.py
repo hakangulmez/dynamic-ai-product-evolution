@@ -20,32 +20,166 @@ rather than adding a field here.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from .errors import ExtractionError
 from .raw_artifacts import canonical_json_bytes
 
 __all__ = [
+    "AUTHORIZATION_PROPERTIES",
     "CLIENT_CONTRACT_CONTRACT",
     "CLIENT_CONTRACT_PROPERTIES",
+    "ENABLEMENT_CONTRACT",
+    "ENABLEMENT_PROPERTIES",
+    "ENABLEMENT_STATUS_FOR_ROLLOUT",
     "EXTRACTION_RUN_PROPERTIES",
+    "GOVERNANCE_SCHEMA_VERSION",
+    "LIVE_AUTHORIZATION_CONTRACT",
     "NON_RUN_CONTRACT",
     "NON_RUN_REASONS",
+    "PROVIDER_DECLARED_MAX_OUTPUT_TOKENS_PIN",
     "PROVIDER_ERROR_CONTRACT",
     "PROVIDER_ERROR_REASONS",
+    "PROVIDER_MAX_ATTEMPTS_PIN",
+    "PROVIDER_RETRY_DELAYS_PIN",
+    "PROVIDER_TIMEOUT_SECONDS_PIN",
+    "PROVIDER_WORST_CASE_WALL_CLOCK_SECONDS",
+    "QUALIFICATION_CONTRACT",
+    "QUALIFICATION_PROPERTIES",
+    "STAGE_OUTPUT_CONTRACT_ID",
     "STAGE_OUTPUT_SCHEMA",
     "STAGE_OUTPUT_SCHEMA_SHA256",
     "build_extraction_run",
     "build_non_run_record",
     "build_provider_error_record",
     "record_bytes",
+    "resolve_attempt_cap",
     "resolve_stage_schema_hash",
+    "validate_authorization_client_contract",
+    "validate_authorization_scope",
+    "validate_budget_meter_identity",
+    "validate_governance_chain",
+    "validate_governance_semantics",
     "validate_provider_client_contract",
+    "validate_qualification_execution_contract",
 ]
 
 NON_RUN_CONTRACT = "extraction_non_run_record@0.1.0"
 CLIENT_CONTRACT_CONTRACT = "extraction_provider_client_contract@0.1.0"
 PROVIDER_ERROR_CONTRACT = "extraction_provider_error_record@0.1.0"
+QUALIFICATION_CONTRACT = "adapter_qualification_record@0.1.0"
+ENABLEMENT_CONTRACT = "adapter_enablement_record@0.1.0"
+LIVE_AUTHORIZATION_CONTRACT = "live_call_authorization@0.1.0"
+GOVERNANCE_SCHEMA_VERSION = "0.1.0"
+
+# Closed rollout -> enablement-status mapping. ``full_scale`` is deliberately
+# absent: SPEC-027 declares no "enabled" status for it, and admitting it would
+# be premature scale (CLAUDE.md rule 10). ``mock_only`` means "no network" by
+# definition and can never authorize a live call.
+# Closed stage -> output-contract identity map. Without it, two records could
+# agree on an arbitrary identity while carrying the correct released digest, and
+# the identity would assert nothing about which stage was qualified.
+STAGE_OUTPUT_CONTRACT_ID: dict[str, str] = {
+    "product_extraction": "product_observation@0.1.0",
+    "capability_extraction": "capability_observation@0.1.0",
+    "task_extraction": "task_observation@0.1.0",
+}
+
+ENABLEMENT_STATUS_FOR_ROLLOUT: dict[str, str] = {
+    "live_dev": "enabled_live_dev",
+    "controlled_pilot": "enabled_pilot",
+    "release_or_research_production": "enabled_release",
+}
+
+# Closed static pins of the E-P execution policy. ``extraction`` may not import
+# ``providers``, so the values are pinned here and a drift test re-derives each
+# one from providers.retry_policy.
+PROVIDER_MAX_ATTEMPTS_PIN = 3
+PROVIDER_TIMEOUT_SECONDS_PIN = 300
+PROVIDER_RETRY_DELAYS_PIN: tuple[int, ...] = (1, 2)
+PROVIDER_DECLARED_MAX_OUTPUT_TOKENS_PIN = 8192
+# 3 attempts x 300s + (1 + 2)s of backoff. A theoretical ceiling only: real
+# elapsed enforcement belongs to the injected budget meter.
+PROVIDER_WORST_CASE_WALL_CLOCK_SECONDS = 903
+
+QUALIFICATION_PROPERTIES: frozenset[str] = frozenset(
+    {
+        "contract",
+        "schema_version",
+        "qualification_id",
+        "adapter_identity",
+        "adapter_version",
+        "adapter_family",
+        "execution_contract_id",
+        "execution_contract_sha256",
+        "stage_output_contract_id",
+        "stage_output_contract_sha256",
+        "qualification_scope",
+        "qualification_status",
+        "qualified_at",
+    }
+)
+
+ENABLEMENT_PROPERTIES: frozenset[str] = frozenset(
+    {
+        "contract",
+        "schema_version",
+        "enablement_id",
+        "adapter_qualification_record_reference",
+        "adapter_qualification_record_sha256",
+        "prompt_qualification_reference",
+        "prompt_qualification_sha256",
+        "stage",
+        "stage_output_contract_id",
+        "stage_output_contract_sha256",
+        "routing_contract_id",
+        "routing_contract_sha256",
+        "deployment_environment_id",
+        "rollout_state",
+        "endpoint_allowlist",
+        "enablement_status",
+        "approver",
+        "effective_at",
+        "expires_at",
+    }
+)
+
+AUTHORIZATION_PROPERTIES: frozenset[str] = frozenset(
+    {
+        "contract",
+        "schema_version",
+        "authorization_id",
+        "authorized_by",
+        "effective_at",
+        "expires_at",
+        "deployment_environment_id",
+        "rollout_state",
+        "adapter_enablement_record_reference",
+        "adapter_enablement_record_sha256",
+        "provider_client_contract_reference",
+        "provider_client_contract_sha256",
+        "budget_meter_identity",
+        "budget_meter_version",
+        "stage",
+        "company_id",
+        "observation_cutoff_date",
+        "corpus_scope",
+        "budget_max_records",
+        "budget_max_requests",
+        "budget_max_input_tokens",
+        "budget_max_output_tokens",
+        "budget_max_estimated_cost_micros",
+        "budget_max_wall_clock_seconds",
+        "budget_policy_version",
+        "retry_policy_version",
+        "rate_limit_policy_version",
+        "endpoint_allowlist",
+        "circuit_breaker_max_consecutive_failures",
+        "provider_called",
+        "harness_run",
+    }
+)
 
 # Closed enum, identical to the released schema. ``live_call_not_authorized`` is
 # deliberately absent: it is refused before any provider attempt begins, so no
@@ -490,6 +624,485 @@ def build_provider_error_record(
         "provider_called": True,
         "harness_run": False,
     }
+
+
+# --- SPEC-027 governance chain (ADR-035) --------------------------------------
+
+
+def _require_exact_properties(
+    payload: Any, expected: frozenset[str], *, what: str, code: str
+) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ExtractionError(f"{what} must be a mapping", reason_code=code)
+    # Credential material is scanned FIRST, for the same reason as the client
+    # contract: a leaked credential is almost always an undeclared property too.
+    _scan_for_credential_material(payload)
+    observed = set(payload)
+    missing = sorted(expected - observed)
+    if missing:
+        raise ExtractionError(
+            f"{what} is missing properties: {missing}", reason_code=code
+        )
+    extra = sorted(observed - expected)
+    if extra:
+        raise ExtractionError(
+            f"{what} carries undeclared properties: {extra}", reason_code=code
+        )
+    return dict(payload)
+
+
+def _require_pin_pair(payload: dict[str, Any], prefix: str, *, code: str) -> tuple[str, str]:
+    reference = payload.get(f"{prefix}_reference")
+    digest = payload.get(f"{prefix}_sha256")
+    if not isinstance(reference, str) or not reference.strip():
+        raise ExtractionError(
+            f"{prefix}_reference must be a non-blank reference", reason_code=code
+        )
+    if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
+        raise ExtractionError(
+            f"{prefix}_sha256 must be 64 lowercase hex characters", reason_code=code
+        )
+    return reference, digest
+
+
+def validate_governance_chain(
+    *,
+    authorization: Any,
+    enablement: Any,
+    qualification: Any,
+    authorization_pin: dict[str, str],
+    enablement_pin: dict[str, str],
+    qualification_pin: dict[str, str],
+) -> dict[str, Any]:
+    """Walk the three-ring chain upward, refusing any broken link.
+
+    Each record pins exactly one ring above it; the chain is never transitive.
+    The caller has already re-read and hash-verified each artifact through the
+    shared hydrator, so this function verifies that the pins each record
+    *declares* are the artifacts that were actually loaded.
+    """
+    code = "authorization_chain_broken"
+    authorization = _require_exact_properties(
+        authorization, AUTHORIZATION_PROPERTIES, what="live call authorization", code=code
+    )
+    enablement = _require_exact_properties(
+        enablement, ENABLEMENT_PROPERTIES, what="adapter enablement record", code=code
+    )
+    qualification = _require_exact_properties(
+        qualification,
+        QUALIFICATION_PROPERTIES,
+        what="adapter qualification record",
+        code=code,
+    )
+    for payload, expected_contract in (
+        (authorization, LIVE_AUTHORIZATION_CONTRACT),
+        (enablement, ENABLEMENT_CONTRACT),
+        (qualification, QUALIFICATION_CONTRACT),
+    ):
+        if payload.get("contract") != expected_contract:
+            raise ExtractionError(
+                f"governance record must declare {expected_contract}", reason_code=code
+            )
+        # The released schemas declare this as a const, but no schema file
+        # executes on this path (ADR-032), so the loader enforces it. Without
+        # this a record could carry any schema_version and still satisfy the
+        # property-set check.
+        if payload.get("schema_version") != GOVERNANCE_SCHEMA_VERSION:
+            raise ExtractionError(
+                f"governance record must declare schema_version "
+                f"{GOVERNANCE_SCHEMA_VERSION}",
+                reason_code=code,
+            )
+
+    declared_enablement = _require_pin_pair(
+        authorization, "adapter_enablement_record", code=code
+    )
+    if declared_enablement != (
+        enablement_pin.get("reference"),
+        enablement_pin.get("sha256"),
+    ):
+        raise ExtractionError(
+            "the authorization pins a different enablement record", reason_code=code
+        )
+    declared_qualification = _require_pin_pair(
+        enablement, "adapter_qualification_record", code=code
+    )
+    if declared_qualification != (
+        qualification_pin.get("reference"),
+        qualification_pin.get("sha256"),
+    ):
+        raise ExtractionError(
+            "the enablement record pins a different qualification record",
+            reason_code=code,
+        )
+    # SPEC-024: a prompt-bearing stage must carry its prompt qualification, and
+    # SPEC-027 places that reference on the enablement record, not here.
+    _require_pin_pair(enablement, "prompt_qualification", code=code)
+    if authorization.get("provider_called") is not True:
+        raise ExtractionError(
+            "a live-call authorization must declare provider_called", reason_code=code
+        )
+    if authorization.get("harness_run") is not False:
+        raise ExtractionError(
+            "a live-call authorization must not declare a harness run",
+            reason_code=code,
+        )
+    _require_sha256_field(authorization_pin.get("sha256"), code)
+    return authorization
+
+
+def _require_sha256_field(value: Any, code: str) -> str:
+    if not isinstance(value, str) or not _SHA256_RE.fullmatch(value):
+        raise ExtractionError(
+            "the authorization pin sha256 must be 64 lowercase hex characters",
+            reason_code=code,
+        )
+    return value
+
+
+def _require_aware_instant(value: Any, *, field: str, code: str) -> datetime:
+    """Parse a timezone-aware ISO-8601 instant and normalize it to UTC.
+
+    Lexicographic comparison of these strings is wrong, not merely imprecise:
+    ``2026-07-01T00:00:00Z`` and ``2026-07-01T02:00:00+02:00`` are the same
+    instant but do not compare equal as text, and an offset-bearing timestamp can
+    sort on either side of a ``Z`` one regardless of chronology. A naive
+    timestamp is refused rather than assumed to be UTC — guessing a zone would
+    silently move a window boundary by hours.
+
+    Parsing only; this package reads no clock.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise ExtractionError(
+            f"{field} must be a non-blank ISO-8601 instant", reason_code=code
+        )
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ExtractionError(
+            f"{field} is not a valid ISO-8601 instant: {value!r}", reason_code=code
+        ) from exc
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        raise ExtractionError(
+            f"{field} must carry an explicit UTC offset; a naive instant would "
+            "move the window boundary by an unknown amount",
+            reason_code=code,
+        )
+    return parsed.astimezone(timezone.utc)
+
+
+def validate_authorization_scope(
+    *,
+    authorization: dict[str, Any],
+    stage: str,
+    company_id: str,
+    observation_cutoff_date: str,
+    corpus_scope: str,
+    run_created_at: str,
+) -> None:
+    """Every scope field must match the run exactly, and the window must hold.
+
+    ``run_created_at`` is caller-injected; this package reads no clock, so the
+    validity window is checked against the run's own declared instant. All three
+    timestamps are parsed as timezone-aware ISO-8601 and compared
+    chronologically in UTC, never as text.
+    """
+    code = "authorization_scope_mismatch"
+    for field, expected in (
+        ("stage", stage),
+        ("company_id", company_id),
+        ("observation_cutoff_date", observation_cutoff_date),
+        ("corpus_scope", corpus_scope),
+    ):
+        if authorization.get(field) != expected:
+            raise ExtractionError(
+                f"authorization {field} does not match this run", reason_code=code
+            )
+    effective = _require_aware_instant(
+        authorization.get("effective_at"), field="effective_at", code=code
+    )
+    expires = _require_aware_instant(
+        authorization.get("expires_at"), field="expires_at", code=code
+    )
+    instant = _require_aware_instant(
+        run_created_at, field="run_created_at", code=code
+    )
+    if effective > expires:
+        raise ExtractionError(
+            "the authorization validity window is inverted: effective_at is "
+            "later than expires_at",
+            reason_code=code,
+        )
+    if not (effective <= instant <= expires):
+        raise ExtractionError(
+            "the run instant lies outside the authorization validity window",
+            reason_code=code,
+        )
+
+
+def validate_authorization_client_contract(
+    *,
+    authorization: dict[str, Any],
+    client_contract_reference: str,
+    client_contract_sha256: str,
+) -> None:
+    """The authorized client contract must be byte-identical to this run's.
+
+    This is how SPEC-027's "execution-affecting contract changes never inherit
+    enablement" becomes code: change the contract and the authorization dies.
+    """
+    code = "authorization_client_contract_mismatch"
+    reference, digest = _require_pin_pair(
+        authorization, "provider_client_contract", code=code
+    )
+    if reference != client_contract_reference or digest != client_contract_sha256:
+        raise ExtractionError(
+            "the authorization pins a different provider client contract",
+            reason_code=code,
+        )
+
+
+def validate_budget_meter_identity(
+    *, authorization: dict[str, Any], meter_identity: Any
+) -> None:
+    """The injected meter must be the one the authorization names.
+
+    This enforces the expected operational identity. It does **not**
+    structurally prevent an in-process implementation from imitating those
+    values; a deliberate imitation is a ``noncanonical_experiment`` under
+    SPEC-027 and may never enter an evaluation or production record.
+    """
+    code = "budget_meter_identity_mismatch"
+    if not isinstance(meter_identity, dict):
+        raise ExtractionError(
+            "the budget meter must report a mapping identity", reason_code=code
+        )
+    for field in ("budget_meter_identity", "budget_meter_version"):
+        expected = authorization.get(field)
+        observed = meter_identity.get(field.removeprefix("budget_"))
+        if not isinstance(expected, str) or not expected.strip():
+            raise ExtractionError(
+                f"authorization {field} must be a non-blank string", reason_code=code
+            )
+        if observed != expected:
+            raise ExtractionError(
+                f"the injected meter {field} does not match the authorization",
+                reason_code=code,
+            )
+
+
+def resolve_attempt_cap(*, authorization: dict[str, Any]) -> int:
+    """Enforce the arithmetic budget limits and return the attempt cap.
+
+    Three limits are genuinely enforced here: records, requests, and declared
+    output tokens. The wall-clock field is a **compatibility floor** only -- it
+    proves the budget could accommodate the policy's theoretical ceiling, and
+    real elapsed enforcement belongs to the injected meter.
+    """
+    code = "budget_insufficient"
+
+    def _positive(field: str) -> int:
+        value = authorization.get(field)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise ExtractionError(
+                f"{field} must be a positive integer", reason_code=code
+            )
+        return value
+
+    records = _positive("budget_max_records")
+    requests = _positive("budget_max_requests")
+    output_tokens = _positive("budget_max_output_tokens")
+    wall_clock = _positive("budget_max_wall_clock_seconds")
+    breaker = _positive("circuit_breaker_max_consecutive_failures")
+    # The meter is the only thing that can check these two; refuse a malformed
+    # value here so a missing limit cannot masquerade as an unlimited one.
+    _positive("budget_max_input_tokens")
+    _positive("budget_max_estimated_cost_micros")
+
+    if records < 1:
+        raise ExtractionError("a run needs at least one record", reason_code=code)
+    if output_tokens < PROVIDER_DECLARED_MAX_OUTPUT_TOKENS_PIN:
+        raise ExtractionError(
+            "budget_max_output_tokens is below the declared max_output_tokens; "
+            "the run would exceed its budget by construction",
+            reason_code=code,
+        )
+    cap = min(PROVIDER_MAX_ATTEMPTS_PIN, requests)
+    floor = cap * PROVIDER_TIMEOUT_SECONDS_PIN + sum(PROVIDER_RETRY_DELAYS_PIN[: cap - 1])
+    if wall_clock < floor:
+        raise ExtractionError(
+            f"budget_max_wall_clock_seconds is below the {cap}-attempt ceiling "
+            f"of {floor}s; this is a compatibility floor, not elapsed enforcement",
+            reason_code=code,
+        )
+    # Single-call runs start no second call, so the breaker is validated
+    # configuration here and has no further runtime effect.
+    if breaker < 1:
+        raise ExtractionError(
+            "circuit_breaker_max_consecutive_failures must be at least 1",
+            reason_code=code,
+        )
+    return cap
+
+
+def validate_governance_semantics(
+    *,
+    authorization: dict[str, Any],
+    enablement: dict[str, Any],
+    qualification: dict[str, Any],
+    stage: str,
+    run_created_at: str,
+    stage_output_schema_sha256: str,
+) -> None:
+    """Enforce the governing meaning of the upstream records, not just their hashes.
+
+    A hash-valid chain proves the records are the ones that were pinned. It says
+    nothing about whether they are *in force*: without these checks a run can be
+    authorized through a revoked qualification, a suspended or expired
+    enablement, a different deployment environment, or a rollout state that was
+    never meant to reach the network. Every released ``const``/``enum`` in the
+    three schemas is re-enforced here, because no schema file executes on this
+    path (ADR-032).
+    """
+    code = "governance_record_not_effective"
+
+    # (2) The adapter must be qualified, and qualified as a model executor: the
+    # two adapter families have separate readiness and safety gates.
+    if qualification.get("adapter_family") != "model_execution":
+        raise ExtractionError(
+            "the qualification record is not for a model-execution adapter",
+            reason_code=code,
+        )
+    if qualification.get("qualification_status") != "qualified":
+        raise ExtractionError(
+            "the adapter qualification is not in force: "
+            f"{qualification.get('qualification_status')!r}",
+            reason_code=code,
+        )
+
+    # (3) The enablement status must be the one this rollout state requires.
+    rollout = enablement.get("rollout_state")
+    expected_status = ENABLEMENT_STATUS_FOR_ROLLOUT.get(str(rollout))
+    if expected_status is None:
+        raise ExtractionError(
+            f"rollout state {rollout!r} has no enabled status in E-L; "
+            "mock_only performs no network and full_scale is premature scale",
+            reason_code=code,
+        )
+    if enablement.get("enablement_status") != expected_status:
+        raise ExtractionError(
+            f"enablement status {enablement.get('enablement_status')!r} does not "
+            f"match rollout state {rollout!r}",
+            reason_code=code,
+        )
+
+    # (5) One environment, one rollout state, across both records.
+    for field in ("deployment_environment_id", "rollout_state"):
+        if enablement.get(field) != authorization.get(field):
+            raise ExtractionError(
+                f"enablement and authorization disagree on {field}", reason_code=code
+            )
+
+    # (4) The enablement window must hold at the run instant AND must fully
+    # contain the authorization window. Containment matters independently: an
+    # authorization must not outlive the enablement it rests on, and checking
+    # only the run instant would leave that possible.
+    enablement_effective = _require_aware_instant(
+        enablement.get("effective_at"), field="enablement effective_at", code=code
+    )
+    enablement_expires = _require_aware_instant(
+        enablement.get("expires_at"), field="enablement expires_at", code=code
+    )
+    instant = _require_aware_instant(run_created_at, field="run_created_at", code=code)
+    if enablement_effective > enablement_expires:
+        raise ExtractionError(
+            "the enablement validity window is inverted", reason_code=code
+        )
+    if not (enablement_effective <= instant <= enablement_expires):
+        raise ExtractionError(
+            "the run instant lies outside the enablement validity window",
+            reason_code=code,
+        )
+    authorization_effective = _require_aware_instant(
+        authorization.get("effective_at"), field="effective_at", code=code
+    )
+    authorization_expires = _require_aware_instant(
+        authorization.get("expires_at"), field="expires_at", code=code
+    )
+    if (
+        authorization_effective < enablement_effective
+        or authorization_expires > enablement_expires
+    ):
+        raise ExtractionError(
+            "the authorization window is not fully contained by the enablement "
+            "window; an authorization may not outlive its enablement",
+            reason_code=code,
+        )
+
+    # (7) One stage, one stage-output contract, agreed by both records and equal
+    # to the released schema this run actually validates against.
+    if enablement.get("stage") != stage:
+        raise ExtractionError(
+            "the enablement record was issued for a different stage", reason_code=code
+        )
+    for field in ("stage_output_contract_id", "stage_output_contract_sha256"):
+        if qualification.get(field) != enablement.get(field):
+            raise ExtractionError(
+                f"qualification and enablement disagree on {field}", reason_code=code
+            )
+    # Mutual agreement is not enough: both records could name the same arbitrary
+    # identity while carrying the correct digest, and the identity would then
+    # assert nothing about which stage was qualified.
+    expected_contract_id = STAGE_OUTPUT_CONTRACT_ID.get(stage)
+    if expected_contract_id is None:
+        raise ExtractionError(
+            f"no stage-output contract identity is declared for stage {stage!r}",
+            reason_code=code,
+        )
+    for record, label in ((qualification, "qualification"), (enablement, "enablement")):
+        if record.get("stage_output_contract_id") != expected_contract_id:
+            raise ExtractionError(
+                f"the {label} stage-output contract identity is not "
+                f"{expected_contract_id} for stage {stage!r}",
+                reason_code=code,
+            )
+    if enablement.get("stage_output_contract_sha256") != stage_output_schema_sha256:
+        raise ExtractionError(
+            "the enablement stage-output contract is not the released schema this "
+            "run validates against",
+            reason_code=code,
+        )
+
+
+def validate_qualification_execution_contract(
+    *,
+    qualification: dict[str, Any],
+    client_contract: dict[str, Any],
+    client_contract_sha256: str,
+) -> None:
+    """The adapter must be qualified for the contract it is about to execute.
+
+    SPEC-027 qualifies an adapter *under a specific execution contract*. If the
+    qualification names a different contract identity or digest, the adapter was
+    never qualified for this run's actual configuration, and
+    "execution-affecting contract changes never inherit enablement" would be a
+    slogan rather than a rule.
+
+    Called after the client contract is validated, because only then is its
+    digest known. Still before ``mkdir``, the meter, the factory, and the
+    network, so a refusal leaves zero artifacts.
+    """
+    code = "governance_record_not_effective"
+    if qualification.get("execution_contract_id") != client_contract.get("contract"):
+        raise ExtractionError(
+            "the qualification names a different execution contract identity",
+            reason_code=code,
+        )
+    if qualification.get("execution_contract_sha256") != client_contract_sha256:
+        raise ExtractionError(
+            "the adapter was qualified under a different execution contract digest",
+            reason_code=code,
+        )
 
 
 def record_bytes(record: dict[str, Any]) -> bytes:

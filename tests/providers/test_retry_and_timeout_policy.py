@@ -250,3 +250,51 @@ def test_the_driver_uses_real_sleeping_only_when_none_is_injected():
     source = inspect.getsource(vertex_gemini.execute_with_retry)
     assert 'options["sleep"] = sleep' in source
     assert "time.sleep" not in source
+
+
+# --- the budget-derived attempt cap (ADR-035) --------------------------------
+
+
+@pytest.mark.parametrize("cap,expected_calls", [(1, 1), (2, 2), (3, 3)])
+def test_the_cap_bounds_the_attempt_count(cap, expected_calls):
+    state = {"n": 0}
+
+    def call():
+        state["n"] += 1
+        raise _exc("ApiError", code=503)
+
+    with pytest.raises(ProviderError) as excinfo:
+        execute_with_retry(call, sleep=lambda _: None, max_attempts=cap)
+    assert state["n"] == expected_calls
+    assert excinfo.value.attempt_count == expected_calls
+
+
+def test_a_cap_above_the_policy_cannot_buy_extra_attempts():
+    """The cap may only lower RETRY_MAX_ATTEMPTS, never raise it."""
+    state = {"n": 0}
+
+    def call():
+        state["n"] += 1
+        raise _exc("ApiError", code=503)
+
+    with pytest.raises(ProviderError):
+        execute_with_retry(call, sleep=lambda _: None, max_attempts=99)
+    assert state["n"] == rp.RETRY_MAX_ATTEMPTS
+
+
+def test_a_cap_below_one_is_refused():
+    with pytest.raises(ProviderError) as excinfo:
+        execute_with_retry(lambda: "ok", sleep=lambda _: None, max_attempts=0)
+    assert excinfo.value.reason_code == "live_call_not_authorized"
+
+
+def test_no_cap_keeps_the_e_p_policy_unchanged():
+    state = {"n": 0}
+
+    def call():
+        state["n"] += 1
+        raise _exc("ApiError", code=503)
+
+    with pytest.raises(ProviderError):
+        execute_with_retry(call, sleep=lambda _: None)
+    assert state["n"] == rp.RETRY_MAX_ATTEMPTS == 3

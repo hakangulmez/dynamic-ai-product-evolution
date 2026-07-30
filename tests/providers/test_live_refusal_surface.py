@@ -1,8 +1,12 @@
-"""E-P cannot make a live call — as a code path, not a claim (ADR-034).
+"""The default-deny surface — a code path, not a claim (ADR-034, ADR-035).
 
-Both public entry points refuse. ``assert_run_permitted`` matters most: the
+A connector built without an authorization digest refuses at both public entry
+points, exactly as E-P shipped it. ``assert_run_permitted`` matters most: the
 orchestrator calls it before opening a run root, so a refused run leaves zero
 artifacts rather than a directory to clean up.
+
+E-L's authorized path is covered in ``test_live_activation.py``; everything here
+is the unauthorized default.
 """
 
 from __future__ import annotations
@@ -45,7 +49,7 @@ def test_the_connector_satisfies_the_v2_protocol():
         assert callable(getattr(provider, member))
 
 
-def test_assert_run_permitted_refuses_unconditionally():
+def test_assert_run_permitted_refuses_without_an_authorization():
     with pytest.raises(ProviderError) as excinfo:
         _provider().assert_run_permitted()
     assert excinfo.value.reason_code == "live_call_not_authorized"
@@ -54,9 +58,20 @@ def test_assert_run_permitted_refuses_unconditionally():
     assert not excinfo.value.is_terminal
 
 
-def test_complete_refuses_unconditionally():
+def test_complete_refuses_without_an_authorization():
     with pytest.raises(ProviderError) as excinfo:
         _provider().complete(_request())
+    assert excinfo.value.reason_code == "live_call_not_authorized"
+
+
+def test_a_digest_alone_does_not_activate_an_unconfigured_connector():
+    """The runner's key is useless without the connector's own."""
+    with pytest.raises(ProviderError) as excinfo:
+        _provider().assert_run_permitted(
+            authorization_sha256="a" * 64,
+            endpoint_allowlist=("https://x.example.com/v1",),
+            enablement_endpoint_allowlist=("https://x.example.com/v1",),
+        )
     assert excinfo.value.reason_code == "live_call_not_authorized"
 
 
