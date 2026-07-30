@@ -368,7 +368,7 @@ class VertexGeminiProvider:
             def call() -> Any:
                 return client.models.generate_content(
                     model=config["model"],
-                    contents=request.prompt_text,
+                    contents=request.rendered_contents,
                     config=config["config"],
                 )
 

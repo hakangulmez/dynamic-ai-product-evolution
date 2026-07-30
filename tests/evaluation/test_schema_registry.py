@@ -173,9 +173,9 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-035: manifest_version 0.6.0 -> 0.7.0 with the three
-    # SPEC-027 governance contracts added. The guard's meaning is unchanged.
-    "c3bf3014be8911f762669950ea7883f6a527dc627ef6f0c87d140ac3ab365f75"
+    # Rebaselined by ADR-036: manifest_version 0.7.0 -> 0.8.0 with the
+    # extraction_input_packet@0.2.0 successor registered. Meaning unchanged.
+    "eb8c9e4ea5e520ebadb24cacd57c945683617a23326b6d05ec28387147982ff3"
 )
 
 

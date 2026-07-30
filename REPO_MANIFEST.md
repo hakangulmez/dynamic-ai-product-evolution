@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **518**
+Total tracked/scaffold files listed: **523**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -238,6 +238,7 @@ Total tracked/scaffold files listed: **518**
 - `schemas/evaluation_result.v2.schema.json`
 - `schemas/extraction_candidate_collection.schema.json`
 - `schemas/extraction_input_packet.schema.json`
+- `schemas/extraction_input_packet.v2.schema.json`
 - `schemas/extraction_non_run_record.schema.json`
 - `schemas/extraction_provider_client_contract.schema.json`
 - `schemas/extraction_provider_error_record.schema.json`
@@ -371,6 +372,7 @@ Total tracked/scaffold files listed: **518**
 - `src/dynamic_ai_products/extraction/parent_snapshots.py`
 - `src/dynamic_ai_products/extraction/prediction_manifest.py`
 - `src/dynamic_ai_products/extraction/prompts.py`
+- `src/dynamic_ai_products/extraction/contents_renderer.py`
 - `src/dynamic_ai_products/extraction/provider_adapter.py`
 - `src/dynamic_ai_products/extraction/raw_artifacts.py`
 - `src/dynamic_ai_products/extraction/run_extraction.py`
@@ -466,6 +468,8 @@ Total tracked/scaffold files listed: **518**
 - `tests/evaluation/test_validator_parameters.py`
 - `tests/evaluation/test_validators.py`
 - `tests/extraction/test_boundaries.py`
+- `tests/extraction/test_company_identity_binding.py`
+- `tests/extraction/test_contents_renderer.py`
 - `tests/extraction/test_candidates.py`
 - `tests/extraction/test_contract_pins.py`
 - `tests/extraction/test_errors.py`
@@ -503,6 +507,7 @@ Total tracked/scaffold files listed: **518**
 - `tests/providers/test_provider_boundaries.py`
 - `tests/providers/test_real_sdk_compatibility.py`
 - `tests/providers/test_request_config_mapping.py`
+- `tests/providers/test_contents_transmission.py`
 - `tests/providers/test_response_capture.py`
 - `tests/providers/test_retry_and_timeout_policy.py`
 - `tests/providers/test_sdk_factory.py`

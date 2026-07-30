@@ -117,3 +117,53 @@ def test_an_empty_prompt_is_refused(tmp_path: Path):
     with pytest.raises(ExtractionError) as excinfo:
         load_prompt(tmp_path, "capability_extraction")
     assert excinfo.value.reason_code == "prompt_invalid"
+
+
+# --- the single-pass decision (ADR-036, E-R) ----------------------------------
+
+
+def test_the_single_pass_plan_is_explicit_not_incidental():
+    """Indexing ``[0]`` is a decision; this records it as one."""
+    from dynamic_ai_products.extraction.prompts import single_pass_prompt_plan
+
+    plan = single_pass_prompt_plan("product_extraction")
+    assert plan == {
+        "prompt_id": "product_discovery_recall",
+        "prompt_pass_index": 1,
+        "prompt_sequence_length": 2,
+        "prompt_sequence_complete": False,
+    }
+
+
+def test_the_product_stage_is_never_reported_as_a_complete_universe():
+    """A recall pass without its consolidation pass is a candidate set."""
+    from dynamic_ai_products.extraction.prompts import single_pass_prompt_plan
+
+    assert single_pass_prompt_plan("product_extraction")["prompt_sequence_complete"] is False
+    assert single_pass_prompt_plan("task_extraction")["prompt_sequence_complete"] is False
+    # The capability stage registers one prompt, so a single pass completes it.
+    assert single_pass_prompt_plan("capability_extraction")["prompt_sequence_complete"] is True
+
+
+def test_the_plan_selects_the_first_registered_prompt_for_every_stage():
+    from dynamic_ai_products.extraction.prompts import (
+        prompts_for_stage,
+        single_pass_prompt_plan,
+    )
+
+    for stage in ("product_extraction", "capability_extraction", "task_extraction"):
+        plan = single_pass_prompt_plan(stage)
+        sequence = prompts_for_stage(stage)
+        assert plan["prompt_id"] == sequence[0]
+        assert plan["prompt_sequence_length"] == len(sequence)
+
+
+def test_an_unknown_stage_has_no_plan():
+    import pytest as _pytest
+
+    from dynamic_ai_products.extraction.errors import ExtractionError
+    from dynamic_ai_products.extraction.prompts import single_pass_prompt_plan
+
+    with _pytest.raises(ExtractionError) as excinfo:
+        single_pass_prompt_plan("mystery_stage")
+    assert excinfo.value.reason_code == "stage_invalid"

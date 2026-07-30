@@ -1,20 +1,23 @@
-"""Publication policy for refusals and terminal provider failures (ADR-034).
+"""Publication policy for refusals and terminal provider failures (ADR-034, ADR-036).
 
 Three exact artifact counts, asserted separately:
 
 - **0** — every pre-run refusal. The run root is never created, so there is
   nothing to roll back; the guarantee is "never created", not "cleaned up".
 - **2** — the zero-admissible-passage non-run route.
-- **5** — a terminal provider failure: packet, prompt, client contract, an
-  errored ``extraction_run``, and the provider-error record.
+- **7** — a terminal provider failure. **Five input artifacts already exist when
+  ``complete()`` is entered** — packet, the rendered provider contents, prompt,
+  client contract, and the live-call authorization — and the terminal route then
+  adds an errored ``extraction_run`` plus the provider-error record.
 
 The whole terminal path is exercised offline: the fake permits the run, so the
-orchestrator opens the root and writes three artifacts, and then the fake fails
+orchestrator opens the root and writes those five inputs, and then the fake fails
 in ``complete()``.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -31,6 +34,7 @@ from dynamic_ai_products.extraction.raw_artifacts import canonical_json_bytes, s
 from dynamic_ai_products.extraction.run_extraction import (
     AUTHORIZATION_REFERENCE,
     CLIENT_CONTRACT_REFERENCE,
+    CONTENTS_REFERENCE,
     ENVELOPES_REFERENCE,
     EXTRACTION_RUN_REFERENCE,
     NON_RUN_REFERENCE,
@@ -131,11 +135,37 @@ def _passage(passage_id: str, text: str, source_id: str = "sec-1"):
     }
 
 
+def write_company_identity(root: Path, **overrides) -> dict[str, str]:
+    """Persist an admission artifact and return its pin (ADR-036, E-R).
+
+    Mirrors the approved Pilot Universe Packet's identity fields. The legal name
+    is only ever *read* from here; no test may pass one to the builder.
+    """
+    admission = {
+        "company_id": COMPANY,
+        "cik": COMPANY[3:].lstrip("0") or "0",
+        "legal_name": "HUBSPOT INC",
+        "observation_cutoff_date": CUTOFF,
+    }
+    unknown = sorted(set(overrides) - set(admission))
+    assert not unknown, f"unknown admission override(s): {unknown}"
+    admission.update(overrides)
+    root.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(admission, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    (root / "pilot_universe_packet.json").write_bytes(payload)
+    return {
+        "reference": "pilot_universe_packet.json",
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
 def _run(tmp_path: Path, **overrides):
     governance_root = tmp_path / "governance-root"
     kwargs = {
         "run_root": tmp_path / "run",
         "governance_artifact_root": governance_root,
+        "company_identity_root": tmp_path / "identity",
+        "company_identity_pin": write_company_identity(tmp_path / "identity"),
         "live_call_authorization_pin": write_governance_chain(governance_root),
         "budget_meter": FakeMeter(),
         "repo_root": REPO_ROOT,
@@ -278,29 +308,31 @@ def test_the_run_root_does_not_exist_during_the_pre_run_gate(tmp_path: Path):
     assert provider.root_at_contract is False
 
 
-def test_four_artifacts_already_exist_when_complete_is_called(tmp_path: Path):
+def test_five_artifacts_already_exist_when_complete_is_called(tmp_path: Path):
     provider = _Recorder(run_root=tmp_path / "run")
     with pytest.raises(ExtractionError):
         _run(tmp_path, provider=provider)
     assert provider.files_at_complete == {
         PACKET_REFERENCE,
+        CONTENTS_REFERENCE,
         PROMPT_REFERENCE,
         CLIENT_CONTRACT_REFERENCE,
         AUTHORIZATION_REFERENCE,
     }
 
 
-# --- 5 artifacts: terminal provider failure -----------------------------------
+# --- 7 artifacts: terminal provider failure -----------------------------------
 
 
-def test_a_terminal_failure_publishes_exactly_six_artifacts(tmp_path: Path):
-    """Six, not E-P's five: the authorization artifact is now written too."""
+def test_a_terminal_failure_publishes_exactly_seven_artifacts(tmp_path: Path):
+    """Seven: E-L's six plus E-R's rendered provider contents."""
     with pytest.raises(ExtractionError) as excinfo:
         _run(tmp_path)
     assert excinfo.value.reason_code == "vertex_unavailable"
     root = tmp_path / "run"
     assert _files(root) == {
         PACKET_REFERENCE,
+        CONTENTS_REFERENCE,
         PROMPT_REFERENCE,
         CLIENT_CONTRACT_REFERENCE,
         AUTHORIZATION_REFERENCE,
@@ -558,3 +590,100 @@ def write_governance_chain(root: Path, **overrides):
     auth_bytes = canonical_json_bytes(authorization)
     (root / GOV_AUTH_REFERENCE).write_bytes(auth_bytes)
     return {"reference": GOV_AUTH_REFERENCE, "sha256": sha256_bytes(auth_bytes)}
+
+
+# --- terminal reconciliation of the rendered contents (ADR-036, E-R) -----------
+
+
+def _terminal_root(tmp_path: Path) -> Path:
+    """Drive a terminal provider failure and return the run root."""
+    with pytest.raises(ExtractionError):
+        _run(tmp_path)
+    return tmp_path / "run"
+
+
+def test_the_terminal_rendered_contents_reconstruct_deterministically(tmp_path: Path):
+    """No prediction manifest exists on this route, so binding is by re-derivation.
+
+    The packet and the resolved prompt are both persisted; re-rendering them with
+    the recorded renderer must reproduce the persisted document byte-for-byte.
+    That is what makes the terminal chain checkable without a manifest root.
+    """
+    from dynamic_ai_products.extraction.contents_renderer import (
+        render_provider_contents,
+    )
+
+    root = _terminal_root(tmp_path)
+    packet = json.loads((root / PACKET_REFERENCE).read_text(encoding="utf-8"))
+    prompt_text = (root / PROMPT_REFERENCE).read_text(encoding="utf-8")
+    persisted = (root / CONTENTS_REFERENCE).read_bytes()
+
+    reconstructed = render_provider_contents(
+        stage=packet["stage"], prompt_text=prompt_text, packet=packet
+    )
+    assert reconstructed.encode("utf-8") == persisted
+    assert sha256_bytes(reconstructed.encode("utf-8")) == sha256_bytes(persisted)
+
+
+def test_the_terminal_route_persists_the_rendered_contents_at_all(tmp_path: Path):
+    root = _terminal_root(tmp_path)
+    assert (root / CONTENTS_REFERENCE).is_file()
+    assert (root / CONTENTS_REFERENCE).read_bytes()
+
+
+def test_the_terminal_error_record_pins_what_reconstruction_needs(tmp_path: Path):
+    """packet, prompt, client contract, extraction run and code commit."""
+    root = _terminal_root(tmp_path)
+    record = json.loads((root / PROVIDER_ERROR_REFERENCE).read_text(encoding="utf-8"))
+
+    pins = {
+        record["input_packet_reference"]: record["input_packet_sha256"],
+        record["resolved_prompt_reference"]: record["resolved_prompt_sha256"],
+        record["provider_client_contract_reference"]: record[
+            "provider_client_contract_sha256"
+        ],
+        record["extraction_run_reference"]: record["extraction_run_sha256"],
+    }
+    assert PACKET_REFERENCE in pins
+    assert PROMPT_REFERENCE in pins
+    assert CLIENT_CONTRACT_REFERENCE in pins
+    assert EXTRACTION_RUN_REFERENCE in pins
+    # Every pin resolves to bytes on disk with the recorded digest.
+    for reference, digest in pins.items():
+        assert sha256_bytes((root / reference).read_bytes()) == digest
+    # The code commit is recorded, so the renderer version is reconstructible.
+    assert record["code_commit"]
+    assert record["provider_called"] is True
+
+
+def test_the_terminal_extraction_run_pins_the_resolved_prompt_hash(tmp_path: Path):
+    """What this actually proves: the run's prompt_hash equals the persisted prompt.
+
+    That is one input the deterministic re-render needs. It is **not** a
+    renderer-version field: ``extraction_provider_error_record@0.1.0`` and
+    ``extraction_run@0.1.0`` are released and carry none, and neither is widened
+    to preserve a more flattering test name. The renderer version travels in the
+    envelope's open ``prompt_model_metadata`` on the success route only.
+    """
+    root = _terminal_root(tmp_path)
+    run_record = json.loads((root / EXTRACTION_RUN_REFERENCE).read_text(encoding="utf-8"))
+    prompt_bytes = (root / PROMPT_REFERENCE).read_bytes()
+    assert run_record["prompt_hash"] == sha256_bytes(prompt_bytes)
+
+
+def test_a_tampered_terminal_packet_breaks_the_reconciliation(tmp_path: Path):
+    """The reconciliation has teeth: a changed packet no longer reproduces."""
+    from dynamic_ai_products.extraction.contents_renderer import (
+        render_provider_contents,
+    )
+
+    root = _terminal_root(tmp_path)
+    packet = json.loads((root / PACKET_REFERENCE).read_text(encoding="utf-8"))
+    prompt_text = (root / PROMPT_REFERENCE).read_text(encoding="utf-8")
+    persisted = (root / CONTENTS_REFERENCE).read_bytes()
+
+    packet["legal_name"] = "SOMEONE ELSE INC"
+    tampered = render_provider_contents(
+        stage=packet["stage"], prompt_text=prompt_text, packet=packet
+    )
+    assert tampered.encode("utf-8") != persisted

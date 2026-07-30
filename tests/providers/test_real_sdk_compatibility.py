@@ -137,3 +137,19 @@ def test_the_sdk_default_follows_redirects_so_ours_must_say_otherwise():
     SDK's own client defaults it to True."""
     source = inspect.getsource(_api_client.SyncHttpxClient.__init__)
     assert "follow_redirects" in source and "True" in source
+
+
+def test_the_sdk_accepts_a_plain_string_as_contents():
+    """E-R sends one canonical UTF-8 document, so ``contents`` stays a ``str``.
+
+    Measured against the installed SDK rather than assumed: if a future version
+    stopped accepting a bare string for ``contents``, the renderer's
+    single-representation design would need revisiting and this fails first.
+    """
+    genai_types = pytest.importorskip("google.genai.types")
+    from google.genai import _transformers  # noqa: PLC0415 - drift probe only
+
+    parts = _transformers.t_contents("Firm HUBSPOT INC as of 2024-12-31.")
+    assert parts, "a plain string must still transform into contents"
+    assert isinstance(parts, list)
+    assert isinstance(parts[0], genai_types.Content)

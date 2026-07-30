@@ -6,6 +6,7 @@ created. Nothing in this module touches a network, an SDK, or ADC.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -34,6 +35,7 @@ from dynamic_ai_products.extraction.manifests import (
 from dynamic_ai_products.extraction.raw_artifacts import canonical_json_bytes, sha256_bytes
 from dynamic_ai_products.extraction.run_extraction import (
     CLIENT_CONTRACT_REFERENCE,
+    CONTENTS_REFERENCE,
     run_extraction_stage,
 )
 from dynamic_ai_products.providers.client_contract import build_client_contract
@@ -78,6 +80,30 @@ def _passage(text="the product ships an assistant"):
     }
 
 
+def write_company_identity(root: Path, **overrides) -> dict[str, str]:
+    """Persist an admission artifact and return its pin (ADR-036, E-R).
+
+    Mirrors the approved Pilot Universe Packet's identity fields. The legal name
+    is only ever *read* from here; no test may pass one to the builder.
+    """
+    admission = {
+        "company_id": COMPANY,
+        "cik": COMPANY[3:].lstrip("0") or "0",
+        "legal_name": "HUBSPOT INC",
+        "observation_cutoff_date": CUTOFF,
+    }
+    unknown = sorted(set(overrides) - set(admission))
+    assert not unknown, f"unknown admission override(s): {unknown}"
+    admission.update(overrides)
+    root.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(admission, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    (root / "pilot_universe_packet.json").write_bytes(payload)
+    return {
+        "reference": "pilot_universe_packet.json",
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
 def _run(tmp_path: Path, *, chain_overrides=None, **overrides):
     governance_root = tmp_path / "governance-root"
     pin = write_governance_chain(governance_root, **(chain_overrides or {}))
@@ -98,6 +124,8 @@ def _run(tmp_path: Path, *, chain_overrides=None, **overrides):
         "schema_root": str(SCHEMAS),
         "provider": _Provider(),
         "governance_artifact_root": governance_root,
+        "company_identity_root": tmp_path / "identity",
+        "company_identity_pin": write_company_identity(tmp_path / "identity"),
         "live_call_authorization_pin": pin,
         "budget_meter": FakeMeter(),
     }
@@ -184,7 +212,9 @@ def test_a_complete_chain_reaches_the_provider(tmp_path: Path):
         for f in (tmp_path / "run").rglob("*")
         if f.is_file()
     }
-    assert len(published) == 6
+    assert len(published) == 7
+    # The rendered document is among them: E-R persists what was sent.
+    assert CONTENTS_REFERENCE in published
 
 
 def test_a_broken_enablement_pin_is_refused(tmp_path: Path):

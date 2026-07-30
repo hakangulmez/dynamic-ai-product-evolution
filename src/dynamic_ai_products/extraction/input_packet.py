@@ -34,8 +34,10 @@ from .raw_artifacts import canonical_json_bytes, sha256_bytes
 
 __all__ = [
     "CORPUS_SCOPE_SEC_ONLY",
+    "hydrate_company_identity",
     "hydrate_pinned_artifact",
     "PACKET_CONTRACT",
+    "PACKET_CONTRACT_V2",
     "STAGES",
     "build_extraction_input_packet",
     "derive_parent_context",
@@ -47,6 +49,12 @@ __all__ = [
 ]
 
 PACKET_CONTRACT = "extraction_input_packet@0.1.0"
+# ADR-036 (E-R). ``@0.1.0`` is released and is never modified: it carries
+# ``company_id`` but no name field at all, so it cannot render a prompt that
+# needs a legal name. ``@0.2.0`` adds the hash-pinned company-identity reference
+# and the name derived from it. A caller that supplies neither pin still gets
+# ``@0.1.0`` byte-for-byte, so every pre-E-R caller is unaffected.
+PACKET_CONTRACT_V2 = "extraction_input_packet@0.2.0"
 CORPUS_SCOPE_SEC_ONLY = "sec_only_partial"
 
 STAGES: tuple[str, ...] = (
@@ -165,6 +173,87 @@ def hydrate_pinned_artifact(
     return _hydrate(
         artifact_root, pin, what=what, unsafe_code=unsafe_code, sha_code=sha_code
     )
+
+
+def hydrate_company_identity(
+    company_identity_root: str | Path | None,
+    pin: Any,
+    *,
+    company_id: str,
+    observation_cutoff_date: str,
+) -> str:
+    """Derive the legal name from the SHA-pinned admission artifact (ADR-036).
+
+    The name is **derived, never supplied**. A caller passes a reference and a
+    digest; this function re-reads those bytes from an explicitly injected root
+    and returns the name it finds. There is no cwd search, no repository search
+    and no environment fallback, so the identity cannot be resolved ambiently.
+
+    Four equalities must hold against the admission artifact. Reconciling only
+    the name would let a packet borrow a name from a different firm or a
+    different observation year while still hash-verifying.
+    """
+    code = "company_identity_mismatch"
+    if company_identity_root is None:
+        raise ExtractionError(
+            "a company_identity_root must be injected to hydrate the legal name",
+            reason_code="company_identity_root_required",
+        )
+    if pin is None:
+        raise ExtractionError(
+            "a company-identity reference and sha256 are required",
+            reason_code="company_identity_pin_required",
+        )
+    admission = _hydrate(
+        company_identity_root,
+        pin,
+        what="company identity",
+        unsafe_code="company_identity_reference_unsafe",
+        sha_code="company_identity_pin_sha_mismatch",
+    )
+
+    legal_name = admission.get("legal_name")
+    if not isinstance(legal_name, str) or not legal_name.strip():
+        raise ExtractionError(
+            "the admission artifact carries no non-blank legal_name",
+            reason_code="company_identity_invalid",
+        )
+    admitted_id = admission.get("company_id")
+    admitted_cik = admission.get("cik")
+    admitted_cutoff = admission.get("observation_cutoff_date")
+    if not isinstance(admitted_id, str) or not _COMPANY_ID_RE.fullmatch(admitted_id):
+        raise ExtractionError(
+            "the admission artifact company_id must match ^CIK[0-9]{10}$",
+            reason_code="company_identity_invalid",
+        )
+    if not isinstance(admitted_cik, str) or not admitted_cik.strip().isdigit():
+        raise ExtractionError(
+            "the admission artifact cik must be a digit string",
+            reason_code="company_identity_invalid",
+        )
+    if not isinstance(admitted_cutoff, str) or not _DATE_RE.fullmatch(admitted_cutoff):
+        raise ExtractionError(
+            "the admission artifact observation_cutoff_date must be YYYY-MM-DD",
+            reason_code="company_identity_invalid",
+        )
+
+    if admitted_id != company_id:
+        raise ExtractionError(
+            "the admission artifact company_id does not match this packet",
+            reason_code=code,
+        )
+    # Zero-padded so a bare CIK and its padded form reconcile as one identity.
+    if admitted_cik.strip().zfill(10) != company_id[3:]:
+        raise ExtractionError(
+            "the admission artifact cik does not match this packet company_id",
+            reason_code=code,
+        )
+    if admitted_cutoff != observation_cutoff_date:
+        raise ExtractionError(
+            "the admission artifact observation_cutoff_date does not match this packet",
+            reason_code=code,
+        )
+    return legal_name
 
 
 def hydrate_snapshot(artifact_root: str | Path, pin: Any) -> dict[str, Any]:
@@ -509,13 +598,32 @@ def build_extraction_input_packet(
     snapshot_b_pin: dict[str, str] | None = None,
     product_decision_set_pin: dict[str, str] | None = None,
     capability_decision_set_pin: dict[str, str] | None = None,
+    company_identity_root: str | Path | None = None,
+    company_identity_pin: dict[str, str] | None = None,
     **forbidden: Any,
 ) -> dict[str, Any]:
     """Build a stage-scoped packet from identity pins only.
 
     There is no snapshot or decision-set document parameter: content is
     hydrated here from ``artifact_root`` and verified before use.
+
+    ``company_identity_root`` is a **builder argument**, not a packet field: the
+    packet records the reference and digest it was given, never the root it was
+    read from. Supplying both the root and the pin produces ``@0.2.0`` with a
+    derived ``legal_name``; supplying neither produces ``@0.1.0`` unchanged.
+    A ``legal_name`` or any prehydrated identity mapping from the caller is
+    refused outright -- the pin is mandatory, the *claim* is forbidden.
     """
+    claimed = sorted(
+        name
+        for name in forbidden
+        if name in {"legal_name", "company_identity", "company_name"}
+    )
+    if claimed:
+        raise ExtractionError(
+            f"company identity is derived from its pin, never supplied: {claimed}",
+            reason_code="company_identity_pin_forbidden",
+        )
     if forbidden:
         raise ExtractionError(
             f"unsupported packet inputs: {sorted(forbidden)}; snapshots and decision "
@@ -537,6 +645,27 @@ def build_extraction_input_packet(
         )
     _require_sha256(coverage_artifact.get("sha256"), "coverage sha256")
     _require_sha256(source_snapshot_manifest.get("sha256"), "source snapshot sha256")
+
+    # One of the two must not appear without the other: a pin with no root
+    # cannot be read, and a root with no pin names nothing.
+    if company_identity_pin is not None and company_identity_root is None:
+        raise ExtractionError(
+            "a company-identity pin requires an injected company_identity_root",
+            reason_code="company_identity_root_required",
+        )
+    if company_identity_root is not None and company_identity_pin is None:
+        raise ExtractionError(
+            "a company_identity_root requires a company-identity pin",
+            reason_code="company_identity_pin_required",
+        )
+    legal_name: str | None = None
+    if company_identity_pin is not None:
+        legal_name = hydrate_company_identity(
+            company_identity_root,
+            company_identity_pin,
+            company_id=company_id,
+            observation_cutoff_date=observation_cutoff_date,
+        )
 
     admissible, blank_drops, temporal_drops = _admissible(
         list(passages), document_publication_dates, observation_cutoff_date
@@ -650,16 +779,44 @@ def build_extraction_input_packet(
             capability_decision_set_pin, capability_decisions
         )
 
+    identity_fields: dict[str, Any] = {}
+    emitted_passages = admissible
+    if legal_name is not None:
+        identity_fields = {
+            "company_identity_reference": company_identity_pin["reference"],
+            "company_identity_sha256": company_identity_pin["sha256"],
+            "legal_name": legal_name,
+        }
+        # ADR-036 (E-R). @0.2.0 passages carry the **authoritative** publication
+        # date, copied from ``document_publication_dates`` rather than from any
+        # date a caller attached to a passage: the renderer prints this value, and
+        # a dated quote is what makes a claim checkable against the observation
+        # cutoff. Each passage is copied, so caller input is never mutated, and
+        # @0.1.0 bytes are untouched because this runs only on the @0.2.0 path.
+        emitted_passages = []
+        for passage in admissible:
+            source_id = passage.get("source_id")
+            authoritative = document_publication_dates.get(source_id)
+            if not isinstance(authoritative, str) or not _DATE_RE.fullmatch(
+                authoritative
+            ):
+                raise ExtractionError(
+                    "every admissible passage needs an authoritative YYYY-MM-DD "
+                    f"publication date; source_id={source_id!r} has none",
+                    reason_code="packet_context_invalid",
+                )
+            emitted_passages.append({**passage, "publication_date": authoritative})
+
     return {
-        "contract": PACKET_CONTRACT,
-        "schema_version": "0.1.0",
+        "contract": PACKET_CONTRACT_V2 if identity_fields else PACKET_CONTRACT,
+        "schema_version": "0.2.0" if identity_fields else "0.1.0",
         "stage": stage,
         "company_id": company_id,
         "observation_cutoff_date": observation_cutoff_date,
         "corpus_scope": CORPUS_SCOPE_SEC_ONLY,
         "coverage_artifact": dict(coverage_artifact),
         "source_snapshot_manifest": dict(source_snapshot_manifest),
-        "passages": admissible,
+        "passages": emitted_passages,
         "filter_ledger": {
             "input_passage_count": len(passages),
             "blank_drop_count": len(blank_drops),
@@ -671,6 +828,7 @@ def build_extraction_input_packet(
         "parent_context": parent_context,
         "product_validation_provenance": product_provenance,
         "capability_validation_provenance": capability_provenance,
+        **identity_fields,
     }
 
 

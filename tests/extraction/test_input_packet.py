@@ -450,3 +450,57 @@ def test_the_public_hydrator_refuses_a_symlink(tmp_path: Path):
             sha_code="authorization_chain_broken",
         )
     assert excinfo.value.reason_code == "authorization_chain_broken"
+
+
+# --- the @0.2.0 successor (ADR-036, E-R) --------------------------------------
+
+
+def test_the_released_v0_1_contract_identity_is_unchanged():
+    """E-R adds a successor; it does not touch the released contract."""
+    from dynamic_ai_products.extraction.input_packet import (
+        PACKET_CONTRACT,
+        PACKET_CONTRACT_V2,
+    )
+
+    assert PACKET_CONTRACT == "extraction_input_packet@0.1.0"
+    assert PACKET_CONTRACT_V2 == "extraction_input_packet@0.2.0"
+    assert PACKET_CONTRACT != PACKET_CONTRACT_V2
+
+
+def test_both_packet_contracts_are_accepted_but_only_v0_2_carries_identity():
+    from dynamic_ai_products.extraction.manifests import (
+        ACCEPTED_PACKET_CONTRACTS,
+        PACKET_CONTRACT_REQUIRING_IDENTITY,
+    )
+
+    assert ACCEPTED_PACKET_CONTRACTS == (
+        "extraction_input_packet@0.1.0",
+        "extraction_input_packet@0.2.0",
+    )
+    assert PACKET_CONTRACT_REQUIRING_IDENTITY == "extraction_input_packet@0.2.0"
+    assert PACKET_CONTRACT_REQUIRING_IDENTITY in ACCEPTED_PACKET_CONTRACTS
+
+
+def test_the_v0_2_schema_file_exists_and_is_strict():
+    import json
+    from pathlib import Path as _Path
+
+    schema = json.loads(
+        (
+            _Path(__file__).resolve().parents[2]
+            / "schemas"
+            / "extraction_input_packet.v2.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["contract"] == {
+        "const": "extraction_input_packet@0.2.0"
+    }
+    assert schema["properties"]["schema_version"] == {"const": "0.2.0"}
+    for field in (
+        "company_identity_reference",
+        "company_identity_sha256",
+        "legal_name",
+    ):
+        assert field in schema["properties"], field
+        assert field in schema["required"], field

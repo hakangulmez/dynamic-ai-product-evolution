@@ -111,7 +111,10 @@ def _code_tokens(tree: ast.AST) -> tuple[set[str], list[str]]:
 
 
 def test_package_is_enumerable_and_complete():
-    assert len(MODULES) == 13
+    # ADR-036 (E-R) adds contents_renderer.py: 13 -> 14. ADR-035 claimed the
+    # 13-module count would hold; materializing the provider contents needs a
+    # module of its own, and that is recorded as a change rather than glossed.
+    assert len(MODULES) == 14
     assert (PACKAGE / "__init__.py") in MODULES
 
 
@@ -341,9 +344,15 @@ def test_no_provider_is_constructed_inside_the_package():
         "client_contract",
         "complete",
         # The budget-enforcement seam lives on this same typed surface so that
-        # no new extraction module is needed and the 13-module count holds.
+        # no new extraction module is needed for the meter seam itself; the
+        # 14th module comes from E-R's contents renderer (ADR-036).
         "meter_identity",
         "assert_within_budget",
+        # ADR-036 (E-R). Validation only: it binds rendered_contents_sha256 to the
+        # rendered bytes and refuses a mismatch. It constructs no client, imports
+        # no vendor module, and performs no I/O -- so the guard's meaning is
+        # unchanged even though the function set grew.
+        "__post_init__",
     }
     assert "Protocol" in text and "runtime_checkable" in text
 

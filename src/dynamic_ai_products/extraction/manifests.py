@@ -27,6 +27,7 @@ from .errors import ExtractionError
 from .raw_artifacts import canonical_json_bytes
 
 __all__ = [
+    "ACCEPTED_PACKET_CONTRACTS",
     "AUTHORIZATION_PROPERTIES",
     "CLIENT_CONTRACT_CONTRACT",
     "CLIENT_CONTRACT_PROPERTIES",
@@ -38,6 +39,7 @@ __all__ = [
     "LIVE_AUTHORIZATION_CONTRACT",
     "NON_RUN_CONTRACT",
     "NON_RUN_REASONS",
+    "PACKET_CONTRACT_REQUIRING_IDENTITY",
     "PROVIDER_DECLARED_MAX_OUTPUT_TOKENS_PIN",
     "PROVIDER_ERROR_CONTRACT",
     "PROVIDER_ERROR_REASONS",
@@ -71,6 +73,17 @@ PROVIDER_ERROR_CONTRACT = "extraction_provider_error_record@0.1.0"
 QUALIFICATION_CONTRACT = "adapter_qualification_record@0.1.0"
 ENABLEMENT_CONTRACT = "adapter_enablement_record@0.1.0"
 LIVE_AUTHORIZATION_CONTRACT = "live_call_authorization@0.1.0"
+# ADR-036 (E-R). The packet contracts a run may present. ``@0.1.0`` remains
+# valid for the non-run route, which renders nothing and therefore needs no legal
+# name; the authorized route requires ``@0.2.0`` because the renderer cannot bind
+# ``{{company_name}}`` without it. A packet naming anything else is refused
+# rather than assumed to be one of these.
+ACCEPTED_PACKET_CONTRACTS: tuple[str, ...] = (
+    "extraction_input_packet@0.1.0",
+    "extraction_input_packet@0.2.0",
+)
+PACKET_CONTRACT_REQUIRING_IDENTITY = "extraction_input_packet@0.2.0"
+
 GOVERNANCE_SCHEMA_VERSION = "0.1.0"
 
 # Closed rollout -> enablement-status mapping. ``full_scale`` is deliberately

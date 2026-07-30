@@ -13,7 +13,9 @@ connector satisfies it too, but refuses unconditionally in both
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Any, Protocol, runtime_checkable
 
 from .errors import ExtractionError
@@ -28,18 +30,69 @@ __all__ = [
     "require_provider",
 ]
 
-PROVIDER_PROTOCOL_VERSION = "extraction_provider_protocol_v6"
+_SHA256_LOWER_RE = re.compile(r"^[0-9a-f]{64}$")
+
+PROVIDER_PROTOCOL_VERSION = "extraction_provider_protocol_v7"
 
 
 @dataclass(frozen=True)
 class ProviderRequest:
-    """One extraction request as seen by a provider."""
+    """One extraction request as seen by a provider.
+
+    ``rendered_contents`` is the **sole** provider-input authority (ADR-036,
+    E-R). ``prompt_text`` and ``payload`` are deliberately absent rather than
+    merely unused: before E-R the connector sent ``prompt_text`` and the packet
+    payload was never transmitted at all, so a live call handed the model a
+    template still carrying literal placeholders. Keeping either field would
+    leave a second, divergent authority from which a connector could rebuild its
+    own representation. With the fields removed, that is structurally impossible.
+
+    ``prompt_sha256`` remains the digest of the **raw frozen template** bytes and
+    is provenance only; ``rendered_contents_sha256`` is the digest of what is
+    actually sent. The two are different values by construction.
+    """
 
     stage: str
-    prompt_text: str
+    rendered_contents: str
+    rendered_contents_sha256: str
     prompt_sha256: str
     input_packet_sha256: str
-    payload: dict[str, Any]
+
+    def __post_init__(self) -> None:
+        """Bind the digest to the bytes at construction, not by convention.
+
+        Without this a request could carry real contents and a fabricated digest:
+        the connector would send the contents anyway, the meter would measure
+        them, and every artifact would record a digest that matches nothing. The
+        check runs before the request can reach meter admission, ``mkdir``, the
+        SDK factory or the provider, so a mismatch costs zero artifacts.
+
+        Neither digest is reported. A hex digest is not secret, but the boundary
+        has no channel for unexpected values and gains nothing from one.
+        """
+        if not isinstance(self.rendered_contents, str) or not self.rendered_contents:
+            raise ExtractionError(
+                "rendered_contents must be a non-empty string",
+                reason_code="provider_protocol_invalid",
+            )
+        declared = self.rendered_contents_sha256
+        if not isinstance(declared, str) or not _SHA256_LOWER_RE.fullmatch(declared):
+            raise ExtractionError(
+                "rendered_contents_sha256 must be 64 lowercase hex characters",
+                reason_code="provider_protocol_invalid",
+            )
+        try:
+            payload = self.rendered_contents.encode("utf-8")
+        except UnicodeEncodeError as exc:  # pragma: no cover - str is always encodable
+            raise ExtractionError(
+                "rendered_contents must be UTF-8 encodable",
+                reason_code="provider_protocol_invalid",
+            ) from exc
+        if sha256(payload).hexdigest() != declared:
+            raise ExtractionError(
+                "rendered_contents_sha256 does not match the rendered contents",
+                reason_code="provider_protocol_invalid",
+            )
 
 
 @dataclass(frozen=True)

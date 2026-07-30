@@ -34,10 +34,10 @@ def _provider() -> VertexGeminiProvider:
 def _request() -> ProviderRequest:
     return ProviderRequest(
         stage="product_extraction",
-        prompt_text="prompt",
+        rendered_contents="prompt",
+        rendered_contents_sha256="cf07194ee232eb531e15f690000d19846dea69cf05504782658afcfacb9228a2",
         prompt_sha256="a" * 64,
         input_packet_sha256="b" * 64,
-        payload={"passages": []},
     )
 
 

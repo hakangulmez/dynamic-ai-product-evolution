@@ -275,3 +275,31 @@ def test_no_behavioural_module_disappears_behind_a_module_level_skip():
                 ):
                     offenders.append(f"{module.name}:{child.attr}")
     assert offenders == []
+
+
+def test_the_extraction_edge_still_carries_exactly_three_names_after_e_r():
+    """E-R changes ProviderRequest's shape, not the size of the import edge.
+
+    ADR-036 removes ``prompt_text`` and ``payload`` from the request and adds
+    ``rendered_contents``; the connector still imports the same three names. The
+    allowlist widens only at E-M, and that will be a separate recorded change.
+    """
+    assert ALLOWED_EXTRACTION_NAMES == {
+        "ExtractionProvider",
+        "ProviderRequest",
+        "ProviderResponse",
+    }
+    assert len(ALLOWED_EXTRACTION_NAMES) == 3
+
+
+def test_no_provider_module_reads_a_removed_request_field():
+    """The removal is structural: nothing provider-side names either field."""
+    offenders = []
+    for module in _modules(PACKAGE):
+        for node in ast.walk(_tree(module)):
+            if isinstance(node, ast.Attribute) and node.attr in {
+                "prompt_text",
+                "payload",
+            }:
+                offenders.append(f"{module.name}:{node.lineno}")
+    assert not offenders, offenders

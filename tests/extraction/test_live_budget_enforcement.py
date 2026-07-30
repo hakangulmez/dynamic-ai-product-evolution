@@ -10,6 +10,8 @@ rather than run unmetered.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -25,6 +27,7 @@ from dynamic_ai_products.extraction.manifests import (
 from dynamic_ai_products.extraction.raw_artifacts import canonical_json_bytes, sha256_bytes
 from dynamic_ai_products.extraction.run_extraction import (
     CLIENT_CONTRACT_REFERENCE,
+    CONTENTS_REFERENCE,
     run_extraction_stage,
 )
 from dynamic_ai_products.providers.client_contract import build_client_contract
@@ -80,6 +83,30 @@ def _passage(text="the product ships an assistant"):
     }
 
 
+def write_company_identity(root: Path, **overrides) -> dict[str, str]:
+    """Persist an admission artifact and return its pin (ADR-036, E-R).
+
+    Mirrors the approved Pilot Universe Packet's identity fields. The legal name
+    is only ever *read* from here; no test may pass one to the builder.
+    """
+    admission = {
+        "company_id": COMPANY,
+        "cik": COMPANY[3:].lstrip("0") or "0",
+        "legal_name": "HUBSPOT INC",
+        "observation_cutoff_date": CUTOFF,
+    }
+    unknown = sorted(set(overrides) - set(admission))
+    assert not unknown, f"unknown admission override(s): {unknown}"
+    admission.update(overrides)
+    root.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(admission, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    (root / "pilot_universe_packet.json").write_bytes(payload)
+    return {
+        "reference": "pilot_universe_packet.json",
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
 def _run(tmp_path: Path, *, chain_overrides=None, **overrides):
     governance_root = tmp_path / "governance-root"
     pin = write_governance_chain(governance_root, **(chain_overrides or {}))
@@ -100,6 +127,8 @@ def _run(tmp_path: Path, *, chain_overrides=None, **overrides):
         "schema_root": str(SCHEMAS),
         "provider": _Provider(),
         "governance_artifact_root": governance_root,
+        "company_identity_root": tmp_path / "identity",
+        "company_identity_pin": write_company_identity(tmp_path / "identity"),
         "live_call_authorization_pin": pin,
         "budget_meter": FakeMeter(),
     }
@@ -210,8 +239,16 @@ def test_the_meter_sees_the_exact_request_the_provider_receives(tmp_path: Path):
         _run(tmp_path, provider=provider, budget_meter=meter)
     # The same object, not an equal copy.
     assert meter.seen_request is provider.seen_request
-    assert meter.seen_request.prompt_text == provider.seen_request.prompt_text
-    assert meter.seen_request.payload == provider.seen_request.payload
+    # rendered_contents is the sole provider-input authority (ADR-036, E-R), so
+    # metering it is metering exactly what is sent.
+    assert (
+        meter.seen_request.rendered_contents
+        == provider.seen_request.rendered_contents
+    )
+    assert (
+        meter.seen_request.rendered_contents_sha256
+        == provider.seen_request.rendered_contents_sha256
+    )
 
 
 def test_the_meter_sees_the_declared_max_output_tokens(tmp_path: Path):
@@ -246,6 +283,22 @@ def test_the_metered_prompt_digest_is_the_persisted_one(tmp_path: Path):
         _run(tmp_path, budget_meter=meter)
     persisted = (tmp_path / "run" / PROMPT_REFERENCE).read_bytes()
     assert meter.seen_request.prompt_sha256 == sha256_bytes(persisted)
+
+
+def test_the_metered_contents_digest_is_the_persisted_one(tmp_path: Path):
+    """The meter measures the document that is actually sent (ADR-036, E-R).
+
+    The prompt digest above is the frozen template; this is the rendered
+    document. Metering the template would measure something the provider never
+    receives, so the two are asserted separately and must differ.
+    """
+    meter = FakeMeter()
+    with pytest.raises(ExtractionError):
+        _run(tmp_path, budget_meter=meter)
+    persisted = (tmp_path / "run" / CONTENTS_REFERENCE).read_bytes()
+    assert meter.seen_request.rendered_contents_sha256 == sha256_bytes(persisted)
+    assert meter.seen_request.rendered_contents.encode("utf-8") == persisted
+    assert meter.seen_request.rendered_contents_sha256 != meter.seen_request.prompt_sha256
 
 
 # --- the arithmetic limits ----------------------------------------------------

@@ -21,6 +21,7 @@ __all__ = [
     "EXTRACTION_PROMPTS",
     "PROMPT_REGISTRY_VERSION",
     "load_prompt",
+    "single_pass_prompt_plan",
     "prompt_hash_of_bytes",
     "resolve_prompt_path",
 ]
@@ -79,6 +80,26 @@ def load_prompt(repo_root: str | Path, prompt_id: str) -> dict[str, Any]:
         "prompt_hash": prompt_hash_of_bytes(payload),
         "byte_count": len(payload),
         "text": payload.decode("utf-8"),
+    }
+
+
+def single_pass_prompt_plan(stage: str) -> dict[str, Any]:
+    """The one prompt a single-pass run executes, and an honest record of that.
+
+    ADR-036 (E-R) makes this an **explicit, tested decision** rather than the
+    incidental consequence of indexing ``[0]``. ``product_extraction`` registers
+    two prompts: a high-recall discovery pass and a precision consolidation pass
+    that consumes the first pass's output. A single-pass run executes only the
+    first, so its result is a recall-oriented candidate set and **not** a
+    consolidated product universe. The returned record carries that fact into the
+    run artifacts so no downstream reader can mistake one for the other.
+    """
+    sequence = prompts_for_stage(stage)
+    return {
+        "prompt_id": sequence[0],
+        "prompt_pass_index": 1,
+        "prompt_sequence_length": len(sequence),
+        "prompt_sequence_complete": len(sequence) == 1,
     }
 
 

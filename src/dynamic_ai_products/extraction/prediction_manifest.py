@@ -40,6 +40,12 @@ PREDICTION_MANIFEST_CONTRACT: dict[str, str] = {
 REQUIRED_SOURCE_ARTIFACT_ROLES: tuple[str, ...] = (
     "raw_prediction",
     "extraction_input_packet",
+    # ADR-036 (E-R). The eighth role is the exact UTF-8 document the provider
+    # received. Without it the manifest pinned the packet and the frozen prompt
+    # but nothing proving what was actually sent, because the two were combined
+    # only in memory. ``source_artifacts`` is an unbounded tuple on the released
+    # model, so nothing is widened.
+    "rendered_provider_contents",
     "coverage_artifact",
     "resolved_prompt",
     "provider_client_contract",

@@ -427,11 +427,11 @@ def test_the_protocol_v5_signature_carries_three_keyword_only_inputs():
         assert parameters[name].default is None
 
 
-def test_the_protocol_version_and_the_connector_pin_agree_at_v6():
+def test_the_protocol_version_and_the_connector_pin_agree_at_v7():
     from dynamic_ai_products.extraction.provider_adapter import PROVIDER_PROTOCOL_VERSION
     from dynamic_ai_products.providers.client_contract import (
         PROVIDER_PROTOCOL_VERSION_PIN,
     )
 
-    assert PROVIDER_PROTOCOL_VERSION == "extraction_provider_protocol_v6"
+    assert PROVIDER_PROTOCOL_VERSION == "extraction_provider_protocol_v7"
     assert PROVIDER_PROTOCOL_VERSION_PIN == PROVIDER_PROTOCOL_VERSION

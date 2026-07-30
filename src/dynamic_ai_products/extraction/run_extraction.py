@@ -1,4 +1,4 @@
-"""Stage-dispatched extraction orchestration (ADR-033, ADR-034).
+"""Stage-dispatched extraction orchestration (ADR-033, ADR-034, ADR-036).
 
 **Every deterministic input is resolved before anything is created on disk.**
 The packet is built in memory; the provider, its client contract, the resolved
@@ -17,11 +17,13 @@ Four published shapes, each with an exact artifact count:
 - **pre-authorization refusal** — 0 artifacts, no run root;
 - **non-run** (zero admissible passages) — 2 artifacts, and no governance,
   meter, provider, prompt, or schema preflight is performed at all;
-- **terminal provider failure** — 6 artifacts: packet, prompt, client
-  contract, the live-call authorization, an errored ``extraction_run``, and the
-  provider-error record;
-- **authorized successful run** — 8 artifacts, adding the raw prediction, the
-  envelopes, and the prediction manifest.
+- **terminal provider failure** — 7 artifacts: packet, the rendered provider
+  contents, prompt, client contract, the live-call authorization, an errored
+  ``extraction_run``, and the provider-error record;
+- **authorized successful run** — 9 artifacts: those five inputs — packet,
+  rendered provider contents, prompt, client contract, authorization — plus the
+  raw prediction, a completed ``extraction_run``, the envelopes, and the
+  prediction manifest.
 
 Neither a provider nor a budget meter is constructed here: both must be
 injected, and both default to refusing (ADR-035).
@@ -40,6 +42,7 @@ from .input_packet import (
     packet_bytes,
 )
 from .manifests import (
+    PACKET_CONTRACT_REQUIRING_IDENTITY,
     PROVIDER_ERROR_REASONS,
     build_extraction_run,
     build_non_run_record,
@@ -56,7 +59,8 @@ from .manifests import (
     validate_qualification_execution_contract,
 )
 from .prediction_manifest import build_prediction_artifact_manifest, manifest_bytes
-from .prompts import load_prompt, prompts_for_stage
+from .contents_renderer import RENDERER_VERSION, render_provider_contents
+from .prompts import load_prompt, single_pass_prompt_plan
 from .provider_adapter import ProviderRequest, require_budget_meter, require_provider
 from .raw_artifacts import (
     build_prediction_envelope,
@@ -71,6 +75,9 @@ __all__ = ["ExtractionOutcome", "run_extraction_stage"]
 
 PACKET_REFERENCE = "inputs/extraction_input_packet.json"
 PROMPT_REFERENCE = "inputs/resolved_prompt.md"
+# ADR-036 (E-R). The exact UTF-8 document the provider received. Persisted
+# separately from the frozen prompt so "what was sent" is auditable on its own.
+CONTENTS_REFERENCE = "inputs/rendered_provider_contents.md"
 CLIENT_CONTRACT_REFERENCE = "inputs/provider_client_contract.json"
 AUTHORIZATION_REFERENCE = "inputs/live_call_authorization.json"
 NON_RUN_REFERENCE = "manifests/extraction_non_run_record.json"
@@ -305,6 +312,11 @@ def run_extraction_stage(
     live_call_authorization_pin: dict[str, str] | None = None,
     budget_meter: object = None,
     artifact_root: str | Path | None = None,
+    # ADR-036 (E-R). A builder/runner argument, never a packet field: the packet
+    # records the reference and digest, not the root they were read from. There
+    # is no cwd search and no environment fallback.
+    company_identity_root: str | Path | None = None,
+    company_identity_pin: dict[str, str] | None = None,
     snapshot_a_pin: dict[str, str] | None = None,
     snapshot_b_pin: dict[str, str] | None = None,
     product_decision_set_pin: dict[str, str] | None = None,
@@ -335,6 +347,8 @@ def run_extraction_stage(
         snapshot_b_pin=snapshot_b_pin,
         product_decision_set_pin=product_decision_set_pin,
         capability_decision_set_pin=capability_decision_set_pin,
+        company_identity_root=company_identity_root,
+        company_identity_pin=company_identity_pin,
     )
     root = Path(run_root)
     # Computed once, in memory: the request the meter inspects must carry the
@@ -526,18 +540,36 @@ def _run_authorized_stage(
     )
     declared_max_output_tokens = contract["model_parameters"]["max_output_tokens"]
 
-    # [H] Read-only prompt resolution, still in memory.
-    prompt_id = prompts_for_stage(stage)[0]
-    prompt = load_prompt(repo_root, prompt_id)
+    # [H] Read-only prompt resolution, still in memory. The pass is an explicit
+    # decision, not the by-product of indexing: a single-pass run executes the
+    # first registered prompt only and records that it did.
+    prompt_plan = single_pass_prompt_plan(stage)
+    prompt = load_prompt(repo_root, prompt_plan["prompt_id"])
     prompt_payload = prompt["text"].encode("utf-8")
 
-    # [I] The one canonical request. The meter and the provider see this object.
+    # [H2] Materialize the contents. The authorized route needs a legal name, so
+    # a @0.1.0 packet is refused here rather than sending a literal placeholder.
+    if packet["contract"] != PACKET_CONTRACT_REQUIRING_IDENTITY:
+        raise ExtractionError(
+            "the authorized route requires "
+            f"{PACKET_CONTRACT_REQUIRING_IDENTITY}; a packet without a hydrated "
+            "company identity cannot render the provider contents",
+            reason_code="company_identity_pin_required",
+        )
+    rendered_contents = render_provider_contents(
+        stage=stage, prompt_text=prompt["text"], packet=packet
+    )
+    contents_payload = rendered_contents.encode("utf-8")
+    contents_sha_expected = sha256_bytes(contents_payload)
+
+    # [I] The one canonical request. The meter and the provider see this object,
+    # and rendered_contents is its sole provider-input authority.
     provider_request = ProviderRequest(
         stage=stage,
-        prompt_text=prompt["text"],
+        rendered_contents=rendered_contents,
+        rendered_contents_sha256=contents_sha_expected,
         prompt_sha256=prompt["prompt_hash"],
         input_packet_sha256=packet_sha,
-        payload={"passages": packet["passages"]},
     )
 
     # [J] The budget meter, and the identity the authorization names.
@@ -563,6 +595,8 @@ def _run_authorized_stage(
     _require_written_digest(
         write_artifact(root, PACKET_REFERENCE, packet_payload), packet_sha
     )
+    contents_sha = write_artifact(root, CONTENTS_REFERENCE, contents_payload)
+    _require_written_digest(contents_sha, contents_sha_expected)
     prompt_sha = write_artifact(root, PROMPT_REFERENCE, prompt_payload)
     contract_sha = write_artifact(root, CLIENT_CONTRACT_REFERENCE, contract_payload)
     _require_written_digest(contract_sha, contract_sha_expected)
@@ -644,7 +678,17 @@ def _run_authorized_stage(
             CLIENT_CONTRACT_REFERENCE,
             AUTHORIZATION_REFERENCE,
         ],
-        prompt_model_metadata=response.prompt_model_metadata,
+        # ADR-036 (E-R). prompt_model_metadata is an open dict on a released
+        # model and the envelope is hash-bound through envelopes_sha256, so the
+        # renderer version, the rendered digest and the single-pass record are
+        # auditable in the run artifact chain rather than only in an ADR.
+        prompt_model_metadata={
+            **response.prompt_model_metadata,
+            "contents_renderer_version": RENDERER_VERSION,
+            "rendered_contents_reference": CONTENTS_REFERENCE,
+            "rendered_contents_sha256": contents_sha,
+            **prompt_plan,
+        },
         input_packet_hash=packet_sha,
         prediction_run_manifest_reference=PREDICTION_MANIFEST_REFERENCE,
         input_packet_reference=PACKET_REFERENCE,
@@ -660,6 +704,10 @@ def _run_authorized_stage(
         source_artifacts={
             "raw_prediction": {"reference": RAW_REFERENCE, "sha256": raw_sha},
             "extraction_input_packet": {"reference": PACKET_REFERENCE, "sha256": packet_sha},
+            "rendered_provider_contents": {
+                "reference": CONTENTS_REFERENCE,
+                "sha256": contents_sha,
+            },
             "coverage_artifact": dict(coverage_artifact),
             "resolved_prompt": {"reference": PROMPT_REFERENCE, "sha256": prompt_sha},
             "provider_client_contract": {
@@ -683,6 +731,7 @@ def _run_authorized_stage(
         packet_sha256=packet_sha,
         artifacts={
             PACKET_REFERENCE: packet_sha,
+            CONTENTS_REFERENCE: contents_sha,
             PROMPT_REFERENCE: prompt_sha,
             CLIENT_CONTRACT_REFERENCE: contract_sha,
             AUTHORIZATION_REFERENCE: authorization_sha,

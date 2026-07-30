@@ -6,6 +6,7 @@ function of the locked constants and the stage request.
 
 from __future__ import annotations
 
+import hashlib
 import pytest
 
 from dynamic_ai_products.extraction.provider_adapter import ProviderRequest
@@ -21,13 +22,17 @@ from dynamic_ai_products.providers.vertex_gemini import (
 )
 
 
+CONTENTS = "prompt body with HUBSPOT INC and p-1"
+CONTENTS_SHA256 = hashlib.sha256(CONTENTS.encode("utf-8")).hexdigest()
+
+
 def _request(stage: str = "product_extraction") -> ProviderRequest:
     return ProviderRequest(
         stage=stage,
-        prompt_text="prompt body",
+        rendered_contents=CONTENTS,
+        rendered_contents_sha256=CONTENTS_SHA256,
         prompt_sha256="a" * 64,
         input_packet_sha256="b" * 64,
-        payload={"passages": [{"passage_id": "p-1"}]},
     )
 
 

@@ -380,14 +380,21 @@ def test_the_error_record_does_not_pin_the_authorization():
     assert not any("authorization" in key for key in record)
 
 
-def test_the_seventh_manifest_role_is_the_authorization():
-    """Bound in the prediction manifest, not in extraction_run or this record."""
+def test_the_authorization_and_rendered_contents_are_manifest_roles():
+    """Bound in the prediction manifest, not in extraction_run or this record.
+
+    ADR-036 (E-R) adds ``rendered_provider_contents`` as the eighth role, so the
+    authorization keeps its position relative to the end of the tuple rather
+    than an absolute index that a later insertion would silently shift.
+    """
     from dynamic_ai_products.extraction.prediction_manifest import (
         REQUIRED_SOURCE_ARTIFACT_ROLES,
     )
 
-    assert len(REQUIRED_SOURCE_ARTIFACT_ROLES) == 7
+    assert len(REQUIRED_SOURCE_ARTIFACT_ROLES) == 8
     assert REQUIRED_SOURCE_ARTIFACT_ROLES[-2] == "live_call_authorization"
+    assert REQUIRED_SOURCE_ARTIFACT_ROLES[-1] == "extraction_run"
+    assert "rendered_provider_contents" in REQUIRED_SOURCE_ARTIFACT_ROLES
     # extraction_run@0.1.0 is still strict and unwidened.
     assert len(EXTRACTION_RUN_PROPERTIES) == 15
     assert "live_call_authorization" not in EXTRACTION_RUN_PROPERTIES

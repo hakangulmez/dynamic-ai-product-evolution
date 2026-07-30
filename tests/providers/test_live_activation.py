@@ -8,6 +8,7 @@ what gets archived, and that the retry cap and the capture refusals hold.
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from contextlib import contextmanager
 
@@ -24,6 +25,10 @@ PROJECT = "my-research-project"
 DIGEST = "a" * 64
 ALLOWLIST = ("https://us-central1-aiplatform.googleapis.com/v1/projects",)
 BODY = b'{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}'
+
+
+CONTENTS = "prompt body with HUBSPOT INC and p-1"
+CONTENTS_SHA256 = hashlib.sha256(CONTENTS.encode("utf-8")).hexdigest()
 
 
 class _FakeCapture:
@@ -88,10 +93,10 @@ def _provider(**overrides):
 def _request():
     return ProviderRequest(
         stage="product_extraction",
-        prompt_text="prompt body",
+        rendered_contents=CONTENTS,
+        rendered_contents_sha256=CONTENTS_SHA256,
         prompt_sha256="c" * 64,
         input_packet_sha256="d" * 64,
-        payload={"passages": [{"passage_id": "p-1"}]},
     )
 
 

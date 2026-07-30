@@ -8,6 +8,7 @@ files and no ``extraction_run`` at all.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -20,10 +21,15 @@ from dynamic_ai_products.extraction.provider_adapter import (
     ProviderRequest,
     ProviderResponse,
 )
-from dynamic_ai_products.extraction.raw_artifacts import sha256_bytes
+from dynamic_ai_products.extraction.raw_artifacts import (
+    canonical_json_bytes,
+    sha256_bytes,
+    write_artifact,
+)
 from dynamic_ai_products.extraction.run_extraction import (
     AUTHORIZATION_REFERENCE,
     CLIENT_CONTRACT_REFERENCE,
+    CONTENTS_REFERENCE,
     ENVELOPES_REFERENCE,
     EXTRACTION_RUN_REFERENCE,
     NON_RUN_REFERENCE,
@@ -34,10 +40,10 @@ from dynamic_ai_products.extraction.run_extraction import (
     run_extraction_stage,
 )
 from dynamic_ai_products.extraction.manifests import (
+    STAGE_OUTPUT_CONTRACT_ID as _STAGE_OUTPUT_CONTRACT_ID,
     STAGE_OUTPUT_SCHEMA_SHA256 as _STAGE_OUTPUT_SCHEMA_SHA256,
     validate_provider_client_contract,
 )
-from dynamic_ai_products.extraction.raw_artifacts import canonical_json_bytes
 from dynamic_ai_products.providers.client_contract import build_client_contract
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -123,11 +129,37 @@ def _passage(passage_id: str, text: str, source_id: str = "sec-1"):
     }
 
 
+def write_company_identity(root: Path, **overrides) -> dict[str, str]:
+    """Persist an admission artifact and return its pin (ADR-036, E-R).
+
+    Mirrors the approved Pilot Universe Packet's identity fields. The legal name
+    is only ever *read* from here; no test may pass one to the builder.
+    """
+    admission = {
+        "company_id": COMPANY,
+        "cik": COMPANY[3:].lstrip("0") or "0",
+        "legal_name": "HUBSPOT INC",
+        "observation_cutoff_date": CUTOFF,
+    }
+    unknown = sorted(set(overrides) - set(admission))
+    assert not unknown, f"unknown admission override(s): {unknown}"
+    admission.update(overrides)
+    root.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(admission, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    (root / "pilot_universe_packet.json").write_bytes(payload)
+    return {
+        "reference": "pilot_universe_packet.json",
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
 def _run(tmp_path: Path, **overrides):
     governance_root = tmp_path / "governance-root"
     kwargs = {
         "run_root": tmp_path / "run",
         "governance_artifact_root": governance_root,
+        "company_identity_root": tmp_path / "identity",
+        "company_identity_pin": write_company_identity(tmp_path / "identity"),
         "live_call_authorization_pin": write_governance_chain(governance_root),
         "budget_meter": FakeMeter(),
         "repo_root": REPO_ROOT,
@@ -156,11 +188,12 @@ def _files(root: Path) -> set[str]:
 # --- the provider route -------------------------------------------------------
 
 
-def test_a_provider_run_publishes_the_eight_expected_artifacts(tmp_path: Path):
+def test_a_provider_run_publishes_the_nine_expected_artifacts(tmp_path: Path):
     outcome = _run(tmp_path)
     assert outcome.verdict == "provider_run_complete"
     assert _files(outcome.run_root) == {
         PACKET_REFERENCE,
+        CONTENTS_REFERENCE,
         PROMPT_REFERENCE,
         CLIENT_CONTRACT_REFERENCE,
         AUTHORIZATION_REFERENCE,
@@ -187,7 +220,15 @@ def test_the_provider_sees_the_packet_digest_and_the_prompt_digest(tmp_path: Pat
     assert request.input_packet_sha256 == outcome.packet_sha256
     prompt_bytes = (outcome.run_root / PROMPT_REFERENCE).read_bytes()
     assert request.prompt_sha256 == sha256_bytes(prompt_bytes)
-    assert request.prompt_text.encode("utf-8") == prompt_bytes
+    # ADR-036 (E-R): the request no longer carries prompt_text at all. Its sole
+    # provider-input authority is rendered_contents, whose bytes are the ones
+    # persisted -- and which differ from the frozen template.
+    contents_bytes = (outcome.run_root / CONTENTS_REFERENCE).read_bytes()
+    assert request.rendered_contents.encode("utf-8") == contents_bytes
+    assert request.rendered_contents_sha256 == sha256_bytes(contents_bytes)
+    assert request.rendered_contents_sha256 != request.prompt_sha256
+    assert not hasattr(request, "prompt_text")
+    assert not hasattr(request, "payload")
 
 
 def test_the_raw_provider_output_is_preserved_literally(tmp_path: Path):
@@ -515,3 +556,267 @@ def write_governance_chain(root: Path, **overrides):
     auth_bytes = canonical_json_bytes(authorization)
     (root / GOV_AUTH_REFERENCE).write_bytes(auth_bytes)
     return {"reference": GOV_AUTH_REFERENCE, "sha256": sha256_bytes(auth_bytes)}
+
+
+# --- Stage 06 and Stage 07 stay blocked until E-S (ADR-036, E-R) ---------------
+
+
+@pytest.mark.parametrize("stage", ["capability_extraction", "task_extraction"])
+def test_a_non_product_stage_without_parent_pins_stops_in_the_packet_preflight(
+    tmp_path: Path, stage
+):
+    """Product-shaped inputs at a non-product stage: the **packet** refuses.
+
+    This is a packet-preflight test, not an E-R test. Both stages require pinned
+    snapshot and decision-set identities, so a product-shaped invocation cannot
+    build a packet at all and stops at ``parent_context_missing`` -- before the
+    permit handshake and before the renderer is ever consulted.
+
+    The companion test below supplies fully valid parent context and proves the
+    separate E-R route: the packet and governance preflight both succeed, the
+    permit is activated, and the **renderer** then refuses.
+    """
+
+    class _Recorder:
+        def __init__(self) -> None:
+            self.activated = False
+            self.revoked = 0
+            self.completes = 0
+            self.factory_entries = 0
+
+        def assert_run_permitted(self, **kwargs) -> None:
+            self.activated = True
+
+        def revoke_run_permission(self) -> None:
+            self.activated = False
+            self.revoked += 1
+
+        def client_contract(self) -> dict:
+            return build_client_contract(vertex_project="my-research-project")
+
+        def complete(self, request):
+            self.completes += 1
+            self.factory_entries += 1
+            raise AssertionError("the provider must never be reached")
+
+    provider = _Recorder()
+    with pytest.raises(ExtractionError) as excinfo:
+        _run(tmp_path, stage=stage, provider=provider)
+
+    assert excinfo.value.reason_code == "parent_context_missing"
+    # Zero artifacts: the run root was never created.
+    assert not (tmp_path / "run").exists()
+    # The provider was never called and the factory was never entered.
+    assert provider.completes == 0
+    assert provider.factory_entries == 0
+    # No permit is left live. It was never activated at all: the packet build at
+    # [B] precedes assert_run_permitted at [F], so there is nothing to revoke --
+    # a stronger guarantee than "revoked on the way out".
+    assert provider.activated is False
+    assert provider.revoked == 0
+
+# --- E-R blocks a FULLY VALID Stage 06 / Stage 07 invocation -------------------
+
+
+def _write_parent_artifact(root: Path, reference: str, payload) -> dict:
+    """Persist real bytes and return a real pin. No model_construct anywhere."""
+    digest = write_artifact(root, reference, json.dumps(payload).encode("utf-8"))
+    return {"reference": reference, "sha256": digest}
+
+
+def _valid_parent_chain(root: Path) -> dict:
+    """A complete, mutually consistent A/B chain persisted under one root.
+
+    Built from real payloads through the ordinary ``write_artifact`` path, so the
+    packet builder's normal hydration, hash verification and reconciliation all
+    run for real. Nothing here is a malformed stand-in.
+    """
+    products = [
+        _write_parent_artifact(
+            root,
+            f"observations/product/p{i}.json",
+            {"product_observation_id": f"prod-{i}", "product_name": f"P{i}"},
+        )
+        for i in range(2)
+    ]
+    capabilities = [
+        _write_parent_artifact(
+            root,
+            "observations/capability/c0.json",
+            {"capability_observation_id": "cap-0", "capability": "C0"},
+        )
+    ]
+
+    def members(role, pins):
+        return sorted(
+            ({"role": role, **pin} for pin in pins),
+            key=lambda m: (m["role"], m["reference"]),
+        )
+
+    def decision_set(kind, pins, **extra):
+        payload = {
+            "contract": "extraction_validation_decision_set@0.1.0",
+            "observation_kind": kind,
+            "raw_artifact_sha256": "9" * 64,
+            "candidate_collection_sha256": "8" * 64,
+            "decisions": [
+                {
+                    "candidate_id": pin["sha256"][:32],
+                    "decision": "accept",
+                    "reason": "",
+                    "accepted_artifact_reference": pin["reference"],
+                    "accepted_artifact_sha256": pin["sha256"],
+                }
+                for pin in pins
+            ],
+        }
+        payload.update(extra)
+        return payload
+
+    def publish_snapshot(reference, version, member_rows):
+        payload = {
+            "contract": "parent_observation_snapshot@0.1.0",
+            "snapshot_version": version,
+            "case_id": "case-1",
+            "company_id": COMPANY,
+            "observation_cutoff": CUTOFF,
+            "members": member_rows,
+        }
+        pin = _write_parent_artifact(root, reference, payload)
+        pin["snapshot_version"] = version
+        return pin
+
+    product_decisions = _write_parent_artifact(
+        root, "decisions/product.json", decision_set("product", products)
+    )
+    snapshot_a = publish_snapshot(
+        "snapshots/a.json", "a-1", members("product_parent", products)
+    )
+    capability_decisions = _write_parent_artifact(
+        root,
+        "decisions/capability.json",
+        decision_set(
+            "capability",
+            capabilities,
+            snapshot_a_reference=snapshot_a["reference"],
+            snapshot_a_sha256=snapshot_a["sha256"],
+        ),
+    )
+    snapshot_b = publish_snapshot(
+        "snapshots/b.json",
+        "b-1",
+        sorted(
+            members("product_parent", products)
+            + members("capability_parent", capabilities),
+            key=lambda m: (m["role"], m["reference"]),
+        ),
+    )
+    return {
+        "artifact_root": root,
+        "snapshot_a_pin": snapshot_a,
+        "snapshot_b_pin": snapshot_b,
+        "product_decision_set_pin": product_decisions,
+        "capability_decision_set_pin": capability_decisions,
+    }
+
+
+class _HandshakeRecorder:
+    """Records how far a fully valid non-product invocation actually gets."""
+
+    def __init__(self) -> None:
+        self.permits = 0
+        self.activated = False
+        self.revoked = 0
+        self.contracts = 0
+        self.completes = 0
+        self.factory_entries = 0
+
+    def assert_run_permitted(self, **kwargs) -> None:
+        self.permits += 1
+        self.activated = True
+
+    def revoke_run_permission(self) -> None:
+        self.activated = False
+        self.revoked += 1
+
+    def client_contract(self) -> dict:
+        self.contracts += 1
+        # The same project the governance fixture pins, so the authorization's
+        # client-contract digest matches and the run proceeds to the renderer.
+        return build_client_contract(vertex_project="my-research-project")
+
+    def complete(self, request):
+        self.completes += 1
+        self.factory_entries += 1
+        raise AssertionError("the provider must never be reached")
+
+
+@pytest.mark.parametrize("stage", ["capability_extraction", "task_extraction"])
+def test_a_fully_valid_non_product_stage_is_blocked_by_the_e_r_renderer(
+    tmp_path: Path, stage
+):
+    """The E-R gate itself, reached end to end through the public runner.
+
+    Every preflight succeeds here: the parent chain is real and hash-verified, the
+    governance chain and stage-output pins match the selected stage, the passage
+    set is nonempty, and the ``@0.2.0`` company-identity pin is valid. The permit
+    handshake therefore happens -- and the renderer is what refuses, because
+    ``MATERIALIZATION_SUPPORTED_STAGES`` holds only the product stage until E-S.
+    """
+    chain = _valid_parent_chain(tmp_path / "parents")
+    # A distinct root: ``_run``'s default kwargs write a product-stage chain to
+    # ``tmp_path / "governance-root"``, which would clobber these bytes and make
+    # the pin below stale.
+    governance_root = tmp_path / "governance-stage"
+    stage_sha = _STAGE_OUTPUT_SCHEMA_SHA256[stage]
+    stage_contract = _STAGE_OUTPUT_CONTRACT_ID[stage]
+    pin = write_governance_chain(
+        governance_root,
+        qualification={
+            "stage_output_contract_id": stage_contract,
+            "stage_output_contract_sha256": stage_sha,
+        },
+        enablement={
+            "stage": stage,
+            "stage_output_contract_id": stage_contract,
+            "stage_output_contract_sha256": stage_sha,
+        },
+        authorization={"stage": stage},
+    )
+    provider = _HandshakeRecorder()
+
+    parent_kwargs = {
+        "artifact_root": chain["artifact_root"],
+        "snapshot_a_pin": chain["snapshot_a_pin"],
+        "product_decision_set_pin": chain["product_decision_set_pin"],
+    }
+    if stage == "task_extraction":
+        parent_kwargs["snapshot_b_pin"] = chain["snapshot_b_pin"]
+        parent_kwargs["capability_decision_set_pin"] = chain[
+            "capability_decision_set_pin"
+        ]
+
+    with pytest.raises(ExtractionError) as excinfo:
+        _run(
+            tmp_path,
+            stage=stage,
+            provider=provider,
+            governance_artifact_root=governance_root,
+            live_call_authorization_pin=pin,
+            **parent_kwargs,
+        )
+
+    # The E-R gate is the refusal, not an earlier preflight.
+    assert excinfo.value.reason_code == "contents_placeholder_unbound"
+    # The permit handshake was reached, proving packet and governance preflight
+    # both succeeded -- this is the route the missing-pins test cannot exercise.
+    assert provider.permits == 1
+    assert provider.contracts >= 1
+    # Zero artifacts: the run root was never created.
+    assert not (tmp_path / "run").exists()
+    # Revoked exactly once on the way out, leaving no spendable permit.
+    assert provider.revoked == 1
+    assert provider.activated is False
+    # The provider and the SDK/client-factory boundary were never entered.
+    assert provider.completes == 0
+    assert provider.factory_entries == 0

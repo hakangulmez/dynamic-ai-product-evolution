@@ -1,14 +1,18 @@
-"""The four artifact counts, offline (ADR-035).
+"""The four artifact counts, offline (ADR-035, ADR-036).
 
 - **0** — every pre-authorization refusal; the run root is never created.
 - **2** — the zero-admissible-passage non-run, which never consults governance,
   the meter, the provider, the prompt, or the schema pin.
-- **6** — a terminal provider failure, adding the authorization to E-P's five.
-- **8** — an authorized successful run, driven entirely by injected fakes.
+- **7** — a terminal provider failure: five inputs (packet, rendered provider
+  contents, prompt, client contract, authorization) plus an errored
+  ``extraction_run`` and the provider-error record.
+- **9** — an authorized successful run, adding the raw prediction, the envelopes,
+  and the prediction manifest. Driven entirely by injected fakes.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -26,6 +30,7 @@ from dynamic_ai_products.extraction.raw_artifacts import canonical_json_bytes, s
 from dynamic_ai_products.extraction.run_extraction import (
     AUTHORIZATION_REFERENCE,
     CLIENT_CONTRACT_REFERENCE,
+    CONTENTS_REFERENCE,
     ENVELOPES_REFERENCE,
     EXTRACTION_RUN_REFERENCE,
     NON_RUN_REFERENCE,
@@ -117,6 +122,30 @@ def _passage(passage_id="p-1", text="the product ships an assistant", source_id=
     }
 
 
+def write_company_identity(root: Path, **overrides) -> dict[str, str]:
+    """Persist an admission artifact and return its pin (ADR-036, E-R).
+
+    Mirrors the approved Pilot Universe Packet's identity fields. The legal name
+    is only ever *read* from here; no test may pass one to the builder.
+    """
+    admission = {
+        "company_id": COMPANY,
+        "cik": COMPANY[3:].lstrip("0") or "0",
+        "legal_name": "HUBSPOT INC",
+        "observation_cutoff_date": CUTOFF,
+    }
+    unknown = sorted(set(overrides) - set(admission))
+    assert not unknown, f"unknown admission override(s): {unknown}"
+    admission.update(overrides)
+    root.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(admission, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    (root / "pilot_universe_packet.json").write_bytes(payload)
+    return {
+        "reference": "pilot_universe_packet.json",
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
 def _run(tmp_path: Path, **overrides):
     governance_root = tmp_path / "governance-root"
     kwargs = {
@@ -136,6 +165,8 @@ def _run(tmp_path: Path, **overrides):
         "schema_root": str(SCHEMAS),
         "provider": _Provider(),
         "governance_artifact_root": governance_root,
+        "company_identity_root": tmp_path / "identity",
+        "company_identity_pin": write_company_identity(tmp_path / "identity"),
         "live_call_authorization_pin": write_governance_chain(governance_root),
         "budget_meter": FakeMeter(),
     }
@@ -147,14 +178,15 @@ def _files(root: Path) -> set[str]:
     return {str(p.relative_to(root)) for p in root.rglob("*") if p.is_file()}
 
 
-# --- 8: the authorized successful run ----------------------------------------
+# --- 9: the authorized successful run ----------------------------------------
 
 
-def test_an_authorized_run_publishes_exactly_eight_artifacts(tmp_path: Path):
+def test_an_authorized_run_publishes_exactly_nine_artifacts(tmp_path: Path):
     outcome = _run(tmp_path)
     assert outcome.verdict == "provider_run_complete"
     assert _files(outcome.run_root) == {
         PACKET_REFERENCE,
+        CONTENTS_REFERENCE,
         PROMPT_REFERENCE,
         CLIENT_CONTRACT_REFERENCE,
         AUTHORIZATION_REFERENCE,
@@ -172,12 +204,12 @@ def test_every_reported_digest_matches_the_persisted_bytes(tmp_path: Path):
         assert sha256_bytes((outcome.run_root / reference).read_bytes()) == digest
 
 
-def test_the_authorization_is_bound_as_the_seventh_manifest_role(tmp_path: Path):
+def test_the_authorization_and_contents_are_bound_as_manifest_roles(tmp_path: Path):
     outcome = _run(tmp_path)
     manifest = json.loads((outcome.run_root / PREDICTION_MANIFEST_REFERENCE).read_text())
     PredictionArtifactManifest.model_validate(manifest)
     pinned = {e["reference"]: e["sha256"] for e in manifest["source_artifacts"]}
-    assert len(pinned) == 7
+    assert len(pinned) == 8
     assert pinned[AUTHORIZATION_REFERENCE] == outcome.artifacts[AUTHORIZATION_REFERENCE]
 
 
@@ -226,15 +258,16 @@ def test_the_meter_and_the_provider_see_the_same_request_object(tmp_path: Path):
     assert meter.seen_request is provider.seen_request
 
 
-# --- 6: terminal provider failure --------------------------------------------
+# --- 7: terminal provider failure --------------------------------------------
 
 
-def test_a_terminal_failure_publishes_exactly_six_artifacts(tmp_path: Path):
+def test_a_terminal_failure_publishes_exactly_seven_artifacts(tmp_path: Path):
     with pytest.raises(ExtractionError) as excinfo:
         _run(tmp_path, provider=_Provider(fail=_Refusal("vertex_unavailable", 3)))
     assert excinfo.value.reason_code == "vertex_unavailable"
     assert _files(tmp_path / "run") == {
         PACKET_REFERENCE,
+        CONTENTS_REFERENCE,
         PROMPT_REFERENCE,
         CLIENT_CONTRACT_REFERENCE,
         AUTHORIZATION_REFERENCE,
@@ -600,8 +633,8 @@ def test_an_equivalent_normalized_allowlist_activates_through_the_runner(tmp_pat
             governance_artifact_root=governance_root,
             live_call_authorization_pin=pin,
         )
-    # Six artifacts: the handshake was accepted and the terminal route ran.
-    assert len(_files(tmp_path / "run")) == 6
+    # Seven artifacts: the handshake was accepted and the terminal route ran.
+    assert len(_files(tmp_path / "run")) == 7
 
 
 @pytest.mark.parametrize(

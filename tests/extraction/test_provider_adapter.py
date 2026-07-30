@@ -69,7 +69,7 @@ class _PartialShape:
 
 
 def test_protocol_version_is_declared():
-    assert PROVIDER_PROTOCOL_VERSION == "extraction_provider_protocol_v6"
+    assert PROVIDER_PROTOCOL_VERSION == "extraction_provider_protocol_v7"
 
 
 def test_the_protocol_declares_all_four_members():
@@ -97,10 +97,10 @@ def test_request_and_response_are_frozen_dataclasses():
 def test_a_request_cannot_be_mutated_after_construction():
     request = ProviderRequest(
         stage="product_extraction",
-        prompt_text="p",
+        rendered_contents="p",
+        rendered_contents_sha256="148de9c5a7a44d19e56cd9ae1a554bf67847afb0c58f6e12fa29ac7ddfca9940",
         prompt_sha256="a" * 64,
         input_packet_sha256="b" * 64,
-        payload={},
     )
     with pytest.raises(dataclasses.FrozenInstanceError):
         request.stage = "task_extraction"
@@ -143,10 +143,10 @@ def test_the_fake_round_trips_a_request_without_touching_the_network():
     response = provider.complete(
         ProviderRequest(
             stage="product_extraction",
-            prompt_text="prompt",
+            rendered_contents="prompt",
+            rendered_contents_sha256="cf07194ee232eb531e15f690000d19846dea69cf05504782658afcfacb9228a2",
             prompt_sha256="c" * 64,
             input_packet_sha256="d" * 64,
-            payload={"passages": []},
         )
     )
     assert isinstance(response, ProviderResponse)

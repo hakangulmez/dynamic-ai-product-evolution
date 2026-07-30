@@ -24,6 +24,10 @@ SOURCE_ARTIFACTS = {
         "reference": "inputs/extraction_input_packet.json",
         "sha256": "2" * 64,
     },
+    "rendered_provider_contents": {
+        "reference": "inputs/rendered_provider_contents.md",
+        "sha256": "a" * 64,
+    },
     "coverage_artifact": {
         "reference": "coverage/source_family_coverage.json",
         "sha256": "3" * 64,
@@ -53,8 +57,8 @@ def _manifest(**overrides):
     return build_prediction_artifact_manifest(**kwargs)
 
 
-def test_seven_roles_are_required():
-    """E-L adds the live-call authorization as the seventh role (ADR-035).
+def test_eight_roles_are_required():
+    """E-R adds the rendered provider contents as the eighth role (ADR-036).
 
     The released model's ``source_artifacts`` is an unbounded tuple, so this
     does not widen ``prediction_artifact_manifest@0.1.0``.
@@ -62,6 +66,7 @@ def test_seven_roles_are_required():
     assert REQUIRED_SOURCE_ARTIFACT_ROLES == (
         "raw_prediction",
         "extraction_input_packet",
+        "rendered_provider_contents",
         "coverage_artifact",
         "resolved_prompt",
         "provider_client_contract",
@@ -74,6 +79,7 @@ def test_the_provider_client_contract_is_bound_here_not_in_extraction_run():
     """extraction_run@0.1.0 is strict and released; it gains no new field."""
     manifest = _manifest()
     references = {entry["reference"] for entry in manifest["source_artifacts"]}
+    assert "inputs/rendered_provider_contents.md" in references
     assert "inputs/provider_client_contract.json" in references
     assert "inputs/live_call_authorization.json" in references
     assert "manifests/extraction_run.json" in references
@@ -92,7 +98,7 @@ def test_the_contract_stamp_comes_only_from_the_closed_pin():
 def test_source_artifacts_are_emitted_in_canonical_order():
     entries = _manifest()["source_artifacts"]
     assert entries == sorted(entries, key=lambda e: (e["reference"], e["sha256"]))
-    assert len(entries) == 7
+    assert len(entries) == 8
 
 
 @pytest.mark.parametrize("role", REQUIRED_SOURCE_ARTIFACT_ROLES)
