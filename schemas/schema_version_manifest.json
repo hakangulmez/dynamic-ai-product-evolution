@@ -1,11 +1,12 @@
 {
-  "manifest_version": "0.8.0",
+  "manifest_version": "0.9.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
     "capability_observation": "0.1.0",
     "company": "0.1.0",
     "company_universe_classification": "0.1.0",
+    "documentation_collection_receipt": "0.1.0",
     "evaluation_result": "0.1.0",
     "extraction_candidate_collection": "0.1.0",
     "extraction_input_packet": "0.1.0",

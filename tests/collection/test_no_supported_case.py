@@ -120,26 +120,67 @@ def test_extraction_verdicts_are_not_available_here() -> None:
     assert excinfo.value.reason_code == "verdict_invalid"
 
 
+# Narrowly scoped provider/harness surfaces. A bare "completion" substring was
+# removed: it flagged ADR-037's locked ``completion_status`` receipt vocabulary
+# while proving nothing about model reachability. Concrete call surfaces are
+# matched instead, so the guard tightens rather than relaxes.
+PROVIDER_HARNESS_MARKERS: tuple[str, ...] = (
+    "anthropic",
+    "openai",
+    "claude",
+    "chat.completions",
+    "completions.create",
+    "messages.create",
+    "generate_content",
+    "count_tokens(",
+    "chat(",
+    "run_evaluation",
+    "evaluate_case",
+    "extract_products",
+    "extract_tasks",
+)
+
+
 def test_package_has_no_provider_or_harness_reachability() -> None:
     """Structural, not conventional: nothing here can call a model or the harness."""
-    markers = (
-        "anthropic",
-        "openai",
-        "claude",
-        "completion",
-        "chat(",
-        "run_evaluation",
-        "evaluate_case",
-        "extract_products",
-        "extract_tasks",
-    )
     offenders = []
     for path in sorted(COLLECTION_DIR.glob("*.py")):
         text = path.read_text(encoding="utf-8").lower()
-        for marker in markers:
+        for marker in PROVIDER_HARNESS_MARKERS:
             if marker in text:
                 offenders.append((path.name, marker))
     assert not offenders, f"no provider or harness reachability: {offenders}"
+
+
+def test_the_marker_set_rejects_real_model_call_surfaces() -> None:
+    """The guard is proven against what it exists to catch."""
+    for sample in (
+        "client.chat.completions.create(model=...)",
+        "openai.completions.create(prompt=...)",
+        "anthropic.messages.create(model=...)",
+        "client.models.generate_content(contents=...)",
+        "from anthropic import Anthropic",
+        "run_evaluation(case)",
+        "extract_products(packet)",
+    ):
+        assert any(m in sample.lower() for m in PROVIDER_HARNESS_MARKERS), sample
+
+
+def test_the_marker_set_allows_the_locked_receipt_vocabulary() -> None:
+    """``completion_status``/``completed`` are attempt statuses, not model calls.
+
+    A bare ``completion`` substring marker flagged ADR-037's receipt vocabulary,
+    which is a false positive: the guard exists to prove this package cannot
+    call a model, and an attempt's terminal status has nothing to do with that.
+    """
+    for sample in (
+        'completion_status = "completed"',
+        '"completion_status": {"enum": ["completed", "stopped"]}',
+        "if completion_status not in COMPLETION_STATUSES:",
+        "COMPLETION_STATUSES = ('completed', 'stopped')",
+    ):
+        offenders = [m for m in PROVIDER_HARNESS_MARKERS if m in sample.lower()]
+        assert not offenders, (sample, offenders)
 
 
 def test_no_module_defines_a_prompt_constant() -> None:

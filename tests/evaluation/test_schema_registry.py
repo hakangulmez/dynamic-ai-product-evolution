@@ -173,9 +173,9 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-036: manifest_version 0.7.0 -> 0.8.0 with the
-    # extraction_input_packet@0.2.0 successor registered. Meaning unchanged.
-    "eb8c9e4ea5e520ebadb24cacd57c945683617a23326b6d05ec28387147982ff3"
+    # Rebaselined by ADR-037: manifest_version 0.8.0 -> 0.9.0 with
+    # documentation_collection_receipt@0.1.0 registered. Meaning unchanged.
+    "36f2c183c15986badbfab6e88f54d21420f31f2c44490f2fa6fca73b9db53f44"
 )
 
 

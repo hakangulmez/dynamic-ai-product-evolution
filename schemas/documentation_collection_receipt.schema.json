@@ -1,0 +1,1080 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "documentation_collection_receipt.schema.json",
+  "title": "documentation_collection_receipt@0.1.0",
+  "comment": "ADR-037 (E-C-D). One attempt-level receipt for the ordered three-entry documentation acquisition. Entries are positionally frozen and each status pins its own payload shape, so a succeeded entry without a digest, a failed entry carrying one, or a sequence describing a run that cannot have happened are all refused. The receipt owns retrieval_status only; whether the bytes contain the required official claim belongs to documentation_evidence_validation@0.1.0. It lives outside any content digest directory so it stays writable when the first entry fails before any hash exists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "adapter_contract_sha256",
+    "attempt_id",
+    "code_commit",
+    "completion_status",
+    "contract",
+    "entries",
+    "policy_contract_sha256",
+    "receipt_schema_sha256",
+    "retrieval_timestamp_mode",
+    "run_created_at",
+    "schema_version"
+  ],
+  "properties": {
+    "contract": {
+      "const": "documentation_collection_receipt@0.1.0"
+    },
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "attempt_id": {
+      "type": "string",
+      "pattern": "^docattempt-[0-9a-f]{32}$"
+    },
+    "code_commit": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_created_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+    },
+    "adapter_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "policy_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "receipt_schema_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "retrieval_timestamp_mode": {
+      "const": "caller_injected_request_start_utc_v1"
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "byte_count",
+            "content_encoding",
+            "content_sha256",
+            "content_type",
+            "entry_status",
+            "evidence_kind",
+            "failure_reason",
+            "final_url",
+            "http_status",
+            "object_disposition",
+            "raw_reference",
+            "redirect_chain",
+            "requested_url",
+            "retrieval_timestamp"
+          ],
+          "properties": {
+            "evidence_kind": {
+              "const": "gemini_thinking"
+            },
+            "requested_url": {
+              "const": "https://cloud.google.com/vertex-ai/generative-ai/docs/thinking"
+            },
+            "final_url": {
+              "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+            },
+            "entry_status": {
+              "type": "string",
+              "enum": [
+                "succeeded",
+                "failed",
+                "not_attempted"
+              ]
+            },
+            "redirect_chain": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "maxItems": 2
+            },
+            "http_status": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 100,
+              "maximum": 599
+            },
+            "content_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "content_encoding": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "byte_count": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "content_sha256": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "raw_reference": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "object_disposition": {
+              "enum": [
+                "created",
+                "reused",
+                null
+              ]
+            },
+            "retrieval_timestamp": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+            },
+            "failure_reason": {
+              "enum": [
+                "attempt_byte_ceiling_exceeded",
+                "content_object_corrupt",
+                "content_type_invalid",
+                "destination_exists",
+                "direct_terminal_not_permitted",
+                "entity_empty",
+                "entity_too_large",
+                "redirect_chain_too_long",
+                "redirect_location_mismatch",
+                "redirect_location_missing",
+                "redirect_location_not_absolute",
+                "redirect_status_invalid",
+                "response_request_identity_mismatch",
+                "retrieval_clock_failed",
+                "retrieval_clock_invalid",
+                "terminal_status_invalid",
+                "tls_keylog_environment_present",
+                "transport_failed",
+                "transport_timeout",
+                "write_error",
+                null
+              ]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "succeeded"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "redirect_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/thinking",
+                      "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+                    ]
+                  },
+                  "http_status": {
+                    "const": 200
+                  },
+                  "content_type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "content_encoding": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "byte_count": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "content_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "raw_reference": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "object_disposition": {
+                    "enum": [
+                      "created",
+                      "reused"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "failure_reason": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "failed"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "redirect_chain": {
+                    "const": []
+                  },
+                  "http_status": {
+                    "const": null
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  },
+                  "raw_reference": {
+                    "const": null
+                  },
+                  "object_disposition": {
+                    "const": null
+                  },
+                  "retrieval_timestamp": {
+                    "const": null
+                  },
+                  "failure_reason": {
+                    "enum": [
+                      "attempt_byte_ceiling_exceeded",
+                      "content_object_corrupt",
+                      "content_type_invalid",
+                      "destination_exists",
+                      "direct_terminal_not_permitted",
+                      "entity_empty",
+                      "entity_too_large",
+                      "redirect_chain_too_long",
+                      "redirect_location_mismatch",
+                      "redirect_location_missing",
+                      "redirect_location_not_absolute",
+                      "redirect_status_invalid",
+                      "response_request_identity_mismatch",
+                      "retrieval_clock_failed",
+                      "retrieval_clock_invalid",
+                      "terminal_status_invalid",
+                      "tls_keylog_environment_present",
+                      "transport_failed",
+                      "transport_timeout",
+                      "write_error"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "not_attempted"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "redirect_chain": {
+                    "const": []
+                  },
+                  "http_status": {
+                    "const": null
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  },
+                  "raw_reference": {
+                    "const": null
+                  },
+                  "object_disposition": {
+                    "const": null
+                  },
+                  "retrieval_timestamp": {
+                    "const": null
+                  },
+                  "failure_reason": {
+                    "const": null
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "byte_count",
+            "content_encoding",
+            "content_sha256",
+            "content_type",
+            "entry_status",
+            "evidence_kind",
+            "failure_reason",
+            "final_url",
+            "http_status",
+            "object_disposition",
+            "raw_reference",
+            "redirect_chain",
+            "requested_url",
+            "retrieval_timestamp"
+          ],
+          "properties": {
+            "evidence_kind": {
+              "const": "count_tokens"
+            },
+            "requested_url": {
+              "const": "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/get-token-count"
+            },
+            "final_url": {
+              "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/get-token-count"
+            },
+            "entry_status": {
+              "type": "string",
+              "enum": [
+                "succeeded",
+                "failed",
+                "not_attempted"
+              ]
+            },
+            "redirect_chain": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "maxItems": 2
+            },
+            "http_status": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 100,
+              "maximum": 599
+            },
+            "content_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "content_encoding": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "byte_count": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "content_sha256": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "raw_reference": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "object_disposition": {
+              "enum": [
+                "created",
+                "reused",
+                null
+              ]
+            },
+            "retrieval_timestamp": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+            },
+            "failure_reason": {
+              "enum": [
+                "attempt_byte_ceiling_exceeded",
+                "content_object_corrupt",
+                "content_type_invalid",
+                "destination_exists",
+                "direct_terminal_not_permitted",
+                "entity_empty",
+                "entity_too_large",
+                "redirect_chain_too_long",
+                "redirect_location_mismatch",
+                "redirect_location_missing",
+                "redirect_location_not_absolute",
+                "redirect_status_invalid",
+                "response_request_identity_mismatch",
+                "retrieval_clock_failed",
+                "retrieval_clock_invalid",
+                "terminal_status_invalid",
+                "tls_keylog_environment_present",
+                "transport_failed",
+                "transport_timeout",
+                "write_error",
+                null
+              ]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "succeeded"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "redirect_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/get-token-count",
+                      "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/get-token-count"
+                    ]
+                  },
+                  "http_status": {
+                    "const": 200
+                  },
+                  "content_type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "content_encoding": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "byte_count": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "content_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "raw_reference": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "object_disposition": {
+                    "enum": [
+                      "created",
+                      "reused"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "failure_reason": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "failed"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "redirect_chain": {
+                    "const": []
+                  },
+                  "http_status": {
+                    "const": null
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  },
+                  "raw_reference": {
+                    "const": null
+                  },
+                  "object_disposition": {
+                    "const": null
+                  },
+                  "retrieval_timestamp": {
+                    "const": null
+                  },
+                  "failure_reason": {
+                    "enum": [
+                      "attempt_byte_ceiling_exceeded",
+                      "content_object_corrupt",
+                      "content_type_invalid",
+                      "destination_exists",
+                      "direct_terminal_not_permitted",
+                      "entity_empty",
+                      "entity_too_large",
+                      "redirect_chain_too_long",
+                      "redirect_location_mismatch",
+                      "redirect_location_missing",
+                      "redirect_location_not_absolute",
+                      "redirect_status_invalid",
+                      "response_request_identity_mismatch",
+                      "retrieval_clock_failed",
+                      "retrieval_clock_invalid",
+                      "terminal_status_invalid",
+                      "tls_keylog_environment_present",
+                      "transport_failed",
+                      "transport_timeout",
+                      "write_error"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "not_attempted"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "redirect_chain": {
+                    "const": []
+                  },
+                  "http_status": {
+                    "const": null
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  },
+                  "raw_reference": {
+                    "const": null
+                  },
+                  "object_disposition": {
+                    "const": null
+                  },
+                  "retrieval_timestamp": {
+                    "const": null
+                  },
+                  "failure_reason": {
+                    "const": null
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "byte_count",
+            "content_encoding",
+            "content_sha256",
+            "content_type",
+            "entry_status",
+            "evidence_kind",
+            "failure_reason",
+            "final_url",
+            "http_status",
+            "object_disposition",
+            "raw_reference",
+            "redirect_chain",
+            "requested_url",
+            "retrieval_timestamp"
+          ],
+          "properties": {
+            "evidence_kind": {
+              "const": "pricing_standard"
+            },
+            "requested_url": {
+              "const": "https://cloud.google.com/vertex-ai/generative-ai/pricing"
+            },
+            "final_url": {
+              "const": "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing"
+            },
+            "entry_status": {
+              "type": "string",
+              "enum": [
+                "succeeded",
+                "failed",
+                "not_attempted"
+              ]
+            },
+            "redirect_chain": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "maxItems": 2
+            },
+            "http_status": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 100,
+              "maximum": 599
+            },
+            "content_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "content_encoding": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "byte_count": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "content_sha256": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "raw_reference": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "object_disposition": {
+              "enum": [
+                "created",
+                "reused",
+                null
+              ]
+            },
+            "retrieval_timestamp": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+            },
+            "failure_reason": {
+              "enum": [
+                "attempt_byte_ceiling_exceeded",
+                "content_object_corrupt",
+                "content_type_invalid",
+                "destination_exists",
+                "direct_terminal_not_permitted",
+                "entity_empty",
+                "entity_too_large",
+                "redirect_chain_too_long",
+                "redirect_location_mismatch",
+                "redirect_location_missing",
+                "redirect_location_not_absolute",
+                "redirect_status_invalid",
+                "response_request_identity_mismatch",
+                "retrieval_clock_failed",
+                "retrieval_clock_invalid",
+                "terminal_status_invalid",
+                "tls_keylog_environment_present",
+                "transport_failed",
+                "transport_timeout",
+                "write_error",
+                null
+              ]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "succeeded"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "redirect_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/pricing",
+                      "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing"
+                    ]
+                  },
+                  "http_status": {
+                    "const": 200
+                  },
+                  "content_type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "content_encoding": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "byte_count": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "content_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "raw_reference": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "object_disposition": {
+                    "enum": [
+                      "created",
+                      "reused"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "failure_reason": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "failed"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "redirect_chain": {
+                    "const": []
+                  },
+                  "http_status": {
+                    "const": null
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  },
+                  "raw_reference": {
+                    "const": null
+                  },
+                  "object_disposition": {
+                    "const": null
+                  },
+                  "retrieval_timestamp": {
+                    "const": null
+                  },
+                  "failure_reason": {
+                    "enum": [
+                      "attempt_byte_ceiling_exceeded",
+                      "content_object_corrupt",
+                      "content_type_invalid",
+                      "destination_exists",
+                      "direct_terminal_not_permitted",
+                      "entity_empty",
+                      "entity_too_large",
+                      "redirect_chain_too_long",
+                      "redirect_location_mismatch",
+                      "redirect_location_missing",
+                      "redirect_location_not_absolute",
+                      "redirect_status_invalid",
+                      "response_request_identity_mismatch",
+                      "retrieval_clock_failed",
+                      "retrieval_clock_invalid",
+                      "terminal_status_invalid",
+                      "tls_keylog_environment_present",
+                      "transport_failed",
+                      "transport_timeout",
+                      "write_error"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "not_attempted"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "redirect_chain": {
+                    "const": []
+                  },
+                  "http_status": {
+                    "const": null
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  },
+                  "raw_reference": {
+                    "const": null
+                  },
+                  "object_disposition": {
+                    "const": null
+                  },
+                  "retrieval_timestamp": {
+                    "const": null
+                  },
+                  "failure_reason": {
+                    "const": null
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "items": false
+    },
+    "completion_status": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "stopped"
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "completion_status": {
+          "const": "completed"
+        },
+        "entries": {
+          "prefixItems": [
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "succeeded"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "completion_status": {
+          "const": "stopped"
+        },
+        "entries": {
+          "prefixItems": [
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "failed"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "not_attempted"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "not_attempted"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "completion_status": {
+          "const": "stopped"
+        },
+        "entries": {
+          "prefixItems": [
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "failed"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "not_attempted"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "completion_status": {
+          "const": "stopped"
+        },
+        "entries": {
+          "prefixItems": [
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "failed"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
