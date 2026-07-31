@@ -19,18 +19,25 @@ Boundaries enforced here and covered by tests:
 ADR-037 (E-C-D) adds documentation-evidence acquisition and, with it, this
 package's first outbound transport. Two boundaries keep that narrow:
 
-- ``http_adapter`` is the **only** module here that may import ``httpx``, and
-  ``documentation_policy`` is the **only** production module that may import
-  ``http_adapter``. Neither is exported below: no public name exposes a raw
-  ``send(url)`` capability, so the governed entry point is the only route to the
-  network. Direct adapter use elsewhere is ``noncanonical_experiment`` and is
-  barred from governed artifacts;
+- ``http_adapter`` is the **only** module here that may import ``httpx``, and the
+  two named documentation policies -- ``documentation_policy`` (v0.3) and
+  ``documentation_policy_v4`` -- are the **only** production modules that may
+  import ``http_adapter``. Neither adapter nor seam is exported below: no public
+  name exposes a raw ``send(url)`` capability, so the governed entry points are
+  the only route to the network. Direct adapter use elsewhere is
+  ``noncanonical_experiment`` and is barred from governed artifacts;
 - the official-web transport policy is untouched.
   ``collection.transport.follow_redirects`` keeps its five-hop, apex-bound
   semantics, which ADR-032 hard-binds to the HubSpot run. The documentation
-  policy needs exactly one hop across apexes against a frozen pair list, so it
-  implements its own rule over the same generic adapter rather than loosening a
-  hard-bound guarantee for an unrelated purpose.
+  policies implement their own rule over the same generic adapter rather than
+  loosening a hard-bound guarantee for an unrelated purpose.
+
+ADR-040 (E-C-D3) adds ``@0.4.0`` alongside ``@0.3.0`` rather than replacing it.
+Route kinds are now declared per entry: ``redirect_once`` performs exactly one
+recognized hop, while ``direct`` issues a single send whose initial 200 is the
+only success path and whose redirect, if any, is recorded and refused without
+being followed. Both entry points are exported, and each keeps publishing the
+receipt contract it was built for.
 """
 
 from __future__ import annotations
@@ -39,11 +46,13 @@ from .documentation_policy import (
     DocumentationCollectionResult,
     collect_documentation_evidence,
 )
+from .documentation_policy_v4 import collect_documentation_evidence_v4
 from .errors import CollectionError, translate_write_once_error
 
 __all__ = [
     "CollectionError",
     "DocumentationCollectionResult",
     "collect_documentation_evidence",
+    "collect_documentation_evidence_v4",
     "translate_write_once_error",
 ]

@@ -479,9 +479,10 @@ def test_manifest_count():
     txt = (ROOT / "REPO_MANIFEST.md").read_text().splitlines()
     declared = int(re.search(r"listed:\s*\*\*(\d+)\*\*", "\n".join(txt)).group(1))
     paths = [re.match(r"- `([^`]+)`", ln).group(1) for ln in txt if re.match(r"- `[^`]+`\s*$", ln)]
-    # 539 = 535 + the four ADR-039 (E-C-D2) paths: the v0.3.0 receipt schema,
-    # its module, the v0.3-only route module, and its test file.
-    assert declared == len(paths) == 539
+    # 548 = 539 + the nine ADR-040 (E-C-D3) paths: the v0.4.0 receipt schema,
+    # its module, the v0.4 routes and policy modules, the shared ordinal-only
+    # transport helper, and the four v0.4 test files.
+    assert declared == len(paths) == 548
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

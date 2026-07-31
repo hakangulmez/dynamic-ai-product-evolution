@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **539**
+Total tracked/scaffold files listed: **548**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -240,6 +240,7 @@ Total tracked/scaffold files listed: **539**
 - `schemas/documentation_collection_receipt.schema.json`
 - `schemas/documentation_collection_receipt.v2.schema.json`
 - `schemas/documentation_collection_receipt.v3.schema.json`
+- `schemas/documentation_collection_receipt.v4.schema.json`
 - `schemas/extraction_input_packet.schema.json`
 - `schemas/extraction_input_packet.v2.schema.json`
 - `schemas/extraction_non_run_record.schema.json`
@@ -325,7 +326,10 @@ Total tracked/scaffold files listed: **539**
 - `src/dynamic_ai_products/collection/documentation_receipt.py`
 - `src/dynamic_ai_products/collection/documentation_receipt_v2.py`
 - `src/dynamic_ai_products/collection/documentation_receipt_v3.py`
+- `src/dynamic_ai_products/collection/documentation_receipt_v4.py`
+- `src/dynamic_ai_products/collection/documentation_policy_v4.py`
 - `src/dynamic_ai_products/collection/documentation_routes.py`
+- `src/dynamic_ai_products/collection/documentation_routes_v4.py`
 - `src/dynamic_ai_products/collection/discovery.py`
 - `src/dynamic_ai_products/collection/domains.py`
 - `src/dynamic_ai_products/collection/errors.py`
@@ -424,6 +428,7 @@ Total tracked/scaffold files listed: **539**
 - `src/dynamic_ai_products/workflow.py`
 - `tests/README.md`
 - `tests/collection/collection_test_helpers.py`
+- `tests/collection/documentation_v4_transport.py`
 - `tests/collection/test_canonical_url.py`
 - `tests/collection/test_collection_boundaries.py`
 - `tests/collection/test_collection_publication_atomicity.py`
@@ -431,11 +436,15 @@ Total tracked/scaffold files listed: **539**
 - `tests/collection/test_discovery.py`
 - `tests/collection/test_domains.py`
 - `tests/collection/test_documentation_observation_recording.py`
+- `tests/collection/test_documentation_observation_recording_v4.py`
 - `tests/collection/test_documentation_policy.py`
+- `tests/collection/test_documentation_policy_v4.py`
 - `tests/collection/test_documentation_receipt.py`
 - `tests/collection/test_documentation_receipt_v2.py`
 - `tests/collection/test_documentation_receipt_v3.py`
+- `tests/collection/test_documentation_receipt_v4.py`
 - `tests/collection/test_documentation_redirect_grammar.py`
+- `tests/collection/test_documentation_redirect_grammar_v4.py`
 - `tests/collection/test_http_adapter.py`
 - `tests/collection/test_manifests.py`
 - `tests/collection/test_no_supported_case.py`

@@ -147,15 +147,36 @@ def test_exactly_two_source_modules_import_httpx_repository_wide() -> None:
     assert importers == ["http_adapter.py", "response_capture.py"], importers
 
 
-def test_only_the_documentation_policy_imports_the_adapter() -> None:
+# ADR-040 (E-C-D3) records a bounded weakening: the adapter's importer set goes
+# from one policy module to an exact allowlist of two named ones, because v0.4
+# succeeds rather than mutates and the v0.3 policy is preserved byte-identically.
+# The same pattern ADR-037 used when the httpx importer became a two-entry list.
+ADAPTER_IMPORT_ALLOWLIST = frozenset(
+    {"documentation_policy.py", "documentation_policy_v4.py", "http_adapter.py"}
+)
+
+
+def test_only_the_documentation_policies_import_the_adapter() -> None:
     offenders = [
         (p.name, n)
         for p in _sources(COLLECTION_DIR)
-        if p.name not in {"documentation_policy.py", "http_adapter.py"}
+        if p.name not in ADAPTER_IMPORT_ALLOWLIST
         for n in _module_names(p)
         if "http_adapter" in n
     ]
     assert not offenders, offenders
+
+
+def test_the_adapter_allowlist_names_exactly_the_two_policies() -> None:
+    """A bounded exemption, not an open one: new importers must be declared."""
+    importers = sorted(
+        p.name
+        for p in _sources(COLLECTION_DIR)
+        if p.name != "http_adapter.py"
+        for n in _module_names(p)
+        if "http_adapter" in n
+    )
+    assert importers == ["documentation_policy.py", "documentation_policy_v4.py"]
 
 
 def test_no_public_export_exposes_a_raw_send() -> None:
@@ -167,8 +188,14 @@ def test_no_public_export_exposes_a_raw_send() -> None:
         "CollectionError",
         "DocumentationCollectionResult",
         "collect_documentation_evidence",
+        "collect_documentation_evidence_v4",
         "translate_write_once_error",
     }
+    # ADR-040 adds one governed entry point and nothing else: no raw send, no
+    # adapter, no seam, and no widening of the surface beyond it.
+    assert "send_once" not in collection.__all__
+    assert "documentation_policy_v4" not in collection.__all__
+    assert len(collection.__all__) == 5
 
 
 def test_only_urllib_parse_is_used() -> None:
@@ -184,10 +211,12 @@ def test_only_urllib_parse_is_used() -> None:
 # a live URL silently.
 URL_LITERAL_POLICY_MODULES = frozenset(
     {
-        "request_plan.py",           # the deterministic robots URL template
-        "documentation_routes.py",   # ADR-039: the v0.3 frozen evidence pairs
-        "documentation_policy.py",   # ADR-039: the bare https:// scheme prefix only
-        "documentation_receipt.py",  # ADR-037: dialect URI + the v0.1/v0.2 pairs
+        "request_plan.py",              # the deterministic robots URL template
+        "documentation_routes.py",      # ADR-039: the v0.3 frozen evidence pairs
+        "documentation_routes_v4.py",   # ADR-040: the v0.4 frozen evidence pairs
+        "documentation_policy.py",      # ADR-039: the bare https:// prefix only
+        "documentation_policy_v4.py",   # ADR-040: the bare https:// prefix only
+        "documentation_receipt.py",     # ADR-037: dialect URI + the v0.1/v0.2 pairs
     }
 )
 
@@ -325,6 +354,101 @@ def test_the_v3_receipt_contract_reads_the_same_route_source() -> None:
     ]
     assert "documentation_routes" in imports
     assert '"https://' not in source, "v0.3 receipt declares no route of its own"
+
+
+def test_the_v4_routes_module_holds_only_its_frozen_pairs() -> None:
+    """The bounded exact-pair guarantee, extended to the v0.4 declaration.
+
+    Five distinct URLs, not six: E3 is ``direct``, so its requested and final
+    URLs are the same one. A hard-coded six would have been a stale count
+    masquerading as a guard.
+    """
+    import re
+
+    from dynamic_ai_products.collection.documentation_routes_v4 import (
+        FROZEN_ROUTE_IDENTITIES_V4,
+    )
+
+    source = (COLLECTION_DIR / "documentation_routes_v4.py").read_text(encoding="utf-8")
+    frozen = {e["requested_url"] for e in FROZEN_ROUTE_IDENTITIES_V4} | {
+        e["final_url"] for e in FROZEN_ROUTE_IDENTITIES_V4
+    }
+    assert len(frozen) == 5
+    for fragment in re.findall(r'"(https?://[^"]*)"', source):
+        assert any(url.startswith(fragment) for url in frozen), fragment
+    assert "http://" not in source, "no scheme downgrade literal"
+
+
+def test_the_v4_policy_holds_no_url_beyond_the_scheme_prefix() -> None:
+    """The v0.4 policy declares no route either; the exemption stayed moved."""
+    import re
+
+    from dynamic_ai_products.collection.documentation_routes_v4 import (
+        FROZEN_ROUTE_IDENTITIES_V4,
+    )
+
+    source = (COLLECTION_DIR / "documentation_policy_v4.py").read_text(encoding="utf-8")
+    literals = re.findall(r'"(https?://[^"]*)"', source)
+    assert literals == ["https://"], literals
+    for entry in FROZEN_ROUTE_IDENTITIES_V4:
+        for field in ("requested_url", "final_url"):
+            assert entry[field] not in source, field
+
+
+def test_the_v4_policy_is_bound_to_the_v4_routes_module() -> None:
+    from dynamic_ai_products.collection.documentation_policy_v4 import (
+        FROZEN_EVIDENCE_ENTRIES_V4,
+    )
+    from dynamic_ai_products.collection.documentation_routes_v4 import (
+        FROZEN_ROUTE_IDENTITIES_V4,
+    )
+
+    assert FROZEN_EVIDENCE_ENTRIES_V4 is FROZEN_ROUTE_IDENTITIES_V4
+
+
+def test_the_v4_receipt_contract_reads_the_same_route_source() -> None:
+    """One declaration for the whole v0.4 stack: policy and receipt cannot drift."""
+    import ast as _ast
+
+    source = (COLLECTION_DIR / "documentation_receipt_v4.py").read_text(encoding="utf-8")
+    imports = [
+        node.module for node in _ast.walk(_ast.parse(source))
+        if isinstance(node, _ast.ImportFrom) and node.module
+    ]
+    assert "documentation_routes_v4" in imports
+    assert '"https://' not in source, "the v0.4 contract declares no route itself"
+
+
+def test_the_v4_route_kinds_agree_with_their_url_relationship() -> None:
+    """The truthfulness constraint, asserted on the declaration itself."""
+    from dynamic_ai_products.collection.documentation_routes_v4 import (
+        FROZEN_ROUTE_IDENTITIES_V4,
+        ROUTE_KINDS,
+    )
+
+    assert set(ROUTE_KINDS) == {"direct", "redirect_once"}
+    for entry in FROZEN_ROUTE_IDENTITIES_V4:
+        assert entry["route_kind"] in ROUTE_KINDS
+        same = entry["requested_url"] == entry["final_url"]
+        assert same is (entry["route_kind"] == "direct"), entry["evidence_kind"]
+
+
+def test_the_v3_and_v4_route_declarations_are_independent() -> None:
+    """v0.3 is frozen; v0.4 re-froze E2 and E3 without touching it."""
+    from dynamic_ai_products.collection.documentation_routes import (
+        FROZEN_ROUTE_IDENTITIES as V3,
+    )
+    from dynamic_ai_products.collection.documentation_routes_v4 import (
+        FROZEN_ROUTE_IDENTITIES_V4 as V4,
+    )
+
+    assert V3 is not V4
+    assert V3[0]["final_url"] == V4[0]["final_url"], "E1 carried forward unchanged"
+    assert V3[1]["final_url"] != V4[1]["final_url"], "E2 re-frozen"
+    assert V3[2]["final_url"] != V4[2]["final_url"], "E3 re-frozen as direct"
+    for entry in V3:
+        assert "route_kind" not in entry, "v0.3 declared no kinds"
+        assert entry["requested_url"] != entry["final_url"]
 
 
 def test_v3_differs_from_the_historical_declaration_at_e1_only() -> None:

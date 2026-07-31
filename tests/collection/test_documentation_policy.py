@@ -100,10 +100,20 @@ def test_the_private_seams_are_not_exported():
     assert "http_adapter" not in collection.__all__
 
 
-def test_only_the_policy_module_imports_the_adapter():
+def test_only_the_policy_modules_import_the_adapter():
+    """ADR-040 widens this shared structural boundary to the two named policies.
+
+    A bounded weakening, recorded in the decision log: v0.4 succeeds rather than
+    mutates, so ``documentation_policy_v4`` is a second legitimate importer. No
+    v0.3 semantic assertion in this file is retargeted.
+    """
     offenders = []
     for module in sorted(SRC.glob("*.py")):
-        if module.name in {"documentation_policy.py", "http_adapter.py"}:
+        if module.name in {
+            "documentation_policy.py",
+            "documentation_policy_v4.py",
+            "http_adapter.py",
+        }:
             continue
         tree = ast.parse(module.read_text(encoding="utf-8"))
         for node in ast.walk(tree):

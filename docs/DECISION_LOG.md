@@ -855,6 +855,113 @@ it was never validated. Re-freezing E2/E3 by the host/path transformation
 observed for E1 was rejected as inference from a single observation. Treating the
 observed value as authorized because it was observed was rejected outright: an
 observation is evidence of what a server returned, not authority to follow it.
+
+## ADR-040 — Route kinds, a direct route, and successor-only policy (E-C-D3)
+
+**Status:** Accepted.
+
+**Provenance is not uniform across these three routes, and the receipt must not
+imply that it is.** E1's target is the `Location` that governed receipt
+`docattempt-c4082dd835f2f5228669487f50ca2308` actually recorded — a collector
+observation. **E2 and E3 carry human-supplied route hypotheses dated
+2026-07-30.** They are not collector provenance and not raw-byte evidence:
+ADR-037 rejected `WebFetch` output as authoritative on measurement, because it
+returns model-summarised markdown with no digest and produced navigation shells
+for two of three pages during E-M0. Freezing E2 and E3 makes them **testable, not
+true**. E2's target follows the same host swap E1's governed observation
+confirmed; that corroborates and does not prove, and nothing in this increment
+treats it as proof. The superseded E3 final was requested by no attempt and is
+dropped rather than demoted to a second hop.
+
+**Route kinds are declared, never inferred.** v0.1–v0.3 could express only "one
+redirect hop", which worked solely because every frozen pair's two URLs differed.
+E3 is now `direct`: `requested_url == final_url`. `route_kind` is therefore
+declared per entry and `const`-pinned, and both schema and builder enforce the
+truthfulness constraint in each direction — `direct` requires the two URLs to be
+the same one, `redirect_once` requires them to differ. A mislabelled route cannot
+be published.
+
+**A direct route issues exactly one send.** An initial 200 is its only success
+path. A 3xx is **recorded** — status, and the adapter-exposed `Location` under
+the unchanged transcription policy — and refused with the new reason
+`direct_redirect_not_permitted`. It is never followed. The schema pins the three
+`send2_*` phases unreachable for a direct entry and its `request_chain` to two
+constants, so a second send cannot be described even by a malformed builder.
+The attempt maximum falls from six sends to **five** (2 + 2 + 1).
+
+**Observation slots are named by send ordinal.** Calling a direct route's only
+send "terminal" while its failure phases stayed named "redirect" would describe a
+hop that never happened. `redirect_observed_*`/`terminal_observed_*` become
+`send1_observed_*`/`send2_observed_*`, and the seven phases become
+`entry_preflight`, `send1_request`, `send1_evaluation`, `send2_preflight`,
+`send2_request`, `send2_evaluation`, `persistence`. The reason vocabulary is
+kind-scoped: the six hop-describing reasons are absent from a direct route's
+enum, and `direct_redirect_not_permitted` is absent from a hop route's.
+
+**Successor-only, now including the policy source.** `documentation_policy.py`
+was modified in place across E-C-D, E-C-D1 and E-C-D2. That was the historical
+pattern; it is not the pattern from here on. Under the v0.4 standard **every**
+governed layer — receipt, schema, routes and policy source — succeeds rather than
+mutates, so an archived receipt can be re-verified against the exact sources that
+produced it. `documentation_policy_v4.py` publishes `@0.4.0` through the explicit
+`collect_documentation_evidence_v4`; the v0.3 policy stays byte-identical and
+keeps publishing `@0.3.0`. Both entry points are exported. Every v0.3 semantic
+regression test remains unchanged; the sole legacy test file modified is
+`test_documentation_policy.py`, and only its shared structural adapter-import
+boundary.
+
+**Two bounded weakenings, recorded rather than absorbed.** The adapter's importer
+set moves from one policy module to an exact allowlist of **two named** ones, and
+the URL-literal exemption gains `documentation_routes_v4.py` and
+`documentation_policy_v4.py` — the latter for the bare `https://` scheme prefix
+alone, with a test proving it declares no route URL. Both follow the pattern
+ADR-037 used when the httpx importer became a two-entry list.
+`collection.__all__` grows from four names to **five**: one governed entry point
+and nothing else, with `send_once` and the adapter still absent.
+
+**The v0.4 test double selects by call ordinal only.** Every earlier documentation
+stub branched on `url == pair["requested_url"]`, which is ambiguous when a route's
+two URLs are identical. `documentation_v4_transport.OrdinalTransport` picks its
+response positionally; `url` and `iterate_body` are assertions, never selectors,
+and a mismatch fails inside the transport seam. That is a property of the helper,
+not something production code can enforce — a test double is test code, and the
+collector never sees it. The event queue proves the send budget directly: exactly
+one send for E3 under success, every refusal and persistence failure, and exactly
+five ordered calls for a full success.
+
+**No total wall-clock ceiling exists, and none is derived.** At most five sends;
+four deterministic 2-second spacing delays if all sends are reached; four
+independent 30-second connect/read/write/pool deadlines per send. Phase deadlines
+do not compose into a request bound, and per-send bounds do not compose into a run
+bound. `total_wall_clock_deadline` is declared `null` in the policy contract. A
+total deadline would be a separately governed successor to
+`documentation_transport_client@0.1.0`, which this increment leaves unchanged.
+
+**Movements.** `schema_version_manifest.json` `0.11.0` → `0.12.0`, 39 → 40
+entries; receipt v1/v2/v3 unchanged, `_v4` added at `0.4.0`. Schema files 42 → 43.
+`REPO_MANIFEST.md` 539 → 548. Entry fields 20 → 21; entry-recordable reasons
+20 → 21; public reason codes 27 → 28.
+
+**E-C-D3 makes no live call.** No URL is retrieved, nothing is written under
+`data/`, no ADC, no SDK client, no provider operation. Gate chain: E-C-D → E-M-S
+one (stopped) → E-C-D1 → E-M-S two (stopped, truthful) → E-C-D2 → **E-C-D3** →
+E-M-S three under `@0.4.0` → E-M implementation → E-B.
+
+This decision supplements ADR-037, ADR-038 and ADR-039 and amends none of them.
+
+**Rejected alternatives:** Editing the v0.3 routes, schema or policy in place was
+rejected on measurement — the routes are `const`-pinned inside the committed v0.3
+schema, so its loader would stop matching. Reusing `redirect_observed_*` /
+`terminal_observed_*` for a direct route was rejected as misleading redirect-only
+vocabulary. Inferring the route kind from URL inequality was rejected: an inferred
+kind is a guess that happens to be right, and a declared one can be checked.
+Deriving E2's target from E1's confirmed host swap was rejected as inference from
+a single observation — it is frozen as a hypothesis on the same human-supplied
+footing as E3, not on E1's. Claiming any finite elapsed-time ceiling was rejected
+because no such bound is implemented at any layer.
+
+## Open decisions
+
 - Filing-date versus fiscal-year observation convention.
 - Required source packet by firm-year.
 - Frontier-registry granularity.
