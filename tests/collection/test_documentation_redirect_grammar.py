@@ -1,11 +1,13 @@
-"""The frozen route grammar: exactly one hop, exact pairs (ADR-037, ADR-038).
+"""The frozen route grammar: exactly one hop, exact pairs (ADR-037/038/039).
 
 All three frozen pairs differ, so the authorized route requires **exactly one**
 recognized redirect hop — not "at most one". A direct 200 at the requested URL
 is therefore not the authorized route and is refused, which is the case a
 "maximum one hop" reading would have silently accepted.
 
-ADR-038 keeps every refusal in this file identical and adds what 0.1.0 threw
+ADR-039 re-froze E1 and moved the collector onto
+``documentation_collection_receipt@0.3.0``; every refusal below is unchanged and
+now runs against the v0.3 routes. ADR-038 added what 0.1.0 threw
 away: each refusal now also asserts the phase it reached and the observation it
 held at that moment, so a future regression that reintroduces the erasure fails
 here rather than only in the dedicated closure file.
@@ -23,8 +25,12 @@ from dynamic_ai_products.collection import documentation_policy as dp
 from dynamic_ai_products.collection.http_adapter import AdapterResponse
 
 ROOT = Path(__file__).resolve().parents[2]
+# Derived, never hard-coded: ADR-039 re-froze E1, and a hard-coded decoy
+# would quietly stop being a near-miss of the actual frozen target.
+_E1_FINAL = dp.FROZEN_EVIDENCE_ENTRIES[0]["final_url"]
+_E1_HOST = _E1_FINAL.split("/")[2]
 SCHEMA = (
-    ROOT / "schemas" / "documentation_collection_receipt.v2.schema.json"
+    ROOT / "schemas" / "documentation_collection_receipt.v3.schema.json"
 ).read_bytes()
 BODY = b"<html><body>official claim</body></html>"
 HTML = {"content-type": "text/html; charset=utf-8"}
@@ -65,7 +71,7 @@ def _first_failure(result) -> dict:
     proves that the recorded reason names a phase it can truthfully arise in and
     that the request chain holds only frozen URLs this collector initiated.
     """
-    from dynamic_ai_products.collection.documentation_receipt_v2 import REASON_PHASES
+    from dynamic_ai_products.collection.documentation_receipt_v3 import REASON_PHASES
 
     entry = next(e for e in result.entries if e["entry_status"] == "failed")
     reason, phase = entry["failure_reason"], entry["failure_phase"]
@@ -172,7 +178,7 @@ def test_a_missing_location_is_refused(monkeypatch, tmp_path: Path):
         "//docs.cloud.google.com/x",
         # A scheme downgrade is not an accepted absolute https Location, so it
         # is caught here rather than by the frozen-pair comparison.
-        "http://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking",
+        _E1_FINAL.replace("https://", "http://"),
     ],
     ids=["absolute-path", "relative", "protocol-relative", "scheme-downgrade"],
 )
@@ -191,11 +197,11 @@ def test_a_relative_or_downgraded_location_is_refused(
 @pytest.mark.parametrize(
     "location",
     [
-        "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/other",
-        "https://evil.test/gemini-enterprise-agent-platform/models/thinking",
-        "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking?a=1",
-        "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking#f",
-        "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinkingX",
+        _E1_FINAL.rsplit("/", 1)[0] + "/other",
+        _E1_FINAL.replace(_E1_HOST, "evil.test"),
+        _E1_FINAL + "?a=1",
+        _E1_FINAL + "#f",
+        _E1_FINAL + "X",
     ],
     ids=["other-path", "other-host", "query", "fragment", "suffix"],
 )

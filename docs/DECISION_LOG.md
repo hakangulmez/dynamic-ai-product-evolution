@@ -751,9 +751,110 @@ enforcing is closed-vocabulary membership, not call syntax. Claiming that no
 observed value can exist anywhere in the exception-object graph was rejected once
 measurement showed `__context__` retention that the unchanged adapter cannot erase.
 
-## Open decisions
+## ADR-039 — Documentation routes v0.3.0: re-freezing E1 from a governed observation (E-C-D2)
 
-- Exact baseline cutoff, first-release form scope, and final Tier A/Tier B thresholds after the universe sentinel.
+**Status:** Accepted.
+
+**The measured trigger.** The single authorized v0.2 attempt
+`docattempt-c4082dd835f2f5228669487f50ca2308` (receipt SHA-256
+`6ebddbd1131f89e74443363eeb672d729856e29327fdcc6be13de3cae15f6962`) stopped
+truthfully at E1's redirect evaluation with `redirect_location_mismatch`. Because
+ADR-038 had made observations survive a refusal, that receipt records — for the
+first time in governed provenance — the `Location` the server actually returned:
+`https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thinking`. It is
+absolute HTTPS, carries no query, fragment, userinfo or trailing slash, is
+printable ASCII, and would pass `_require_clean_url`. It carries the **host** of
+the previously frozen final and the **path** of the requested URL, and it is
+neither member of any frozen pair.
+
+**A frozen route is not a policy constant.** Measured: the route URLs are
+`const`-pinned inside both committed schema files — **10** occurrences in v0.1,
+**52** in v0.2 — and each loader deep-compares its committed file against a
+constructor that reads the route declaration, which lives inside the frozen
+v0.1.0 module. Editing that tuple in place would make **both** committed schemas
+stop matching their own loaders, and **both** live receipts would become
+unverifiable. A route change therefore cannot be an edit; it must be a successor.
+
+**What this ADR does.** `documentation_routes.py` becomes a v0.3-only route home;
+`documentation_collection_receipt@0.3.0` and `documentation_acquisition_policy@0.3.0`
+read from it. `@0.1.0` and `@0.2.0`, their schemas, their loaders and both live
+receipts are untouched and independently verifiable — the historical declaration
+stays exactly where it is, describing the routes those contracts were built
+against.
+
+**E1 is a hypothesis under test, not a validated target.** Its new `final_url` is
+the observed value above. Freezing it makes the value *testable*; it does not
+make it correct. Nothing has been retrieved from it, no content has been
+validated against it, and it authorizes exactly **one** separately governed
+attempt. It is explicitly **not** an automatically authorized route, and a
+successful retrieval from it would still be retrieval status only —
+`documentation_evidence_validation@0.1.0` owns whether the bytes carry the
+required official claim.
+
+**The superseded E1 final was never validated.**
+`https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking`
+was requested by no attempt: both stopped at E1's redirect evaluation. It is
+recorded here as a superseded, never-validated hypothesis and is **not** carried
+forward as a second hop, which would be treating a prior guess as evidence. It
+remains permanently readable in the two committed receipts, which is where
+superseded route history belongs.
+
+**E2 and E3 are copied byte-identically.** Their finals sit on the same apexes and
+may be wrong in the same way, but one observation about E1 is not evidence about
+them. Transforming them by host/path pattern would be inference. The cost is
+incremental discovery — potentially one authorized attempt per entry — and that
+is the correct trade under the no-guess rule.
+
+**Still exactly one hop.** Every v0.3 pair's two URLs differ, so the grammar
+continues to require exactly one recognized redirect hop. A second redirect may
+be **observed** and recorded at `terminal_observed_location` under
+`redirect_chain_too_long`; it is never followed. No multi-hop contract is
+designed or implemented, because no receipt has yet established that need.
+
+**Only route identity and contract version change.** Every 0.2.0 rule is
+preserved: the 20-field entry, the seven failure phases, the 20-reason phase map,
+the location/disposition binding under two unanchored predicates, the
+three-constant `request_chain` pin, and every fail-closed builder and loader
+guard. This is proven, not asserted: a drift test normalises both schemas by
+substituting route strings, contract id, schema id, version const and prose
+comment, then requires byte equality — so any divergence in a bound, pattern,
+phase, reason, disposition or conditional fails loudly.
+
+**The URL-literal exemption moved rather than relaxed.** The bounded exact-pair
+check now runs against `documentation_routes.py`, and the policy is separately
+proven to declare no route at all. The one scheme occurrence left in the policy
+is the bare `https://` prefix used by the absolute-`Location` check; a guard that
+banned it outright would punish the code implementing the defence, so it is named
+exactly rather than exempted wholesale.
+
+**Attempt-identity safety.** `ordered_pairs`, `policy_contract_sha256` and
+`receipt_schema_sha256` all move, so a v0.3 attempt cannot derive either
+published attempt root. Neither live receipt can be overwritten, and a test pins
+both non-collisions.
+
+**Movements.** `schema_version_manifest.json` `0.10.0` → `0.11.0`, 38 → 39
+entries; `documentation_collection_receipt` stays `0.1.0`, `_v2` stays `0.2.0`,
+`_v3` added at `0.3.0`. Schema files 41 → 42. `REPO_MANIFEST.md` 535 → 539.
+`documentation_transport_client@0.1.0` is unchanged — no transport change is
+implied.
+
+**E-C-D2 makes no live call.** No URL is retrieved, nothing is written under
+`data/`, no ADC, no SDK client, no provider operation. Gate chain: E-C-D →
+E-M-S attempt one (stopped) → E-C-D1 → E-M-S attempt two (stopped, truthful) →
+**E-C-D2** → E-M-S attempt three under `@0.3.0` → E-M implementation → E-B.
+
+This decision supplements ADR-037 and ADR-038 and amends neither.
+
+**Rejected alternatives:** Editing the frozen pair in place was rejected on
+measurement — it would invalidate both committed schemas and both live receipts.
+Adopting a bounded multi-hop contract now was rejected as premature: no evidence
+exists that a second authorized hop is needed, and v0.2/v0.3 already observe a
+second redirect without following it, so the cheaper experiment strictly
+dominates. Retaining the superseded E1 final as a second hop was rejected because
+it was never validated. Re-freezing E2/E3 by the host/path transformation
+observed for E1 was rejected as inference from a single observation. Treating the
+observed value as authorized because it was observed was rejected outright: an
+observation is evidence of what a server returned, not authority to follow it.
 - Filing-date versus fiscal-year observation convention.
 - Required source packet by firm-year.
 - Frontier-registry granularity.

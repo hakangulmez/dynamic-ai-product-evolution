@@ -185,8 +185,9 @@ def test_only_urllib_parse_is_used() -> None:
 URL_LITERAL_POLICY_MODULES = frozenset(
     {
         "request_plan.py",           # the deterministic robots URL template
-        "documentation_policy.py",   # ADR-037: the three frozen evidence pairs
-        "documentation_receipt.py",  # ADR-037: the JSON Schema dialect URI only
+        "documentation_routes.py",   # ADR-039: the v0.3 frozen evidence pairs
+        "documentation_policy.py",   # ADR-039: the bare https:// scheme prefix only
+        "documentation_receipt.py",  # ADR-037: dialect URI + the v0.1/v0.2 pairs
     }
 )
 
@@ -201,23 +202,54 @@ def test_no_live_url_literal_outside_declared_policy() -> None:
         assert "https://" not in text, path.name
 
 
-def test_the_documentation_policy_holds_only_the_frozen_pairs() -> None:
-    """Its exemption is bounded: every URL literal is a frozen pair member."""
+def test_the_routes_module_holds_only_the_frozen_pairs() -> None:
+    """The bounded exact-pair guarantee, moved from the policy by ADR-039.
+
+    It moved rather than relaxed: the same assertion now runs against the module
+    that actually declares the routes, and the policy is separately proven to
+    hold no URL at all.
+    """
     import re
 
-    from dynamic_ai_products.collection.documentation_policy import (
-        FROZEN_EVIDENCE_ENTRIES,
+    from dynamic_ai_products.collection.documentation_routes import (
+        FROZEN_ROUTE_IDENTITIES,
     )
 
-    source = (COLLECTION_DIR / "documentation_policy.py").read_text(encoding="utf-8")
+    source = (COLLECTION_DIR / "documentation_routes.py").read_text(encoding="utf-8")
     # Literals are wrapped across lines, so compare on the joined constants.
-    frozen = {e["requested_url"] for e in FROZEN_EVIDENCE_ENTRIES} | {
-        e["final_url"] for e in FROZEN_EVIDENCE_ENTRIES
+    frozen = {e["requested_url"] for e in FROZEN_ROUTE_IDENTITIES} | {
+        e["final_url"] for e in FROZEN_ROUTE_IDENTITIES
     }
     assert len(frozen) == 6
     for fragment in re.findall(r'"(https?://[^"]*)"', source):
         assert any(url.startswith(fragment) for url in frozen), fragment
     assert "http://" not in source, "no scheme downgrade literal"
+
+
+def test_the_documentation_policy_holds_no_url_beyond_the_scheme_prefix() -> None:
+    """Proof the exemption genuinely moved: the policy declares no route.
+
+    The one scheme occurrence left is the bare ``https://`` prefix used by the
+    absolute-Location check. A guard that banned it outright would punish the
+    code implementing the defence, so it is named exactly rather than exempted
+    wholesale.
+    """
+    import re
+
+    from dynamic_ai_products.collection.documentation_routes import (
+        FROZEN_ROUTE_IDENTITIES,
+    )
+
+    source = (COLLECTION_DIR / "documentation_policy.py").read_text(encoding="utf-8")
+    literals = re.findall(r'"(https?://[^"]*)"', source)
+    assert literals == ["https://"], literals
+    assert "http://" not in source, "no scheme downgrade literal"
+    # The guarantee is that no *route* is declared here. Prose in the module
+    # docstring may still name an apex to explain why the routes cross one; a
+    # guard that banned the word would punish the documentation, not a leak.
+    for entry in FROZEN_ROUTE_IDENTITIES:
+        for field in ("requested_url", "final_url"):
+            assert entry[field] not in source, field
 
 
 def test_the_receipt_module_holds_only_declared_identities() -> None:
@@ -245,16 +277,74 @@ def test_the_receipt_module_holds_only_declared_identities() -> None:
     assert SCHEMA_DIALECT == "https://json-schema.org/draft/2020-12/schema"
 
 
-def test_the_two_frozen_route_declarations_agree() -> None:
-    """Duplicated for independence, so drift between them must fail loudly."""
-    from dynamic_ai_products.collection.documentation_policy import (
-        FROZEN_EVIDENCE_ENTRIES,
-    )
+# The historical E1 final, frozen into v0.1 and v0.2 and const-pinned inside both
+# committed schemas. It was never validated: no attempt ever requested it, because
+# both stopped at E1's redirect evaluation. ADR-039 supersedes it as a route and
+# preserves it here only so its immutability is asserted, not inferred.
+HISTORICAL_E1_FINAL = (
+    "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+)
+
+
+def test_the_historical_route_declaration_is_unchanged() -> None:
+    """v0.1 and v0.2 keep the routes they were built against.
+
+    Their loaders deep-compare their committed schema against a constructor that
+    reads this tuple, so editing it would make both committed schemas stop
+    matching -- and both live receipts unverifiable. It is frozen, permanently.
+    """
     from dynamic_ai_products.collection.documentation_receipt import (
         FROZEN_ENTRY_IDENTITIES,
     )
 
-    assert list(FROZEN_ENTRY_IDENTITIES) == [dict(e) for e in FROZEN_EVIDENCE_ENTRIES]
+    assert len(FROZEN_ENTRY_IDENTITIES) == 3
+    assert FROZEN_ENTRY_IDENTITIES[0]["final_url"] == HISTORICAL_E1_FINAL
+
+
+def test_the_v3_policy_is_bound_to_the_routes_module() -> None:
+    """The v0.3 policy declares nothing; it reads the single route source."""
+    from dynamic_ai_products.collection.documentation_policy import (
+        FROZEN_EVIDENCE_ENTRIES,
+    )
+    from dynamic_ai_products.collection.documentation_routes import (
+        FROZEN_ROUTE_IDENTITIES,
+    )
+
+    assert FROZEN_EVIDENCE_ENTRIES is FROZEN_ROUTE_IDENTITIES
+
+
+def test_the_v3_receipt_contract_reads_the_same_route_source() -> None:
+    """One declaration for the whole v0.3 stack: policy and receipt cannot drift."""
+    import ast
+
+    source = (COLLECTION_DIR / "documentation_receipt_v3.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    imports = [
+        node.module for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module
+    ]
+    assert "documentation_routes" in imports
+    assert '"https://' not in source, "v0.3 receipt declares no route of its own"
+
+
+def test_v3_differs_from_the_historical_declaration_at_e1_only() -> None:
+    """ADR-039 re-froze E1 and copied E2/E3 byte-identically. No inference."""
+    from dynamic_ai_products.collection.documentation_receipt import (
+        FROZEN_ENTRY_IDENTITIES,
+    )
+    from dynamic_ai_products.collection.documentation_routes import (
+        FROZEN_ROUTE_IDENTITIES,
+    )
+
+    assert FROZEN_ROUTE_IDENTITIES[1:] == FROZEN_ENTRY_IDENTITIES[1:], "E2/E3 unchanged"
+    old, new = FROZEN_ENTRY_IDENTITIES[0], FROZEN_ROUTE_IDENTITIES[0]
+    assert new["evidence_kind"] == old["evidence_kind"]
+    assert new["requested_url"] == old["requested_url"], "the request is unchanged"
+    assert new["final_url"] != old["final_url"], "only the expected hop target moved"
+    assert old["final_url"] == HISTORICAL_E1_FINAL
+    # Still exactly one hop: every v0.3 pair's two URLs differ.
+    for entry in FROZEN_ROUTE_IDENTITIES:
+        assert entry["requested_url"] != entry["final_url"]
 
 
 # --- No model, no harness -----------------------------------------------------

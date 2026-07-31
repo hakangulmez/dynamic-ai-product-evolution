@@ -13,12 +13,12 @@ the collector no longer publishes. Those two roles are now separated:
 
 * ``SCHEMA`` stays bound to 0.1.0 and every pure contract test uses it, with its
   fixtures **built directly** rather than harvested from a collector run;
-* ``V2_SCHEMA`` is what the collector is given, because the collector publishes
-  ``documentation_collection_receipt@0.2.0``.
+* ``V3_SCHEMA`` is what the collector is given, because the collector publishes
+  ``documentation_collection_receipt@0.3.0``.
 
-No 0.2.0 receipt is ever validated against the 0.1.0 schema here — the two
+No 0.3.0 receipt is ever validated against the 0.1.0 schema here — the two
 contracts reject each other by design, which
-``tests/collection/test_documentation_receipt_v2.py`` proves.
+``tests/collection/test_documentation_receipt_v2.py`` and its v3 sibling prove.
 """
 
 from __future__ import annotations
@@ -51,9 +51,9 @@ from dynamic_ai_products.collection.http_adapter import AdapterResponse
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = ROOT / "schemas" / "documentation_collection_receipt.schema.json"
 SCHEMA = SCHEMA_PATH.read_bytes()
-# What the collector is given: it publishes 0.2.0, never 0.1.0.
-V2_SCHEMA_PATH = ROOT / "schemas" / "documentation_collection_receipt.v2.schema.json"
-V2_SCHEMA = V2_SCHEMA_PATH.read_bytes()
+# What the collector is given: it publishes 0.3.0, never 0.1.0.
+V3_SCHEMA_PATH = ROOT / "schemas" / "documentation_collection_receipt.v3.schema.json"
+V3_SCHEMA = V3_SCHEMA_PATH.read_bytes()
 BODY = b"<html><body>official claim</body></html>"
 HTML = {"content-type": "text/html; charset=utf-8"}
 COMMIT = "4bcbe2e059714f9a7592751a2a9d1d59d0293bfa"
@@ -75,7 +75,7 @@ def _collect(monkeypatch, tmp_path: Path, *, send=_happy, clock=None):
     monkeypatch.setattr(dp, "_sleep", lambda s: None)
     return dp.collect_documentation_evidence(
         raw_root=tmp_path,
-        receipt_schema_bytes=V2_SCHEMA,
+        receipt_schema_bytes=V3_SCHEMA,
         code_commit=COMMIT,
         run_created_at=STAMP,
         retrieval_clock=clock or (lambda: STAMP),
@@ -288,8 +288,8 @@ def _succeeded_entries() -> list[dict]:
     """Three succeeded v0.1.0 entries, built directly against the frozen shape.
 
     Built rather than harvested from a collector run: the collector publishes
-    0.2.0 now, and validating that against this schema would be exactly the
-    cross-contract confusion ADR-038 separates.
+    0.3.0 now, and validating that against this schema would be exactly the
+    cross-contract confusion ADR-038 separated and ADR-039 preserved.
     """
     from hashlib import sha256
 
@@ -408,10 +408,10 @@ def test_the_schema_rejects_contradictory_status_and_payload(mutate):
 
 
 def test_the_two_contracts_stay_separated_in_this_file():
-    """A 0.2.0 receipt is never validated against the 0.1.0 schema here."""
+    """A 0.3.0 receipt is never validated against the 0.1.0 schema here."""
     assert RECEIPT_CONTRACT == "documentation_collection_receipt@0.1.0"
     assert _valid_receipt()["contract"] == RECEIPT_CONTRACT
-    assert b"@0.2.0" in V2_SCHEMA and b"@0.2.0" not in SCHEMA
+    assert b"@0.3.0" in V3_SCHEMA and b"@0.3.0" not in SCHEMA
 
 
 # --- canonical bytes ----------------------------------------------------------
@@ -468,10 +468,10 @@ def test_a_completed_attempt_publishes_one_write_once_receipt(
     path = result.attempt_root / result.receipt_reference
     assert path.is_file()
     receipt = json.loads(path.read_text(encoding="utf-8"))
-    # The collector publishes the 0.2.0 successor, not this module's contract.
-    assert receipt["contract"] == "documentation_collection_receipt@0.2.0"
+    # The collector publishes the 0.3.0 successor, not this module's contract.
+    assert receipt["contract"] == "documentation_collection_receipt@0.3.0"
     assert receipt["contract"] != RECEIPT_CONTRACT
-    assert receipt["schema_version"] == "0.2.0"
+    assert receipt["schema_version"] == "0.3.0"
     assert receipt["attempt_id"] == result.attempt_id
     assert receipt["completion_status"] == "completed"
     assert len(receipt["entries"]) == 3
@@ -579,7 +579,7 @@ def test_an_identical_object_is_reused_not_overwritten(monkeypatch, tmp_path: Pa
     monkeypatch.setattr(dp, "_sleep", lambda s: None)
     second = dp.collect_documentation_evidence(
         raw_root=tmp_path,
-        receipt_schema_bytes=V2_SCHEMA,
+        receipt_schema_bytes=V3_SCHEMA,
         code_commit="b" * 40,
         run_created_at=STAMP,
         retrieval_clock=lambda: STAMP,

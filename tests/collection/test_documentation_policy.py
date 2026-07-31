@@ -1,15 +1,17 @@
-"""The documentation acquisition policy (ADR-037, ADR-038; E-C-D, E-C-D1).
+"""The documentation acquisition policy (ADR-037/038/039; E-C-D, E-C-D1, E-C-D2).
 
 Offline throughout: the transport is a stub reached only through the
 module-private ``_send_once`` seam, spacing goes through ``_sleep``, and every
 write lands under ``tmp_path``. Nothing here retrieves a real URL and nothing
 touches ``data/``.
 
-ADR-038 moved the policy onto ``documentation_collection_receipt@0.2.0``, so the
-schema loaded here is the v2 file. The clock-failure and success expectations
-below are unchanged on measurement: those are pre-send refusals and successes,
-where a null timestamp was already truthful. What they gain is a
-``failure_phase`` assertion, which is the fact 0.1.0 could not express at all.
+ADR-038 moved the policy onto a receipt successor that records observations;
+ADR-039 moved it again onto ``documentation_collection_receipt@0.3.0`` after E1
+was re-frozen, so the schema loaded here is the **v3** file and the routes come
+from ``documentation_routes``. The clock-failure and success expectations below
+are unchanged on measurement: those are pre-send refusals and successes, where a
+null timestamp was already truthful. What they gain is a ``failure_phase``
+assertion, which is the fact 0.1.0 could not express at all.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from dynamic_ai_products.collection.http_adapter import AdapterResponse
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src" / "dynamic_ai_products" / "collection"
 SCHEMA = (
-    ROOT / "schemas" / "documentation_collection_receipt.v2.schema.json"
+    ROOT / "schemas" / "documentation_collection_receipt.v3.schema.json"
 ).read_bytes()
 BODY = b"<html><body>official claim</body></html>"
 HTML = {"content-type": "text/html; charset=utf-8"}

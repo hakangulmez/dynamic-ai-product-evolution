@@ -1,4 +1,4 @@
-"""Documentation evidence acquisition policy (ADR-037, ADR-038; E-C-D, E-C-D1).
+"""Documentation evidence acquisition policy (ADR-037, ADR-038, ADR-039; E-C-D, E-C-D1, E-C-D2).
 
 **This module owns every decision; the adapter owns none.** The three frozen
 requested/final URL pairs, the HTTPS-only rule, the exactly-one-hop grammar, the
@@ -51,15 +51,16 @@ from ..provenance import WriteOnceError, write_bytes_once
 from . import http_adapter
 from .publication import canonical_json_bytes
 from .documentation_receipt import ENTRY_RECORDABLE_REASONS as _ENTRY_RECORDABLE
-from .documentation_receipt_v2 import (
+from .documentation_receipt_v3 import (
     FAILURE_PHASES,
     LOCATION_MAX_LENGTH,
-    RECEIPT_CONTRACT_V2,
-    build_documentation_receipt_v2,
+    RECEIPT_CONTRACT_V3,
+    build_documentation_receipt_v3,
     classify_observed_location,
-    receipt_bytes_v2,
-    validate_receipt_schema_v2_bytes,
+    receipt_bytes_v3,
+    validate_receipt_schema_v3_bytes,
 )
+from .documentation_routes import FROZEN_ROUTE_IDENTITIES
 from .errors import CollectionError
 
 __all__ = [
@@ -77,36 +78,12 @@ __all__ = [
 ]
 
 # --- frozen routes ------------------------------------------------------------
-
-FROZEN_EVIDENCE_ENTRIES: tuple[dict[str, str], ...] = (
-    {
-        "evidence_kind": "gemini_thinking",
-        "requested_url": "https://cloud.google.com/vertex-ai/generative-ai/docs/thinking",
-        "final_url": (
-            "https://docs.cloud.google.com/gemini-enterprise-agent-platform/"
-            "models/thinking"
-        ),
-    },
-    {
-        "evidence_kind": "count_tokens",
-        "requested_url": (
-            "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/"
-            "get-token-count"
-        ),
-        "final_url": (
-            "https://docs.cloud.google.com/gemini-enterprise-agent-platform/"
-            "models/capabilities/get-token-count"
-        ),
-    },
-    {
-        "evidence_kind": "pricing_standard",
-        "requested_url": "https://cloud.google.com/vertex-ai/generative-ai/pricing",
-        "final_url": (
-            "https://cloud.google.com/gemini-enterprise-agent-platform/"
-            "generative-ai/pricing"
-        ),
-    },
-)
+#
+# ADR-039: the routes now live in their own module and are read, not redeclared.
+# This module holds no URL literal at all, so a route can no longer be changed
+# here without changing the single declaration the v0.3 receipt contract also
+# reads -- and a boundary test proves the exemption moved rather than relaxed.
+FROZEN_EVIDENCE_ENTRIES: tuple[dict[str, str], ...] = FROZEN_ROUTE_IDENTITIES
 
 REDIRECT_STATUSES: tuple[int, ...] = (301, 308)
 TERMINAL_STATUS = 200
@@ -124,9 +101,9 @@ _STATUS_MIN = 100
 _STATUS_MAX = 599
 
 POLICY_CONTRACT: dict[str, Any] = {
-    "contract": "documentation_acquisition_policy@0.2.0",
+    "contract": "documentation_acquisition_policy@0.3.0",
     "policy_module": "dynamic_ai_products.collection.documentation_policy",
-    "policy_version": "0.2.0",
+    "policy_version": "0.3.0",
     "ordered_pairs": [dict(entry) for entry in FROZEN_EVIDENCE_ENTRIES],
     "scheme": "https",
     "max_redirect_hops": 1,
@@ -641,7 +618,7 @@ def collect_documentation_evidence(
     # [2] Static keylog preflight, before anything exists.
     http_adapter.require_no_tls_keylog()
     # [3] Schema bytes validated; digest derived. No file is re-read later.
-    schema_digest = validate_receipt_schema_v2_bytes(receipt_schema_bytes)
+    schema_digest = validate_receipt_schema_v3_bytes(receipt_schema_bytes)
     # [4] Contract identities.
     adapter_digest = sha256(http_adapter.adapter_contract_bytes()).hexdigest()
     policy_digest = sha256(_canonical(POLICY_CONTRACT)).hexdigest()
@@ -662,7 +639,7 @@ def collect_documentation_evidence(
                 "run_created_at": run_created_at,
                 "adapter_contract_sha256": adapter_digest,
                 "policy_contract_sha256": policy_digest,
-                "receipt_contract_id": RECEIPT_CONTRACT_V2,
+                "receipt_contract_id": RECEIPT_CONTRACT_V3,
                 "receipt_schema_sha256": schema_digest,
                 "ordered_pairs": [dict(e) for e in FROZEN_EVIDENCE_ENTRIES],
             }
@@ -733,7 +710,7 @@ def collect_documentation_evidence(
             stopped_at = index
 
     completion = "completed" if stopped_at is None else "stopped"
-    receipt = build_documentation_receipt_v2(
+    receipt = build_documentation_receipt_v3(
         attempt_id=attempt_id,
         code_commit=code_commit,
         run_created_at=run_created_at,
@@ -745,7 +722,7 @@ def collect_documentation_evidence(
         completion_status=completion,
     )
     reference = "collection_receipt.json"
-    payload = receipt_bytes_v2(receipt)
+    payload = receipt_bytes_v3(receipt)
     try:
         digest = write_bytes_once(
             attempt_root / reference, payload, what="documentation collection receipt"

@@ -22,25 +22,26 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from dynamic_ai_products.collection import documentation_policy as dp
-from dynamic_ai_products.collection import documentation_receipt_v2 as v2
+from dynamic_ai_products.collection import documentation_receipt_v3 as v3
 from dynamic_ai_products.collection import http_adapter
 from dynamic_ai_products.collection.errors import CollectionError
 from dynamic_ai_products.collection.http_adapter import AdapterResponse
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src" / "dynamic_ai_products" / "collection"
-SCHEMA = (ROOT / "schemas" / "documentation_collection_receipt.v2.schema.json").read_bytes()
+SCHEMA = (ROOT / "schemas" / "documentation_collection_receipt.v3.schema.json").read_bytes()
 BODY = b"<html><body>official claim</body></html>"
 HTML = {"content-type": "text/html; charset=utf-8"}
 COMMIT = "4d285669820ad610643be29d4ff790e94d61c90d"
 STAMP = "2026-07-31T09:00:00Z"
 LIVE_V1_ATTEMPT = "docattempt-f88b54ac65e04d0766d749cb606bcee2"
+LIVE_V2_ATTEMPT = "docattempt-c4082dd835f2f5228669487f50ca2308"
 
 # A decoy that is a well-formed absolute https URL and is NOT any frozen final,
 # which is precisely the shape the live attempt actually met.
-DECOY = "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking-v2"
+DECOY = dp.FROZEN_EVIDENCE_ENTRIES[0]["final_url"] + "-decoy"
 
-VALIDATOR = Draft202012Validator(v2.expected_receipt_schema_v2())
+VALIDATOR = Draft202012Validator(v3.expected_receipt_schema_v3())
 
 
 def _entry(index: int) -> dict[str, str]:
@@ -112,7 +113,7 @@ def test_the_observation_is_in_the_persisted_bytes_not_only_in_memory(
     assert entry["redirect_observed_status"] == 301
     assert entry["retrieval_timestamp"] == STAMP
     assert entry["failure_phase"] == "redirect_evaluation"
-    assert receipt["contract"] == "documentation_collection_receipt@0.2.0"
+    assert receipt["contract"] == "documentation_collection_receipt@0.3.0"
 
 
 def test_the_v0_1_0_shape_would_have_discarded_all_of_it():
@@ -208,7 +209,7 @@ def test_an_untranscribable_location_is_null_never_truncated(monkeypatch, tmp_pa
     assert entry["redirect_observed_location"] is None
     assert entry["redirect_observed_location_disposition"] == "rejected_oversize"
     raw = (result.attempt_root / result.receipt_reference).read_bytes()
-    assert oversize[: v2.LOCATION_MAX_LENGTH].encode() not in raw, "no truncated artifact"
+    assert oversize[: v3.LOCATION_MAX_LENGTH].encode() not in raw, "no truncated artifact"
 
 
 # --- dispositions distinguish the three kinds of nothing ----------------------
@@ -385,8 +386,8 @@ def test_every_recorded_failure_names_a_phase_its_reason_permits(
         result = _run(monkeypatch, tmp_path / f"s{index}", send, **extra)
         entry = result.entries[0]
         reason, phase = entry["failure_reason"], entry["failure_phase"]
-        assert reason in v2.REASON_PHASES, reason
-        assert phase in v2.REASON_PHASES[reason], (reason, phase)
+        assert reason in v3.REASON_PHASES, reason
+        assert phase in v3.REASON_PHASES[reason], (reason, phase)
 
 
 # --- the adapter-side keylog recheck ------------------------------------------
@@ -432,7 +433,7 @@ def test_an_adapter_side_keylog_publishes_a_truthful_stopped_receipt(
     entry = result.entries[0]
     assert entry["failure_reason"] == "tls_keylog_environment_present"
     assert entry["failure_phase"] == phase
-    assert phase in v2.REASON_PHASES["tls_keylog_environment_present"]
+    assert phase in v3.REASON_PHASES["tls_keylog_environment_present"]
     assert entry["request_chain"] == [
         _entry(0)["requested_url"], _entry(0)["final_url"]
     ][:chain_length]
@@ -456,7 +457,7 @@ def test_an_adapter_side_keylog_publishes_a_truthful_stopped_receipt(
 
 def test_the_keylog_reason_covers_every_point_it_can_be_raised():
     """Two policy prechecks and two adapter rechecks: four reachable phases."""
-    assert set(v2.REASON_PHASES["tls_keylog_environment_present"]) == {
+    assert set(v3.REASON_PHASES["tls_keylog_environment_present"]) == {
         "entry_preflight", "redirect_request", "terminal_preflight", "terminal_request",
     }
 
@@ -678,7 +679,7 @@ def test_every_entry_refusal_names_a_declared_reason_and_phase():
             assert isinstance(reason, ast.Attribute), ast.dump(reason)
             assert reason.attr == "reason_code", ast.dump(reason)
         assert isinstance(phase, ast.Constant), ast.dump(phase)
-        assert phase.value in v2.FAILURE_PHASES, phase.value
+        assert phase.value in v3.FAILURE_PHASES, phase.value
 
 
 def test_no_f_string_or_concatenation_reaches_a_raise_site():
@@ -692,16 +693,17 @@ def test_no_f_string_or_concatenation_reaches_a_raise_site():
 # --- attempt identity ---------------------------------------------------------
 
 
-def test_the_v2_attempt_id_cannot_collide_with_the_live_v1_attempt(
+def test_the_v3_attempt_id_cannot_collide_with_either_live_attempt(
     monkeypatch, tmp_path: Path
 ):
     """The receipt contract id and the policy digest both changed, so the live
     0.1.0 attempt root is structurally unreachable from this collector."""
     result = _run(monkeypatch, tmp_path, _redirect_with(DECOY))
     assert result.attempt_id != LIVE_V1_ATTEMPT
+    assert result.attempt_id != LIVE_V2_ATTEMPT
     assert result.attempt_id.startswith("docattempt-")
-    assert dp.POLICY_CONTRACT["contract"] == "documentation_acquisition_policy@0.2.0"
-    assert v2.RECEIPT_CONTRACT_V2 == "documentation_collection_receipt@0.2.0"
+    assert dp.POLICY_CONTRACT["contract"] == "documentation_acquisition_policy@0.3.0"
+    assert v3.RECEIPT_CONTRACT_V3 == "documentation_collection_receipt@0.3.0"
 
 
 def test_the_policy_declares_the_observation_semantics():
@@ -709,7 +711,7 @@ def test_the_policy_declares_the_observation_semantics():
     assert contract["observed_location_followed"] is False
     assert contract["observed_location_truncated"] is False
     assert contract["observed_location_max_length"] == 2048
-    assert contract["failure_phases"] == list(v2.FAILURE_PHASES)
+    assert contract["failure_phases"] == list(v3.FAILURE_PHASES)
 
 
 # --- nothing escapes into the repository --------------------------------------
