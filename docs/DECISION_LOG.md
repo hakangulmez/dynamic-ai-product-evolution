@@ -542,6 +542,215 @@ This decision supplements ADR-030, ADR-031, ADR-032, ADR-035 and ADR-036.
 
 **Rejected alternatives:** Placing all networking inside a documentation module was rejected because it would fuse a reusable transport with one policy and make a second consumer impossible without duplication. Reusing `web_collection_receipt@0.1.0` was rejected on measurement: its `$defs/request_record` does carry `final_url`, `http_status`, `redirect_hops`, `retry_count`, `byte_count` and `content_sha256`, but the contract requires `company_id`, `request_plan_sha256`, `spec_version`, `prompt_hash` and `model_route`, has no `content_type` or `evidence_kind`, and cannot express `not_attempted`. Loosening `follow_redirects` to cross apexes was rejected as weakening a hard-bound official-web guarantee for an unrelated purpose. Accepting an injectable transport on the public API was rejected because a fake could then be recorded under the canonical identity. Accepting a caller-supplied schema digest was rejected for the same reason a caller-supplied legal name was rejected in ADR-036: the pin is derived, the claim forbidden. Treating `WebFetch` output, curl, browser extraction or an ad hoc script as authoritative raw-byte provenance was rejected — the first returns model-summarised markdown with no digest and produced navigation shells for two of three pages during E-M0. Placing the only receipt inside a digest directory was rejected because a zero-byte first failure has no digest to name one. Claiming a 30-second total wall-clock deadline was rejected once measurement showed four phase deadlines. Relying on `trust_env=False` for the keylog guarantee was rejected once measurement showed the file is still created.
 
+## ADR-038 — Documentation collection receipt v0.2.0: observations survive a refusal (E-C-D1)
+
+**Status:** Accepted.
+
+**The measured defect.** The single authorized E-M-S acquisition
+(`docattempt-f88b54ac65e04d0766d749cb606bcee2`, receipt SHA-256
+`c5c8980d888517604581a4b491b51939c5ea8ee109eec31eddbcbf49952485bf`) stopped on its
+first entry with `redirect_location_mismatch`. That receipt **retains only the
+sanitized response-derived failure classification**. It contains no field-level
+response observation: the concrete HTTP status, the request-start timestamp, the
+observed `Location` value and the partial request chain were all discarded, and
+`final_url` holds the *frozen expected* URL — an a-priori constant pinned by
+`{"const": …}`, never an observation. The reason code proves only that a response
+was received, that its status was 301 or 308, and that the `Location` was
+non-empty, absolute HTTPS and unequal to the frozen expected final URL. **It does
+not establish the new target value**, and no governed evidence currently does.
+
+**Why a successor rather than a repair.** The erasure is enforced at three
+layers, not one. `_fetch_entry` raised before assembling any record, so the
+established facts died with the frame; `_blank_entry` then rebuilt the entry from
+the frozen constants and a reason code alone. Independently, the 0.1.0 builder
+refuses a `failed` entry carrying any non-null payload field, and the 0.1.0
+schema pins every one of them to `{"const": null}`. A collector that recorded the
+truth **could not publish a receipt at all** under 0.1.0. The defect is therefore
+contractual, and 0.1.0 is never modified: it stays byte-frozen so the live
+receipt remains verifiable against the exact contract that produced it. A
+successor collision is structurally impossible — the receipt contract id and the
+policy digest both feed the attempt identity, so the v0.2.0 collector cannot
+derive the existing attempt root.
+
+**`redirect_chain` becomes `request_chain`.** Under 0.1.0 the field could only
+ever hold two frozen constants, so it carried no observation whatsoever. It now
+means *URLs this collector initiated a request for, in order*, and a name
+containing "redirect" would invite a future reader to write the observed
+`Location` into it. It is schema-pinned per frozen entry to **exactly three
+constant values** — `[]`, `[requested_url]`, `[requested_url, final_url]` — so an
+observed `Location` is *structurally* incapable of entering it. That guarantee is
+checkable from the schema alone, without trusting the collector, and it is what
+separates recording from authorizing: an observation is never followed merely
+because it was observed.
+
+**The 20-field entry.** The thirteen applicable 0.1.0 fields are retained,
+`http_status` is removed (superseded by `terminal_observed_status`),
+`redirect_chain` is renamed, and seven fields are added: `failure_phase`, plus an
+observed status, observed location and location disposition for each of the two
+possible sends. Payload rules are conditioned on **both** status and phase, under
+`additionalProperties: false`.
+
+**Seven phases, twenty reasons.** `entry_preflight`, `redirect_request`,
+`redirect_evaluation`, `terminal_preflight`, `terminal_request`,
+`terminal_evaluation`, `persistence`. Every entry-recordable reason maps to the
+phases it can truthfully arise in, and the map is bound to
+`ENTRY_RECORDABLE_REASONS` by a drift test so a new code cannot be added without
+a phase. The phase is **derived from the accumulator's state**, not a static
+lookup, so a reason reachable from two points reports where it actually happened:
+`response_request_identity_mismatch` raised inside the adapter lands on
+`*_request` (no `AdapterResponse` escaped), and raised by the policy with a
+response in hand lands on `*_evaluation`. A `persistence` failure records the
+accepted entity facts — `content_type`, `content_encoding`, `byte_count`,
+`content_sha256` — and leaves `raw_reference` and `object_disposition` null,
+because the entity was real and no object exists. The schema pins phase to
+payload; the builder additionally pins reason to phase.
+
+**What an observed location is.** Exactly the adapter-exposed Python string
+returned by the pinned `httpx` `Headers.get("location")` surface, before any
+policy parsing, normalization, resolution, percent-decoding, truncation or
+authorization comparison. It is **not** wire bytes, **not** a byte-verbatim HTTP
+field, and it does **not** preserve duplicate header-line boundaries. Measured on
+the installed httpx 0.28.1: response headers decode with `iso-8859-1`, so
+`b"...\xe9\x01x"` surfaces as `'…é\x01x'`, and two `Location` field lines surface
+through `.get()` as the single joined string `'https://a.test/x, https://b.test/y'`
+(`get_list` would preserve them, and the adapter does not call it). If duplicate
+lines are combined, the combined string **is** the observation; it is recorded
+under the transcription policy and never split.
+
+**Transcription, never truncation.** `no_response` when the hop was never
+answered; `absent` when a response carried no `Location`; `rejected_oversize`
+above 2048 characters; `rejected_uncharacterizable` for any character outside
+`U+0020`–`U+007E`; otherwise `recorded` with the string unchanged. A shortened URL
+is a fabricated artifact, so an untranscribable value is refused outright and the
+disposition says why. `no_response` and `absent` are deliberately distinct:
+collapsing "never asked" into "asked, got nothing" would reintroduce exactly the
+class of untruth this contract removes. Classification is orthogonal to
+authorization — a value may be `recorded` and still refused by the route grammar.
+The charset rule is measurement-backed rather than defensive guesswork: the
+pinned surface demonstrably can deliver `\x01`, `\t` and `é`.
+
+**The exception guarantee, and its stated limits.** Entry-level refusals travel
+on a module-private `_EntryRefusal` carrying **only** a closed-vocabulary reason
+code and phase — never a message, never a value — and the observation accumulator
+is owned by the *caller*, so it outlives the refusal without ever riding on an
+exception. Every rendered `CollectionError` message is a constant; no observed
+value reaches `str`, `repr`, `args`, `reason_code`, `detail`, `stop_reason`, any
+intentionally exposed attribute, or an explicit `__cause__` chain. A dynamically
+selected reason code is permitted after closed-vocabulary validation — an
+AST-shape rule requiring only constants would have been impossible, because
+`_persist_object` legitimately selects between `destination_exists` and
+`write_error` and forwards the result through a local.
+
+**Two residual limitations, stated rather than hidden.** (1) `raise … from None`
+clears `__cause__` and sets `__suppress_context__`, but CPython still retains the
+upstream object in `__context__` — measured. `http_adapter.py` is outside this
+increment's path set, so that retention is documented, pinned by a regression
+that fails loudly if it ever changes, and never rendered, serialized into a
+receipt, or exposed as governed provenance. (2) Reasons raised *inside* the
+adapter — `transport_timeout`, `transport_failed`, `entity_too_large` and
+adapter-side `response_request_identity_mismatch` — destroy the `AdapterResponse`,
+so no observed status can accompany them without an adapter change, which
+v0.2.0 deliberately does not make.
+
+**The observed location is bound to its disposition.** The first cut of this
+contract declared the two fields independently, which let three untruthful shapes
+through both the schema and the builder: a null location claiming `recorded`, a
+non-null location claiming `absent` (or any other non-recorded disposition), and
+a non-printable or blank value claiming `recorded`. Each describes an observation
+that did not happen, which is the same class of defect this ADR exists to remove.
+Both layers now enforce the binding in both directions, per observation pair:
+`recorded` requires a non-blank string of at most 2048 characters, every
+character in `U+0020`–`U+007E`; every other disposition requires null; and
+therefore a non-null location implies `recorded`. `transcribable_location()` is
+the single definition shared by the classifier, the builder and the committed
+schema's predicates, so the three cannot disagree.
+
+**Charset is decided before the space-only rule.** The locked order is: no
+response → `no_response`; `None` or empty string → `absent`; non-string →
+`rejected_uncharacterizable`; length above 2048 → `rejected_oversize`; any
+character outside `U+0020`–`U+007E` → `rejected_uncharacterizable`; a non-empty
+run of **ASCII `U+0020` alone** → `absent`; otherwise `recorded` unchanged. The
+first cut tested emptiness with a bare `str.strip()` *before* the charset check,
+which strips `\t`, `\n`, `\r`, `\x0b`, `\x0c` and every Unicode whitespace
+codepoint — so `"\t"`, `"\n"`, `"\r"`, `" "`, `" "` and `" \t "` were
+all classified `absent`, a benign disposition concealing forbidden characters.
+Only `U+0020` may reach the space-only rule, which is why that rule tests
+codepoints explicitly rather than calling `strip()`. `length before charset` is
+preserved, so an over-long value carrying a control character is still reported
+`rejected_oversize`. An ASCII-space-only `Location` is `absent` because it
+arrived and names no target; recording it would claim an observation of nothing.
+
+**The anchored pattern was replaced by two independent predicates.** JSON Schema
+`pattern` is a **search**, not a full match, and in the installed engine `$` also
+matches immediately before a final newline. The first cut used
+`^[\x20-\x7e]*[\x21-\x7e][\x20-\x7e]*$`, which `re.search` accepts for `"x\n"` —
+measured — while `transcribable_location()` and the builder reject it. The
+committed schema was therefore strictly weaker than the code it was supposed to
+mirror, and the divergence was invisible to the `re.fullmatch` check that had
+been used to verify it. The anchor is gone: `recorded` now requires an
+unanchored `[\x21-\x7e]` (at least one non-space printable) **and**
+`not: {"pattern": "[^\x20-\x7e]"}` (no character outside printable ASCII),
+alongside the existing `minLength`/`maxLength`. Neither predicate depends on
+anchoring, so no end-of-string subtlety can weaken either, and both remain
+portable JSON Schema — no Python-only `\A`/`\Z`. Regression cases for `"x\n"`,
+`"x\r"`, `"x\r\n"`, `"\nx"`, `"x\t"`, `"x "`, `"x\v"`, `"x\f"` and
+`"x "` run through `Draft202012Validator` against the committed **bytes**,
+for both observation pairs and for succeeded and failed entries, because
+exercising the real validator rather than `re.fullmatch` is what exposed the
+defect.
+
+**The adapter-side keylog recheck was an unpublishable path.** `send_once`
+performs its own `require_no_tls_keylog()` at the top, *after* the policy's
+precheck for that phase has passed. A keylog appearing in between is refused
+there, with the send already initiated and no response received. The first cut of
+`REASON_PHASES` allowed `tls_keylog_environment_present` only at
+`entry_preflight` and `terminal_preflight`, so the policy recorded the refusal at
+`redirect_request`/`terminal_request`, the builder refused the reason/phase pair
+with `receipt_schema_invalid`, and the attempt was left with an empty root and
+**no terminal receipt at all** — a reachable path that could not be published.
+The reason now covers all four points at which it can genuinely be raised: two
+policy prechecks and two adapter rechecks. The `*_request` treatment is the
+truthful one and already the established meaning of those phases — `transport_failed`
+has exactly the same shape — so `request_chain` records the send that was
+initiated and both dispositions stay `no_response`.
+
+**One incidental correction.** The frozen-pair cleanliness check previously ran
+per entry and raised `redirect_location_mismatch` — a redirect reason code for a
+self-check on constants, which cannot truthfully carry it. It now runs once, for
+all three pairs, in the attempt preflight before any send, under
+`attempt_identity_invalid`: the frozen pairs are part of the attempt identity, so
+a malformed pair invalidates the attempt rather than one entry.
+
+**Movements.** `schema_version_manifest.json` moves `0.9.0` → `0.10.0`, 37 → 38
+entries; `documentation_collection_receipt` stays `0.1.0` and
+`documentation_collection_receipt_v2` is added at `0.2.0`. Schema files 40 → 41.
+`REPO_MANIFEST.md` 531 → 535. `documentation_transport_client@0.1.0`,
+`documentation_receipt.py`, its schema, `http_adapter.py` and
+`collection/__init__.py` are all unchanged.
+
+**E-C-D1 makes no live call.** No URL is retrieved, nothing is written under
+`data/`, no ADC, no SDK client, no provider operation. Every transport test uses a
+stub or a substituted client factory and every filesystem test uses `tmp_path`.
+Gate chain: E-C-D → E-M-S attempt one (stopped) → **E-C-D1** → E-M-S retry under
+`@0.2.0` → E-M implementation → E-B.
+
+This decision supplements ADR-037 and does not amend it.
+
+**Rejected alternatives:** Modifying `documentation_collection_receipt@0.1.0` in
+place was rejected because a live receipt already instantiates it and would stop
+being verifiable. Recording the observation only in the returned result object was
+rejected as the U0 defect in another form — an artifact that is not persisted is
+not evidence. Truncating an over-long `Location` to fit was rejected because a
+shortened URL is a fabricated artifact. Collapsing `no_response` into `absent` was
+rejected as the same erasure at smaller scale. Adding `get_list` handling to
+recover duplicate header-line boundaries was rejected as an adapter change outside
+this increment's scope; the joined string is recorded and the limitation stated.
+Requiring an `ast.Constant`-only shape for every `reason_code` was rejected on
+measurement: `_persist_object` already selects dynamically, and the property worth
+enforcing is closed-vocabulary membership, not call syntax. Claiming that no
+observed value can exist anywhere in the exception-object graph was rejected once
+measurement showed `__context__` retention that the unchanged adapter cannot erase.
+
 ## Open decisions
 
 - Exact baseline cutoff, first-release form scope, and final Tier A/Tier B thresholds after the universe sentinel.

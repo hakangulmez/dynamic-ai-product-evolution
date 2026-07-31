@@ -1,4 +1,4 @@
-"""Documentation evidence acquisition policy (ADR-037, E-C-D).
+"""Documentation evidence acquisition policy (ADR-037, ADR-038; E-C-D, E-C-D1).
 
 **This module owns every decision; the adapter owns none.** The three frozen
 requested/final URL pairs, the HTTPS-only rule, the exactly-one-hop grammar, the
@@ -7,7 +7,7 @@ adapter is URL-policy neutral and is imported by this module alone.
 
 **Why this is separate from ``collection.transport.follow_redirects``.** That
 function permits a hop only inside the official apex or a declared archive host,
-within five hops, keyed on a request-plan entry — semantics ADR-032 hard-binds
+within five hops, keyed on a request-plan entry -- semantics ADR-032 hard-binds
 to the HubSpot official-web run. The documentation routes cross apexes
 (``cloud.google.com`` to ``docs.cloud.google.com``) and need exactly one hop
 against an exact pair list. Reusing that function would mean loosening a
@@ -25,14 +25,23 @@ adapter itself; offline tests patch module-private seams that are absent from
 **The package reads no clock.** ``run_created_at`` and every retrieval instant
 are caller-injected. Calling ``sleep`` for spacing is permitted; reading a wall
 clock is not.
+
+**ADR-038: observations survive a refusal.** Under 0.1.0 an entry-level failure
+was rebuilt from the frozen constants alone, so the request-start instant, the
+observed status, the observed ``Location`` and the partial request chain -- all
+established facts at the moment of refusal -- died with the frame. The facts now
+accumulate in an ``_Observation`` owned by the *caller*, so they outlive the
+refusal, and entry-level refusals travel as ``_EntryRefusal`` carrying only a
+closed-vocabulary reason code and phase. No observed value ever rides on an
+exception, and no exception message is anything but a constant.
 """
 
 from __future__ import annotations
 
 import re
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Protocol
@@ -41,10 +50,15 @@ from urllib.parse import urlsplit
 from ..provenance import WriteOnceError, write_bytes_once
 from . import http_adapter
 from .publication import canonical_json_bytes
-from .documentation_receipt import (
-    build_documentation_receipt,
-    receipt_bytes,
-    validate_receipt_schema_bytes,
+from .documentation_receipt import ENTRY_RECORDABLE_REASONS as _ENTRY_RECORDABLE
+from .documentation_receipt_v2 import (
+    FAILURE_PHASES,
+    LOCATION_MAX_LENGTH,
+    RECEIPT_CONTRACT_V2,
+    build_documentation_receipt_v2,
+    classify_observed_location,
+    receipt_bytes_v2,
+    validate_receipt_schema_v2_bytes,
 )
 from .errors import CollectionError
 
@@ -106,11 +120,13 @@ TOTAL_ACCEPTED_ENTITY_BYTES_MAX = (
 )
 RETRIEVAL_TIMESTAMP_MODE = "caller_injected_request_start_utc_v1"
 ACCEPTED_CONTENT_TYPE = "text/html"
+_STATUS_MIN = 100
+_STATUS_MAX = 599
 
 POLICY_CONTRACT: dict[str, Any] = {
-    "contract": "documentation_acquisition_policy@0.1.0",
+    "contract": "documentation_acquisition_policy@0.2.0",
     "policy_module": "dynamic_ai_products.collection.documentation_policy",
-    "policy_version": "0.1.0",
+    "policy_version": "0.2.0",
     "ordered_pairs": [dict(entry) for entry in FROZEN_EVIDENCE_ENTRIES],
     "scheme": "https",
     "max_redirect_hops": 1,
@@ -125,6 +141,15 @@ POLICY_CONTRACT: dict[str, Any] = {
     "accepted_content_type": ACCEPTED_CONTENT_TYPE,
     "retrieval_timestamp_mode": RETRIEVAL_TIMESTAMP_MODE,
     "write_once": True,
+    # ADR-038 declarations. Each is a contract statement, not an implementation
+    # note: changing any of them changes the policy digest and the attempt id.
+    "failure_phases": list(FAILURE_PHASES),
+    "request_chain_semantics": "urls_this_collector_initiated_in_order",
+    "observed_location_source": "adapter_exposed_httpx_headers_get_location_string",
+    "observed_location_max_length": LOCATION_MAX_LENGTH,
+    "observed_location_accepted_charset": "printable_ascii_0x20_0x7e",
+    "observed_location_followed": False,
+    "observed_location_truncated": False,
 }
 
 DOCUMENTATION_REASON_CODES: frozenset[str] = frozenset(
@@ -187,6 +212,44 @@ class DocumentationCollectionResult:
     receipt_sha256: str | None
 
 
+class _EntryRefusal(Exception):
+    """Entry-level refusal carrying only closed-vocabulary values.
+
+    Deliberately not a :class:`CollectionError`: it never crosses the public
+    boundary, and it exists so an entry can fail without an observed value ever
+    riding on an exception object. Its ``args`` hold the reason code alone, so
+    ``str`` and ``repr`` are closed-vocabulary too.
+    """
+
+    def __init__(self, reason_code: str, phase: str) -> None:
+        # Validated here so a dynamically selected code cannot smuggle a value
+        # into the receipt. Unreachable in practice; an AST test pins every
+        # raise site to the closed vocabulary as well.
+        if reason_code not in _ENTRY_RECORDABLE or phase not in FAILURE_PHASES:
+            raise ValueError("an entry refusal must name a declared reason and phase")
+        super().__init__(reason_code)
+        self.reason_code = reason_code
+        self.phase = phase
+
+
+@dataclass
+class _Observation:
+    """What this entry established, owned by the caller so it outlives a refusal."""
+
+    request_chain: list[str] = field(default_factory=list)
+    retrieval_timestamp: str | None = None
+    redirect_status: int | None = None
+    redirect_location: str | None = None
+    redirect_location_disposition: str = "no_response"
+    terminal_status: int | None = None
+    terminal_location: str | None = None
+    terminal_location_disposition: str = "no_response"
+    content_type: str | None = None
+    content_encoding: str | None = None
+    byte_count: int | None = None
+    content_sha256: str | None = None
+
+
 # --- helpers ------------------------------------------------------------------
 
 
@@ -245,25 +308,27 @@ def _content_type_accepted(value: str) -> bool:
     return bool(_TOKEN_RE.fullmatch(parameter.strip()))
 
 
-def _require_utc_instant(value: Any) -> str:
-    parsed = _parse_utc_instant(value)
-    if parsed is None:
-        raise CollectionError(
-            "the retrieval clock returned a value that is not a strict "
-            "timezone-aware UTC RFC3339 instant",
-            reason_code="retrieval_clock_invalid",
-        )
-    return parsed
+def _observed_status(value: Any) -> int | None:
+    """A usable HTTP status, or None when the response cannot be characterized.
+
+    ``bool`` is excluded explicitly: ``True == 1`` in Python, and a status of 1
+    is not a status. A response whose status cannot be read is treated as no
+    usable response at all, which keeps the phase and the recorded facts
+    consistent rather than pinning a null status into an evaluation phase.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if _STATUS_MIN <= value <= _STATUS_MAX else None
 
 
-def _blank_entry(entry: dict[str, str], status: str, reason: str | None) -> dict[str, Any]:
+def _base_entry(entry: dict[str, str], status: str) -> dict[str, Any]:
+    """The 20-field v0.2 entry with every observation empty."""
     return {
         "evidence_kind": entry["evidence_kind"],
         "requested_url": entry["requested_url"],
         "final_url": entry["final_url"],
         "entry_status": status,
-        "redirect_chain": [],
-        "http_status": None,
+        "request_chain": [],
         "content_type": None,
         "content_encoding": None,
         "byte_count": None,
@@ -271,8 +336,72 @@ def _blank_entry(entry: dict[str, str], status: str, reason: str | None) -> dict
         "raw_reference": None,
         "object_disposition": None,
         "retrieval_timestamp": None,
-        "failure_reason": reason,
+        "failure_reason": None,
+        "failure_phase": None,
+        "redirect_observed_status": None,
+        "redirect_observed_location": None,
+        "redirect_observed_location_disposition": "no_response",
+        "terminal_observed_status": None,
+        "terminal_observed_location": None,
+        "terminal_observed_location_disposition": "no_response",
     }
+
+
+def _observed_fields(observation: _Observation) -> dict[str, Any]:
+    return {
+        "request_chain": list(observation.request_chain),
+        "retrieval_timestamp": observation.retrieval_timestamp,
+        "redirect_observed_status": observation.redirect_status,
+        "redirect_observed_location": observation.redirect_location,
+        "redirect_observed_location_disposition": observation.redirect_location_disposition,
+        "terminal_observed_status": observation.terminal_status,
+        "terminal_observed_location": observation.terminal_location,
+        "terminal_observed_location_disposition": observation.terminal_location_disposition,
+    }
+
+
+def _failed_entry(
+    entry: dict[str, str], observation: _Observation, refusal: _EntryRefusal
+) -> dict[str, Any]:
+    """A truthful failure record: what was established, and exactly how far it got."""
+    record = _base_entry(entry, "failed")
+    record.update(_observed_fields(observation))
+    record["failure_reason"] = refusal.reason_code
+    record["failure_phase"] = refusal.phase
+    if refusal.phase == "persistence":
+        # The entity was accepted and storage refused it, so the entity facts
+        # are real. No object exists, so its two fields stay null.
+        record.update(
+            {
+                "content_type": observation.content_type,
+                "content_encoding": observation.content_encoding,
+                "byte_count": observation.byte_count,
+                "content_sha256": observation.content_sha256,
+            }
+        )
+    return record
+
+
+def _succeeded_entry(
+    entry: dict[str, str],
+    observation: _Observation,
+    *,
+    reference: str,
+    disposition: str,
+) -> dict[str, Any]:
+    record = _base_entry(entry, "succeeded")
+    record.update(_observed_fields(observation))
+    record.update(
+        {
+            "content_type": observation.content_type,
+            "content_encoding": observation.content_encoding,
+            "byte_count": observation.byte_count,
+            "content_sha256": observation.content_sha256,
+            "raw_reference": reference,
+            "object_disposition": disposition,
+        }
+    )
+    return record
 
 
 def _require_no_symlink_ancestry(root: Path, target: Path, code: str) -> None:
@@ -347,14 +476,20 @@ def _persist_object(raw_root: Path, evidence_kind: str, payload: bytes) -> tuple
     return reference, "created"
 
 
-def _fetch_entry(
+def _attempt_entry(
     entry: dict[str, str],
     *,
     retrieval_clock: RetrievalClock,
     accepted_total: int,
     spacer: Callable[[], None],
-) -> tuple[dict[str, Any], bytes]:
+    observation: _Observation,
+) -> bytes:
     """One entry: spacing, clock, keylog recheck, redirect hop, terminal document.
+
+    ``observation`` is owned by the caller and is populated as each fact is
+    established, so a refusal anywhere below leaves the caller holding
+    everything that was true at that moment. Returns the accepted entity bytes;
+    raises :class:`_EntryRefusal` for every entry-level refusal.
 
     ``spacer`` delays before every send after the very first of the attempt --
     six possible sends, so a full success produces exactly five delays. The
@@ -362,111 +497,118 @@ def _fetch_entry(
     initial request and immediately before it.
     """
     requested, final = entry["requested_url"], entry["final_url"]
-    _require_clean_url(requested, "redirect_location_mismatch")
-    _require_clean_url(final, "redirect_location_mismatch")
 
+    # --- entry_preflight: no send has been issued for this entry -------------
     spacer()  # before this entry's initial request
     try:
         stamp = retrieval_clock()
-    except CollectionError:
-        raise
     except Exception:  # noqa: BLE001 - the clock seam is total
-        raise CollectionError(
-            "the injected retrieval clock failed", reason_code="retrieval_clock_failed"
-        ) from None
-    stamp = _require_utc_instant(stamp)
+        raise _EntryRefusal("retrieval_clock_failed", "entry_preflight") from None
+    parsed = _parse_utc_instant(stamp)
+    if parsed is None:
+        raise _EntryRefusal("retrieval_clock_invalid", "entry_preflight")
+    observation.retrieval_timestamp = parsed
 
     # Rechecked immediately before every client construction: an appearance
     # between sends must stop the attempt, not be inherited from the preflight.
-    http_adapter.require_no_tls_keylog()
-    hop = _send_once(url=requested, iterate_body=False)
-    if hop.final_url != requested:
-        raise CollectionError(
-            "the transport answered a different request identity",
-            reason_code="response_request_identity_mismatch",
-        )
-    if hop.status == TERMINAL_STATUS:
-        raise CollectionError(
-            "the frozen route requires one redirect hop; a direct terminal "
-            "response is not the authorized route",
-            reason_code="direct_terminal_not_permitted",
-        )
-    if hop.status not in REDIRECT_STATUSES:
-        raise CollectionError(
-            "the initial response is not an accepted permanent redirect",
-            reason_code="redirect_status_invalid",
-        )
-    location = hop.location
-    if not location:
-        raise CollectionError(
-            "the redirect carries no Location", reason_code="redirect_location_missing"
-        )
-    if not location.startswith("https://"):
-        raise CollectionError(
-            "only an absolute https Location is accepted",
-            reason_code="redirect_location_not_absolute",
-        )
-    if location != final:
-        raise CollectionError(
-            "the Location does not match the frozen final URL",
-            reason_code="redirect_location_mismatch",
-        )
+    try:
+        http_adapter.require_no_tls_keylog()
+    except CollectionError as exc:
+        raise _EntryRefusal(exc.reason_code, "entry_preflight") from None
 
-    spacer()  # between the accepted redirect and its terminal request
-    http_adapter.require_no_tls_keylog()
-    remaining = TOTAL_ACCEPTED_ENTITY_BYTES_MAX - accepted_total
-    terminal = _send_once(
-        url=final,
-        iterate_body=True,
-        max_entity_bytes=min(MAX_ENTITY_BYTES_PER_RESPONSE, max(remaining, 0)),
+    # --- redirect_request: send one is initiated ------------------------------
+    observation.request_chain = [requested]
+    try:
+        hop = _send_once(url=requested, iterate_body=False)
+    except CollectionError as exc:
+        raise _EntryRefusal(exc.reason_code, "redirect_request") from None
+    hop_status = _observed_status(getattr(hop, "status", None))
+    if hop_status is None:
+        # No usable response, so the phase stays at the request rather than
+        # claiming an evaluation that never had a status to evaluate.
+        raise _EntryRefusal("transport_failed", "redirect_request")
+
+    # --- redirect_evaluation: send one answered -------------------------------
+    observation.redirect_status = hop_status
+    location, disposition = classify_observed_location(
+        hop.location, response_received=True
     )
+    observation.redirect_location = location
+    observation.redirect_location_disposition = disposition
+
+    if hop.final_url != requested:
+        raise _EntryRefusal("response_request_identity_mismatch", "redirect_evaluation")
+    if hop_status == TERMINAL_STATUS:
+        raise _EntryRefusal("direct_terminal_not_permitted", "redirect_evaluation")
+    if hop_status not in REDIRECT_STATUSES:
+        raise _EntryRefusal("redirect_status_invalid", "redirect_evaluation")
+    # Authorization runs on the adapter-exposed value itself, independently of
+    # whether that value was transcribable into the receipt.
+    observed = hop.location
+    if not observed:
+        raise _EntryRefusal("redirect_location_missing", "redirect_evaluation")
+    if not isinstance(observed, str) or not observed.startswith("https://"):
+        raise _EntryRefusal("redirect_location_not_absolute", "redirect_evaluation")
+    if observed != final:
+        raise _EntryRefusal("redirect_location_mismatch", "redirect_evaluation")
+
+    # --- terminal_preflight: the redirect was accepted, send two not issued ---
+    spacer()  # between the accepted redirect and its terminal request
+    try:
+        http_adapter.require_no_tls_keylog()
+    except CollectionError as exc:
+        raise _EntryRefusal(exc.reason_code, "terminal_preflight") from None
+
+    # --- terminal_request: send two is initiated ------------------------------
+    observation.request_chain = [requested, final]
+    remaining = TOTAL_ACCEPTED_ENTITY_BYTES_MAX - accepted_total
+    try:
+        terminal = _send_once(
+            url=final,
+            iterate_body=True,
+            max_entity_bytes=min(MAX_ENTITY_BYTES_PER_RESPONSE, max(remaining, 0)),
+        )
+    except CollectionError as exc:
+        raise _EntryRefusal(exc.reason_code, "terminal_request") from None
+    terminal_status = _observed_status(getattr(terminal, "status", None))
+    if terminal_status is None:
+        raise _EntryRefusal("transport_failed", "terminal_request")
+
+    # --- terminal_evaluation: send two answered -------------------------------
+    observation.terminal_status = terminal_status
+    terminal_location, terminal_disposition = classify_observed_location(
+        terminal.location, response_received=True
+    )
+    observation.terminal_location = terminal_location
+    observation.terminal_location_disposition = terminal_disposition
+
     if terminal.final_url != final:
-        raise CollectionError(
-            "the transport answered a different request identity",
-            reason_code="response_request_identity_mismatch",
-        )
-    if terminal.status in REDIRECT_STATUSES or 300 <= terminal.status < 400:
-        raise CollectionError(
-            "a second redirect is not permitted", reason_code="redirect_chain_too_long"
-        )
-    if terminal.status != TERMINAL_STATUS:
-        raise CollectionError(
-            "the terminal response status is not 200",
-            reason_code="terminal_status_invalid",
-        )
+        raise _EntryRefusal("response_request_identity_mismatch", "terminal_evaluation")
+    if 300 <= terminal_status < 400:
+        raise _EntryRefusal("redirect_chain_too_long", "terminal_evaluation")
+    if terminal_status != TERMINAL_STATUS:
+        raise _EntryRefusal("terminal_status_invalid", "terminal_evaluation")
     # The observed header is recorded verbatim; only a parsed copy is validated,
     # so the receipt reports what the server actually sent.
-    observed_content_type = terminal.headers.get("content-type") or ""
+    observed_content_type = terminal.headers.get("content-type")
+    if not isinstance(observed_content_type, str):
+        observed_content_type = ""
     if not _content_type_accepted(observed_content_type):
-        raise CollectionError(
-            "the terminal content type is not accepted",
-            reason_code="content_type_invalid",
-        )
+        raise _EntryRefusal("content_type_invalid", "terminal_evaluation")
     payload = terminal.entity_bytes or b""
     if not payload:
-        raise CollectionError(
-            "the terminal entity body is empty", reason_code="entity_empty"
-        )
+        raise _EntryRefusal("entity_empty", "terminal_evaluation")
     if accepted_total + len(payload) > TOTAL_ACCEPTED_ENTITY_BYTES_MAX:
         # Defensive drift branch: unreachable while three entries each cap at
         # 8 MiB and the total is 3 x 8 MiB.
-        raise CollectionError(
-            "the cumulative accepted entity ceiling would be exceeded",
-            reason_code="attempt_byte_ceiling_exceeded",
-        )
+        raise _EntryRefusal("attempt_byte_ceiling_exceeded", "terminal_evaluation")
 
-    record = _blank_entry(entry, "succeeded", None)
-    record.update(
-        {
-            "redirect_chain": [requested, final],
-            "http_status": terminal.status,
-            "content_type": observed_content_type,
-            "content_encoding": terminal.headers.get("content-encoding") or "identity",
-            "byte_count": len(payload),
-            "retrieval_timestamp": stamp,
-        }
-    )
-    return record, payload
+    encoding = terminal.headers.get("content-encoding")
+    observation.content_type = observed_content_type
+    observation.content_encoding = encoding if isinstance(encoding, str) and encoding else "identity"
+    observation.byte_count = len(payload)
+    observation.content_sha256 = sha256(payload).hexdigest()
+    return payload
 
 
 # --- public entry point -------------------------------------------------------
@@ -499,14 +641,20 @@ def collect_documentation_evidence(
     # [2] Static keylog preflight, before anything exists.
     http_adapter.require_no_tls_keylog()
     # [3] Schema bytes validated; digest derived. No file is re-read later.
-    schema_digest = validate_receipt_schema_bytes(receipt_schema_bytes)
+    schema_digest = validate_receipt_schema_v2_bytes(receipt_schema_bytes)
     # [4] Contract identities.
     adapter_digest = sha256(http_adapter.adapter_contract_bytes()).hexdigest()
     policy_digest = sha256(_canonical(POLICY_CONTRACT)).hexdigest()
-    # [5] Canonical attempt identity.
+    # [5] Canonical attempt identity. The frozen pairs are part of that identity,
+    # so their cleanliness is an attempt-level property checked once, for all
+    # three entries, before any send -- not a per-entry refusal wearing a
+    # redirect reason code it cannot truthfully carry.
     if not isinstance(code_commit, str) or not code_commit.strip():
         raise CollectionError("code_commit is required", reason_code="attempt_identity_invalid")
     _require_utc_instant_identity(run_created_at)
+    for entry in FROZEN_EVIDENCE_ENTRIES:
+        _require_clean_url(entry["requested_url"], "attempt_identity_invalid")
+        _require_clean_url(entry["final_url"], "attempt_identity_invalid")
     attempt_id = "docattempt-" + sha256(
         _canonical(
             {
@@ -514,7 +662,7 @@ def collect_documentation_evidence(
                 "run_created_at": run_created_at,
                 "adapter_contract_sha256": adapter_digest,
                 "policy_contract_sha256": policy_digest,
-                "receipt_contract_id": "documentation_collection_receipt@0.1.0",
+                "receipt_contract_id": RECEIPT_CONTRACT_V2,
                 "receipt_schema_sha256": schema_digest,
                 "ordered_pairs": [dict(e) for e in FROZEN_EVIDENCE_ENTRIES],
             }
@@ -555,29 +703,37 @@ def collect_documentation_evidence(
 
     for index, entry in enumerate(FROZEN_EVIDENCE_ENTRIES):
         if stopped_at is not None:
-            entries.append(_blank_entry(entry, "not_attempted", None))
+            entries.append(_base_entry(entry, "not_attempted"))
             continue
+        observation = _Observation()
         try:
-            record, payload = _fetch_entry(
+            payload = _attempt_entry(
                 entry,
                 retrieval_clock=retrieval_clock,
                 accepted_total=accepted_total,
                 spacer=spacer,
+                observation=observation,
             )
-            reference, disposition = _persist_object(
-                root, entry["evidence_kind"], payload
-            )
-            record["content_sha256"] = sha256(payload).hexdigest()
-            record["raw_reference"] = reference
-            record["object_disposition"] = disposition
+            try:
+                reference, disposition = _persist_object(
+                    root, entry["evidence_kind"], payload
+                )
+            except CollectionError as exc:
+                # Translated at the seam so the persistence phase is named and no
+                # explicit cause carries anything outward.
+                raise _EntryRefusal(exc.reason_code, "persistence") from None
             accepted_total += len(payload)
-            entries.append(record)
-        except CollectionError as exc:
-            entries.append(_blank_entry(entry, "failed", exc.reason_code))
+            entries.append(
+                _succeeded_entry(
+                    entry, observation, reference=reference, disposition=disposition
+                )
+            )
+        except _EntryRefusal as refusal:
+            entries.append(_failed_entry(entry, observation, refusal))
             stopped_at = index
 
     completion = "completed" if stopped_at is None else "stopped"
-    receipt = build_documentation_receipt(
+    receipt = build_documentation_receipt_v2(
         attempt_id=attempt_id,
         code_commit=code_commit,
         run_created_at=run_created_at,
@@ -589,7 +745,7 @@ def collect_documentation_evidence(
         completion_status=completion,
     )
     reference = "collection_receipt.json"
-    payload = receipt_bytes(receipt)
+    payload = receipt_bytes_v2(receipt)
     try:
         digest = write_bytes_once(
             attempt_root / reference, payload, what="documentation collection receipt"

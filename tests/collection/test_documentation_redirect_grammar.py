@@ -1,9 +1,14 @@
-"""The frozen route grammar: exactly one hop, exact pairs (ADR-037, E-C-D).
+"""The frozen route grammar: exactly one hop, exact pairs (ADR-037, ADR-038).
 
 All three frozen pairs differ, so the authorized route requires **exactly one**
 recognized redirect hop — not "at most one". A direct 200 at the requested URL
 is therefore not the authorized route and is refused, which is the case a
 "maximum one hop" reading would have silently accepted.
+
+ADR-038 keeps every refusal in this file identical and adds what 0.1.0 threw
+away: each refusal now also asserts the phase it reached and the observation it
+held at that moment, so a future regression that reintroduces the erasure fails
+here rather than only in the dedicated closure file.
 
 Offline: every send goes through a stub; nothing is written outside ``tmp_path``.
 """
@@ -18,7 +23,9 @@ from dynamic_ai_products.collection import documentation_policy as dp
 from dynamic_ai_products.collection.http_adapter import AdapterResponse
 
 ROOT = Path(__file__).resolve().parents[2]
-SCHEMA = (ROOT / "schemas" / "documentation_collection_receipt.schema.json").read_bytes()
+SCHEMA = (
+    ROOT / "schemas" / "documentation_collection_receipt.v2.schema.json"
+).read_bytes()
 BODY = b"<html><body>official claim</body></html>"
 HTML = {"content-type": "text/html; charset=utf-8"}
 COMMIT = "4bcbe2e059714f9a7592751a2a9d1d59d0293bfa"
@@ -52,7 +59,23 @@ def _happy(*, url, iterate_body, **kwargs):
 
 
 def _first_failure(result) -> dict:
-    return next(e for e in result.entries if e["entry_status"] == "failed")
+    """The failing entry, with the ADR-038 truthfulness invariants enforced.
+
+    Every refusal test in this file routes through here, so each one now also
+    proves that the recorded reason names a phase it can truthfully arise in and
+    that the request chain holds only frozen URLs this collector initiated.
+    """
+    from dynamic_ai_products.collection.documentation_receipt_v2 import REASON_PHASES
+
+    entry = next(e for e in result.entries if e["entry_status"] == "failed")
+    reason, phase = entry["failure_reason"], entry["failure_phase"]
+    assert phase in REASON_PHASES[reason], (reason, phase)
+    assert entry["request_chain"] in (
+        [],
+        [entry["requested_url"]],
+        [entry["requested_url"], entry["final_url"]],
+    )
+    return entry
 
 
 # --- the frozen pairs ---------------------------------------------------------
@@ -96,7 +119,13 @@ def test_the_happy_route_is_one_hop_then_two_hundred(monkeypatch, tmp_path: Path
     assert [flag for _, flag in sends] == [False, True, False, True, False, True]
     for entry in result.entries:
         assert entry["entry_status"] == "succeeded"
-        assert entry["redirect_chain"] == [entry["requested_url"], entry["final_url"]]
+        # Renamed by ADR-038: the chain lists what this collector requested.
+        assert entry["request_chain"] == [entry["requested_url"], entry["final_url"]]
+        assert "redirect_chain" not in entry
+        assert entry["redirect_observed_status"] == 301
+        assert entry["redirect_observed_location"] == entry["final_url"]
+        assert entry["terminal_observed_status"] == 200
+        assert entry["failure_phase"] is None
 
 
 # --- refusals -----------------------------------------------------------------
@@ -263,6 +292,40 @@ def test_a_mismatched_response_identity_is_refused_on_either_send(
         return AdapterResponse(200, None, HTML, answered, BODY, len(BODY))
 
     result = _run(monkeypatch, tmp_path, send)
-    assert (
-        _first_failure(result)["failure_reason"] == "response_request_identity_mismatch"
+    entry = _first_failure(result)
+    assert entry["failure_reason"] == "response_request_identity_mismatch"
+    # The policy holds a response in both cases, so the phase is the evaluation
+    # one and the observed status survives the refusal.
+    assert entry["failure_phase"] == (
+        "redirect_evaluation" if phase == "redirect" else "terminal_evaluation"
     )
+
+
+@pytest.mark.parametrize(
+    "location,reason,phase",
+    [
+        (None, "redirect_location_missing", "redirect_evaluation"),
+        ("/models/thinking", "redirect_location_not_absolute", "redirect_evaluation"),
+        ("https://evil.test/x", "redirect_location_mismatch", "redirect_evaluation"),
+    ],
+)
+def test_each_location_refusal_retains_its_observation(
+    monkeypatch, tmp_path: Path, location, reason, phase
+):
+    """The E-C-D1 defect, pinned in the grammar file it originally passed."""
+
+    def send(*, url, iterate_body, **kwargs):
+        return AdapterResponse(301, location, {}, url, None, 0)
+
+    entry = _first_failure(_run(monkeypatch, tmp_path, send))
+    assert entry["failure_reason"] == reason
+    assert entry["failure_phase"] == phase
+    assert entry["redirect_observed_status"] == 301
+    assert entry["retrieval_timestamp"] == STAMP
+    assert entry["request_chain"] == [entry["requested_url"]]
+    if location:
+        assert entry["redirect_observed_location"] == location
+        assert entry["redirect_observed_location_disposition"] == "recorded"
+    else:
+        assert entry["redirect_observed_location"] is None
+        assert entry["redirect_observed_location_disposition"] == "absent"

@@ -1,0 +1,2838 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "documentation_collection_receipt.v2.schema.json",
+  "title": "documentation_collection_receipt@0.2.0",
+  "comment": "ADR-038 (E-C-D1). Successor to documentation_collection_receipt@0.1.0, which is never modified because a live receipt already instantiates it. A failed entry now records what was actually established before the refusal -- failure_phase, the request-start timestamp, the observed HTTP status, and the adapter-exposed Location string -- instead of being blanked. request_chain replaces redirect_chain and lists only URLs this collector initiated, pinned per entry to three constants so an observed Location can never enter it and is never followed merely because it was observed. An observed location is the exact adapter-exposed Python string returned by httpx.Headers.get('location'): it is not wire bytes and does not preserve duplicate header-line boundaries, which that surface joins. It is either recorded unchanged or refused with a disposition that says why -- never truncated, and never present without a recorded disposition. The receipt owns retrieval_status only; whether the bytes carry the required official claim belongs to documentation_evidence_validation@0.1.0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "adapter_contract_sha256",
+    "attempt_id",
+    "code_commit",
+    "completion_status",
+    "contract",
+    "entries",
+    "policy_contract_sha256",
+    "receipt_schema_sha256",
+    "retrieval_timestamp_mode",
+    "run_created_at",
+    "schema_version"
+  ],
+  "properties": {
+    "contract": {
+      "const": "documentation_collection_receipt@0.2.0"
+    },
+    "schema_version": {
+      "const": "0.2.0"
+    },
+    "attempt_id": {
+      "type": "string",
+      "pattern": "^docattempt-[0-9a-f]{32}$"
+    },
+    "code_commit": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_created_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+    },
+    "adapter_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "policy_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "receipt_schema_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "retrieval_timestamp_mode": {
+      "const": "caller_injected_request_start_utc_v1"
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "byte_count",
+            "content_encoding",
+            "content_sha256",
+            "content_type",
+            "entry_status",
+            "evidence_kind",
+            "failure_phase",
+            "failure_reason",
+            "final_url",
+            "object_disposition",
+            "raw_reference",
+            "redirect_observed_location",
+            "redirect_observed_location_disposition",
+            "redirect_observed_status",
+            "request_chain",
+            "requested_url",
+            "retrieval_timestamp",
+            "terminal_observed_location",
+            "terminal_observed_location_disposition",
+            "terminal_observed_status"
+          ],
+          "properties": {
+            "evidence_kind": {
+              "const": "gemini_thinking"
+            },
+            "requested_url": {
+              "const": "https://cloud.google.com/vertex-ai/generative-ai/docs/thinking"
+            },
+            "final_url": {
+              "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+            },
+            "entry_status": {
+              "type": "string",
+              "enum": [
+                "succeeded",
+                "failed",
+                "not_attempted"
+              ]
+            },
+            "request_chain": {
+              "oneOf": [
+                {
+                  "const": []
+                },
+                {
+                  "const": [
+                    "https://cloud.google.com/vertex-ai/generative-ai/docs/thinking"
+                  ]
+                },
+                {
+                  "const": [
+                    "https://cloud.google.com/vertex-ai/generative-ai/docs/thinking",
+                    "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+                  ]
+                }
+              ]
+            },
+            "content_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "content_encoding": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "byte_count": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "content_sha256": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "raw_reference": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "object_disposition": {
+              "enum": [
+                "created",
+                "reused",
+                null
+              ]
+            },
+            "retrieval_timestamp": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+            },
+            "failure_reason": {
+              "enum": [
+                "attempt_byte_ceiling_exceeded",
+                "content_object_corrupt",
+                "content_type_invalid",
+                "destination_exists",
+                "direct_terminal_not_permitted",
+                "entity_empty",
+                "entity_too_large",
+                "redirect_chain_too_long",
+                "redirect_location_mismatch",
+                "redirect_location_missing",
+                "redirect_location_not_absolute",
+                "redirect_status_invalid",
+                "response_request_identity_mismatch",
+                "retrieval_clock_failed",
+                "retrieval_clock_invalid",
+                "terminal_status_invalid",
+                "tls_keylog_environment_present",
+                "transport_failed",
+                "transport_timeout",
+                "write_error",
+                null
+              ]
+            },
+            "failure_phase": {
+              "enum": [
+                "entry_preflight",
+                "redirect_request",
+                "redirect_evaluation",
+                "terminal_preflight",
+                "terminal_request",
+                "terminal_evaluation",
+                "persistence",
+                null
+              ]
+            },
+            "redirect_observed_status": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 100,
+              "maximum": 599
+            },
+            "redirect_observed_location": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "redirect_observed_location_disposition": {
+              "type": "string",
+              "enum": [
+                "no_response",
+                "absent",
+                "recorded",
+                "rejected_oversize",
+                "rejected_uncharacterizable"
+              ]
+            },
+            "terminal_observed_status": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 100,
+              "maximum": 599
+            },
+            "terminal_observed_location": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "terminal_observed_location_disposition": {
+              "type": "string",
+              "enum": [
+                "no_response",
+                "absent",
+                "recorded",
+                "rejected_oversize",
+                "rejected_uncharacterizable"
+              ]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": [
+                  "entry_status"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/thinking",
+                      "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+                    ]
+                  },
+                  "content_type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "content_encoding": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "byte_count": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "content_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "raw_reference": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "object_disposition": {
+                    "enum": [
+                      "created",
+                      "reused"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "failure_reason": {
+                    "const": null
+                  },
+                  "failure_phase": {
+                    "const": null
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "const": 200
+                  },
+                  "terminal_observed_location_disposition": {
+                    "enum": [
+                      "absent",
+                      "recorded",
+                      "rejected_oversize",
+                      "rejected_uncharacterizable"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "not_attempted"
+                  }
+                },
+                "required": [
+                  "entry_status"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": []
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  },
+                  "raw_reference": {
+                    "const": null
+                  },
+                  "object_disposition": {
+                    "const": null
+                  },
+                  "retrieval_timestamp": {
+                    "const": null
+                  },
+                  "redirect_observed_status": {
+                    "const": null
+                  },
+                  "redirect_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "failure_reason": {
+                    "const": null
+                  },
+                  "failure_phase": {
+                    "const": null
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "failed"
+                  }
+                },
+                "required": [
+                  "entry_status"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "failure_reason": {
+                    "type": "string",
+                    "enum": [
+                      "attempt_byte_ceiling_exceeded",
+                      "content_object_corrupt",
+                      "content_type_invalid",
+                      "destination_exists",
+                      "direct_terminal_not_permitted",
+                      "entity_empty",
+                      "entity_too_large",
+                      "redirect_chain_too_long",
+                      "redirect_location_mismatch",
+                      "redirect_location_missing",
+                      "redirect_location_not_absolute",
+                      "redirect_status_invalid",
+                      "response_request_identity_mismatch",
+                      "retrieval_clock_failed",
+                      "retrieval_clock_invalid",
+                      "terminal_status_invalid",
+                      "tls_keylog_environment_present",
+                      "transport_failed",
+                      "transport_timeout",
+                      "write_error"
+                    ]
+                  },
+                  "failure_phase": {
+                    "type": "string",
+                    "enum": [
+                      "entry_preflight",
+                      "redirect_request",
+                      "redirect_evaluation",
+                      "terminal_preflight",
+                      "terminal_request",
+                      "terminal_evaluation",
+                      "persistence"
+                    ]
+                  },
+                  "raw_reference": {
+                    "const": null
+                  },
+                  "object_disposition": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "entry_preflight"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": []
+                  },
+                  "redirect_observed_status": {
+                    "const": null
+                  },
+                  "redirect_observed_location": {
+                    "const": null
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "redirect_request"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/thinking"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "const": null
+                  },
+                  "redirect_observed_location": {
+                    "const": null
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "redirect_evaluation"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/thinking"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 599
+                  },
+                  "redirect_observed_location_disposition": {
+                    "enum": [
+                      "absent",
+                      "recorded",
+                      "rejected_oversize",
+                      "rejected_uncharacterizable"
+                    ]
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "terminal_preflight"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/thinking"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "terminal_request"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/thinking",
+                      "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "terminal_evaluation"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/thinking",
+                      "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 599
+                  },
+                  "terminal_observed_location_disposition": {
+                    "enum": [
+                      "absent",
+                      "recorded",
+                      "rejected_oversize",
+                      "rejected_uncharacterizable"
+                    ]
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "persistence"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/thinking",
+                      "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "const": 200
+                  },
+                  "terminal_observed_location_disposition": {
+                    "enum": [
+                      "absent",
+                      "recorded",
+                      "rejected_oversize",
+                      "rejected_uncharacterizable"
+                    ]
+                  },
+                  "content_type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "content_encoding": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "byte_count": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "content_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  }
+                },
+                "required": [
+                  "redirect_observed_location_disposition"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "redirect_observed_location": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "[\\x21-\\x7e]",
+                    "not": {
+                      "pattern": "[^\\x20-\\x7e]"
+                    }
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "redirect_observed_location": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "terminal_observed_location_disposition": {
+                    "const": "recorded"
+                  }
+                },
+                "required": [
+                  "terminal_observed_location_disposition"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "terminal_observed_location": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "[\\x21-\\x7e]",
+                    "not": {
+                      "pattern": "[^\\x20-\\x7e]"
+                    }
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "terminal_observed_location": {
+                    "const": null
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "byte_count",
+            "content_encoding",
+            "content_sha256",
+            "content_type",
+            "entry_status",
+            "evidence_kind",
+            "failure_phase",
+            "failure_reason",
+            "final_url",
+            "object_disposition",
+            "raw_reference",
+            "redirect_observed_location",
+            "redirect_observed_location_disposition",
+            "redirect_observed_status",
+            "request_chain",
+            "requested_url",
+            "retrieval_timestamp",
+            "terminal_observed_location",
+            "terminal_observed_location_disposition",
+            "terminal_observed_status"
+          ],
+          "properties": {
+            "evidence_kind": {
+              "const": "count_tokens"
+            },
+            "requested_url": {
+              "const": "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/get-token-count"
+            },
+            "final_url": {
+              "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/get-token-count"
+            },
+            "entry_status": {
+              "type": "string",
+              "enum": [
+                "succeeded",
+                "failed",
+                "not_attempted"
+              ]
+            },
+            "request_chain": {
+              "oneOf": [
+                {
+                  "const": []
+                },
+                {
+                  "const": [
+                    "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/get-token-count"
+                  ]
+                },
+                {
+                  "const": [
+                    "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/get-token-count",
+                    "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/get-token-count"
+                  ]
+                }
+              ]
+            },
+            "content_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "content_encoding": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "byte_count": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "content_sha256": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "raw_reference": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "object_disposition": {
+              "enum": [
+                "created",
+                "reused",
+                null
+              ]
+            },
+            "retrieval_timestamp": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+            },
+            "failure_reason": {
+              "enum": [
+                "attempt_byte_ceiling_exceeded",
+                "content_object_corrupt",
+                "content_type_invalid",
+                "destination_exists",
+                "direct_terminal_not_permitted",
+                "entity_empty",
+                "entity_too_large",
+                "redirect_chain_too_long",
+                "redirect_location_mismatch",
+                "redirect_location_missing",
+                "redirect_location_not_absolute",
+                "redirect_status_invalid",
+                "response_request_identity_mismatch",
+                "retrieval_clock_failed",
+                "retrieval_clock_invalid",
+                "terminal_status_invalid",
+                "tls_keylog_environment_present",
+                "transport_failed",
+                "transport_timeout",
+                "write_error",
+                null
+              ]
+            },
+            "failure_phase": {
+              "enum": [
+                "entry_preflight",
+                "redirect_request",
+                "redirect_evaluation",
+                "terminal_preflight",
+                "terminal_request",
+                "terminal_evaluation",
+                "persistence",
+                null
+              ]
+            },
+            "redirect_observed_status": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 100,
+              "maximum": 599
+            },
+            "redirect_observed_location": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "redirect_observed_location_disposition": {
+              "type": "string",
+              "enum": [
+                "no_response",
+                "absent",
+                "recorded",
+                "rejected_oversize",
+                "rejected_uncharacterizable"
+              ]
+            },
+            "terminal_observed_status": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 100,
+              "maximum": 599
+            },
+            "terminal_observed_location": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "terminal_observed_location_disposition": {
+              "type": "string",
+              "enum": [
+                "no_response",
+                "absent",
+                "recorded",
+                "rejected_oversize",
+                "rejected_uncharacterizable"
+              ]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": [
+                  "entry_status"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/get-token-count",
+                      "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/get-token-count"
+                    ]
+                  },
+                  "content_type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "content_encoding": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "byte_count": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "content_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "raw_reference": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "object_disposition": {
+                    "enum": [
+                      "created",
+                      "reused"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "failure_reason": {
+                    "const": null
+                  },
+                  "failure_phase": {
+                    "const": null
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/get-token-count"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "const": 200
+                  },
+                  "terminal_observed_location_disposition": {
+                    "enum": [
+                      "absent",
+                      "recorded",
+                      "rejected_oversize",
+                      "rejected_uncharacterizable"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "not_attempted"
+                  }
+                },
+                "required": [
+                  "entry_status"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": []
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  },
+                  "raw_reference": {
+                    "const": null
+                  },
+                  "object_disposition": {
+                    "const": null
+                  },
+                  "retrieval_timestamp": {
+                    "const": null
+                  },
+                  "redirect_observed_status": {
+                    "const": null
+                  },
+                  "redirect_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "failure_reason": {
+                    "const": null
+                  },
+                  "failure_phase": {
+                    "const": null
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "failed"
+                  }
+                },
+                "required": [
+                  "entry_status"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "failure_reason": {
+                    "type": "string",
+                    "enum": [
+                      "attempt_byte_ceiling_exceeded",
+                      "content_object_corrupt",
+                      "content_type_invalid",
+                      "destination_exists",
+                      "direct_terminal_not_permitted",
+                      "entity_empty",
+                      "entity_too_large",
+                      "redirect_chain_too_long",
+                      "redirect_location_mismatch",
+                      "redirect_location_missing",
+                      "redirect_location_not_absolute",
+                      "redirect_status_invalid",
+                      "response_request_identity_mismatch",
+                      "retrieval_clock_failed",
+                      "retrieval_clock_invalid",
+                      "terminal_status_invalid",
+                      "tls_keylog_environment_present",
+                      "transport_failed",
+                      "transport_timeout",
+                      "write_error"
+                    ]
+                  },
+                  "failure_phase": {
+                    "type": "string",
+                    "enum": [
+                      "entry_preflight",
+                      "redirect_request",
+                      "redirect_evaluation",
+                      "terminal_preflight",
+                      "terminal_request",
+                      "terminal_evaluation",
+                      "persistence"
+                    ]
+                  },
+                  "raw_reference": {
+                    "const": null
+                  },
+                  "object_disposition": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "entry_preflight"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": []
+                  },
+                  "redirect_observed_status": {
+                    "const": null
+                  },
+                  "redirect_observed_location": {
+                    "const": null
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "redirect_request"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/get-token-count"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "const": null
+                  },
+                  "redirect_observed_location": {
+                    "const": null
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "redirect_evaluation"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/get-token-count"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 599
+                  },
+                  "redirect_observed_location_disposition": {
+                    "enum": [
+                      "absent",
+                      "recorded",
+                      "rejected_oversize",
+                      "rejected_uncharacterizable"
+                    ]
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "terminal_preflight"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/get-token-count"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/get-token-count"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "terminal_request"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/get-token-count",
+                      "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/get-token-count"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/get-token-count"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "terminal_evaluation"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/get-token-count",
+                      "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/get-token-count"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/get-token-count"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 599
+                  },
+                  "terminal_observed_location_disposition": {
+                    "enum": [
+                      "absent",
+                      "recorded",
+                      "rejected_oversize",
+                      "rejected_uncharacterizable"
+                    ]
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "persistence"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/get-token-count",
+                      "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/get-token-count"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/get-token-count"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "const": 200
+                  },
+                  "terminal_observed_location_disposition": {
+                    "enum": [
+                      "absent",
+                      "recorded",
+                      "rejected_oversize",
+                      "rejected_uncharacterizable"
+                    ]
+                  },
+                  "content_type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "content_encoding": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "byte_count": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "content_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  }
+                },
+                "required": [
+                  "redirect_observed_location_disposition"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "redirect_observed_location": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "[\\x21-\\x7e]",
+                    "not": {
+                      "pattern": "[^\\x20-\\x7e]"
+                    }
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "redirect_observed_location": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "terminal_observed_location_disposition": {
+                    "const": "recorded"
+                  }
+                },
+                "required": [
+                  "terminal_observed_location_disposition"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "terminal_observed_location": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "[\\x21-\\x7e]",
+                    "not": {
+                      "pattern": "[^\\x20-\\x7e]"
+                    }
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "terminal_observed_location": {
+                    "const": null
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "byte_count",
+            "content_encoding",
+            "content_sha256",
+            "content_type",
+            "entry_status",
+            "evidence_kind",
+            "failure_phase",
+            "failure_reason",
+            "final_url",
+            "object_disposition",
+            "raw_reference",
+            "redirect_observed_location",
+            "redirect_observed_location_disposition",
+            "redirect_observed_status",
+            "request_chain",
+            "requested_url",
+            "retrieval_timestamp",
+            "terminal_observed_location",
+            "terminal_observed_location_disposition",
+            "terminal_observed_status"
+          ],
+          "properties": {
+            "evidence_kind": {
+              "const": "pricing_standard"
+            },
+            "requested_url": {
+              "const": "https://cloud.google.com/vertex-ai/generative-ai/pricing"
+            },
+            "final_url": {
+              "const": "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing"
+            },
+            "entry_status": {
+              "type": "string",
+              "enum": [
+                "succeeded",
+                "failed",
+                "not_attempted"
+              ]
+            },
+            "request_chain": {
+              "oneOf": [
+                {
+                  "const": []
+                },
+                {
+                  "const": [
+                    "https://cloud.google.com/vertex-ai/generative-ai/pricing"
+                  ]
+                },
+                {
+                  "const": [
+                    "https://cloud.google.com/vertex-ai/generative-ai/pricing",
+                    "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing"
+                  ]
+                }
+              ]
+            },
+            "content_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "content_encoding": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "byte_count": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "content_sha256": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "raw_reference": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "object_disposition": {
+              "enum": [
+                "created",
+                "reused",
+                null
+              ]
+            },
+            "retrieval_timestamp": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+            },
+            "failure_reason": {
+              "enum": [
+                "attempt_byte_ceiling_exceeded",
+                "content_object_corrupt",
+                "content_type_invalid",
+                "destination_exists",
+                "direct_terminal_not_permitted",
+                "entity_empty",
+                "entity_too_large",
+                "redirect_chain_too_long",
+                "redirect_location_mismatch",
+                "redirect_location_missing",
+                "redirect_location_not_absolute",
+                "redirect_status_invalid",
+                "response_request_identity_mismatch",
+                "retrieval_clock_failed",
+                "retrieval_clock_invalid",
+                "terminal_status_invalid",
+                "tls_keylog_environment_present",
+                "transport_failed",
+                "transport_timeout",
+                "write_error",
+                null
+              ]
+            },
+            "failure_phase": {
+              "enum": [
+                "entry_preflight",
+                "redirect_request",
+                "redirect_evaluation",
+                "terminal_preflight",
+                "terminal_request",
+                "terminal_evaluation",
+                "persistence",
+                null
+              ]
+            },
+            "redirect_observed_status": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 100,
+              "maximum": 599
+            },
+            "redirect_observed_location": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "redirect_observed_location_disposition": {
+              "type": "string",
+              "enum": [
+                "no_response",
+                "absent",
+                "recorded",
+                "rejected_oversize",
+                "rejected_uncharacterizable"
+              ]
+            },
+            "terminal_observed_status": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 100,
+              "maximum": 599
+            },
+            "terminal_observed_location": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "terminal_observed_location_disposition": {
+              "type": "string",
+              "enum": [
+                "no_response",
+                "absent",
+                "recorded",
+                "rejected_oversize",
+                "rejected_uncharacterizable"
+              ]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "succeeded"
+                  }
+                },
+                "required": [
+                  "entry_status"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/pricing",
+                      "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing"
+                    ]
+                  },
+                  "content_type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "content_encoding": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "byte_count": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "content_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "raw_reference": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "object_disposition": {
+                    "enum": [
+                      "created",
+                      "reused"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "failure_reason": {
+                    "const": null
+                  },
+                  "failure_phase": {
+                    "const": null
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "const": 200
+                  },
+                  "terminal_observed_location_disposition": {
+                    "enum": [
+                      "absent",
+                      "recorded",
+                      "rejected_oversize",
+                      "rejected_uncharacterizable"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "not_attempted"
+                  }
+                },
+                "required": [
+                  "entry_status"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": []
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  },
+                  "raw_reference": {
+                    "const": null
+                  },
+                  "object_disposition": {
+                    "const": null
+                  },
+                  "retrieval_timestamp": {
+                    "const": null
+                  },
+                  "redirect_observed_status": {
+                    "const": null
+                  },
+                  "redirect_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "failure_reason": {
+                    "const": null
+                  },
+                  "failure_phase": {
+                    "const": null
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "entry_status": {
+                    "const": "failed"
+                  }
+                },
+                "required": [
+                  "entry_status"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "failure_reason": {
+                    "type": "string",
+                    "enum": [
+                      "attempt_byte_ceiling_exceeded",
+                      "content_object_corrupt",
+                      "content_type_invalid",
+                      "destination_exists",
+                      "direct_terminal_not_permitted",
+                      "entity_empty",
+                      "entity_too_large",
+                      "redirect_chain_too_long",
+                      "redirect_location_mismatch",
+                      "redirect_location_missing",
+                      "redirect_location_not_absolute",
+                      "redirect_status_invalid",
+                      "response_request_identity_mismatch",
+                      "retrieval_clock_failed",
+                      "retrieval_clock_invalid",
+                      "terminal_status_invalid",
+                      "tls_keylog_environment_present",
+                      "transport_failed",
+                      "transport_timeout",
+                      "write_error"
+                    ]
+                  },
+                  "failure_phase": {
+                    "type": "string",
+                    "enum": [
+                      "entry_preflight",
+                      "redirect_request",
+                      "redirect_evaluation",
+                      "terminal_preflight",
+                      "terminal_request",
+                      "terminal_evaluation",
+                      "persistence"
+                    ]
+                  },
+                  "raw_reference": {
+                    "const": null
+                  },
+                  "object_disposition": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "entry_preflight"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": []
+                  },
+                  "redirect_observed_status": {
+                    "const": null
+                  },
+                  "redirect_observed_location": {
+                    "const": null
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "redirect_request"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/pricing"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "const": null
+                  },
+                  "redirect_observed_location": {
+                    "const": null
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "redirect_evaluation"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/pricing"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 599
+                  },
+                  "redirect_observed_location_disposition": {
+                    "enum": [
+                      "absent",
+                      "recorded",
+                      "rejected_oversize",
+                      "rejected_uncharacterizable"
+                    ]
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "terminal_preflight"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/pricing"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "terminal_request"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/pricing",
+                      "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "const": null
+                  },
+                  "terminal_observed_location": {
+                    "const": null
+                  },
+                  "terminal_observed_location_disposition": {
+                    "const": "no_response"
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "terminal_evaluation"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/pricing",
+                      "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 599
+                  },
+                  "terminal_observed_location_disposition": {
+                    "enum": [
+                      "absent",
+                      "recorded",
+                      "rejected_oversize",
+                      "rejected_uncharacterizable"
+                    ]
+                  },
+                  "content_type": {
+                    "const": null
+                  },
+                  "content_encoding": {
+                    "const": null
+                  },
+                  "byte_count": {
+                    "const": null
+                  },
+                  "content_sha256": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "failure_phase": {
+                    "const": "persistence"
+                  }
+                },
+                "required": [
+                  "failure_phase"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "request_chain": {
+                    "const": [
+                      "https://cloud.google.com/vertex-ai/generative-ai/pricing",
+                      "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing"
+                    ]
+                  },
+                  "retrieval_timestamp": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|\\+00:00)$"
+                  },
+                  "redirect_observed_status": {
+                    "enum": [
+                      301,
+                      308
+                    ]
+                  },
+                  "redirect_observed_location": {
+                    "const": "https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing"
+                  },
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  },
+                  "terminal_observed_status": {
+                    "const": 200
+                  },
+                  "terminal_observed_location_disposition": {
+                    "enum": [
+                      "absent",
+                      "recorded",
+                      "rejected_oversize",
+                      "rejected_uncharacterizable"
+                    ]
+                  },
+                  "content_type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "content_encoding": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "byte_count": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "content_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "redirect_observed_location_disposition": {
+                    "const": "recorded"
+                  }
+                },
+                "required": [
+                  "redirect_observed_location_disposition"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "redirect_observed_location": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "[\\x21-\\x7e]",
+                    "not": {
+                      "pattern": "[^\\x20-\\x7e]"
+                    }
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "redirect_observed_location": {
+                    "const": null
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "terminal_observed_location_disposition": {
+                    "const": "recorded"
+                  }
+                },
+                "required": [
+                  "terminal_observed_location_disposition"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "terminal_observed_location": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "[\\x21-\\x7e]",
+                    "not": {
+                      "pattern": "[^\\x20-\\x7e]"
+                    }
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "terminal_observed_location": {
+                    "const": null
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "items": false
+    },
+    "completion_status": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "stopped"
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "completion_status": {
+          "const": "completed"
+        },
+        "entries": {
+          "prefixItems": [
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "succeeded"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "completion_status": {
+          "const": "stopped"
+        },
+        "entries": {
+          "prefixItems": [
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "failed"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "not_attempted"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "not_attempted"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "completion_status": {
+          "const": "stopped"
+        },
+        "entries": {
+          "prefixItems": [
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "failed"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "not_attempted"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "completion_status": {
+          "const": "stopped"
+        },
+        "entries": {
+          "prefixItems": [
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "succeeded"
+                }
+              }
+            },
+            {
+              "properties": {
+                "entry_status": {
+                  "const": "failed"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

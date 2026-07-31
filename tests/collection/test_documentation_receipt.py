@@ -1,9 +1,24 @@
-"""The attempt-level receipt and its manual schema loader (ADR-037, E-C-D).
+"""The attempt-level receipt and its manual schema loader (ADR-037, ADR-038).
 
 The loader is deliberately hand-written rather than ``jsonschema``-driven: that
 package sits in the ``dev`` extra, not the base dependencies, and
 ``pyproject.toml`` is outside this increment's path set. What it validates is the
 schema *document's* shape, which is all the attempt identity needs to bind.
+
+**Two contracts, kept apart (ADR-038).** This file owns the frozen
+``documentation_collection_receipt@0.1.0`` contract: its loader, its builder, its
+schema and its terminal sequencing. It had also grown live-collector tests that
+fed the collector ``SCHEMA`` and validated the result against it — an identity
+the collector no longer publishes. Those two roles are now separated:
+
+* ``SCHEMA`` stays bound to 0.1.0 and every pure contract test uses it, with its
+  fixtures **built directly** rather than harvested from a collector run;
+* ``V2_SCHEMA`` is what the collector is given, because the collector publishes
+  ``documentation_collection_receipt@0.2.0``.
+
+No 0.2.0 receipt is ever validated against the 0.1.0 schema here — the two
+contracts reject each other by design, which
+``tests/collection/test_documentation_receipt_v2.py`` proves.
 """
 
 from __future__ import annotations
@@ -36,6 +51,9 @@ from dynamic_ai_products.collection.http_adapter import AdapterResponse
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = ROOT / "schemas" / "documentation_collection_receipt.schema.json"
 SCHEMA = SCHEMA_PATH.read_bytes()
+# What the collector is given: it publishes 0.2.0, never 0.1.0.
+V2_SCHEMA_PATH = ROOT / "schemas" / "documentation_collection_receipt.v2.schema.json"
+V2_SCHEMA = V2_SCHEMA_PATH.read_bytes()
 BODY = b"<html><body>official claim</body></html>"
 HTML = {"content-type": "text/html; charset=utf-8"}
 COMMIT = "4bcbe2e059714f9a7592751a2a9d1d59d0293bfa"
@@ -57,7 +75,7 @@ def _collect(monkeypatch, tmp_path: Path, *, send=_happy, clock=None):
     monkeypatch.setattr(dp, "_sleep", lambda s: None)
     return dp.collect_documentation_evidence(
         raw_root=tmp_path,
-        receipt_schema_bytes=SCHEMA,
+        receipt_schema_bytes=V2_SCHEMA,
         code_commit=COMMIT,
         run_created_at=STAMP,
         retrieval_clock=clock or (lambda: STAMP),
@@ -266,72 +284,102 @@ def test_a_duplicated_required_declaration_is_refused():
 # --- the schema itself, exercised with a real validator -----------------------
 
 
-def _valid_receipt(monkeypatch, tmp_path: Path) -> dict:
-    result = _collect(monkeypatch, tmp_path)
-    return json.loads(
-        (result.attempt_root / result.receipt_reference).read_text(encoding="utf-8")
+def _succeeded_entries() -> list[dict]:
+    """Three succeeded v0.1.0 entries, built directly against the frozen shape.
+
+    Built rather than harvested from a collector run: the collector publishes
+    0.2.0 now, and validating that against this schema would be exactly the
+    cross-contract confusion ADR-038 separates.
+    """
+    from hashlib import sha256
+
+    digest = sha256(BODY).hexdigest()
+    entries = []
+    for frozen in FROZEN_ENTRY_IDENTITIES:
+        entry = {field: None for field in ENTRY_PROPERTIES}
+        entry.update(frozen)
+        entry["entry_status"] = "succeeded"
+        entry["redirect_chain"] = [frozen["requested_url"], frozen["final_url"]]
+        entry["http_status"] = 200
+        entry["content_type"] = HTML["content-type"]
+        entry["content_encoding"] = "identity"
+        entry["byte_count"] = len(BODY)
+        entry["content_sha256"] = digest
+        entry["raw_reference"] = (
+            f"{frozen['evidence_kind']}/sha256-{digest}/document.html"
+        )
+        entry["object_disposition"] = "created"
+        entry["retrieval_timestamp"] = STAMP
+        entries.append(entry)
+    return entries
+
+
+def _valid_receipt() -> dict:
+    """A completed v0.1.0 receipt, constructed directly."""
+    return build_documentation_receipt(
+        attempt_id="docattempt-" + "0" * 32,
+        code_commit=COMMIT,
+        run_created_at=STAMP,
+        adapter_contract_sha256="1" * 64,
+        policy_contract_sha256="2" * 64,
+        receipt_schema_sha256="3" * 64,
+        retrieval_timestamp_mode=dp.RETRIEVAL_TIMESTAMP_MODE,
+        entries=_succeeded_entries(),
+        completion_status="completed",
     )
 
 
-def test_a_published_receipt_validates_against_the_committed_schema(
-    monkeypatch, tmp_path: Path
-):
+def test_a_completed_v1_receipt_validates_against_the_committed_schema():
     from jsonschema import Draft202012Validator
 
     schema = json.loads(SCHEMA.decode("utf-8"))
     Draft202012Validator.check_schema(schema)
-    Draft202012Validator(schema).validate(_valid_receipt(monkeypatch, tmp_path))
+    Draft202012Validator(schema).validate(_valid_receipt())
 
 
-def test_a_stopped_receipt_validates_against_the_committed_schema(
-    monkeypatch, tmp_path: Path
-):
+def test_a_stopped_v1_receipt_validates_against_the_committed_schema():
     from jsonschema import Draft202012Validator
 
     schema = json.loads(SCHEMA.decode("utf-8"))
-    result = _collect(monkeypatch, tmp_path, clock=lambda: "bad")
-    receipt = json.loads(
-        (result.attempt_root / result.receipt_reference).read_text(encoding="utf-8")
-    )
-    Draft202012Validator(schema).validate(receipt)
+    Draft202012Validator(schema).validate(_valid_stopped_receipt())
 
 
 @pytest.mark.parametrize("count", [0, 2, 4], ids=["zero", "two", "four"])
-def test_the_schema_rejects_a_wrong_entry_count(monkeypatch, tmp_path: Path, count):
+def test_the_schema_rejects_a_wrong_entry_count(count):
     from jsonschema import Draft202012Validator, ValidationError
 
     schema = json.loads(SCHEMA.decode("utf-8"))
-    receipt = _valid_receipt(monkeypatch, tmp_path)
+    receipt = _valid_receipt()
     receipt["entries"] = (receipt["entries"] * 2)[:count]
     with pytest.raises(ValidationError):
         Draft202012Validator(schema).validate(receipt)
 
 
-def test_the_schema_rejects_reordered_entry_identities(monkeypatch, tmp_path: Path):
+def test_the_schema_rejects_reordered_entry_identities():
     from jsonschema import Draft202012Validator, ValidationError
 
     schema = json.loads(SCHEMA.decode("utf-8"))
-    receipt = _valid_receipt(monkeypatch, tmp_path)
+    receipt = _valid_receipt()
     receipt["entries"] = list(reversed(receipt["entries"]))
     with pytest.raises(ValidationError):
         Draft202012Validator(schema).validate(receipt)
 
 
-def test_the_schema_rejects_a_foreign_url(monkeypatch, tmp_path: Path):
+def test_the_schema_rejects_a_foreign_url():
     from jsonschema import Draft202012Validator, ValidationError
 
     schema = json.loads(SCHEMA.decode("utf-8"))
-    receipt = _valid_receipt(monkeypatch, tmp_path)
+    receipt = _valid_receipt()
     receipt["entries"][0]["final_url"] = "https://evil.test/x"
     with pytest.raises(ValidationError):
         Draft202012Validator(schema).validate(receipt)
 
 
-def test_the_schema_rejects_an_unknown_failure_reason(monkeypatch, tmp_path: Path):
+def test_the_schema_rejects_an_unknown_failure_reason():
     from jsonschema import Draft202012Validator, ValidationError
 
     schema = json.loads(SCHEMA.decode("utf-8"))
-    receipt = _valid_receipt(monkeypatch, tmp_path)
+    receipt = _valid_receipt()
     receipt["entries"][0]["entry_status"] = "failed"
     receipt["entries"][0]["failure_reason"] = "evidence_body_unusable"
     with pytest.raises(ValidationError):
@@ -349,16 +397,21 @@ def test_the_schema_rejects_an_unknown_failure_reason(monkeypatch, tmp_path: Pat
     ids=["failed-with-payload", "succeeded-without-digest",
          "succeeded-without-disposition", "stopped-without-a-failure"],
 )
-def test_the_schema_rejects_contradictory_status_and_payload(
-    monkeypatch, tmp_path: Path, mutate
-):
+def test_the_schema_rejects_contradictory_status_and_payload(mutate):
     from jsonschema import Draft202012Validator, ValidationError
 
     schema = json.loads(SCHEMA.decode("utf-8"))
-    receipt = _valid_receipt(monkeypatch, tmp_path)
+    receipt = _valid_receipt()
     mutate(receipt)
     with pytest.raises(ValidationError):
         Draft202012Validator(schema).validate(receipt)
+
+
+def test_the_two_contracts_stay_separated_in_this_file():
+    """A 0.2.0 receipt is never validated against the 0.1.0 schema here."""
+    assert RECEIPT_CONTRACT == "documentation_collection_receipt@0.1.0"
+    assert _valid_receipt()["contract"] == RECEIPT_CONTRACT
+    assert b"@0.2.0" in V2_SCHEMA and b"@0.2.0" not in SCHEMA
 
 
 # --- canonical bytes ----------------------------------------------------------
@@ -415,7 +468,10 @@ def test_a_completed_attempt_publishes_one_write_once_receipt(
     path = result.attempt_root / result.receipt_reference
     assert path.is_file()
     receipt = json.loads(path.read_text(encoding="utf-8"))
-    assert receipt["contract"] == RECEIPT_CONTRACT
+    # The collector publishes the 0.2.0 successor, not this module's contract.
+    assert receipt["contract"] == "documentation_collection_receipt@0.2.0"
+    assert receipt["contract"] != RECEIPT_CONTRACT
+    assert receipt["schema_version"] == "0.2.0"
     assert receipt["attempt_id"] == result.attempt_id
     assert receipt["completion_status"] == "completed"
     assert len(receipt["entries"]) == 3
@@ -523,7 +579,7 @@ def test_an_identical_object_is_reused_not_overwritten(monkeypatch, tmp_path: Pa
     monkeypatch.setattr(dp, "_sleep", lambda s: None)
     second = dp.collect_documentation_evidence(
         raw_root=tmp_path,
-        receipt_schema_bytes=SCHEMA,
+        receipt_schema_bytes=V2_SCHEMA,
         code_commit="b" * 40,
         run_created_at=STAMP,
         retrieval_clock=lambda: STAMP,

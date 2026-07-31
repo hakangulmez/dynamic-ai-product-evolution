@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **531**
+Total tracked/scaffold files listed: **535**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -238,6 +238,7 @@ Total tracked/scaffold files listed: **531**
 - `schemas/evaluation_result.v2.schema.json`
 - `schemas/extraction_candidate_collection.schema.json`
 - `schemas/documentation_collection_receipt.schema.json`
+- `schemas/documentation_collection_receipt.v2.schema.json`
 - `schemas/extraction_input_packet.schema.json`
 - `schemas/extraction_input_packet.v2.schema.json`
 - `schemas/extraction_non_run_record.schema.json`
@@ -321,6 +322,7 @@ Total tracked/scaffold files listed: **531**
 - `src/dynamic_ai_products/collection/coverage_v2.py`
 - `src/dynamic_ai_products/collection/documentation_policy.py`
 - `src/dynamic_ai_products/collection/documentation_receipt.py`
+- `src/dynamic_ai_products/collection/documentation_receipt_v2.py`
 - `src/dynamic_ai_products/collection/discovery.py`
 - `src/dynamic_ai_products/collection/domains.py`
 - `src/dynamic_ai_products/collection/errors.py`
@@ -425,8 +427,10 @@ Total tracked/scaffold files listed: **531**
 - `tests/collection/test_coverage_v2.py`
 - `tests/collection/test_discovery.py`
 - `tests/collection/test_domains.py`
+- `tests/collection/test_documentation_observation_recording.py`
 - `tests/collection/test_documentation_policy.py`
 - `tests/collection/test_documentation_receipt.py`
+- `tests/collection/test_documentation_receipt_v2.py`
 - `tests/collection/test_documentation_redirect_grammar.py`
 - `tests/collection/test_http_adapter.py`
 - `tests/collection/test_manifests.py`

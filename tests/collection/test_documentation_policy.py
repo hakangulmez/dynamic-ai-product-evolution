@@ -1,9 +1,15 @@
-"""The documentation acquisition policy (ADR-037, E-C-D).
+"""The documentation acquisition policy (ADR-037, ADR-038; E-C-D, E-C-D1).
 
 Offline throughout: the transport is a stub reached only through the
 module-private ``_send_once`` seam, spacing goes through ``_sleep``, and every
 write lands under ``tmp_path``. Nothing here retrieves a real URL and nothing
 touches ``data/``.
+
+ADR-038 moved the policy onto ``documentation_collection_receipt@0.2.0``, so the
+schema loaded here is the v2 file. The clock-failure and success expectations
+below are unchanged on measurement: those are pre-send refusals and successes,
+where a null timestamp was already truthful. What they gain is a
+``failure_phase`` assertion, which is the fact 0.1.0 could not express at all.
 """
 
 from __future__ import annotations
@@ -21,7 +27,9 @@ from dynamic_ai_products.collection.http_adapter import AdapterResponse
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src" / "dynamic_ai_products" / "collection"
-SCHEMA = (ROOT / "schemas" / "documentation_collection_receipt.schema.json").read_bytes()
+SCHEMA = (
+    ROOT / "schemas" / "documentation_collection_receipt.v2.schema.json"
+).read_bytes()
 BODY = b"<html><body>official claim</body></html>"
 HTML = {"content-type": "text/html; charset=utf-8"}
 COMMIT = "4bcbe2e059714f9a7592751a2a9d1d59d0293bfa"
@@ -173,6 +181,14 @@ def test_a_keylog_appearing_between_sends_stops_and_preserves_earlier_objects(
     statuses = [e["entry_status"] for e in result.entries]
     assert statuses == ["succeeded", "failed", "not_attempted"]
     assert result.entries[1]["failure_reason"] == "tls_keylog_environment_present"
+    # The keylog appears during entry two's redirect send, so its own preflight
+    # had already passed: the refusal lands on the recheck before send two.
+    assert result.entries[1]["failure_phase"] == "terminal_preflight"
+    assert result.entries[1]["retrieval_timestamp"] == STAMP
+    assert result.entries[1]["redirect_observed_status"] in dp.REDIRECT_STATUSES
+    assert result.entries[1]["request_chain"] == [
+        dp.FROZEN_EVIDENCE_ENTRIES[1]["requested_url"]
+    ]
     # The first object survives.
     assert any("gemini_thinking" in f for f in _files(tmp_path))
 
@@ -278,7 +294,11 @@ def test_an_invalid_clock_value_fails_the_entry_with_no_sends(
     result = _collect(monkeypatch, tmp_path, send=send, clock=lambda: value)
     assert result.completion_status == "stopped"
     assert result.entries[0]["failure_reason"] == "retrieval_clock_invalid"
+    # Still null, and now also phase-attributed: no instant was ever established,
+    # so this is the one phase where a null timestamp remains truthful.
     assert result.entries[0]["retrieval_timestamp"] is None
+    assert result.entries[0]["failure_phase"] == "entry_preflight"
+    assert result.entries[0]["request_chain"] == []
     assert [e["entry_status"] for e in result.entries] == [
         "failed",
         "not_attempted",
@@ -297,7 +317,10 @@ def test_a_raising_clock_fails_the_entry_with_no_sends(monkeypatch, tmp_path: Pa
     )
     assert result.entries[0]["failure_reason"] == "retrieval_clock_failed"
     assert result.entries[0]["retrieval_timestamp"] is None
+    assert result.entries[0]["failure_phase"] == "entry_preflight"
     assert sends == []
+    # The upstream detail never reaches the artifact.
+    assert "upstream secret detail" not in json.dumps(result.entries[0])
 
 
 def test_not_attempted_entries_carry_a_null_timestamp(monkeypatch, tmp_path: Path):
@@ -306,6 +329,9 @@ def test_not_attempted_entries_carry_a_null_timestamp(monkeypatch, tmp_path: Pat
         assert entry["entry_status"] == "not_attempted"
         assert entry["retrieval_timestamp"] is None
         assert entry["failure_reason"] is None
+        assert entry["failure_phase"] is None
+        assert entry["request_chain"] == []
+        assert entry["redirect_observed_location_disposition"] == "no_response"
 
 
 def test_the_retrieval_timestamp_mode_travels_with_the_artifact(
@@ -515,6 +541,7 @@ def test_an_impossible_or_non_utc_clock_value_is_refused(
     )
     assert result.entries[0]["failure_reason"] == "retrieval_clock_invalid"
     assert result.entries[0]["retrieval_timestamp"] is None
+    assert result.entries[0]["failure_phase"] == "entry_preflight"
     assert sends == []
 
 
@@ -545,6 +572,7 @@ def test_a_real_utc_instant_is_accepted(monkeypatch, tmp_path: Path, value):
     result = _collect(monkeypatch, tmp_path, clock=lambda: value)
     assert result.completion_status == "completed"
     assert result.entries[0]["retrieval_timestamp"] == value
+    assert result.entries[0]["failure_phase"] is None
 
 
 # --- content-type grammar -----------------------------------------------------
