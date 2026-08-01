@@ -1164,8 +1164,8 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     text = (ROOT / "REPO_MANIFEST.md").read_text(encoding="utf-8")
     declared = int(re.search(r"listed:\s*\*\*(\d+)\*\*", text).group(1))
     paths = re.findall(r"^- `([^`]+)`$", text, flags=re.MULTILINE)
-    # 548 = 539 + the nine ADR-040 (E-C-D3) paths.
-    assert declared == len(paths) == 548
+    # 557 = 548 + the nine ADR-041 (E-C-D4) paths.
+    assert declared == len(paths) == 557
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

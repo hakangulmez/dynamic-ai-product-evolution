@@ -20,9 +20,9 @@ ADR-037 (E-C-D) adds documentation-evidence acquisition and, with it, this
 package's first outbound transport. Two boundaries keep that narrow:
 
 - ``http_adapter`` is the **only** module here that may import ``httpx``, and the
-  two named documentation policies -- ``documentation_policy`` (v0.3) and
-  ``documentation_policy_v4`` -- are the **only** production modules that may
-  import ``http_adapter``. Neither adapter nor seam is exported below: no public
+  three named documentation policies -- ``documentation_policy`` (v0.3),
+  ``documentation_policy_v4`` and ``documentation_policy_v5`` -- are the **only**
+  production modules that may import ``http_adapter``. Neither adapter nor seam is exported below: no public
   name exposes a raw ``send(url)`` capability, so the governed entry points are
   the only route to the network. Direct adapter use elsewhere is
   ``noncanonical_experiment`` and is barred from governed artifacts;
@@ -32,12 +32,13 @@ package's first outbound transport. Two boundaries keep that narrow:
   policies implement their own rule over the same generic adapter rather than
   loosening a hard-bound guarantee for an unrelated purpose.
 
-ADR-040 (E-C-D3) adds ``@0.4.0`` alongside ``@0.3.0`` rather than replacing it.
-Route kinds are now declared per entry: ``redirect_once`` performs exactly one
-recognized hop, while ``direct`` issues a single send whose initial 200 is the
-only success path and whose redirect, if any, is recorded and refused without
-being followed. Both entry points are exported, and each keeps publishing the
-receipt contract it was built for.
+ADR-040 (E-C-D3) added ``@0.4.0`` alongside ``@0.3.0`` rather than replacing it,
+declaring route kinds per entry. ADR-041 (E-C-D4) adds ``@0.5.0`` the same way,
+correcting route grammar only: ``redirect_twice_relative_path`` walks two
+recognized hops, the second an absolute-path reference joined to a fixed declared
+base, before the terminal document; ``redirect_once`` keeps the two-send shape.
+v0.5 declares no ``direct`` kind. All three entry points are exported and each
+keeps publishing the receipt contract it was built for.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ from .documentation_policy import (
     collect_documentation_evidence,
 )
 from .documentation_policy_v4 import collect_documentation_evidence_v4
+from .documentation_policy_v5 import collect_documentation_evidence_v5
 from .errors import CollectionError, translate_write_once_error
 
 __all__ = [
@@ -54,5 +56,6 @@ __all__ = [
     "DocumentationCollectionResult",
     "collect_documentation_evidence",
     "collect_documentation_evidence_v4",
+    "collect_documentation_evidence_v5",
     "translate_write_once_error",
 ]

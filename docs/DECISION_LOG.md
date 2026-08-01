@@ -960,6 +960,108 @@ a single observation — it is frozen as a hypothesis on the same human-supplied
 footing as E3, not on E1's. Claiming any finite elapsed-time ceiling was rejected
 because no such bound is implemented at any layer.
 
+## ADR-041 — Two-hop route grammar with a relative second hop (E-C-D4)
+
+**Status:** Accepted.
+
+**The measured trigger.** The governed v0.4 attempt
+`docattempt-921cb253da290dc5dadadd5afc7244d6` stopped at `send2_evaluation` with
+`redirect_chain_too_long`. That is a **positive observation**: E1's send-one hop
+was accepted — the frozen intermediate matched byte-exactly — and the intermediate
+itself answered with a further redirect. The route is two hops deep, and the
+one-hop grammar could not express it. ADR-039's re-freeze of E1 was correct as far
+as it went; it was simply one hop short.
+
+**Provenance is not uniform, and the receipt must not imply that it is.**
+
+* **E1's second-hop `Location`** is a governed observation. The v0.4 stopped
+  receipt recorded it, under an attempt identity, with a digest. That is raw
+  evidence.
+* **E2's and E3's chain information is human/agent-supplied design input obtained
+  with `curl`.** It is **not governed raw evidence**. No receipt attests it, it
+  carries no digest, no manifest and no attempt identity, and it was pasted into a
+  design conversation rather than collected. ADR-037 already rejected `WebFetch`
+  as authoritative for redirect chains — it summarises rather than reports and
+  reveals no hop structure — and curl output enjoys no better standing merely
+  because it is more literal. Freezing E2 and E3 makes them **testable, not
+  true**.
+
+A test asserts both halves of this: the decision log states it in words, and no
+governed artifact under `data/` attests a v0.5 route.
+
+**Scope: route grammar only.** v0.5 collects no content evidence. A successful
+retrieval under it is still retrieval status alone; whether the bytes carry the
+required official claim remains `documentation_evidence_validation@0.1.0`'s
+question.
+
+**The second hop is an absolute-path reference, resolved against a fixed base.**
+`redirect_twice_relative_path` performs three sends. Send one and send two accept
+only 301/308. Send one's `Location` must be byte-exact against the frozen
+intermediate. Send two's `Location` must satisfy a deliberately narrow grammar —
+one leading `/`, and no `//`, scheme, colon, host, userinfo, query, fragment,
+backslash or `..` segment — and be byte-exact against the frozen raw path. It is
+then joined by plain concatenation to `https://docs.cloud.google.com`, a **module
+constant**, and the result must reproduce the frozen final URL byte-exactly.
+Nothing is parsed out of the observed value and reused as a base: a base taken
+from a response would let the server choose where the join lands. Send three must
+answer 200.
+
+**No `direct` kind.** v0.4's direct semantics are not carried forward. Every v0.5
+route performs at least one recognized hop, so no entry can describe a bare fetch.
+E3 returns to `redirect_once`.
+
+**Successor-only, at every layer.** `@0.1.0`–`@0.4.0`, their schemas, their route
+modules and the v0.3/v0.4 policy sources are byte-identical. `@0.5.0` adds its
+own routes, receipt, schema and policy, and `collect_documentation_evidence_v5`
+joins the two existing entry points rather than replacing them. The v0.4 entry is
+**extended** with send-three fields, not mutated: 21 fields become 27, and no v0.4
+field is renamed or removed.
+
+**Vocabulary movement.** Five reasons are added, all describing the second hop —
+`second_redirect_status_invalid`, `second_location_missing`,
+`second_location_not_relative_path`, `second_location_mismatch`,
+`resolved_final_mismatch` — and `direct_redirect_not_permitted` is removed with
+the kind it described. Public codes 28 → 32; entry-recordable 21 → 25. The five
+new reasons are absent from a `redirect_once` route's enum, and phases are
+kind-scoped: 10 for the two-hop kind, 7 for the one-hop kind.
+
+**One bounded weakening, recorded rather than absorbed.** The adapter's importer
+allowlist grows from two named policies to three. The **httpx** importer allowlist
+is unchanged at two modules, and a test asserts `documentation_policy_v5` imports
+no `httpx`. `collection.__all__` grows from five names to **six**: one governed
+entry point and nothing else.
+
+**Send budget.** At most **eight** sends — 3 + 3 + 2 — and **seven** deterministic
+2-second spacing delays on the success path. Each send configures four independent
+30-second connect/read/write/pool deadlines. **No request-total or run-total
+wall-clock deadline exists at any layer, and none is derived**; phase deadlines do
+not compose into a request bound, and per-send bounds do not compose into a run
+bound. `total_wall_clock_deadline` is declared `null`. No retry.
+
+**Movements.** `schema_version_manifest.json` `0.12.0` → `0.13.0`, 40 → 41
+entries; receipt v1–v4 unchanged, `_v5` added at `0.5.0`. Schema files 43 → 44.
+`REPO_MANIFEST.md` 548 → 557. Collection source modules 20 → 23.
+
+**E-C-D4 makes no live call.** No URL is retrieved, nothing is written under
+`data/`, no ADC, no SDK client, no provider operation, and no E-M-S retry. Gate
+chain: E-C-D → E-M-S one → E-C-D1 → E-M-S two → E-C-D2 → E-M-S three (stopped at
+`redirect_chain_too_long`) → **E-C-D4** → E-M-S four under `@0.5.0` → E-M
+implementation → E-B.
+
+This decision supplements ADR-037 through ADR-040 and amends none of them.
+
+**Rejected alternatives:** Editing the v0.4 routes, schema or policy in place was
+rejected on measurement — the routes are `const`-pinned inside the committed v0.4
+schema, so its loader would stop matching and its live receipt would become
+unverifiable. Resolving the second hop with a general URL joiner was rejected: a
+permissive resolver is exactly how `//host/x` becomes an authority and how a
+first segment becomes a scheme, so the grammar is narrow and the base is a
+constant. Carrying v0.4's `direct` kind forward was rejected because no v0.5 route
+is a bare fetch. Treating the curl-derived chain as evidence was rejected
+outright: it is an input to a design decision, and only a governed attempt can
+turn it into provenance.
+
+
 ## Open decisions
 
 - Filing-date versus fiscal-year observation convention.

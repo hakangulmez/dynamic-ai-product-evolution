@@ -152,7 +152,12 @@ def test_exactly_two_source_modules_import_httpx_repository_wide() -> None:
 # succeeds rather than mutates and the v0.3 policy is preserved byte-identically.
 # The same pattern ADR-037 used when the httpx importer became a two-entry list.
 ADAPTER_IMPORT_ALLOWLIST = frozenset(
-    {"documentation_policy.py", "documentation_policy_v4.py", "http_adapter.py"}
+    {
+        "documentation_policy.py",
+        "documentation_policy_v4.py",
+        "documentation_policy_v5.py",
+        "http_adapter.py",
+    }
 )
 
 
@@ -167,8 +172,13 @@ def test_only_the_documentation_policies_import_the_adapter() -> None:
     assert not offenders, offenders
 
 
-def test_the_adapter_allowlist_names_exactly_the_two_policies() -> None:
-    """A bounded exemption, not an open one: new importers must be declared."""
+def test_the_adapter_allowlist_names_exactly_the_three_policies() -> None:
+    """A bounded exemption, not an open one: new importers must be declared.
+
+    ADR-041 widens it from two to three named policies, because v0.5 succeeds
+    rather than mutates and both earlier policies are preserved byte-identically.
+    The **httpx** allowlist is unaffected and stays at two modules.
+    """
     importers = sorted(
         p.name
         for p in _sources(COLLECTION_DIR)
@@ -176,7 +186,11 @@ def test_the_adapter_allowlist_names_exactly_the_two_policies() -> None:
         for n in _module_names(p)
         if "http_adapter" in n
     )
-    assert importers == ["documentation_policy.py", "documentation_policy_v4.py"]
+    assert importers == [
+        "documentation_policy.py",
+        "documentation_policy_v4.py",
+        "documentation_policy_v5.py",
+    ]
 
 
 def test_no_public_export_exposes_a_raw_send() -> None:
@@ -189,13 +203,15 @@ def test_no_public_export_exposes_a_raw_send() -> None:
         "DocumentationCollectionResult",
         "collect_documentation_evidence",
         "collect_documentation_evidence_v4",
+        "collect_documentation_evidence_v5",
         "translate_write_once_error",
     }
     # ADR-040 adds one governed entry point and nothing else: no raw send, no
     # adapter, no seam, and no widening of the surface beyond it.
     assert "send_once" not in collection.__all__
     assert "documentation_policy_v4" not in collection.__all__
-    assert len(collection.__all__) == 5
+    assert "documentation_policy_v5" not in collection.__all__
+    assert len(collection.__all__) == 6
 
 
 def test_only_urllib_parse_is_used() -> None:
@@ -214,8 +230,10 @@ URL_LITERAL_POLICY_MODULES = frozenset(
         "request_plan.py",              # the deterministic robots URL template
         "documentation_routes.py",      # ADR-039: the v0.3 frozen evidence pairs
         "documentation_routes_v4.py",   # ADR-040: the v0.4 frozen evidence pairs
+        "documentation_routes_v5.py",   # ADR-041: the v0.5 frozen routes
         "documentation_policy.py",      # ADR-039: the bare https:// prefix only
         "documentation_policy_v4.py",   # ADR-040: the bare https:// prefix only
+        "documentation_policy_v5.py",   # ADR-041: the bare https:// prefix only
         "documentation_receipt.py",     # ADR-037: dialect URI + the v0.1/v0.2 pairs
     }
 )
@@ -354,6 +372,107 @@ def test_the_v3_receipt_contract_reads_the_same_route_source() -> None:
     ]
     assert "documentation_routes" in imports
     assert '"https://' not in source, "v0.3 receipt declares no route of its own"
+
+
+def test_the_v5_routes_module_holds_only_its_frozen_routes() -> None:
+    """The bounded exact-pair guarantee, extended to the v0.5 declaration.
+
+    Eight distinct URLs across three routes, plus the two frozen raw paths and
+    the fixed resolution base -- every scheme-bearing literal is a declared
+    member, and the base is one of them.
+    """
+    import re
+
+    from dynamic_ai_products.collection.documentation_routes_v5 import (
+        FROZEN_ROUTE_IDENTITIES_V5,
+        RELATIVE_RESOLUTION_BASE,
+    )
+
+    source = (COLLECTION_DIR / "documentation_routes_v5.py").read_text(encoding="utf-8")
+    frozen = {RELATIVE_RESOLUTION_BASE}
+    for entry in FROZEN_ROUTE_IDENTITIES_V5:
+        for field in ("requested_url", "intermediate_url", "final_url"):
+            if entry[field]:
+                frozen.add(entry[field])
+    assert len(frozen) == 9
+    for fragment in re.findall(r'"(https?://[^"]*)"', source):
+        assert any(url.startswith(fragment) for url in frozen), fragment
+    assert "http://" not in source, "no scheme downgrade literal"
+
+
+def test_the_v5_policy_holds_no_url_beyond_the_scheme_prefix() -> None:
+    """The v0.5 policy declares no route either; the exemption stayed moved."""
+    import re
+
+    from dynamic_ai_products.collection.documentation_routes_v5 import (
+        FROZEN_ROUTE_IDENTITIES_V5,
+    )
+
+    source = (COLLECTION_DIR / "documentation_policy_v5.py").read_text(encoding="utf-8")
+    assert set(re.findall(r'"(https?://[^"]*)"', source)) == {"https://"}
+    for entry in FROZEN_ROUTE_IDENTITIES_V5:
+        for field in ("requested_url", "intermediate_url", "final_url"):
+            if entry[field]:
+                assert entry[field] not in source, field
+
+
+def test_the_v5_policy_is_bound_to_the_v5_routes_module() -> None:
+    from dynamic_ai_products.collection.documentation_policy_v5 import (
+        FROZEN_EVIDENCE_ENTRIES_V5,
+    )
+    from dynamic_ai_products.collection.documentation_routes_v5 import (
+        FROZEN_ROUTE_IDENTITIES_V5,
+    )
+
+    assert FROZEN_EVIDENCE_ENTRIES_V5 is FROZEN_ROUTE_IDENTITIES_V5
+
+
+def test_the_v5_receipt_contract_reads_the_same_route_source() -> None:
+    import ast as _ast
+
+    source = (COLLECTION_DIR / "documentation_receipt_v5.py").read_text(encoding="utf-8")
+    imports = [
+        node.module for node in _ast.walk(_ast.parse(source))
+        if isinstance(node, _ast.ImportFrom) and node.module
+    ]
+    assert "documentation_routes_v5" in imports
+    assert '"https://' not in source, "the v0.5 contract declares no route itself"
+
+
+def test_the_v4_and_v5_route_declarations_are_independent() -> None:
+    from dynamic_ai_products.collection.documentation_routes_v4 import (
+        FROZEN_ROUTE_IDENTITIES_V4 as V4,
+    )
+    from dynamic_ai_products.collection.documentation_routes_v5 import (
+        FROZEN_ROUTE_IDENTITIES_V5 as V5,
+    )
+
+    assert V4 is not V5
+    assert [e["route_kind"] for e in V4] == ["redirect_once", "redirect_once", "direct"]
+    assert [e["route_kind"] for e in V5] == [
+        "redirect_twice_relative_path", "redirect_twice_relative_path", "redirect_once",
+    ]
+    for entry in V4:
+        assert "intermediate_url" not in entry, "v0.4 declared no intermediate hop"
+    assert "direct" not in {e["route_kind"] for e in V5}
+
+
+def test_the_collection_package_declares_three_documentation_policies() -> None:
+    """Successor-only: each policy source is preserved once committed."""
+    policies = sorted(
+        p.name for p in _sources(COLLECTION_DIR) if p.name.startswith("documentation_policy")
+    )
+    assert policies == [
+        "documentation_policy.py",
+        "documentation_policy_v4.py",
+        "documentation_policy_v5.py",
+    ]
+    routes = sorted(
+        p.name for p in _sources(COLLECTION_DIR) if p.name.startswith("documentation_routes")
+    )
+    assert routes == ["documentation_routes.py", "documentation_routes_v4.py",
+                      "documentation_routes_v5.py"]
+    assert len(_sources(COLLECTION_DIR)) == 23
 
 
 def test_the_v4_routes_module_holds_only_its_frozen_pairs() -> None:

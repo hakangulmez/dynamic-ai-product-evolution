@@ -112,6 +112,7 @@ def test_only_the_policy_modules_import_the_adapter():
         if module.name in {
             "documentation_policy.py",
             "documentation_policy_v4.py",
+            "documentation_policy_v5.py",
             "http_adapter.py",
         }:
             continue
