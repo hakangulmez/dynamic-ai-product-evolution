@@ -39,6 +39,13 @@ recognized hops, the second an absolute-path reference joined to a fixed declare
 base, before the terminal document; ``redirect_once`` keeps the two-send shape.
 v0.5 declares no ``direct`` kind. All three entry points are exported and each
 keeps publishing the receipt contract it was built for.
+
+ADR-042 adds ``documentation_evidence_validation@0.1.0``, which answers the one
+question a collection receipt deliberately does not: whether a named byte range
+of a named persisted object contains named literal text. It is offline and
+fail-closed -- no parser, renderer, entity decoder, normalizer, model or network --
+so a claim cannot outlive a change in the bytes it rests on. Only its pure
+selection verifier is exported.
 """
 
 from __future__ import annotations
@@ -48,6 +55,9 @@ from .documentation_policy import (
     collect_documentation_evidence,
 )
 from .documentation_policy_v4 import collect_documentation_evidence_v4
+from .documentation_evidence_validation import (
+    validate_selection as validate_documentation_evidence_selection,
+)
 from .documentation_policy_v5 import collect_documentation_evidence_v5
 from .errors import CollectionError, translate_write_once_error
 
@@ -57,5 +67,6 @@ __all__ = [
     "collect_documentation_evidence",
     "collect_documentation_evidence_v4",
     "collect_documentation_evidence_v5",
+    "validate_documentation_evidence_selection",
     "translate_write_once_error",
 ]

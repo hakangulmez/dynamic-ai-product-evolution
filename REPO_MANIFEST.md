@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **557**
+Total tracked/scaffold files listed: **561**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -53,6 +53,7 @@ Total tracked/scaffold files listed: **557**
 - `configs/universe_sample_rules.yaml`
 - `configs/universe_taxonomy.yaml`
 - `data/README.md`
+- `data/registry/documentation_evidence_validation_vertex_ai_gemini_2_5_flash_v1.json`
 - `data/interim/.gitkeep`
 - `data/manifests/.gitkeep`
 - `data/normalized/.gitkeep`
@@ -242,6 +243,7 @@ Total tracked/scaffold files listed: **557**
 - `schemas/documentation_collection_receipt.v3.schema.json`
 - `schemas/documentation_collection_receipt.v4.schema.json`
 - `schemas/documentation_collection_receipt.v5.schema.json`
+- `schemas/documentation_evidence_validation.schema.json`
 - `schemas/extraction_input_packet.schema.json`
 - `schemas/extraction_input_packet.v2.schema.json`
 - `schemas/extraction_non_run_record.schema.json`
@@ -324,6 +326,7 @@ Total tracked/scaffold files listed: **557**
 - `src/dynamic_ai_products/collection/canonical_url.py`
 - `src/dynamic_ai_products/collection/coverage_v2.py`
 - `src/dynamic_ai_products/collection/documentation_policy.py`
+- `src/dynamic_ai_products/collection/documentation_evidence_validation.py`
 - `src/dynamic_ai_products/collection/documentation_receipt.py`
 - `src/dynamic_ai_products/collection/documentation_receipt_v2.py`
 - `src/dynamic_ai_products/collection/documentation_receipt_v3.py`
@@ -451,6 +454,7 @@ Total tracked/scaffold files listed: **557**
 - `tests/collection/test_documentation_receipt_v3.py`
 - `tests/collection/test_documentation_receipt_v4.py`
 - `tests/collection/test_documentation_receipt_v5.py`
+- `tests/collection/test_documentation_evidence_validation.py`
 - `tests/collection/test_documentation_redirect_grammar.py`
 - `tests/collection/test_documentation_redirect_grammar_v4.py`
 - `tests/collection/test_documentation_redirect_grammar_v5.py`

@@ -105,11 +105,23 @@ def test_the_public_signature_is_pinned():
 
 
 def test_all_three_entry_points_coexist():
+    """Three collectors plus ADR-042's pure verifier: seven names, not nine.
+
+    ADR-042 exports only ``validate_documentation_evidence_selection``. The
+    adapter, the raw sender, the record publisher and the record builder stay
+    unexported, so the public surface still exposes no way to reach the network
+    or to publish a governed artifact directly.
+    """
     from dynamic_ai_products import collection
     from dynamic_ai_products.collection import documentation_policy as dp3
     from dynamic_ai_products.collection import documentation_policy_v4 as dp4
 
-    assert len(collection.__all__) == 6
+    assert len(collection.__all__) == 7
+    for absent in (
+        "http_adapter", "send_once",
+        "publish_evidence_validation_record", "build_evidence_validation_record",
+    ):
+        assert absent not in collection.__all__, absent
     assert collection.collect_documentation_evidence is dp3.collect_documentation_evidence
     assert collection.collect_documentation_evidence_v4 is dp4.collect_documentation_evidence_v4
     assert collection.collect_documentation_evidence_v5 is dp5.collect_documentation_evidence_v5

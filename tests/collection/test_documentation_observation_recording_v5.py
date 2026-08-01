@@ -94,7 +94,10 @@ LIVE_ATTEMPTS = {
     "docattempt-f88b54ac65e04d0766d749cb606bcee2",
     "docattempt-c4082dd835f2f5228669487f50ca2308",
     "docattempt-921cb253da290dc5dadadd5afc7244d6",
+    # The governed v0.5 attempt that completed. A fresh id must still avoid it.
+    "docattempt-ef3032c82e618c8ace8e33b26326d5c6",
 }
+V5_ATTEMPT = "docattempt-ef3032c82e618c8ace8e33b26326d5c6"
 
 
 def through(n: int) -> list:
@@ -320,10 +323,13 @@ def test_the_adapter_context_retention_is_a_known_residual():
 
 
 def test_the_curl_derived_chain_is_recorded_only_in_the_adr_not_as_evidence():
-    """E2/E3 chain data is design input, never a receipt or a raw artifact.
+    """E2/E3 chain data is design input; it is never mistaken for collector output.
 
-    Two independent checks: the decision log says so in words, and no governed
-    artifact under ``data/`` attests it.
+    The historical form of this test asserted that no v0.5 receipt existed at
+    all -- true while the routes were an untested hypothesis, and false since the
+    governed attempt completed. What must hold permanently is narrower and more
+    useful: the curl-derived chain lives in the decision log, and a governed
+    receipt is a separate artifact that carries no trace of it.
     """
     log = (ROOT / "docs" / "DECISION_LOG.md").read_text(encoding="utf-8")
     adr = log[log.index("## ADR-041"):]
@@ -331,12 +337,32 @@ def test_the_curl_derived_chain_is_recorded_only_in_the_adr_not_as_evidence():
     assert "curl" in lowered
     assert "not governed raw evidence" in lowered or "not governed evidence" in lowered
     assert "webfetch" in lowered
-    # No v0.5 receipt exists yet: the routes are a hypothesis under test.
-    attempts = ROOT / "data" / "raw" / "documentation" / "vertex_ai" / "attempts"
-    for receipt in attempts.glob("*/collection_receipt.json"):
-        assert json.loads(receipt.read_text())["contract"] != (
-            "documentation_collection_receipt@0.5.0"
-        )
+
+
+def test_a_governed_v5_receipt_carries_no_trace_of_the_curl_observations():
+    """Collector output and design input must not blend into one another.
+
+    Skipped where the attempt tree is absent: ``data/raw/**`` is gitignored, so a
+    fresh clone has no receipts and this would otherwise pass vacuously.
+    """
+    receipt_path = (
+        ROOT / "data" / "raw" / "documentation" / "vertex_ai" / "attempts"
+        / V5_ATTEMPT / "collection_receipt.json"
+    )
+    if not receipt_path.is_file():
+        pytest.skip("the governed v0.5 attempt is not present in this checkout")
+
+    raw = receipt_path.read_bytes()
+    receipt = json.loads(raw.decode("utf-8"))
+    assert receipt["contract"] == "documentation_collection_receipt@0.5.0"
+    assert receipt["attempt_id"] == V5_ATTEMPT
+    assert receipt["completion_status"] == "completed"
+    assert [e["entry_status"] for e in receipt["entries"]] == ["succeeded"] * 3
+    # The receipt is collector output alone: no curl or WebFetch artefact in it.
+    lowered = raw.lower()
+    assert b"curl" not in lowered
+    assert b"webfetch" not in lowered
+    assert b"web_fetch" not in lowered
 
 
 def test_the_routes_module_marks_e1_governed_and_e2_e3_supplied():

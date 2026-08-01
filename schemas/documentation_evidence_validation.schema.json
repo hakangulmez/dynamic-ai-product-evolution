@@ -1,0 +1,339 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "documentation_evidence_validation.schema.json",
+  "title": "documentation_evidence_validation@0.1.0",
+  "comment": "ADR-042. Offline, fail-closed validation of persisted documentation evidence. It answers only the question a collection receipt deliberately does not: whether a named byte range of a named persisted object contains named literal text. No HTML parser, renderer, entity decoder, whitespace normalizer, model or network is involved, so a claim cannot survive a change in the bytes it rests on. Every finding binds the pinned attempt receipt, the raw object digest and byte count, the byte range and its digest, strict UTF-8 decoding, and exact substring containment of each required literal plus absence of each forbidden literal. The byte range is a human selection, labelled as such, and the attached claim is an attributed human reading of the verified range rather than an inference the code performed. Source qualifiers are bound as required literals so that dropping one breaks validation: CountTokens is free of monetary charge and simultaneously carries a 3000 requests-per-minute maximum quota, and thinking_budget=0 suppresses returned thought content while reasoning-style text may still appear. Pricing is carried as exact integer ratios in microdollars per token, never as a float.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "attempt_binding",
+    "contract",
+    "decode",
+    "findings",
+    "normalization",
+    "pricing_units",
+    "schema_version",
+    "selection_provenance",
+    "subject"
+  ],
+  "properties": {
+    "contract": {
+      "const": "documentation_evidence_validation@0.1.0"
+    },
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "subject": {
+      "const": "vertex_ai_gemini_2_5_flash"
+    },
+    "attempt_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt_id",
+        "receipt_contract",
+        "receipt_schema_sha256",
+        "receipt_sha256"
+      ],
+      "properties": {
+        "attempt_id": {
+          "const": "docattempt-ef3032c82e618c8ace8e33b26326d5c6",
+          "pattern": "^docattempt-[0-9a-f]{32}$"
+        },
+        "receipt_sha256": {
+          "const": "eeb8287ecceddb35ad4eef5c36f14fa94ef04b2bff5f8b25bcba27d59a6841a3"
+        },
+        "receipt_contract": {
+          "const": "documentation_collection_receipt@0.5.0"
+        },
+        "receipt_schema_sha256": {
+          "const": "307777c1e4df625b82a8186fb5260b2426c1425009d0f2da400a2e7b0655e5db"
+        }
+      }
+    },
+    "selection_provenance": {
+      "const": "human_selected_byte_slice_v1"
+    },
+    "decode": {
+      "const": "utf_8_strict"
+    },
+    "normalization": {
+      "const": "none"
+    },
+    "findings": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "claim",
+            "claim_attribution",
+            "evidence_kind",
+            "forbidden_literal_count",
+            "forbidden_literals",
+            "raw_byte_count",
+            "raw_reference",
+            "raw_sha256",
+            "required_literal_count",
+            "required_literals",
+            "slice_byte_count",
+            "slice_sha256",
+            "slice_start",
+            "slice_stop"
+          ],
+          "properties": {
+            "evidence_kind": {
+              "const": "gemini_thinking"
+            },
+            "raw_reference": {
+              "type": "string",
+              "minLength": 1
+            },
+            "raw_sha256": {
+              "const": "e47448c0d68f0465035af00aac7f8969ffdcfebf7a491f444b3bd81c4503df7d"
+            },
+            "raw_byte_count": {
+              "const": 624675
+            },
+            "slice_start": {
+              "const": 367041
+            },
+            "slice_stop": {
+              "const": 369448
+            },
+            "slice_byte_count": {
+              "const": 2407
+            },
+            "slice_sha256": {
+              "const": "b6a6195df8dbfc21b329f029999981ca1c2f17fe19edeb18d558cf85b28c533c"
+            },
+            "required_literal_count": {
+              "const": 10
+            },
+            "forbidden_literal_count": {
+              "const": 0
+            },
+            "required_literals": {
+              "const": [
+                "For models earlier than Gemini 3",
+                "thinking_budget",
+                "not set, the model automatically controls how much it thinks",
+                "<td>Gemini 2.5 Flash</td>\n<td>1</td>\n<td>24,576</td>",
+                "set the budget to 0 to prevent thought content from being",
+                "no thought content is returned with the",
+                "However, reasoning-style text might still be present in the model",
+                "thinking_level",
+                "parameter with a model earlier than Gemini 3, the",
+                "model returns an error"
+              ]
+            },
+            "forbidden_literals": {
+              "const": []
+            },
+            "claim": {
+              "const": "For Gemini 2.5 Flash (a model earlier than Gemini 3), thinking is controlled by thinking_budget: when unset the model controls it automatically, the settable range is 1 to 24,576 tokens, and setting it to 0 prevents thought content from being returned -- though the source qualifies that reasoning-style text may still appear in the output. Using thinking_level with a model earlier than Gemini 3 makes the model return an error."
+            },
+            "claim_attribution": {
+              "const": "human_reading_of_the_verified_range"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "claim",
+            "claim_attribution",
+            "evidence_kind",
+            "forbidden_literal_count",
+            "forbidden_literals",
+            "raw_byte_count",
+            "raw_reference",
+            "raw_sha256",
+            "required_literal_count",
+            "required_literals",
+            "slice_byte_count",
+            "slice_sha256",
+            "slice_start",
+            "slice_stop"
+          ],
+          "properties": {
+            "evidence_kind": {
+              "const": "count_tokens"
+            },
+            "raw_reference": {
+              "type": "string",
+              "minLength": 1
+            },
+            "raw_sha256": {
+              "const": "e7cb9e6b4142ea79f9f39c905fd8b2395c090826ec5d03e59a1e36da3c9fda4d"
+            },
+            "raw_byte_count": {
+              "const": 284918
+            },
+            "slice_start": {
+              "const": 251498
+            },
+            "slice_stop": {
+              "const": 251819
+            },
+            "slice_byte_count": {
+              "const": 321
+            },
+            "slice_sha256": {
+              "const": "6491feec0ef68e1aa300882291f4a29929ae846150d850a5ba2c44938029f6d5"
+            },
+            "required_literal_count": {
+              "const": 4
+            },
+            "forbidden_literal_count": {
+              "const": 0
+            },
+            "required_literals": {
+              "const": [
+                "There is no charge or quota restriction for using the",
+                "CountTokens",
+                "maximum quota for the",
+                "3000 requests per minute"
+              ]
+            },
+            "forbidden_literals": {
+              "const": []
+            },
+            "claim": {
+              "const": "The CountTokens API carries no monetary charge. The same passage also states a maximum quota of 3000 requests per minute, so this evidence supports a zero-price claim and a 3000 RPM rate-limit claim together; it does not support a claim that no quota applies."
+            },
+            "claim_attribution": {
+              "const": "human_reading_of_the_verified_range"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "claim",
+            "claim_attribution",
+            "evidence_kind",
+            "forbidden_literal_count",
+            "forbidden_literals",
+            "raw_byte_count",
+            "raw_reference",
+            "raw_sha256",
+            "required_literal_count",
+            "required_literals",
+            "slice_byte_count",
+            "slice_sha256",
+            "slice_start",
+            "slice_stop"
+          ],
+          "properties": {
+            "evidence_kind": {
+              "const": "pricing_standard"
+            },
+            "raw_reference": {
+              "type": "string",
+              "minLength": 1
+            },
+            "raw_sha256": {
+              "const": "2c96306a245ba39051e0f5c5a2b1359fd55425f6b7e7f17a2c5b4f57ca0fd3fc"
+            },
+            "raw_byte_count": {
+              "const": 828714
+            },
+            "slice_start": {
+              "const": 681132
+            },
+            "slice_stop": {
+              "const": 681752
+            },
+            "slice_byte_count": {
+              "const": 620
+            },
+            "slice_sha256": {
+              "const": "cf451af8ca6860efb6d03d71b77ff81c026e9c76506ebf32f742872cf4bcaa6e"
+            },
+            "required_literal_count": {
+              "const": 3
+            },
+            "forbidden_literal_count": {
+              "const": 0
+            },
+            "required_literals": {
+              "const": [
+                "Gemini 2.5<br>Flash",
+                "<td>Input (text, image, video)</td>\n           <td>$0.30</td>\n           <td>$0.30</td>\n           ",
+                "<td>Text output (response and reasoning)</td>\n           <td>$2.50</td>\n           <td>$2.50</td>\n           "
+              ]
+            },
+            "forbidden_literals": {
+              "const": []
+            },
+            "claim": {
+              "const": "For Gemini 2.5 Flash, text/image/video input is $0.30 per 1M tokens and text output (response and reasoning) is $2.50 per 1M tokens, with the same price in both prompt-length tiers."
+            },
+            "claim_attribution": {
+              "const": "human_reading_of_the_verified_range"
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "pricing_units": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cost_formula",
+        "derivation",
+        "input_denominator",
+        "input_numerator",
+        "microdollar_per_usd",
+        "model",
+        "output_denominator",
+        "output_numerator",
+        "prompt_length_tiers",
+        "tier_prices_equal",
+        "unit"
+      ],
+      "properties": {
+        "model": {
+          "const": "gemini-2.5-flash"
+        },
+        "unit": {
+          "const": "microdollar_per_token"
+        },
+        "microdollar_per_usd": {
+          "const": 1000000
+        },
+        "input_numerator": {
+          "const": 3
+        },
+        "input_denominator": {
+          "const": 10
+        },
+        "output_numerator": {
+          "const": 5
+        },
+        "output_denominator": {
+          "const": 2
+        },
+        "derivation": {
+          "const": "1 USD = 1000000 microdollar; $0.30 per 1000000 tokens = 300000/1000000 = 3/10 microdollar per token; $2.50 per 1000000 tokens = 2500000/1000000 = 5/2 microdollar per token"
+        },
+        "cost_formula": {
+          "const": "ceil(input_tokens * 3 / 10) + ceil(output_tokens * 5 / 2)"
+        },
+        "prompt_length_tiers": {
+          "const": 2
+        },
+        "tier_prices_equal": {
+          "const": true
+        }
+      }
+    }
+  }
+}

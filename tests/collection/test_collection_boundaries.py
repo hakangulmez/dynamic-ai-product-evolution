@@ -205,13 +205,15 @@ def test_no_public_export_exposes_a_raw_send() -> None:
         "collect_documentation_evidence_v4",
         "collect_documentation_evidence_v5",
         "translate_write_once_error",
+        "validate_documentation_evidence_selection",
     }
     # ADR-040 adds one governed entry point and nothing else: no raw send, no
     # adapter, no seam, and no widening of the surface beyond it.
     assert "send_once" not in collection.__all__
     assert "documentation_policy_v4" not in collection.__all__
     assert "documentation_policy_v5" not in collection.__all__
-    assert len(collection.__all__) == 6
+    assert "documentation_evidence_validation" not in collection.__all__
+    assert len(collection.__all__) == 7
 
 
 def test_only_urllib_parse_is_used() -> None:
@@ -235,6 +237,8 @@ URL_LITERAL_POLICY_MODULES = frozenset(
         "documentation_policy_v4.py",   # ADR-040: the bare https:// prefix only
         "documentation_policy_v5.py",   # ADR-041: the bare https:// prefix only
         "documentation_receipt.py",     # ADR-037: dialect URI + the v0.1/v0.2 pairs
+        # ADR-042: the JSON Schema dialect URI alone; a bounded test proves it.
+        "documentation_evidence_validation.py",
     }
 )
 
@@ -374,6 +378,31 @@ def test_the_v3_receipt_contract_reads_the_same_route_source() -> None:
     assert '"https://' not in source, "v0.3 receipt declares no route of its own"
 
 
+def test_the_evidence_validation_module_holds_only_the_dialect_uri() -> None:
+    """ADR-042's exemption is bounded: one URI, and it is not a route."""
+    import re
+
+    source = (COLLECTION_DIR / "documentation_evidence_validation.py").read_text(
+        encoding="utf-8"
+    )
+    assert re.findall(r'"(https?://[^"]*)"', source) == [
+        "https://json-schema.org/draft/2020-12/schema"
+    ]
+    assert "http://" not in source
+    assert "cloud.google.com" not in source, "the validator declares no route"
+
+
+def test_the_evidence_validation_module_imports_no_transport_or_parser() -> None:
+    """Offline by construction: it may not reach a network or an HTML parser."""
+    forbidden = {"httpx", "requests", "urllib", "urllib3", "socket", "http", "ssl",
+                 "html", "lxml", "bs4"}
+    offenders = [
+        n for n in _module_names(COLLECTION_DIR / "documentation_evidence_validation.py")
+        if n.split(".")[0] in forbidden
+    ]
+    assert not offenders, offenders
+
+
 def test_the_v5_routes_module_holds_only_its_frozen_routes() -> None:
     """The bounded exact-pair guarantee, extended to the v0.5 declaration.
 
@@ -472,7 +501,7 @@ def test_the_collection_package_declares_three_documentation_policies() -> None:
     )
     assert routes == ["documentation_routes.py", "documentation_routes_v4.py",
                       "documentation_routes_v5.py"]
-    assert len(_sources(COLLECTION_DIR)) == 23
+    assert len(_sources(COLLECTION_DIR)) == 24
 
 
 def test_the_v4_routes_module_holds_only_its_frozen_pairs() -> None:

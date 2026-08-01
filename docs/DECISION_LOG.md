@@ -1062,6 +1062,106 @@ outright: it is an input to a design decision, and only a governed attempt can
 turn it into provenance.
 
 
+## ADR-042 — Offline documentation evidence validation (`documentation_evidence_validation@0.1.0`)
+
+**Status:** Accepted.
+
+**The question this answers.** ADR-037 declared that a collection receipt owns
+*retrieval status only*, and every receipt ADR since has repeated that whether the
+bytes carry the required official claim belongs to a separate contract. This is
+that contract. The v0.5 attempt `docattempt-ef3032c82e618c8ace8e33b26326d5c6`
+completed and persisted three documents; this increment decides, offline, whether
+named byte ranges of those documents contain named literal text.
+
+**Five mechanical facts, and nothing else.** Validation proves: the receipt is the
+pinned one (digest, attempt id, contract id, schema digest, `completed`); the raw
+object is the pinned one (digest **and** byte count, and the receipt's own entry
+agrees); the byte range lies inside the object and hashes to its pin; the range
+decodes under **strict** UTF-8; and each required literal occurs in the decoded
+range while each forbidden literal does not, by exact substring containment.
+
+**What is refused, deliberately.** No HTML parser, renderer, entity decoder,
+whitespace normalizer, model or network. Each is a way of turning *"the bytes say
+X"* into *"something like X was probably meant"*, and each would let a claim
+survive an edit to the evidence beneath it. Tests pin this: `&#39;` never matches
+`'`, `&lt;td&gt;` never matches `<td>`, a doubled space never matches a single
+one, and case never folds. A structural test forbids the module from importing any
+parser or transport, and an AST test forbids normalizing calls inside the
+verification path specifically — a whole-file ban was rejected because it flagged
+a blank-string check in the schema loader that never touches evidence.
+
+**The selection is a human act and is labelled as one.** Which byte range answers a
+question is a judgement the code never makes and never re-derives.
+`selection_provenance` is `human_selected_byte_slice_v1`, and each finding's
+`claim` is carried with `claim_attribution: human_reading_of_the_verified_range`.
+The code proves the range is what it says it is and that the literals are in it;
+the reading remains attributed to a person.
+
+**Qualifiers are bound so they cannot be dropped.** Two are load-bearing.
+`CountTokens` is free of monetary charge *and* the same passage states a maximum
+quota of 3000 requests per minute — so `maximum quota for the` and `3000 requests
+per minute` are required literals, and the recorded claim states explicitly that
+this evidence **does not support a claim that no quota applies**. Likewise
+`thinking_budget = 0` suppresses returned thought content *while reasoning-style
+text may still appear in the output*, and that qualifier is a required literal too.
+
+**One measurement corrected a drafting assumption.** The `thinking_level` claim was
+first drafted as an *absence* — that the parameter is simply not used for earlier
+models. The bytes are stronger and more precise: *"If you use the `thinking_level`
+parameter with a model earlier than Gemini 3, the model returns an error."* It is
+therefore a **required** literal, not a forbidden one.
+
+**Values are bound to their own table rows.** A bare "`$0.30` appears somewhere in
+the slice" check would not tie a price to a row. The required literals are
+multi-line spans — `<td>Gemini 2.5 Flash</td>\n<td>1</td>\n<td>24,576</td>` and the
+two price rows including both prompt-length tier cells — so the 1..24,576 range
+belongs to Gemini 2.5 Flash specifically and each price belongs to its own line
+item in both tiers.
+
+**Pricing is exact integer arithmetic, never float.** Canonical unit is
+**microdollar per token**: 1 USD = 1,000,000 microdollar, so $0.30/1M = 300,000/1,000,000
+= **3/10** and $2.50/1M = 2,500,000/1,000,000 = **5/2**. Cost is
+`ceil(input_tokens * 3 / 10) + ceil(output_tokens * 5 / 2)`, each side rounded up
+independently because that is what the declared rule says; summing first and
+rounding once would be a different rule. A test pins the round trip: one million of
+each costs 2,800,000 microdollar = $2.80 = $0.30 + $2.50, and no declared pricing
+value is a float.
+
+**Write-once, like every other governed artifact.** The registry record is
+published under `data/registry/` — which is *not* gitignored, unlike `data/raw/**`
+— and republication over an existing file is refused with `destination_exists`,
+leaving the existing bytes untouched.
+
+**Tests never read gitignored evidence.** Every case is synthetic and writes only
+under `tmp_path`; a suite that needed `data/raw/**` would pass on the machine that
+ran the collection and fail everywhere else. The one committed artifact that *is*
+tracked, the registry record, is validated against the committed schema without
+touching a raw object, and the frozen selections are checked for internal
+consistency (bounds inside byte count, 64-hex digests, non-empty literals) the same
+way.
+
+**Movements.** `schema_version_manifest.json` `0.13.0` → `0.14.0`, 41 → 42 entries.
+Schema files 44 → 45. `REPO_MANIFEST.md` 557 → 561. Collection source modules 23 →
+24. `collection.__all__` 6 → 7, adding only the pure selection verifier — no raw
+send, no adapter, no seam.
+
+**No live call.** This increment constructs no HTTP client, retrieves no URL, and
+makes no ADC, credential, SDK or provider call. It reads the three persisted raw
+objects and the v0.5 receipt, and writes one registry record.
+
+This decision supplements ADR-037 through ADR-041 and amends none of them.
+
+**Rejected alternatives:** Parsing the HTML to locate claims was rejected — a
+parser makes the validation depend on a parse tree that the source can change
+without changing the claim, and vice versa. Normalizing whitespace or decoding
+entities before comparison was rejected for the same reason, and is tested against
+directly. Deriving the claim text from the bytes was rejected: selection and
+reading are human acts, and pretending otherwise would launder a judgement into an
+apparent measurement. Storing prices as floats or as dollars was rejected in favour
+of exact integer ratios in microdollars, so that no rounding is implicit and the
+cost rule is auditable.
+
+
 ## Open decisions
 
 - Filing-date versus fiscal-year observation convention.
