@@ -479,9 +479,10 @@ def test_manifest_count():
     txt = (ROOT / "REPO_MANIFEST.md").read_text().splitlines()
     declared = int(re.search(r"listed:\s*\*\*(\d+)\*\*", "\n".join(txt)).group(1))
     paths = [re.match(r"- `([^`]+)`", ln).group(1) for ln in txt if re.match(r"- `[^`]+`\s*$", ln)]
-    # 561 = 557 + the four ADR-042 paths: the evidence-validation schema,
+    # 575 = 561 + the fourteen ADR-043 paths: three schemas, five source
+    # modules and six test modules. Superseding the ADR-042 note:
     # its module, its test file, and the published registry record.
-    assert declared == len(paths) == 561
+    assert declared == len(paths) == 575
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

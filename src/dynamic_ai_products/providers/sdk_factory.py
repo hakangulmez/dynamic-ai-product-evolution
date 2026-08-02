@@ -29,18 +29,28 @@ def build_vertex_client(
     vertex_location: str,
     endpoint_allowlist: tuple[str, ...],
     http_options_kwargs: dict[str, Any],
+    operation_endpoints: dict[str, str] | None = None,
 ) -> Iterator[tuple[Any, CapturingHttpxClient]]:
     """Yield ``(client, capture)``; close the capture client on the way out.
 
     The SDK does not close a client it did not create
     (``_api_client.py:2258``), so closing is this factory's obligation and is
     performed in ``finally``.
+
+    ADR-043 (E-M) adds ``operation_endpoints``. It is forwarded to the capture
+    client and nowhere else: the per-request equality check is transport-side
+    grammar, and the SDK builds the request URL itself from base URL, api
+    version, project and location, so the two must be compared where the request
+    actually is. Left ``None``, the client behaves exactly as E-L shipped it.
     """
     # Lazy: the vendor SDK is imported here and nowhere else in ``src/``.
     from google import genai
     from google.genai import types as genai_types
 
-    capture = CapturingHttpxClient(endpoint_allowlist=endpoint_allowlist)
+    capture = CapturingHttpxClient(
+        endpoint_allowlist=endpoint_allowlist,
+        operation_endpoints=operation_endpoints,
+    )
     try:
         options = genai_types.HttpOptions(
             **http_options_kwargs, httpx_client=capture

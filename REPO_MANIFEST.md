@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **561**
+Total tracked/scaffold files listed: **575**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -244,10 +244,12 @@ Total tracked/scaffold files listed: **561**
 - `schemas/documentation_collection_receipt.v4.schema.json`
 - `schemas/documentation_collection_receipt.v5.schema.json`
 - `schemas/documentation_evidence_validation.schema.json`
+- `schemas/extraction_execution_outcome.schema.json`
 - `schemas/extraction_input_packet.schema.json`
 - `schemas/extraction_input_packet.v2.schema.json`
 - `schemas/extraction_non_run_record.schema.json`
 - `schemas/extraction_provider_client_contract.schema.json`
+- `schemas/extraction_provider_client_contract_v2.schema.json`
 - `schemas/extraction_provider_error_record.schema.json`
 - `schemas/extraction_run.schema.json`
 - `schemas/extraction_validation_decision_set.schema.json`
@@ -256,6 +258,7 @@ Total tracked/scaffold files listed: **561**
 - `schemas/frontier_baseline.schema.json`
 - `schemas/ingestion_preflight_manifest.schema.json`
 - `schemas/live_call_authorization.schema.json`
+- `schemas/live_call_authorization_v2.schema.json`
 - `schemas/official_web_candidate.schema.json`
 - `schemas/official_web_collection_manifest.schema.json`
 - `schemas/product_observation.schema.json`
@@ -386,7 +389,9 @@ Total tracked/scaffold files listed: **561**
 - `src/dynamic_ai_products/evaluation/validators.py`
 - `src/dynamic_ai_products/extraction/__init__.py`
 - `src/dynamic_ai_products/extraction/candidates.py`
+- `src/dynamic_ai_products/extraction/count_reconciliation.py`
 - `src/dynamic_ai_products/extraction/errors.py`
+- `src/dynamic_ai_products/extraction/execution_outcome.py`
 - `src/dynamic_ai_products/extraction/input_packet.py`
 - `src/dynamic_ai_products/extraction/manifests.py`
 - `src/dynamic_ai_products/extraction/parent_snapshots.py`
@@ -411,11 +416,14 @@ Total tracked/scaffold files listed: **561**
 - `src/dynamic_ai_products/providers/__init__.py`
 - `src/dynamic_ai_products/providers/authorization.py`
 - `src/dynamic_ai_products/providers/client_contract.py`
+- `src/dynamic_ai_products/providers/client_contract_v2.py`
+- `src/dynamic_ai_products/providers/endpoint_grammar_v2.py`
 - `src/dynamic_ai_products/providers/errors.py`
 - `src/dynamic_ai_products/providers/response_capture.py`
 - `src/dynamic_ai_products/providers/retry_policy.py`
 - `src/dynamic_ai_products/providers/sdk_factory.py`
 - `src/dynamic_ai_products/providers/vertex_gemini.py`
+- `src/dynamic_ai_products/providers/vertex_gemini_v2.py`
 - `src/dynamic_ai_products/universe/__init__.py`
 - `src/dynamic_ai_products/universe/audit.py`
 - `src/dynamic_ai_products/universe/classification.py`
@@ -510,7 +518,10 @@ Total tracked/scaffold files listed: **561**
 - `tests/extraction/test_contents_renderer.py`
 - `tests/extraction/test_candidates.py`
 - `tests/extraction/test_contract_pins.py`
+- `tests/extraction/test_count_reconciliation.py`
+- `tests/extraction/test_em_route_matrix.py`
 - `tests/extraction/test_errors.py`
+- `tests/extraction/test_execution_outcome.py`
 - `tests/extraction/test_extraction_manifests.py`
 - `tests/extraction/test_input_packet.py`
 - `tests/extraction/test_live_authorization_validation.py`
@@ -538,7 +549,9 @@ Total tracked/scaffold files listed: **561**
 - `tests/provenance/test_write_bytes_once.py`
 - `tests/providers/test_authorization.py`
 - `tests/providers/test_client_contract.py`
+- `tests/providers/test_client_contract_v2.py`
 - `tests/providers/test_credential_non_disclosure.py`
+- `tests/providers/test_endpoint_grammar_v2.py`
 - `tests/providers/test_error_translation_seam.py`
 - `tests/providers/test_live_activation.py`
 - `tests/providers/test_live_refusal_surface.py`
@@ -549,6 +562,7 @@ Total tracked/scaffold files listed: **561**
 - `tests/providers/test_response_capture.py`
 - `tests/providers/test_retry_and_timeout_policy.py`
 - `tests/providers/test_sdk_factory.py`
+- `tests/providers/test_two_operation_capture.py`
 - `tests/schema/test_schemas_are_valid.py`
 - `tests/temporal/test_temporal_rule.py`
 - `tests/ui/test_local_ui_scaffold.py`

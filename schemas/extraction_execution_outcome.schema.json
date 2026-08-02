@@ -1,0 +1,428 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "extraction_execution_outcome.schema.json",
+  "title": "Extraction execution outcome",
+  "description": "The single owner of everything a two-operation model-execution run knows about itself that no released contract can hold (ADR-043, E-M). extraction_run@0.1.0 is strict and released and rejects every measurement field; extraction_provider_error_record@0.1.0 is strict and released and has no room for an operation label, an attempt ordinal, a raw reference or a filesystem reason code, and its reason_code enum accepts no persistence code. So measurement status, budget termination, reconciliation and persistence reasons, costs, operation counters and the evidence binding live here and nowhere else. This record is also the classifier root on every route that publishes no prediction manifest, which is why it pins - by reference and SHA-256 - exactly those artifacts written before it. It can never pin the envelopes or the manifest: both are written after it, and a digest cannot be taken of bytes that do not yet exist.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "schema_version",
+    "route_family",
+    "terminal_reason",
+    "loop_termination_cause",
+    "external_request_count",
+    "error_count",
+    "count_operation",
+    "generate_attempts",
+    "packet_pin",
+    "contents_pin",
+    "prompt_pin",
+    "client_contract_pin",
+    "authorization_pin",
+    "extraction_run_pin",
+    "evidence_binding",
+    "count_operation_monetary_cost_microdollars",
+    "count_operation_rate_limit",
+    "count_operation_quota_claim_limit"
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "attempt_raw_reference": {
+      "type": "string",
+      "minLength": 1,
+      "allOf": [
+        { "pattern": "^(attempts|predictions)/" },
+        { "not": { "pattern": "[^\\u0021-\\u007e]" } },
+        { "not": { "pattern": "\\.\\." } },
+        { "not": { "pattern": "//" } },
+        { "not": { "pattern": "\\\\" } },
+        { "not": { "pattern": "://" } }
+      ]
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_label",
+        "attempt_ordinal",
+        "send_outcome",
+        "sdk_call_outcome",
+        "capture_disposition"
+      ],
+      "properties": {
+        "operation_label": { "enum": ["count_tokens", "generate_content"] },
+        "attempt_ordinal": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "send_outcome": {
+          "enum": [
+            "not_sent_context_url_mismatch",
+            "not_sent_client_unavailable",
+            "no_response_transport_failure",
+            "response_protocol_switch",
+            "response_redirect_refused",
+            "response_2xx",
+            "response_4xx",
+            "response_5xx"
+          ]
+        },
+        "sdk_call_outcome": { "enum": ["returned", "raised", "not_invoked"] },
+        "capture_disposition": {
+          "enum": [
+            "no_body_captured",
+            "empty_entity_body_not_persisted",
+            "raw_persisted",
+            "body_captured_persistence_failed"
+          ]
+        },
+        "raw_reference": { "$ref": "#/$defs/attempt_raw_reference" },
+        "raw_sha256": { "$ref": "#/$defs/sha256" },
+        "byte_count": { "type": "integer", "minimum": 1 },
+        "provider_reason_code": {
+          "comment": "The released extraction_provider_error_record@0.1.0 enum, unchanged and unwidened.",
+          "enum": [
+            "provider_timeout",
+            "vertex_quota_exhausted",
+            "vertex_unavailable",
+            "vertex_permission_denied",
+            "vertex_model_not_found",
+            "vertex_project_invalid",
+            "vertex_location_invalid",
+            "adc_not_configured",
+            "adc_refresh_failed",
+            "adc_expired",
+            "provider_response_unusable"
+          ]
+        },
+        "persistence_reason_code": { "enum": ["write_error", "destination_exists"] }
+      },
+      "allOf": [
+        {
+          "comment": "Exact iff. A zero-length entity body is never written: a zero-byte artifact would carry sha256 of the empty string, a valid-looking digest for content that never existed.",
+          "if": {
+            "required": ["capture_disposition"],
+            "properties": { "capture_disposition": { "const": "raw_persisted" } }
+          },
+          "then": { "required": ["raw_reference", "raw_sha256", "byte_count"] },
+          "else": {
+            "allOf": [
+              { "not": { "required": ["raw_reference"] } },
+              { "not": { "required": ["raw_sha256"] } },
+              { "not": { "required": ["byte_count"] } }
+            ]
+          }
+        },
+        {
+          "comment": "Exact iff. A persistence reason under raw_persisted or no_body_captured would describe a failure that did not happen.",
+          "if": {
+            "required": ["capture_disposition"],
+            "properties": {
+              "capture_disposition": { "const": "body_captured_persistence_failed" }
+            }
+          },
+          "then": { "required": ["persistence_reason_code"] },
+          "else": { "not": { "required": ["persistence_reason_code"] } }
+        },
+        {
+          "comment": "A call that raised, or was never invoked, always has a sanitized provider reason.",
+          "if": {
+            "required": ["sdk_call_outcome"],
+            "properties": { "sdk_call_outcome": { "enum": ["raised", "not_invoked"] } }
+          },
+          "then": { "required": ["provider_reason_code"] }
+        },
+        {
+          "comment": "A call that returned carries a provider reason only when the returned body was itself unusable.",
+          "if": {
+            "required": ["sdk_call_outcome", "capture_disposition"],
+            "properties": {
+              "sdk_call_outcome": { "const": "returned" },
+              "capture_disposition": {
+                "not": { "const": "empty_entity_body_not_persisted" }
+              }
+            }
+          },
+          "then": { "not": { "required": ["provider_reason_code"] } }
+        },
+        {
+          "comment": "not_invoked is exactly the client-unavailable send outcome, in both directions.",
+          "if": {
+            "required": ["sdk_call_outcome"],
+            "properties": { "sdk_call_outcome": { "const": "not_invoked" } }
+          },
+          "then": {
+            "properties": { "send_outcome": { "const": "not_sent_client_unavailable" } }
+          }
+        },
+        {
+          "if": {
+            "required": ["send_outcome"],
+            "properties": { "send_outcome": { "const": "not_sent_client_unavailable" } }
+          },
+          "then": { "properties": { "sdk_call_outcome": { "const": "not_invoked" } } }
+        }
+      ]
+    },
+    "run_root_pin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference", "sha256"],
+      "properties": {
+        "reference": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  },
+  "properties": {
+    "contract": { "const": "extraction_execution_outcome@0.1.0" },
+    "schema_version": { "const": "0.1.0" },
+    "route_family": {
+      "enum": [
+        "completed",
+        "post_generation_invalid",
+        "pre_generation_invalid",
+        "count_provider_error",
+        "generation_provider_error",
+        "generation_persistence_failed"
+      ]
+    },
+    "terminal_reason": {
+      "enum": [
+        "none",
+        "provider_call_failed",
+        "count_parse_failed",
+        "count_reconciliation_mismatch",
+        "budget_termination",
+        "persistence_failure",
+        "reconciliation_invalid"
+      ]
+    },
+    "loop_termination_cause": {
+      "enum": [
+        "terminal_response_returned",
+        "non_retryable_provider_failure",
+        "attempt_cap_reached",
+        "persistence_failure",
+        "client_unavailable",
+        "context_url_mismatch",
+        "retry_not_permitted"
+      ]
+    },
+    "measurement_status": { "enum": ["verified", "unknown", "invalid"] },
+    "external_request_count": {
+      "comment": "Frozen scope: the countTokens and generateContent operations that reach the capture client's transport-send boundary. Nothing else is counted; credential-refresh traffic is out of scope and is deferred to E-B connector qualification.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4
+    },
+    "error_count": {
+      "comment": "Failed provider attempts only. A filesystem failure never increments it.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "reserved_cost_microdollars": { "type": "integer", "minimum": 0 },
+    "actual_cost_microdollars": { "type": "integer", "minimum": 0 },
+    "measured_input_tokens": { "type": "integer", "minimum": 0 },
+    "sdk_witness_total_tokens": { "type": "integer", "minimum": 0 },
+    "thinking_budget": { "const": 0 },
+    "count_operation_monetary_cost_microdollars": {
+      "comment": "Verified against documentation_evidence_validation@0.1.0: 'There is no charge or quota restriction for using the' 'CountTokens'.",
+      "const": 0
+    },
+    "count_operation_rate_limit": {
+      "comment": "The same verified passage states a maximum quota. Recording the zero price without the quota would drop a load-bearing qualifier.",
+      "const": "3000 requests per minute (maximum quota)"
+    },
+    "count_operation_quota_claim_limit": {
+      "const": "this evidence does not support a claim that no quota applies"
+    },
+    "count_operation": { "$ref": "#/$defs/attempt" },
+    "generate_attempts": {
+      "type": "array",
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/attempt" }
+    },
+    "packet_pin": { "$ref": "#/$defs/run_root_pin" },
+    "contents_pin": { "$ref": "#/$defs/run_root_pin" },
+    "prompt_pin": { "$ref": "#/$defs/run_root_pin" },
+    "client_contract_pin": { "$ref": "#/$defs/run_root_pin" },
+    "authorization_pin": { "$ref": "#/$defs/run_root_pin" },
+    "extraction_run_pin": { "$ref": "#/$defs/run_root_pin" },
+    "count_raw_pin": { "$ref": "#/$defs/run_root_pin" },
+    "raw_prediction_pin": { "$ref": "#/$defs/run_root_pin" },
+    "provider_error_record_pin": { "$ref": "#/$defs/run_root_pin" },
+    "evidence_binding": {
+      "comment": "A pre-existing external anchor: the E-M-S registry record is written before any E-M run and lives outside the run root, so its reference is registry-relative and all three fields are pinned by const. A formally valid binding pointing at a different registry file must not become a root of trust.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registry_reference", "sha256", "contract"],
+      "properties": {
+        "registry_reference": {
+          "const": "data/registry/documentation_evidence_validation_vertex_ai_gemini_2_5_flash_v1.json"
+        },
+        "sha256": {
+          "const": "16f7248543cc73e1924163e3218091df0c217b74b26d83e0266077e2732d65ea"
+        },
+        "contract": { "const": "documentation_evidence_validation@0.1.0" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "comment": "completed: a certified prediction. count must have persisted, and a measurement verdict is mandatory.",
+      "if": {
+        "required": ["route_family"],
+        "properties": { "route_family": { "const": "completed" } }
+      },
+      "then": {
+        "required": ["raw_prediction_pin", "count_raw_pin", "measurement_status"],
+        "not": { "required": ["provider_error_record_pin"] },
+        "properties": {
+          "measurement_status": { "enum": ["verified", "unknown"] },
+          "terminal_reason": { "const": "none" },
+          "generate_attempts": { "minItems": 1 },
+          "count_operation": {
+            "properties": { "capture_disposition": { "const": "raw_persisted" } }
+          }
+        }
+      }
+    },
+    {
+      "comment": "post_generation_invalid: the bytes exist and are pinned; only the reading of them was refused.",
+      "if": {
+        "required": ["route_family"],
+        "properties": { "route_family": { "const": "post_generation_invalid" } }
+      },
+      "then": {
+        "required": ["raw_prediction_pin", "count_raw_pin", "measurement_status"],
+        "not": { "required": ["provider_error_record_pin"] },
+        "properties": {
+          "measurement_status": { "const": "invalid" },
+          "terminal_reason": { "const": "reconciliation_invalid" },
+          "generate_attempts": { "minItems": 1 },
+          "count_operation": {
+            "properties": { "capture_disposition": { "const": "raw_persisted" } }
+          }
+        }
+      }
+    },
+    {
+      "comment": "pre_generation_invalid: generation never happened, so the attempt list must be empty. Without this the shape of a generation-phase persistence failure would validate here too.",
+      "if": {
+        "required": ["route_family"],
+        "properties": { "route_family": { "const": "pre_generation_invalid" } }
+      },
+      "then": {
+        "allOf": [
+          { "not": { "required": ["raw_prediction_pin"] } },
+          { "not": { "required": ["provider_error_record_pin"] } },
+          { "not": { "required": ["measurement_status"] } }
+        ],
+        "properties": {
+          "generate_attempts": { "maxItems": 0 },
+          "terminal_reason": {
+            "enum": [
+              "count_parse_failed",
+              "count_reconciliation_mismatch",
+              "budget_termination",
+              "persistence_failure"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "comment": "count_provider_error: the failure is the provider's and it happened in the count phase, so no generate attempt exists.",
+      "if": {
+        "required": ["route_family"],
+        "properties": { "route_family": { "const": "count_provider_error" } }
+      },
+      "then": {
+        "required": ["provider_error_record_pin"],
+        "allOf": [
+          { "not": { "required": ["raw_prediction_pin"] } },
+          { "not": { "required": ["measurement_status"] } }
+        ],
+        "properties": {
+          "generate_attempts": { "maxItems": 0 },
+          "terminal_reason": { "const": "provider_call_failed" }
+        }
+      }
+    },
+    {
+      "comment": "generation_provider_error: count succeeded and is pinned; the generate phase failed on the provider's side.",
+      "if": {
+        "required": ["route_family"],
+        "properties": { "route_family": { "const": "generation_provider_error" } }
+      },
+      "then": {
+        "required": ["provider_error_record_pin", "count_raw_pin"],
+        "allOf": [
+          { "not": { "required": ["raw_prediction_pin"] } },
+          { "not": { "required": ["measurement_status"] } }
+        ],
+        "properties": {
+          "generate_attempts": { "minItems": 1 },
+          "terminal_reason": {
+            "enum": ["provider_call_failed", "persistence_failure"]
+          },
+          "count_operation": {
+            "properties": { "capture_disposition": { "const": "raw_persisted" } }
+          }
+        }
+      }
+    },
+    {
+      "comment": "generation_persistence_failed: the provider returned, we could not durably keep the bytes. That is our failure, not the provider's, so no provider-error record is written.",
+      "if": {
+        "required": ["route_family"],
+        "properties": { "route_family": { "const": "generation_persistence_failed" } }
+      },
+      "then": {
+        "required": ["count_raw_pin"],
+        "allOf": [
+          { "not": { "required": ["raw_prediction_pin"] } },
+          { "not": { "required": ["provider_error_record_pin"] } },
+          { "not": { "required": ["measurement_status"] } }
+        ],
+        "properties": {
+          "generate_attempts": {
+            "minItems": 1,
+            "contains": {
+              "properties": {
+                "capture_disposition": { "const": "body_captured_persistence_failed" }
+              },
+              "required": ["capture_disposition"]
+            }
+          },
+          "terminal_reason": { "const": "persistence_failure" },
+          "count_operation": {
+            "properties": { "capture_disposition": { "const": "raw_persisted" } }
+          }
+        }
+      }
+    },
+    {
+      "comment": "The count operation is one send with a fixed label and no retry.",
+      "properties": {
+        "count_operation": {
+          "properties": {
+            "operation_label": { "const": "count_tokens" },
+            "attempt_ordinal": { "const": 1 }
+          }
+        },
+        "generate_attempts": {
+          "items": { "properties": { "operation_label": { "const": "generate_content" } } }
+        }
+      }
+    },
+    {
+      "comment": "An actual cost may only be recorded once usage has been verified.",
+      "if": { "required": ["actual_cost_microdollars"] },
+      "then": {
+        "required": ["measurement_status"],
+        "properties": { "measurement_status": { "const": "verified" } }
+      }
+    }
+  ]
+}

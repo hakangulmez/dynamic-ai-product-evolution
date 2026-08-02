@@ -10,6 +10,7 @@ import importlib
 import inspect
 import json
 import pkgutil
+import re
 import shutil
 from pathlib import Path
 
@@ -173,10 +174,11 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-042: manifest_version 0.13.0 -> 0.14.0, 41 -> 42 entries,
-    # with documentation_evidence_validation@0.1.0 registered alongside the
-    # unchanged receipt entries. Meaning unchanged.
-    "19f9fb972130f9457c3324b5ca2cd97b8273d1e3e7bffc24511eb5de042f9c22"
+    # Rebaselined by ADR-043: manifest_version 0.14.0 -> 0.15.0, 42 -> 45 entries,
+    # registering the two E-M successor contracts and the new execution outcome
+    # alongside every unchanged entry. The released @0.1.0 schemas they succeed
+    # are byte-identical; only the registry grew. Meaning unchanged.
+    "c6420c1589e684fc9f24b0e691df4f9dd62d064dd3fe734f35e0cbe034f6becb"
 )
 
 
@@ -351,3 +353,106 @@ def test_release_binding_public_surface():
     assert len(evaluation_pkg.__all__) == 579
     assert evaluation_pkg.__all__ == sorted(evaluation_pkg.__all__)
     assert len(set(evaluation_pkg.__all__)) == len(evaluation_pkg.__all__)
+
+
+# --- ADR-043 (E-M): the three new schemas agree with their registry entries ---
+#
+# Four facts have to line up for one contract, and each of them lives somewhere
+# different: the file on disk, its key in schema_version_manifest.json, the
+# ``contract`` const inside the file, and the ``schema_version`` const beside it.
+# A disagreement between any two is invisible at the point of use -- a document
+# validates against a schema that the registry believes is a different version,
+# or a successor is registered under the identity of the contract it succeeds.
+# So the agreement is asserted directly rather than assumed from the naming.
+#
+# The repository holds two spellings for a versioned successor file: the older
+# ``name.vN.schema.json`` and the underscore ``name_vN.schema.json`` used here.
+# Both derive the same manifest key, which is what the registry actually reads;
+# the naming difference is informational and is deliberately not "fixed" by
+# renaming a file that other artifacts already reference.
+
+EM_SCHEMA_KEYS = (
+    "extraction_provider_client_contract_v2",
+    "live_call_authorization_v2",
+    "extraction_execution_outcome",
+)
+
+
+def _schema_version_manifest() -> dict:
+    return json.loads(
+        (ROOT / "schemas" / "schema_version_manifest.json").read_text(encoding="utf-8")
+    )["schemas"]
+
+
+@pytest.mark.parametrize("key", EM_SCHEMA_KEYS)
+def test_each_new_schema_agrees_with_its_manifest_key_contract_and_version(key):
+    path = ROOT / "schemas" / f"{key}.schema.json"
+    assert path.exists(), f"the approved underscore filename is missing: {path.name}"
+
+    schema = json.loads(path.read_text(encoding="utf-8"))
+    manifest = _schema_version_manifest()
+
+    # The key the registry reads is the filename stem.
+    assert key in manifest, f"{key} is not registered in schema_version_manifest.json"
+    assert schema["$id"] == path.name
+
+    declared_version = schema["properties"]["schema_version"]["const"]
+    declared_contract = schema["properties"]["contract"]["const"]
+    registered_version = manifest[key]
+
+    # 1. The registry's version is the schema's own version.
+    assert registered_version == declared_version
+
+    # 2. The contract identity is the un-suffixed key at that same version, so a
+    #    successor can never register under the identity it succeeds.
+    base = re.sub(r"_v\d+$", "", key)
+    assert declared_contract == f"{base}@{registered_version}"
+
+
+@pytest.mark.parametrize("key", EM_SCHEMA_KEYS)
+def test_no_dot_versioned_duplicate_shadows_an_approved_underscore_file(key):
+    """One file per contract. A second spelling would derive the same manifest
+    key and leave two files racing for one registry entry."""
+    base = re.sub(r"_v\d+$", "", key)
+    suffix = key[len(base) :]
+    if not suffix:
+        return
+    twin = ROOT / "schemas" / f"{base}.v{suffix.lstrip('_v')}.schema.json"
+    assert not twin.exists(), f"a dot-versioned duplicate exists alongside {key}"
+
+
+@pytest.mark.parametrize(
+    "released, expected_contract",
+    [
+        ("extraction_provider_client_contract", "extraction_provider_client_contract@0.1.0"),
+        ("live_call_authorization", "live_call_authorization@0.1.0"),
+    ],
+)
+def test_the_released_predecessors_keep_their_own_identity_and_version(
+    released, expected_contract
+):
+    """The successors sit beside them; nothing about @0.1.0 moves."""
+    schema = json.loads(
+        (ROOT / "schemas" / f"{released}.schema.json").read_text(encoding="utf-8")
+    )
+    assert schema["properties"]["contract"]["const"] == expected_contract
+    assert _schema_version_manifest()[released] == "0.1.0"
+    assert schema["properties"]["schema_version"]["const"] == "0.1.0"
+
+
+def test_every_manifest_key_still_resolves_to_exactly_one_schema_file():
+    """Registry-wide, not just for the three new entries.
+
+    Both filename spellings are accepted here, because that divergence predates
+    this increment; what must hold is that each key resolves to one file and no
+    key resolves to none.
+    """
+    manifest = _schema_version_manifest()
+    for key in manifest:
+        base = re.sub(r"_v(\d+)$", "", key)
+        suffix = key[len(base) :]
+        candidates = [ROOT / "schemas" / f"{key}.schema.json"]
+        if suffix:
+            candidates.append(ROOT / "schemas" / f"{base}.v{suffix[2:]}.schema.json")
+        present = [candidate for candidate in candidates if candidate.exists()]
+        assert len(present) == 1, f"{key} resolves to {len(present)} files: {present}"

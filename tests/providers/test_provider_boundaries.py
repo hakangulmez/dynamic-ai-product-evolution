@@ -26,7 +26,36 @@ EXTRACTION = SRC / "extraction"
 # The single permitted outbound edge, and the exact names it may carry.
 ALLOWED_EXTRACTION_MODULE = "extraction.provider_adapter"
 ALLOWED_EXTRACTION_NAMES = frozenset(
-    {"ExtractionProvider", "ProviderRequest", "ProviderResponse"}
+    {
+        "ExtractionProvider",
+        "ProviderRequest",
+        "ProviderResponse",
+        # ADR-043 (E-M). Three more names, all payload types on the same shared
+        # surface -- which is what this edge exists to carry.
+        #
+        # CaptureSinkError must cross because the connector has to let a
+        # runner-owned persistence failure pass through its retry wrapper
+        # unchanged; translating it would publish a filesystem failure as a
+        # provider failure under a reason code the released enum accepts.
+        #
+        # BudgetAdmission crosses because the connector checks it with isinstance
+        # before spending it. Duck-typing that check would have kept the edge at
+        # four names, and that is the wrong trade: an authorization-bearing object
+        # deserves a structural check, not an attribute probe.
+        #
+        # CaptureRecord crosses as the declared return type of both operations.
+        # provider_request_digest and client_contract_digest are the two halves
+        # of one identity rule. The connector recomputes the digest from the
+        # request in hand and its own contract instead of trusting the one the
+        # admission carries, so both must cross -- and there must be exactly one
+        # implementation of each, on the shared surface.
+        "CaptureSinkError",
+        "BudgetAdmission",
+        "CaptureRecord",
+        "PROVIDER_PROTOCOL_VERSION_V8",
+        "client_contract_digest",
+        "provider_request_digest",
+    }
 )
 
 _SCOPES = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
@@ -94,7 +123,11 @@ def _code_tokens(tree: ast.AST) -> tuple[set[str], list[str]]:
 
 
 def test_package_is_enumerable():
-    assert len(MODULES) == 8
+    # ADR-043 (E-M) adds client_contract_v2.py, endpoint_grammar_v2.py and
+    # vertex_gemini_v2.py: 8 -> 11. Each is a successor rather than a rewrite,
+    # because the released v1 modules keep publishing the contract they were
+    # built for and their instances are hash-pinned by existing governance.
+    assert len(MODULES) == 11
     assert (PACKAGE / "__init__.py") in MODULES
 
 
@@ -277,19 +310,30 @@ def test_no_behavioural_module_disappears_behind_a_module_level_skip():
     assert offenders == []
 
 
-def test_the_extraction_edge_still_carries_exactly_three_names_after_e_r():
-    """E-R changes ProviderRequest's shape, not the size of the import edge.
+def test_the_extraction_edge_carries_exactly_nine_names_after_e_m():
+    """E-R changed the request's shape; E-M widens the edge by exactly one name.
 
-    ADR-036 removes ``prompt_text`` and ``payload`` from the request and adds
-    ``rendered_contents``; the connector still imports the same three names. The
-    allowlist widens only at E-M, and that will be a separate recorded change.
+    ADR-036 removed ``prompt_text`` and ``payload`` and added
+    ``rendered_contents`` without touching the edge's size. ADR-043 does widen
+    it, and this is that recorded change: three payload types cross, and the
+    reason each one crosses is written beside it above. The E-M design plan
+    predicted four names; the measured edge is nine. Six of them are payload
+    types and constants; three carry rules that must have exactly one
+    implementation shared by both sides -- an admission identity computed two
+    ways would be two identities.
     """
     assert ALLOWED_EXTRACTION_NAMES == {
         "ExtractionProvider",
         "ProviderRequest",
         "ProviderResponse",
+        "CaptureSinkError",
+        "BudgetAdmission",
+        "CaptureRecord",
+        "PROVIDER_PROTOCOL_VERSION_V8",
+        "client_contract_digest",
+        "provider_request_digest",
     }
-    assert len(ALLOWED_EXTRACTION_NAMES) == 3
+    assert len(ALLOWED_EXTRACTION_NAMES) == 9
 
 
 def test_no_provider_module_reads_a_removed_request_field():

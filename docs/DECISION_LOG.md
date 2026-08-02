@@ -1162,6 +1162,142 @@ of exact integer ratios in microdollars, so that no rounding is implicit and the
 cost rule is auditable.
 
 
+## ADR-043 — E-M two-operation model execution: successor contracts, runner-owned capture, and the execution outcome
+
+**Status:** Accepted.
+
+**The question this answers.** E-L bought one authorized call and E-R fixed what
+that call sends. Neither could say what the call would cost before making it. A
+`countTokens` measurement can, but adding a second operation turns almost every
+single-operation assumption into a wrong one, and the released contracts cannot
+absorb the difference. This increment adds the second operation and states, once,
+what changes.
+
+**Released contracts are succeeded, never mutated.** Measured, not assumed:
+`extraction_run@0.1.0` is closed and rejected all six measurement fields tried
+against it; `extraction_provider_client_contract@0.1.0` has a closed
+`model_parameters`, so `thinking_budget` produced a validation error there;
+`extraction_provider_error_record@0.1.0` is closed, has no operation label,
+attempt ordinal or raw reference, and its `reason_code` enum rejects
+`write_error` and `destination_exists`. So `@0.2.0` successors sit beside the
+first two, `extraction_execution_outcome@0.1.0` is new, and all five released
+schemas stay byte-identical. `PROVIDER_PROTOCOL_VERSION` keeps saying `v7` and
+`v8` is declared alongside it: rewriting the shared constant would have changed
+the digest of every released contract instance and broken every governance record
+that pins one.
+
+**The phase order is the increment.** countTokens, then persist and hash-verify,
+then parse, then reconcile, then admit, then generateContent. Nothing derived
+from a response reaches the budget or the next request before that response's
+bytes are durable. The honest limit is stated in the code: the SDK parses the
+body and classifies its own errors *before* our persistence, so the guarantee
+covers our derivations and our subsequent sends, not everything that touches the
+bytes.
+
+**Why the runner owns the sink.** An earlier shape had the connector finish every
+retry under `tenacity` and hand back a bundle of captures. That makes "a
+persistence failure permits no further send" unenforceable — by the time the
+failure is visible the later sends have happened. The sink is now called after
+each attempt and before the next, and a test asserts the send counter stops where
+the failure did. Measured: an `ExtractionError` raised inside the retry wrapper
+came out as `ProviderError('provider_response_unusable')`, which is a **valid**
+member of the released provider-error enum, so a filesystem failure would have
+been published as a provider failure with nothing to flag it. `CaptureSinkError`
+now passes through unchanged and carries both reasons, because both can be true
+at once.
+
+**Capture is operation-labelled and single-use.** One slot was adequate while one
+run meant one send. Two operations and up to three attempts need keys, and a
+filled key is refused rather than overwritten, so a retryable body cannot be
+silently replaced by the one after it. The label is a fixed code-path constant,
+never a caller argument and never inferred from a URL.
+
+**Endpoints are exact, and a 101 is refused.** Measured: the released matcher
+admits, under a single `/v1/projects` prefix entry, another publisher's
+`:predict` and another location's `:export`; and it strips a query before
+comparing, so `?alt=sse` passes a query-free entry. The successor grammar
+compares for equality against the *one* endpoint the active operation declares —
+allowlist membership cannot catch a crossed operation, since both operations are
+on the allowlist. Separately, `httpcore` breaks its receive loop on an
+informational response with status 101, so a protocol switch reaches the capture
+boundary; the released guard refused only 3xx, and it is now refused before
+`response.content` is touched.
+
+**Budget arithmetic, derived rather than declared.** `budget_max_requests` counted
+retries of one call; a two-operation run makes requests that are not retries, so
+`budget_max_external_requests` replaces it and the effective cap is
+`min(3, budget_max_external_requests - 1)`. No independent
+`budget_max_generate_attempts` field exists — a second source of truth could drift
+from the formula. The wall-clock floor is tiered by that cap (600 / 901 / 1203s)
+rather than flat: a flat 600 would have let a three-request budget claim a
+one-request ceiling. All three numbers are computed from the timeout pins and
+compared against the schema's tiers, so neither can bit-rot alone. Pricing stays
+exact integer microdollar (3/10 and 5/2, each side rounded up independently), and
+the reserve is the cap times the per-attempt ceiling because a retry re-sends the
+same input.
+
+**One canonical projection order.** `generation_config_projection` is six names in
+one fixed order, enforced with `prefixItems` and `items: false`. An `items.enum`
+plus `uniqueItems` construction admits every permutation, and a permuted list
+serializes to different canonical bytes — `sort_keys` orders mapping keys, never
+list elements — so two semantically identical contracts would have acquired
+divergent provenance digests and an authorization pinning one would have stopped
+matching the other. A test shows both halves: the permutation is refused, and the
+digests it would have produced differ.
+
+**What the wire actually carries.** Traced to the terminal `json.dumps`:
+`thinkingConfig` serializes as `{"thinking_budget": 0}` — snake_case, not
+`thinkingBudget`, because the converter passes the object through and
+`convert_to_dict` applies no aliases. `thinking_level`, `include_thoughts`,
+`systemInstruction` and `tools` appear in neither operation's body, and their
+absence is structural: `ProviderRequest` has no such field and the config is
+assembled from closed constants.
+
+**The outcome owns what nothing else can.** Measurement status, budget
+termination, reconciliation and persistence reasons, costs, per-attempt records,
+operation counters and the evidence binding live in
+`extraction_execution_outcome@0.1.0`, bound to the prediction manifest as one of
+two new roles. It pins only what precedes it — never the envelopes or the
+manifest, which are written after — and on routes that publish no manifest it is
+itself the classifier root. Variable-count attempt bodies are deliberately not
+roles: a role is a 1:1 pin, and they are reachable through the outcome instead.
+
+**The classifier is diagnostic and grants nothing.** `authoritative_completed` is
+the only harness-admissible label, and even it states internal consistency rather
+than permission. A contract id or version mismatch is `corrupt`, not
+`incomplete`: the pin is present and the file is present, so nothing is missing —
+and such a document can hash-match its own pin, which is why the schema gate runs
+before any digest comparison.
+
+**Deviation from the plan, recorded.** The plan predicted the
+`extraction -> providers` import edge would widen from three names to four. It is
+six: `CaptureSinkError`, `BudgetAdmission` and `CaptureRecord`. Keeping the
+`isinstance` check on an authorization-bearing admission was judged worth more
+than matching a predicted count.
+
+**No live call.** This increment constructs no client, resolves no ADC, reads no
+credential, and calls neither `countTokens` nor `generateContent`. Every test runs
+offline over `httpx.MockTransport` or an injected fake, and `data/` is unchanged.
+
+**Movements.** `schema_version_manifest.json` `0.14.0` → `0.15.0`, 42 → 45
+entries. Schema files 45 → 48. `REPO_MANIFEST.md` 561 → 575. Provider modules
+8 → 11; extraction modules 14 → 16. Prediction-manifest roles 8 → 10 (v2 tuple;
+the v1 tuple is unchanged). `google.*` importers stay at one and `httpx`
+importers at two.
+
+This decision supplements ADR-033 through ADR-036 and amends none of them.
+
+**Rejected alternatives:** Widening `extraction_run@0.1.0` was rejected — it is
+released and closed, and measured to reject every field this needed. Adding
+`thinking_budget` to `model_parameters` was rejected for the same reason. A
+connector-owned retry loop returning captures afterwards was rejected because it
+makes the persistence rule unenforceable. Duck-typing the admission check to keep
+the import edge at four names was rejected: the count is a prediction, the check
+is a guarantee. Treating a contract mismatch as `incomplete` was rejected because
+nothing is missing in that case. A flat wall-clock floor was rejected because it
+under-constrains every budget above the smallest.
+
+
 ## Open decisions
 
 - Filing-date versus fiscal-year observation convention.

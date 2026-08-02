@@ -753,7 +753,7 @@ def test_no_static_schema_added_and_schema_manifest_unchanged():
     # evidence-validation contract added).
     assert not (ROOT / "schemas" / "evaluation_run_manifest.v2.schema.json").exists()
     got = sha256_bytes((ROOT / "schemas" / "schema_version_manifest.json").read_bytes())
-    assert got == "19f9fb972130f9457c3324b5ca2cd97b8273d1e3e7bffc24511eb5de042f9c22"
+    assert got == "c6420c1589e684fc9f24b0e691df4f9dd62d064dd3fe734f35e0cbe034f6becb"
 
 
 def test_protected_identities_unchanged():

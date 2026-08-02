@@ -111,10 +111,13 @@ def _code_tokens(tree: ast.AST) -> tuple[set[str], list[str]]:
 
 
 def test_package_is_enumerable_and_complete():
-    # ADR-036 (E-R) adds contents_renderer.py: 13 -> 14. ADR-035 claimed the
-    # 13-module count would hold; materializing the provider contents needs a
-    # module of its own, and that is recorded as a change rather than glossed.
-    assert len(MODULES) == 14
+    # ADR-036 (E-R) adds contents_renderer.py: 13 -> 14. ADR-043 (E-M) adds
+    # count_reconciliation.py and execution_outcome.py: 14 -> 16. The first is
+    # pure derivation from archived bytes; the second owns the terminal record
+    # that no released contract can hold. Neither was folded into an existing
+    # module, because a shared module would have blurred "derives a number" with
+    # "publishes a verdict".
+    assert len(MODULES) == 16
     assert (PACKAGE / "__init__.py") in MODULES
 
 
@@ -353,6 +356,27 @@ def test_no_provider_is_constructed_inside_the_package():
         # no vendor module, and performs no I/O -- so the guard's meaning is
         # unchanged even though the function set grew.
         "__post_init__",
+        # ADR-043 (E-M). The v8 surface: a second operation, a metering seam that
+        # admits on a measured count, and a single-use admission. Every one of
+        # these is a Protocol method or a pure guard on a frozen payload -- none
+        # constructs a client, imports a vendor module, or performs I/O, so the
+        # guard still means what it meant.
+        "count_tokens",
+        "complete_v8",
+        "admit",
+        "spend",
+        "spent",
+        "__init__",
+        "__call__",
+        # The v8 gate. Like require_provider it only refuses: the provider is
+        # still injected, and this package still builds none.
+        "require_provider_v8",
+        # The admission-identity rule and its one canonical serializer. Both are
+        # pure: they hash mappings and compare strings. Neither constructs a
+        # client, imports a vendor module, or performs I/O.
+        "provider_request_digest",
+        "client_contract_digest",
+        "_canonical_bytes",
     }
     assert "Protocol" in text and "runtime_checkable" in text
 

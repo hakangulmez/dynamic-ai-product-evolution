@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.14.0",
+  "manifest_version": "0.15.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -14,10 +14,12 @@
     "documentation_evidence_validation": "0.1.0",
     "evaluation_result": "0.1.0",
     "extraction_candidate_collection": "0.1.0",
+    "extraction_execution_outcome": "0.1.0",
     "extraction_input_packet": "0.1.0",
     "extraction_input_packet_v2": "0.2.0",
     "extraction_non_run_record": "0.1.0",
     "extraction_provider_client_contract": "0.1.0",
+    "extraction_provider_client_contract_v2": "0.2.0",
     "extraction_provider_error_record": "0.1.0",
     "extraction_run": "0.1.0",
     "extraction_validation_decision_set": "0.1.0",
@@ -26,6 +28,7 @@
     "frontier_baseline": "0.1.0",
     "ingestion_preflight_manifest": "0.1.0",
     "live_call_authorization": "0.1.0",
+    "live_call_authorization_v2": "0.2.0",
     "official_web_candidate": "0.1.0",
     "official_web_collection_manifest": "0.1.0",
     "product_observation": "0.1.0",

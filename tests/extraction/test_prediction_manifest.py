@@ -14,6 +14,8 @@ from dynamic_ai_products.extraction.errors import ExtractionError
 from dynamic_ai_products.extraction.prediction_manifest import (
     PREDICTION_MANIFEST_CONTRACT,
     REQUIRED_SOURCE_ARTIFACT_ROLES,
+    REQUIRED_SOURCE_ARTIFACT_ROLES_V2,
+    build_prediction_artifact_manifest_v2,
     build_prediction_artifact_manifest,
     manifest_bytes,
 )
@@ -164,3 +166,77 @@ def test_a_contract_key_smuggled_inside_one_role_is_refused():
 
 def test_serialization_is_deterministic():
     assert manifest_bytes(_manifest()) == manifest_bytes(_manifest())
+
+
+# --- ADR-043 (E-M): the ten-role successor -----------------------------------
+
+
+def test_the_v1_role_tuple_is_untouched_by_the_e_m_increment():
+    """Changing it would have altered every manifest the released route emits."""
+    assert len(REQUIRED_SOURCE_ARTIFACT_ROLES) == 8
+    assert REQUIRED_SOURCE_ARTIFACT_ROLES[0] == "raw_prediction"
+    assert "count_tokens_raw_response" not in REQUIRED_SOURCE_ARTIFACT_ROLES
+    assert "extraction_execution_outcome" not in REQUIRED_SOURCE_ARTIFACT_ROLES
+
+
+def test_the_v2_role_tuple_extends_it_by_exactly_two():
+    assert REQUIRED_SOURCE_ARTIFACT_ROLES_V2[:8] == REQUIRED_SOURCE_ARTIFACT_ROLES
+    assert REQUIRED_SOURCE_ARTIFACT_ROLES_V2[8:] == (
+        "count_tokens_raw_response",
+        "extraction_execution_outcome",
+    )
+    assert len(REQUIRED_SOURCE_ARTIFACT_ROLES_V2) == 10
+
+
+def test_the_v2_builder_pins_all_ten_roles():
+    manifest = build_prediction_artifact_manifest_v2(
+        prediction_run_id="run-1",
+        envelopes_reference="predictions/prediction_envelopes.jsonl",
+        envelopes_sha256="a" * 64,
+        record_count=1,
+        source_artifacts={
+            role: {"reference": f"x/{role}", "sha256": "b" * 64}
+            for role in REQUIRED_SOURCE_ARTIFACT_ROLES_V2
+        },
+    )
+    assert len(manifest["source_artifacts"]) == 10
+    assert manifest["contract"] == dict(PREDICTION_MANIFEST_CONTRACT)
+
+
+def test_the_two_builders_do_not_accept_each_other_s_role_sets():
+    """A shared, configurable role set would let one route's requirement quietly
+    become the other's."""
+    v1_only = {
+        role: {"reference": role, "sha256": "b" * 64}
+        for role in REQUIRED_SOURCE_ARTIFACT_ROLES
+    }
+    with pytest.raises(ExtractionError) as caught:
+        build_prediction_artifact_manifest_v2(
+            prediction_run_id="r",
+            envelopes_reference="e",
+            envelopes_sha256="a" * 64,
+            record_count=1,
+            source_artifacts=v1_only,
+        )
+    assert caught.value.reason_code == "source_artifact_missing"
+
+    v2_all = {
+        role: {"reference": role, "sha256": "b" * 64}
+        for role in REQUIRED_SOURCE_ARTIFACT_ROLES_V2
+    }
+    with pytest.raises(ExtractionError) as caught:
+        build_prediction_artifact_manifest(
+            prediction_run_id="r",
+            envelopes_reference="e",
+            envelopes_sha256="a" * 64,
+            record_count=1,
+            source_artifacts=v2_all,
+        )
+    assert caught.value.reason_code == "source_artifact_unknown"
+
+
+def test_generation_attempt_bodies_are_deliberately_not_roles():
+    """A role is a 1:1 pin and a run holds zero to three attempt bodies. They are
+    pinned by the execution outcome's per-attempt entries instead, and the outcome
+    is itself a role -- so they stay reachable by hash, transitively."""
+    assert not any("attempt" in role for role in REQUIRED_SOURCE_ARTIFACT_ROLES_V2)

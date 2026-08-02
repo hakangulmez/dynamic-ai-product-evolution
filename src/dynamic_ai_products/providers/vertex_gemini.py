@@ -30,7 +30,7 @@ from tenacity import (
     wait_fixed,
 )
 
-from ..extraction.provider_adapter import ProviderRequest, ProviderResponse
+from ..extraction.provider_adapter import CaptureSinkError, ProviderRequest, ProviderResponse
 from .authorization import (
     require_authorization_digest,
     require_endpoint_allowlist_match,
@@ -228,6 +228,14 @@ def execute_with_retry(
         options["sleep"] = sleep
     try:
         return Retrying(**options)(attempt)
+    except CaptureSinkError:
+        # ADR-043 (E-M). A runner-owned persistence failure passes through
+        # unchanged. Without this it would be translated to
+        # ``provider_response_unusable`` -- a *valid* member of the released
+        # provider-error enum -- and a filesystem failure would be published as a
+        # provider failure with nothing to flag it. It is already non-retryable:
+        # ``is_retryable`` returns False for it, so the loop has already stopped.
+        raise
     except Exception as exc:  # noqa: BLE001 - the provider seam is total
         translated = translate_provider_exception(exc)
         raise ProviderError(translated.reason_code, attempt_count=attempts) from None

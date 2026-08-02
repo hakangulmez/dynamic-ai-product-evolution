@@ -152,3 +152,61 @@ def test_the_fake_round_trips_a_request_without_touching_the_network():
     assert isinstance(response, ProviderResponse)
     assert isinstance(response.raw_bytes, bytes)
     assert response.prompt_model_metadata == {"prompt_sha256": "c" * 64}
+
+
+# --- ADR-043 (E-M): protocol v8 declared alongside v7 -------------------------
+
+
+def test_v8_is_declared_beside_v7_and_does_not_replace_its_value():
+    """Rewriting the shared constant would have silently changed the digest of
+    every released @0.1.0 client contract, and with it every governance artifact
+    that pins one."""
+    from dynamic_ai_products.extraction.provider_adapter import (
+        PROVIDER_PROTOCOL_VERSION,
+        PROVIDER_PROTOCOL_VERSION_V8,
+    )
+
+    assert PROVIDER_PROTOCOL_VERSION == "extraction_provider_protocol_v7"
+    assert PROVIDER_PROTOCOL_VERSION_V8 == "extraction_provider_protocol_v8"
+
+
+def test_a_budget_admission_is_frozen_and_single_use():
+    from dataclasses import FrozenInstanceError
+
+    from dynamic_ai_products.extraction.provider_adapter import BudgetAdmission
+
+    admission = BudgetAdmission(
+        measured_input_tokens=10,
+        reserved_cost_microdollars=1,
+        generate_attempt_cap=3,
+        provider_request_digest="a" * 64,
+        session_nonce="nonce",
+    )
+    with pytest.raises(FrozenInstanceError):
+        admission.measured_input_tokens = 11
+    assert admission.spent is False
+    admission.spend()
+    assert admission.spent is True
+    with pytest.raises(ExtractionError) as caught:
+        admission.spend()
+    assert caught.value.reason_code == "budget_admission_invalid"
+
+
+def test_the_sink_error_carries_both_reasons_and_no_bytes():
+    """A persistence failure and a provider failure can both be true at once."""
+    from dataclasses import fields
+
+    from dynamic_ai_products.extraction.provider_adapter import CaptureRecord, CaptureSinkError
+
+    error = CaptureSinkError(
+        operation_label="generate_content",
+        attempt_ordinal=2,
+        persistence_reason_code="write_error",
+        provider_reason_code="vertex_unavailable",
+    )
+    assert error.persistence_reason_code == "write_error"
+    assert error.provider_reason_code == "vertex_unavailable"
+    assert not any(isinstance(value, (bytes, bytearray)) for value in vars(error).values())
+    # The return path carries digests, never bytes.
+    annotations = {field.name: str(field.type) for field in fields(CaptureRecord)}
+    assert not any("bytes" in text for text in annotations.values())

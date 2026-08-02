@@ -29,6 +29,7 @@ from .raw_artifacts import canonical_json_bytes
 __all__ = [
     "ACCEPTED_PACKET_CONTRACTS",
     "AUTHORIZATION_PROPERTIES",
+    "AUTHORIZATION_V2_PROPERTIES",
     "CLIENT_CONTRACT_CONTRACT",
     "CLIENT_CONTRACT_PROPERTIES",
     "ENABLEMENT_CONTRACT",
@@ -37,9 +38,11 @@ __all__ = [
     "EXTRACTION_RUN_PROPERTIES",
     "GOVERNANCE_SCHEMA_VERSION",
     "LIVE_AUTHORIZATION_CONTRACT",
+    "LIVE_AUTHORIZATION_V2_CONTRACT",
     "NON_RUN_CONTRACT",
     "NON_RUN_REASONS",
     "PACKET_CONTRACT_REQUIRING_IDENTITY",
+    "PROVIDER_COUNT_TIMEOUT_SECONDS_PIN",
     "PROVIDER_DECLARED_MAX_OUTPUT_TOKENS_PIN",
     "PROVIDER_ERROR_CONTRACT",
     "PROVIDER_ERROR_REASONS",
@@ -47,6 +50,7 @@ __all__ = [
     "PROVIDER_RETRY_DELAYS_PIN",
     "PROVIDER_TIMEOUT_SECONDS_PIN",
     "PROVIDER_WORST_CASE_WALL_CLOCK_SECONDS",
+    "PROVIDER_WORST_CASE_WALL_CLOCK_SECONDS_V2",
     "QUALIFICATION_CONTRACT",
     "QUALIFICATION_PROPERTIES",
     "STAGE_OUTPUT_CONTRACT_ID",
@@ -57,14 +61,17 @@ __all__ = [
     "build_provider_error_record",
     "record_bytes",
     "resolve_attempt_cap",
+    "resolve_attempt_cap_v2",
     "resolve_stage_schema_hash",
     "validate_authorization_client_contract",
     "validate_authorization_scope",
     "validate_budget_meter_identity",
     "validate_governance_chain",
+    "validate_governance_chain_v2",
     "validate_governance_semantics",
     "validate_provider_client_contract",
     "validate_qualification_execution_contract",
+    "wall_clock_floor_for_cap",
 ]
 
 NON_RUN_CONTRACT = "extraction_non_run_record@0.1.0"
@@ -1120,3 +1127,155 @@ def validate_qualification_execution_contract(
 
 def record_bytes(record: dict[str, Any]) -> bytes:
     return canonical_json_bytes(record)
+
+
+# --- ADR-043 (E-M): two-operation budget arithmetic --------------------------
+
+LIVE_AUTHORIZATION_V2_CONTRACT = "live_call_authorization@0.2.0"
+
+# countTokens carries its own declared timeout. The value equals the generation
+# timeout by binding rather than by coincidence; it was never measured for
+# countTokens and is a policy declaration.
+PROVIDER_COUNT_TIMEOUT_SECONDS_PIN = PROVIDER_TIMEOUT_SECONDS_PIN
+
+# One count send plus three generate attempts and their backoff. A compatibility
+# floor, not a physical elapsed-time guarantee: DNS, TLS, credential refresh and
+# connection-pool waiting are outside this arithmetic.
+PROVIDER_WORST_CASE_WALL_CLOCK_SECONDS_V2 = (
+    PROVIDER_COUNT_TIMEOUT_SECONDS_PIN
+    + PROVIDER_MAX_ATTEMPTS_PIN * PROVIDER_TIMEOUT_SECONDS_PIN
+    + sum(PROVIDER_RETRY_DELAYS_PIN)
+)
+
+
+def wall_clock_floor_for_cap(cap: int) -> int:
+    """The compatibility floor implied by an effective generate cap.
+
+    Derived rather than restated, so a change to the timeout pins cannot leave a
+    hard-coded tier behind. The v2 authorization schema states the same three
+    numbers as tiered minima; a mismatch between the two is a refusal, which is
+    the point of computing it twice.
+    """
+    if isinstance(cap, bool) or not isinstance(cap, int) or cap < 1:
+        raise ExtractionError(
+            "an effective generate cap is at least one", reason_code="budget_insufficient"
+        )
+    return (
+        PROVIDER_COUNT_TIMEOUT_SECONDS_PIN
+        + cap * PROVIDER_TIMEOUT_SECONDS_PIN
+        + sum(PROVIDER_RETRY_DELAYS_PIN[: cap - 1])
+    )
+
+
+def resolve_attempt_cap_v2(*, authorization: dict[str, Any]) -> int:
+    """Enforce the two-operation budget and return the effective generate cap.
+
+    One rule, stated once. ``budget_max_external_requests`` below two cannot pay
+    for one count send plus one generate attempt, so the run is refused before
+    the run root exists. Above that the cap is **derived** --
+    ``min(3, budget_max_external_requests - 1)`` -- and never declared: an
+    independent field would be a second source of truth that could drift from the
+    formula the connector actually applies.
+    """
+    code = "budget_insufficient"
+
+    def _positive(field: str) -> int:
+        value = authorization.get(field)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise ExtractionError(f"{field} must be a positive integer", reason_code=code)
+        return value
+
+    external_requests = authorization.get("budget_max_external_requests")
+    if (
+        not isinstance(external_requests, int)
+        or isinstance(external_requests, bool)
+        or external_requests < 2
+    ):
+        raise ExtractionError(
+            "budget_max_external_requests must be at least two: one countTokens "
+            "send plus one generateContent attempt",
+            reason_code=code,
+        )
+    _positive("budget_max_records")
+    output_tokens = _positive("budget_max_output_tokens")
+    wall_clock = _positive("budget_max_wall_clock_seconds")
+    _positive("circuit_breaker_max_consecutive_failures")
+    # The meter is the only thing that can check these two; refuse a malformed
+    # value here so a missing limit cannot masquerade as an unlimited one.
+    _positive("budget_max_input_tokens")
+    _positive("budget_max_estimated_cost_micros")
+
+    if output_tokens < PROVIDER_DECLARED_MAX_OUTPUT_TOKENS_PIN:
+        raise ExtractionError(
+            "budget_max_output_tokens is below the declared max_output_tokens; "
+            "the run would exceed its budget by construction",
+            reason_code=code,
+        )
+    cap = min(PROVIDER_MAX_ATTEMPTS_PIN, external_requests - 1)
+    floor = wall_clock_floor_for_cap(cap)
+    if wall_clock < floor:
+        raise ExtractionError(
+            f"budget_max_wall_clock_seconds is below the {cap}-attempt ceiling of "
+            f"{floor}s; this is a compatibility floor, not elapsed enforcement",
+            reason_code=code,
+        )
+    return cap
+
+
+AUTHORIZATION_V2_PROPERTIES: frozenset[str] = (
+    AUTHORIZATION_PROPERTIES - {"budget_max_requests"}
+) | {"budget_max_external_requests"}
+
+
+def validate_governance_chain_v2(
+    *,
+    authorization: Any,
+    enablement: Any,
+    qualification: Any,
+    authorization_pin: dict[str, str],
+    enablement_pin: dict[str, str],
+    qualification_pin: dict[str, str],
+) -> dict[str, Any]:
+    """The same three-ring walk, against the ``@0.2.0`` authorization shape.
+
+    A separate function rather than a flag on the v1 one. The released
+    ``live_call_authorization@0.1.0`` must keep being validated as exactly what
+    it is; a shared validator that accepted either property set would have let a
+    v1 authorization satisfy a v2 run and vice versa, which is precisely the
+    substitution the two-operation budget cannot survive.
+
+    Only the authorization ring differs. The enablement and qualification records
+    are unchanged contracts and are checked by the released validator.
+    """
+    code = "authorization_chain_broken"
+    authorization = _require_exact_properties(
+        authorization,
+        AUTHORIZATION_V2_PROPERTIES,
+        what="live call authorization v2",
+        code=code,
+    )
+    if authorization.get("contract") != LIVE_AUTHORIZATION_V2_CONTRACT:
+        raise ExtractionError(
+            f"governance record must declare {LIVE_AUTHORIZATION_V2_CONTRACT}",
+            reason_code=code,
+        )
+    if authorization.get("schema_version") != "0.2.0":
+        raise ExtractionError(
+            "a v2 authorization must declare schema_version 0.2.0", reason_code=code
+        )
+    # Re-use the released walk for the two rings it still owns, by handing it a
+    # v1-shaped stand-in of the ring it no longer owns. The stand-in is never
+    # returned: only the pins and the two upper records are being checked here.
+    stand_in = dict(authorization)
+    stand_in["budget_max_requests"] = stand_in.pop("budget_max_external_requests")
+    stand_in["contract"] = LIVE_AUTHORIZATION_CONTRACT
+    stand_in["schema_version"] = GOVERNANCE_SCHEMA_VERSION
+    validate_governance_chain(
+        authorization=stand_in,
+        enablement=enablement,
+        qualification=qualification,
+        authorization_pin=authorization_pin,
+        enablement_pin=enablement_pin,
+        qualification_pin=qualification_pin,
+    )
+    return authorization

@@ -220,3 +220,48 @@ def test_credential_material_is_refused_not_redacted():
     with pytest.raises(ExtractionError):
         validate_provider_client_contract(contract)
     assert contract["client_version"] == "ya29.LEAKED"
+
+
+# --- ADR-043 (E-M): the released v1 contract is not touched by the successor ---
+
+
+def test_the_v1_protocol_pin_still_names_v7_after_e_m():
+    """The successor declares v8; this one keeps declaring v7.
+
+    Bumping the shared value would have changed the digest of every @0.1.0
+    contract instance, and every authorization and qualification record that pins
+    one would have stopped matching. A successor exists precisely so that does not
+    happen.
+    """
+    from dynamic_ai_products.extraction.provider_adapter import (
+        PROVIDER_PROTOCOL_VERSION,
+        PROVIDER_PROTOCOL_VERSION_V8,
+    )
+    from dynamic_ai_products.providers.client_contract_v2 import (
+        PROVIDER_PROTOCOL_VERSION_PIN_V2,
+    )
+
+    assert PROVIDER_PROTOCOL_VERSION_PIN == PROVIDER_PROTOCOL_VERSION
+    assert PROVIDER_PROTOCOL_VERSION_PIN == "extraction_provider_protocol_v7"
+    assert PROVIDER_PROTOCOL_VERSION_PIN_V2 == PROVIDER_PROTOCOL_VERSION_V8
+    assert PROVIDER_PROTOCOL_VERSION_PIN != PROVIDER_PROTOCOL_VERSION_PIN_V2
+
+
+def test_the_v1_contract_still_declares_no_thinking_configuration():
+    """@0.1.0's model_parameters is closed; the successor is where thinking lives."""
+    contract = build_client_contract(vertex_project="p-example")
+    assert sorted(contract["model_parameters"]) == [
+        "candidate_count",
+        "max_output_tokens",
+        "response_mime_type",
+        "temperature",
+        "top_p",
+    ]
+    for absent in (
+        "thinking_config",
+        "count_timeout_duration",
+        "operation_endpoints",
+        "generation_config_projection",
+        "external_request_max",
+    ):
+        assert absent not in contract

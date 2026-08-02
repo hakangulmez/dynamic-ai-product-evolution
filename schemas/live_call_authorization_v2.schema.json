@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "live_call_authorization_v2.schema.json",
+  "title": "Live call authorization v2",
+  "description": "Successor of live_call_authorization@0.1.0 (ADR-043, E-M). The released @0.1.0 schema is byte-identical and untouched. Two changes carry the whole increment. First, budget_max_requests is replaced by budget_max_external_requests, because a two-operation run makes requests that are not retries: one countTokens send plus up to three generateContent attempts. The effective generate cap is derived, never declared - min(3, budget_max_external_requests - 1) - so no second, driftable field exists. Second, budget_max_wall_clock_seconds is bound to that cap in three tiers rather than to one flat floor, so a two-request budget cannot claim a one-request ceiling. endpoint_allowlist is exactly the two named operation endpoints of the pinned client contract. No free-text property exists anywhere in this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "adapter_enablement_record_reference",
+    "adapter_enablement_record_sha256",
+    "authorization_id",
+    "authorized_by",
+    "budget_max_estimated_cost_micros",
+    "budget_max_external_requests",
+    "budget_max_input_tokens",
+    "budget_max_output_tokens",
+    "budget_max_records",
+    "budget_max_wall_clock_seconds",
+    "budget_meter_identity",
+    "budget_meter_version",
+    "budget_policy_version",
+    "circuit_breaker_max_consecutive_failures",
+    "company_id",
+    "contract",
+    "corpus_scope",
+    "deployment_environment_id",
+    "effective_at",
+    "endpoint_allowlist",
+    "expires_at",
+    "harness_run",
+    "observation_cutoff_date",
+    "provider_called",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "rate_limit_policy_version",
+    "retry_policy_version",
+    "rollout_state",
+    "schema_version",
+    "stage"
+  ],
+  "allOf": [
+    {
+      "comment": "Tier 1: two external requests buy one generate attempt, so the ceiling is 300s count + 1x300s generate + 0s backoff.",
+      "if": {
+        "required": ["budget_max_external_requests"],
+        "properties": { "budget_max_external_requests": { "const": 2 } }
+      },
+      "then": {
+        "properties": { "budget_max_wall_clock_seconds": { "minimum": 600 } }
+      }
+    },
+    {
+      "comment": "Tier 2: 300s + 2x300s + 1s backoff.",
+      "if": {
+        "required": ["budget_max_external_requests"],
+        "properties": { "budget_max_external_requests": { "const": 3 } }
+      },
+      "then": {
+        "properties": { "budget_max_wall_clock_seconds": { "minimum": 901 } }
+      }
+    },
+    {
+      "comment": "Tier 3: the cap saturates at three generate attempts, so 300s + 3x300s + (1+2)s backoff, for every budget of four or more.",
+      "if": {
+        "required": ["budget_max_external_requests"],
+        "properties": { "budget_max_external_requests": { "minimum": 4 } }
+      },
+      "then": {
+        "properties": { "budget_max_wall_clock_seconds": { "minimum": 1203 } }
+      }
+    }
+  ],
+  "properties": {
+    "adapter_enablement_record_reference": { "type": "string", "minLength": 1 },
+    "adapter_enablement_record_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "authorization_id": { "type": "string", "minLength": 1 },
+    "authorized_by": { "type": "string", "minLength": 1 },
+    "budget_max_estimated_cost_micros": { "type": "integer", "minimum": 1 },
+    "budget_max_external_requests": {
+      "comment": "Below two, a run cannot pay for one countTokens send plus one generateContent attempt, so it is refused before the run root exists.",
+      "type": "integer",
+      "minimum": 2
+    },
+    "budget_max_input_tokens": { "type": "integer", "minimum": 1 },
+    "budget_max_output_tokens": { "type": "integer", "minimum": 1 },
+    "budget_max_records": { "type": "integer", "minimum": 1 },
+    "budget_max_wall_clock_seconds": {
+      "comment": "A compatibility floor, not a physical elapsed-time guarantee: DNS, TLS, credential refresh and connection-pool waiting are outside this arithmetic. Real elapsed enforcement belongs to the injected budget meter.",
+      "type": "integer",
+      "minimum": 600
+    },
+    "budget_meter_identity": { "type": "string", "minLength": 1 },
+    "budget_meter_version": { "type": "string", "minLength": 1 },
+    "budget_policy_version": { "type": "string", "minLength": 1 },
+    "circuit_breaker_max_consecutive_failures": { "type": "integer", "minimum": 1 },
+    "company_id": { "type": "string", "pattern": "^CIK[0-9]{10}$" },
+    "contract": { "const": "live_call_authorization@0.2.0" },
+    "corpus_scope": { "enum": ["sec_only_partial"] },
+    "deployment_environment_id": { "type": "string", "minLength": 1 },
+    "effective_at": { "type": "string", "minLength": 1 },
+    "endpoint_allowlist": {
+      "comment": "Exactly the two named operation endpoints of the pinned client contract, no more and no fewer. Textual uniqueness is not enough - two spellings of one endpoint normalize to the same origin and path - so a pure predicate additionally compares the normalized set for equality.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^https://" }
+    },
+    "expires_at": { "type": "string", "minLength": 1 },
+    "harness_run": { "const": false },
+    "observation_cutoff_date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "provider_called": { "const": true },
+    "provider_client_contract_reference": { "type": "string", "minLength": 1 },
+    "provider_client_contract_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "rate_limit_policy_version": { "type": "string", "minLength": 1 },
+    "retry_policy_version": { "type": "string", "minLength": 1 },
+    "rollout_state": {
+      "enum": ["live_dev", "controlled_pilot", "release_or_research_production", "full_scale"]
+    },
+    "schema_version": { "const": "0.2.0" },
+    "stage": {
+      "enum": ["product_extraction", "capability_extraction", "task_extraction"]
+    }
+  }
+}

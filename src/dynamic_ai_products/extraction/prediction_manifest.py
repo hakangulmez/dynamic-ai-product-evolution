@@ -26,7 +26,9 @@ from .raw_artifacts import canonical_json_bytes, reject_contract_metadata
 __all__ = [
     "PREDICTION_MANIFEST_CONTRACT",
     "REQUIRED_SOURCE_ARTIFACT_ROLES",
+    "REQUIRED_SOURCE_ARTIFACT_ROLES_V2",
     "build_prediction_artifact_manifest",
+    "build_prediction_artifact_manifest_v2",
     "manifest_bytes",
 ]
 
@@ -51,6 +53,22 @@ REQUIRED_SOURCE_ARTIFACT_ROLES: tuple[str, ...] = (
     "provider_client_contract",
     "live_call_authorization",
     "extraction_run",
+)
+
+# ADR-043 (E-M). Two more roles, and the released model is untouched: its
+# ``source_artifacts`` tuple is unbounded, so binding new artifacts by reference
+# and digest widens nothing.
+#
+# The variable-count generation attempt bodies are deliberately **not** roles. A
+# role is a 1:1 pin and a run may hold zero to three of those bodies; they are
+# pinned instead by the execution outcome's per-attempt entries, and the outcome
+# is itself a role here, so they stay reachable by hash transitively.
+#
+# The v1 tuple keeps its eight roles. Changing it would have altered every
+# manifest the released single-operation route publishes.
+REQUIRED_SOURCE_ARTIFACT_ROLES_V2: tuple[str, ...] = REQUIRED_SOURCE_ARTIFACT_ROLES + (
+    "count_tokens_raw_response",
+    "extraction_execution_outcome",
 )
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -91,6 +109,76 @@ def build_prediction_artifact_manifest(
 
     entries: list[dict[str, str]] = []
     for role in REQUIRED_SOURCE_ARTIFACT_ROLES:
+        pin = source_artifacts[role]
+        reference = pin.get("reference")
+        digest = pin.get("sha256")
+        if not isinstance(reference, str) or not reference:
+            raise ExtractionError(
+                f"source artifact {role} lacks a reference",
+                reason_code="source_artifact_missing",
+            )
+        if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
+            raise ExtractionError(
+                f"source artifact {role} lacks a valid sha256",
+                reason_code="pin_invalid",
+            )
+        entries.append({"reference": reference, "sha256": digest})
+    entries.sort(key=lambda entry: (entry["reference"], entry["sha256"]))
+
+    digest = PREDICTION_MANIFEST_CONTRACT.get("contract_hash")
+    if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
+        raise ExtractionError(
+            "the prediction-manifest contract pin is malformed",
+            reason_code="contract_pin_invalid",
+        )
+    return {
+        "prediction_run_id": prediction_run_id,
+        "envelopes_reference": envelopes_reference,
+        "envelopes_sha256": envelopes_sha256,
+        "record_count": int(record_count),
+        "source_artifacts": entries,
+        # Set last, from the closed pin only.
+        "contract": dict(PREDICTION_MANIFEST_CONTRACT),
+    }
+
+
+def build_prediction_artifact_manifest_v2(
+    *,
+    prediction_run_id: str,
+    envelopes_reference: str,
+    envelopes_sha256: str,
+    record_count: int,
+    source_artifacts: dict[str, dict[str, str]],
+    **forbidden: Any,
+) -> dict[str, Any]:
+    """The E-M manifest: the same released shape with ten pinned roles.
+
+    A separate builder rather than a parameter on the v1 one. The released
+    single-operation route publishes eight roles and must keep publishing
+    exactly eight; a shared, configurable role set would let one route's
+    requirement silently become the other's.
+    """
+    reject_contract_metadata(forbidden, source_artifacts, *source_artifacts.values())
+    missing = sorted(set(REQUIRED_SOURCE_ARTIFACT_ROLES_V2) - set(source_artifacts))
+    if missing:
+        raise ExtractionError(
+            f"prediction manifest is missing source artifacts: {missing}",
+            reason_code="source_artifact_missing",
+        )
+    extra = sorted(set(source_artifacts) - set(REQUIRED_SOURCE_ARTIFACT_ROLES_V2))
+    if extra:
+        raise ExtractionError(
+            f"prediction manifest carries undeclared source artifacts: {extra}",
+            reason_code="source_artifact_unknown",
+        )
+    if not isinstance(envelopes_sha256, str) or not _SHA256_RE.fullmatch(envelopes_sha256):
+        raise ExtractionError(
+            "envelopes_sha256 must be 64 lowercase hex characters",
+            reason_code="pin_invalid",
+        )
+
+    entries: list[dict[str, str]] = []
+    for role in REQUIRED_SOURCE_ARTIFACT_ROLES_V2:
         pin = source_artifacts[role]
         reference = pin.get("reference")
         digest = pin.get("sha256")
