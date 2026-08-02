@@ -1298,6 +1298,105 @@ nothing is missing in that case. A flat wall-clock floor was rejected because it
 under-constrains every budget above the smallest.
 
 
+## ADR-044 — Prompt qualification bound to the two-operation route: a fourth artifact, two roots, and a pre-evaluation basis (G2)
+
+**Status:** Accepted.
+
+**The question this answers.** `adapter_enablement_record@0.1.0` has always
+*required* `prompt_qualification_reference` and `prompt_qualification_sha256` —
+SPEC-027 places the SPEC-024 reference on enablement rather than on the
+authorization — but nothing ever opened the artifact those fields name. Measured:
+the governance walk's only prompt-related line is
+`_require_pin_pair(enablement, "prompt_qualification")`, which checks a non-blank
+string and sixty-four hex characters and nothing else. Every fixture in the
+repository satisfied it with `"3" * 64` naming a file that does not exist, and all
+of them passed. So a live call could execute a frozen prompt under an enablement
+pinning nothing, and editing that prompt could not break any run — the prompt's
+digest chain and the governance chain were two disconnected hash trees.
+
+**The binding is transitive, and stays that way.** `prompt_qualification_record`
+→ enablement → authorization. No prompt property is added to
+`live_call_authorization@0.2.0`: both authorization property sets are closed, and
+a released test already forbids the addition. That test now asserts the same of
+the v2 set, so a later "helpful" addition fails loudly rather than creating a
+second, unwalked path to the same reference.
+
+**No released contract is modified.** The binding surface already existed on the
+enablement schema, so no successor enablement record is needed, and
+`validate_governance_chain` stays byte-identical. The new gate is a separate
+module and runs on the v2 route only.
+
+**Two roots, one containment.** The record is JSON and hydrates from
+`governance_artifact_root`. The two documents it cites — the SPEC-024
+qualification policy and the tracked change request — are Markdown and live in
+the repository tree, so they are read against the already-injected `repo_root`.
+Measured: `hydrate_pinned_artifact` calls `json.loads`, so it cannot read them at
+all. The answer is not a second loader. `_hydrate` was split so that
+`hydrate_pinned_bytes` and `hydrate_pinned_artifact` share one `_safe_target` and
+one digest comparison; the relative-reference rules cannot drift between the two
+roots. A repository-relative reference is never resolved inside the governance
+root, and the reference patterns make that unrepresentable rather than merely
+discouraged.
+
+**The governing spec is SPEC-024, as a const rather than a pattern.** The policy
+governing a prompt qualification record is the qualification registry, whatever
+stage the prompt serves. An earlier draft named SPEC-008 here, which mislabelled
+stage context as qualification policy. SPEC-008 is cited by the change request.
+
+**Only the bootstrap basis executes.** `evaluated_comparison` records cite
+evaluation runs that resolve against a third root which nothing injects or
+hash-verifies. Accepting one would let unverified references authorize a live
+call, so that basis is refused *before* the property set is selected — the two
+bases have different shapes, and checking shape first would report the wrong
+cause and make the evaluated branch look unimplemented rather than deliberately
+unreachable. G2 therefore declares exactly one runtime property set, the
+twenty-eight-field bootstrap shape.
+
+**A pre-evaluation record may not carry a review decision at all.**
+`evals/CHANGE_CONTROL_PROTOCOL.md` states that a review decision presupposes a
+completed valid evaluation, and the repository has none: no evaluation case, no
+`evaluation_run_manifest` artifact. An empty or neutral decision would still be a
+decision, so the property is absent, not blank. `declared_non_claims` is
+bootstrap-only for the mirror-image reason: its fixed content says "not a release
+qualification", which contradicts the release-capable branch. It is fixed with
+`prefixItems` plus `items: false`, because an `enum` with `uniqueItems` would have
+admitted any permutation, and a permuted tuple is a different statement.
+
+**Placement.** The gate sits in `_run_two_operation_stage`, immediately after
+`validate_qualification_execution_contract` and `load_prompt` — the first point
+where both operands exist — and before the meter, the run root, `mkdir`, SDK
+construction, and any send. A refusal there produces zero artifacts, and it is
+raised inside the caller's `try`/`finally`, so the run permit is revoked on this
+route exactly as on every other terminal one. Hydration happens earlier, in F0,
+before the handshake, so a hydration refusal has no permit to release.
+
+**Prose lives in the change request.** The record carries no free-text property;
+`known_limitation_codes` is a closed vocabulary and the reviewer's reasoning is in
+`CR-0001`, pinned by reference and digest. A governance chain must not become a
+channel for prose any more than for secret material.
+
+**Known limitation, stated rather than fixed here.** `run_extraction_stage` is a
+public, provider-capable v1 entry point with no non-test caller, and it does not
+carry this binding. It is therefore a bypass. Retiring its provider route touches
+173 tests across five modules and roughly 368 lines of production code, so it is a
+separate increment (G2b) rather than a silent widening of this one. **The live
+smoke run is blocked until G2b is implemented, reviewed, committed, and pushed.**
+That block is a decision recorded here, not a runbook note: a runbook is a human
+document and the bypass is a code path.
+
+**Rejected alternatives.** Adding the prompt fields to
+`live_call_authorization@0.2.0` was rejected: the property sets are closed and
+SPEC-027 places the reference on enablement. Tightening `validate_governance_chain`
+was rejected because the v1 route still calls it and a released validator must
+keep validating exactly what it was released as. Folding the rules into
+`manifests.py` was rejected for the same reason. A free-text `known_limitations`
+field was rejected as an unbounded channel into an authorization chain. Accepting
+an `evaluated_comparison` record on the strength of being schema-valid was
+rejected: schema validity is not verification. Allowing an empty
+`supporting_evaluation_references` array under an evaluated basis was rejected —
+it would have let a record claim an evaluation basis with no evaluation.
+
+
 ## Open decisions
 
 - Filing-date versus fiscal-year observation convention.
@@ -1310,3 +1409,5 @@ under-constrains every budget above the smallest.
 - Numeric gate thresholds, frozen-run budgets, and retest intervals (live in versioned scoring/gate/policy configs; see ADR-013, ADR-015, ADR-019).
 - Protected-class taxonomy enumeration and change-classification policy contents (see ADR-020, ADR-021).
 - Pilot cohort design document (see ADR-022).
+- Retirement of the v1 provider-backed extraction route and migration of its 173 tests (G2b); the live smoke run is blocked until it lands (see ADR-044).
+- The evaluation-artifact root and the `evaluated_comparison` property set that would make an evaluated prompt qualification reachable (see ADR-044).

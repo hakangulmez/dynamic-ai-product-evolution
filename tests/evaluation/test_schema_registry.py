@@ -174,11 +174,12 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-043: manifest_version 0.14.0 -> 0.15.0, 42 -> 45 entries,
-    # registering the two E-M successor contracts and the new execution outcome
-    # alongside every unchanged entry. The released @0.1.0 schemas they succeed
-    # are byte-identical; only the registry grew. Meaning unchanged.
-    "c6420c1589e684fc9f24b0e691df4f9dd62d064dd3fe734f35e0cbe034f6becb"
+    # Rebaselined by ADR-044: manifest_version 0.15.0 -> 0.16.0, 45 -> 46 entries,
+    # registering prompt_qualification_record alongside every unchanged entry.
+    # The previous ADR-043 rebaseline (0.14.0 -> 0.15.0, 42 -> 45) registered the
+    # two E-M successor contracts and the execution outcome. In both cases the
+    # released @0.1.0 schemas are byte-identical; only the registry grew.
+    "5171df860dc71f0a988a8067a92b89d5fd05a1be049cc7e7050bd0c6d49efa17"
 )
 
 
@@ -375,6 +376,10 @@ EM_SCHEMA_KEYS = (
     "extraction_provider_client_contract_v2",
     "live_call_authorization_v2",
     "extraction_execution_outcome",
+    # ADR-044 (G2). Not a successor: the key carries no ``_vN`` suffix, so the
+    # contract identity it must declare is the bare key at its registered
+    # version. The same four-way agreement is asserted for it.
+    "prompt_qualification_record",
 )
 
 

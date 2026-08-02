@@ -17,6 +17,7 @@ from jsonschema import Draft202012Validator
 from dynamic_ai_products.extraction.errors import ExtractionError
 from dynamic_ai_products.extraction.manifests import (
     AUTHORIZATION_PROPERTIES,
+    AUTHORIZATION_V2_PROPERTIES,
     ENABLEMENT_CONTRACT,
     ENABLEMENT_PROPERTIES,
     EXTRACTION_RUN_PROPERTIES,
@@ -34,6 +35,9 @@ from dynamic_ai_products.extraction.manifests import (
     build_non_run_record,
     record_bytes,
     resolve_stage_schema_hash,
+)
+from dynamic_ai_products.extraction.prompt_qualification import (
+    PROMPT_QUALIFICATION_PROPERTIES_BOOTSTRAP,
 )
 from dynamic_ai_products.extraction.raw_artifacts import sha256_bytes
 
@@ -445,10 +449,20 @@ def test_the_authorization_carries_the_budget_meter_identity_pin():
 
 
 def test_the_enablement_record_carries_the_spec_024_reference():
-    """SPEC-027 places the prompt qualification on enablement, not authorization."""
+    """SPEC-027 places the prompt qualification on enablement, not authorization.
+
+    ADR-044 binds the artifact those two fields name, and the binding travels
+    transitively: prompt qualification -> enablement -> authorization. Neither
+    authorization property set gains a prompt field, and both are asserted, so a
+    later "helpful" addition to the v2 set fails here rather than silently
+    creating a second, unwalked path to the same reference.
+    """
     assert "prompt_qualification_reference" in ENABLEMENT_PROPERTIES
     assert "prompt_qualification_sha256" in ENABLEMENT_PROPERTIES
-    assert "prompt_qualification_reference" not in AUTHORIZATION_PROPERTIES
+    for properties in (AUTHORIZATION_PROPERTIES, AUTHORIZATION_V2_PROPERTIES):
+        assert "prompt_qualification_reference" not in properties
+        assert "prompt_qualification_sha256" not in properties
+        assert not any("prompt" in name for name in properties)
 
 
 def test_no_governance_property_set_admits_a_free_text_field():
@@ -457,6 +471,8 @@ def test_no_governance_property_set_admits_a_free_text_field():
         QUALIFICATION_PROPERTIES,
         ENABLEMENT_PROPERTIES,
         AUTHORIZATION_PROPERTIES,
+        AUTHORIZATION_V2_PROPERTIES,
+        PROMPT_QUALIFICATION_PROPERTIES_BOOTSTRAP,
     ):
         for forbidden in ("message", "detail", "note", "comment", "error"):
             assert not any(forbidden in name for name in properties), forbidden

@@ -482,7 +482,10 @@ def test_manifest_count():
     # 575 = 561 + the fourteen ADR-043 paths: three schemas, five source
     # modules and six test modules. Superseding the ADR-042 note:
     # its module, its test file, and the published registry record.
-    assert declared == len(paths) == 575
+    # 579 = 575 + the four newly tracked ADR-044 (G2) paths: the
+    # prompt-qualification schema, its source module, its test module, and the
+    # tracked change request the record pins by reference and digest.
+    assert declared == len(paths) == 579
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

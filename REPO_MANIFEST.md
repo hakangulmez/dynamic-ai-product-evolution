@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **575**
+Total tracked/scaffold files listed: **579**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -119,6 +119,7 @@ Total tracked/scaffold files listed: **575**
 - `evals/cases/dev/.gitkeep`
 - `evals/cases/frozen_test/.gitkeep`
 - `evals/cases/regression/.gitkeep`
+- `evals/change_requests/CR-0001-product-discovery-recall-bootstrap-qualification.md`
 - `evals/change_requests/README.md`
 - `evals/expected/.gitkeep`
 - `evals/fixtures/README.md`
@@ -262,6 +263,7 @@ Total tracked/scaffold files listed: **575**
 - `schemas/official_web_candidate.schema.json`
 - `schemas/official_web_collection_manifest.schema.json`
 - `schemas/product_observation.schema.json`
+- `schemas/prompt_qualification_record.schema.json`
 - `schemas/schema_version_manifest.json`
 - `schemas/sec_source_candidate.schema.json`
 - `schemas/snapshot_manifest.schema.json`
@@ -396,6 +398,7 @@ Total tracked/scaffold files listed: **575**
 - `src/dynamic_ai_products/extraction/manifests.py`
 - `src/dynamic_ai_products/extraction/parent_snapshots.py`
 - `src/dynamic_ai_products/extraction/prediction_manifest.py`
+- `src/dynamic_ai_products/extraction/prompt_qualification.py`
 - `src/dynamic_ai_products/extraction/prompts.py`
 - `src/dynamic_ai_products/extraction/contents_renderer.py`
 - `src/dynamic_ai_products/extraction/provider_adapter.py`
@@ -530,6 +533,7 @@ Total tracked/scaffold files listed: **575**
 - `tests/extraction/test_parent_context.py`
 - `tests/extraction/test_parent_snapshots.py`
 - `tests/extraction/test_prediction_manifest.py`
+- `tests/extraction/test_prompt_qualification.py`
 - `tests/extraction/test_prompts.py`
 - `tests/extraction/test_provider_adapter.py`
 - `tests/extraction/test_provider_error_publication.py`

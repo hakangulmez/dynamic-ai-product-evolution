@@ -1,0 +1,313 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prompt_qualification_record.schema.json",
+  "title": "Prompt qualification record",
+  "description": "The SPEC-024 qualification-registry record that a prompt-bearing model-execution route must carry (ADR-044). SPEC-027 places its reference on the adapter enablement record, never on the live-call authorization, so this record reaches a run transitively: prompt qualification -> enablement -> authorization. It binds the frozen prompt artifact's exact bytes to the stage-output contract, the execution and routing contracts, the governing qualification policy, and a tracked change request. No free-text property and no credential-shaped property: a governance chain must not become a channel for prose or for secret material. Two disjoint bases exist. `bootstrap_pre_evaluation` is the pre-evaluation shape used before any completed evaluation run exists; it can only ever authorize `live_dev`. `evaluated_comparison` is the post-evaluation shape, and it is UNREACHABLE in E-B: its `supporting_evaluation_references` resolve against an evaluation-artifact root that no runtime injects or hash-verifies yet, so the E-B v2 runtime refuses that basis outright rather than accept a schema-valid but unverified record. A successor increment introduces that third root together with the second property set. No schema file executes on the run path (ADR-032); every const, enum, and conditional here is re-enforced in `extraction.prompt_qualification`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "change_request_reference",
+    "change_request_sha256",
+    "code_commit",
+    "contract",
+    "decided_at",
+    "execution_contract_id",
+    "execution_contract_sha256",
+    "governing_spec_reference",
+    "governing_spec_sha256",
+    "known_limitation_codes",
+    "prompt_artifact_sha256",
+    "prompt_id",
+    "prompt_lifecycle_state",
+    "prompt_reference",
+    "prompt_registry_version",
+    "qualification_basis",
+    "qualification_id",
+    "qualification_scope",
+    "qualification_status",
+    "reviewer",
+    "routing_contract_id",
+    "routing_contract_sha256",
+    "schema_version",
+    "stage",
+    "stage_output_contract_id",
+    "stage_output_contract_sha256",
+    "supersedes_qualification_id"
+  ],
+  "properties": {
+    "change_request_reference": {
+      "description": "Tracked under `evals/change_requests/` and therefore resolved against the injected repository root, never against the governance artifact root. The negative lookahead is not decoration: in ECMA-262 `$` matches before a trailing line terminator, so a plain anchored pattern would admit a reference carrying an embedded newline.",
+      "type": "string",
+      "pattern": "^(?![\\s\\S]*[\\r\\n])evals/change_requests/CR-[0-9]{4}-[a-z0-9-]+\\.md$"
+    },
+    "change_request_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "code_commit": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contract": {
+      "const": "prompt_qualification_record@0.1.0"
+    },
+    "decided_at": {
+      "description": "A timezone-aware ISO-8601 instant. Awareness and chronology are enforced at runtime, where a naive timestamp is refused rather than assumed to be UTC.",
+      "type": "string",
+      "minLength": 1
+    },
+    "declared_non_claims": {
+      "description": "Present only under `bootstrap_pre_evaluation`, where it states in closed vocabulary what the record does not assert. Forbidden under `evaluated_comparison`, whose whole purpose is that a release qualification may in fact be claimed. `prefixItems` plus `items: false` fixes the exact ordered tuple; an `enum` with `uniqueItems` would have admitted any permutation of the four values.",
+      "type": "array",
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "const": "not_an_evaluation_verdict"
+        },
+        {
+          "const": "not_an_acceptance_decision"
+        },
+        {
+          "const": "not_a_release_qualification"
+        },
+        {
+          "const": "not_a_complete_universe_finding"
+        }
+      ],
+      "items": false
+    },
+    "execution_contract_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "execution_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "governing_spec_reference": {
+      "description": "A const, not a pattern. The policy that governs a prompt qualification record is the SPEC-024 qualification registry, whatever stage the prompt serves. A stage spec such as SPEC-008 is stage context and is cited by the tracked change request; naming it here would mislabel stage context as qualification policy.",
+      "const": "specs/SPEC-024-run-versioning-and-comparison.md"
+    },
+    "governing_spec_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "known_limitation_codes": {
+      "description": "Closed vocabulary. Prose belongs in the tracked change request, which this record pins by reference and digest.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "single_pass_recall_only_not_consolidated",
+          "sec_only_partial_corpus",
+          "single_firm_single_observation_year",
+          "no_completed_evaluation_run",
+          "no_baseline_comparison"
+        ]
+      }
+    },
+    "prompt_artifact_sha256": {
+      "description": "SHA-256 over the exact bytes of the frozen prompt artifact, with no normalization. Equal by construction to `extraction.prompts.load_prompt(...)['prompt_hash']`, and compared to it at runtime, so a single edited byte breaks the chain and forces requalification.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prompt_id": {
+      "enum": [
+        "product_discovery_recall",
+        "product_consolidation_precision",
+        "capability_extraction",
+        "task_discovery_recall",
+        "task_consolidation_precision"
+      ]
+    },
+    "prompt_lifecycle_state": {
+      "enum": [
+        "draft",
+        "candidate",
+        "accepted",
+        "frozen",
+        "deprecated"
+      ]
+    },
+    "prompt_reference": {
+      "type": "string",
+      "pattern": "^(?![\\s\\S]*[\\r\\n])prompts/extraction/[a-z0-9_]+\\.md$"
+    },
+    "prompt_registry_version": {
+      "const": "extraction_prompt_registry_v1"
+    },
+    "qualification_basis": {
+      "enum": [
+        "bootstrap_pre_evaluation",
+        "evaluated_comparison"
+      ]
+    },
+    "qualification_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "qualification_scope": {
+      "enum": [
+        "qualified_for_development",
+        "qualified_for_shadow_or_pilot",
+        "qualified_for_release"
+      ]
+    },
+    "qualification_status": {
+      "description": "`bootstrap_authorized_live_dev` is reachable only under `bootstrap_pre_evaluation`, and the evaluated branch excludes it; the two are bound by an exact iff.",
+      "enum": [
+        "bootstrap_authorized_live_dev",
+        "qualified",
+        "superseded",
+        "revoked"
+      ]
+    },
+    "review_decision": {
+      "description": "Present only under `evaluated_comparison`. `evals/CHANGE_CONTROL_PROTOCOL.md` states that a review decision presupposes a completed, valid evaluation, so a pre-evaluation record may not carry one at all -- not even an empty or neutral value.",
+      "enum": [
+        "accept_candidate",
+        "accept_with_documented_nonblocking_tradeoff",
+        "revise",
+        "reject"
+      ]
+    },
+    "reviewer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "routing_contract_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "routing_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "stage": {
+      "enum": [
+        "product_extraction",
+        "capability_extraction",
+        "task_extraction"
+      ]
+    },
+    "stage_output_contract_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stage_output_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "supersedes_qualification_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "supporting_evaluation_references": {
+      "description": "Present only under `evaluated_comparison`. These resolve against an evaluation-artifact root that is a distinct third root from the governance artifact root and the repository root. No runtime injects or hash-verifies that root yet, which is exactly why the evaluated basis is refused in E-B.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "evaluation_run_reference",
+          "evaluation_run_sha256"
+        ],
+        "properties": {
+          "evaluation_run_reference": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evaluation_run_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "qualification_basis"
+        ],
+        "properties": {
+          "qualification_basis": {
+            "const": "bootstrap_pre_evaluation"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "declared_non_claims"
+        ],
+        "properties": {
+          "prompt_lifecycle_state": {
+            "const": "candidate"
+          },
+          "qualification_scope": {
+            "const": "qualified_for_development"
+          },
+          "qualification_status": {
+            "const": "bootstrap_authorized_live_dev"
+          }
+        },
+        "allOf": [
+          {
+            "not": {
+              "required": [
+                "review_decision"
+              ]
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "supporting_evaluation_references"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "qualification_basis"
+        ],
+        "properties": {
+          "qualification_basis": {
+            "const": "evaluated_comparison"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "review_decision",
+          "supporting_evaluation_references"
+        ],
+        "properties": {
+          "qualification_status": {
+            "enum": [
+              "qualified",
+              "superseded",
+              "revoked"
+            ]
+          }
+        },
+        "not": {
+          "required": [
+            "declared_non_claims"
+          ]
+        }
+      }
+    }
+  ]
+}

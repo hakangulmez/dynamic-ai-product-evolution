@@ -117,7 +117,13 @@ def test_package_is_enumerable_and_complete():
     # that no released contract can hold. Neither was folded into an existing
     # module, because a shared module would have blurred "derives a number" with
     # "publishes a verdict".
-    assert len(MODULES) == 16
+    #
+    # ADR-044 (G2) adds prompt_qualification.py: 16 -> 17. It is separate from
+    # manifests.py for the same reason: manifests owns the three released
+    # governance rings, whose validators must keep being exactly what they were
+    # released as, and folding a fourth artifact's rules in beside them would
+    # have put a new refusal inside the function the v1 route still calls.
+    assert len(MODULES) == 17
     assert (PACKAGE / "__init__.py") in MODULES
 
 

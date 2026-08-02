@@ -49,6 +49,11 @@ from dynamic_ai_products.extraction.provider_adapter import (
     require_provider_v8,
 )
 from dynamic_ai_products.extraction.manifests import STAGE_OUTPUT_SCHEMA_SHA256
+from dynamic_ai_products.extraction.prompt_qualification import (
+    DECLARED_NON_CLAIMS,
+    GOVERNING_SPEC_REFERENCE,
+)
+from dynamic_ai_products.extraction.prompts import load_prompt
 from dynamic_ai_products.extraction.provider_adapter import ProviderResponse
 from dynamic_ai_products.extraction.run_extraction import (
     AUTHORIZATION_REFERENCE,
@@ -523,6 +528,16 @@ PROJECT = "my-research-project"
 GOV_AUTH = "governance/live_call_authorization.json"
 GOV_ENABLEMENT = "governance/adapter_enablement_record.json"
 GOV_QUALIFICATION = "governance/adapter_qualification_record.json"
+# ADR-044. The fourth governance artifact. Its digests are derived from the real
+# repository -- the frozen prompt, SPEC-024, and the tracked change request --
+# rather than from placeholder hex, because the whole point of the binding is
+# that a run refuses when those bytes are not the ones that were qualified.
+GOV_PROMPT_QUALIFICATION = "governance/prompt_qualification_record.json"
+CHANGE_REQUEST_REFERENCE = (
+    "evals/change_requests/CR-0001-product-discovery-recall-bootstrap-qualification.md"
+)
+CODE_COMMIT = "be627003f3246b371c2b3ac13e813ef0bb112582"
+RUN_CREATED_AT = "2026-07-29T00:00:00Z"
 METER_IDENTITY = "e-m-reference-meter"
 METER_VERSION = "0.1.0"
 COUNT_BODY = b'{"totalTokens": 1000}'
@@ -664,7 +679,53 @@ def _write_identity(root: Path) -> dict[str, str]:
     return {"reference": "pilot_universe_packet.json", "sha256": sha256_bytes(payload)}
 
 
-def _write_governance_v2(root: Path, **authorization_overrides) -> dict[str, str]:
+def _repo_digest(reference: str) -> str:
+    return sha256_bytes((REPO_ROOT / reference).read_bytes())
+
+
+def _prompt_qualification_record(stage_sha: str, routing_sha: str, **overrides):
+    prompt = load_prompt(REPO_ROOT, "product_discovery_recall")
+    record = {
+        "contract": "prompt_qualification_record@0.1.0",
+        "schema_version": "0.1.0",
+        "qualification_id": "promptqual-em",
+        "qualification_basis": "bootstrap_pre_evaluation",
+        "qualification_scope": "qualified_for_development",
+        "qualification_status": "bootstrap_authorized_live_dev",
+        "prompt_lifecycle_state": "candidate",
+        "supersedes_qualification_id": None,
+        "prompt_id": "product_discovery_recall",
+        "prompt_registry_version": prompt["prompt_registry_version"],
+        "prompt_reference": prompt["reference"],
+        "prompt_artifact_sha256": prompt["prompt_hash"],
+        "stage": "product_extraction",
+        "stage_output_contract_id": "product_observation@0.1.0",
+        "stage_output_contract_sha256": stage_sha,
+        "execution_contract_id": "extraction_provider_client_contract@0.2.0",
+        "execution_contract_sha256": _v2_contract_digest(),
+        "routing_contract_id": "vertex_gemini_route@0.2.0",
+        "routing_contract_sha256": routing_sha,
+        "governing_spec_reference": GOVERNING_SPEC_REFERENCE,
+        "governing_spec_sha256": _repo_digest(GOVERNING_SPEC_REFERENCE),
+        "change_request_reference": CHANGE_REQUEST_REFERENCE,
+        "change_request_sha256": _repo_digest(CHANGE_REQUEST_REFERENCE),
+        "declared_non_claims": list(DECLARED_NON_CLAIMS),
+        "known_limitation_codes": [
+            "single_pass_recall_only_not_consolidated",
+            "sec_only_partial_corpus",
+            "no_completed_evaluation_run",
+        ],
+        "reviewer": "methodology-owner",
+        "decided_at": "2026-07-28T00:00:00Z",
+        "code_commit": CODE_COMMIT,
+    }
+    record.update(overrides)
+    return record
+
+
+def _write_governance_v2(
+    root: Path, prompt_qualification_overrides=None, **authorization_overrides
+) -> dict[str, str]:
     (root / "governance").mkdir(parents=True, exist_ok=True)
     stage_sha = STAGE_OUTPUT_SCHEMA_SHA256["product_extraction"]
     qualification = {
@@ -685,6 +746,13 @@ def _write_governance_v2(root: Path, **authorization_overrides) -> dict[str, str
     qual_bytes = canonical_json_bytes(qualification)
     (root / GOV_QUALIFICATION).write_bytes(qual_bytes)
 
+    routing_sha = "4" * 64
+    prompt_qualification = _prompt_qualification_record(
+        stage_sha, routing_sha, **(prompt_qualification_overrides or {})
+    )
+    pq_bytes = canonical_json_bytes(prompt_qualification)
+    (root / GOV_PROMPT_QUALIFICATION).write_bytes(pq_bytes)
+
     endpoints = _v2_endpoints()
     allowlist = [endpoints["count_tokens"], endpoints["generate_content"]]
     enablement = {
@@ -693,13 +761,13 @@ def _write_governance_v2(root: Path, **authorization_overrides) -> dict[str, str
         "enablement_id": "enab-em",
         "adapter_qualification_record_reference": GOV_QUALIFICATION,
         "adapter_qualification_record_sha256": sha256_bytes(qual_bytes),
-        "prompt_qualification_reference": "governance/prompt_qualification.json",
-        "prompt_qualification_sha256": "3" * 64,
+        "prompt_qualification_reference": GOV_PROMPT_QUALIFICATION,
+        "prompt_qualification_sha256": sha256_bytes(pq_bytes),
         "stage": "product_extraction",
         "stage_output_contract_id": "product_observation@0.1.0",
         "stage_output_contract_sha256": stage_sha,
         "routing_contract_id": "vertex_gemini_route@0.2.0",
-        "routing_contract_sha256": "4" * 64,
+        "routing_contract_sha256": routing_sha,
         "deployment_environment_id": "dev-local",
         "rollout_state": "live_dev",
         "endpoint_allowlist": list(allowlist),
@@ -757,9 +825,20 @@ def _evidence_binding():
     return {name: schema[name]["const"] for name in schema}
 
 
-def _run_v2(tmp_path: Path, *, provider=None, session=None, authorization_overrides=None):
+def _run_v2(
+    tmp_path: Path,
+    *,
+    provider=None,
+    session=None,
+    authorization_overrides=None,
+    prompt_qualification_overrides=None,
+):
     governance = tmp_path / "governance-root"
-    pin = _write_governance_v2(governance, **(authorization_overrides or {}))
+    pin = _write_governance_v2(
+        governance,
+        prompt_qualification_overrides=prompt_qualification_overrides,
+        **(authorization_overrides or {}),
+    )
     return run_extraction_stage_v2(
         run_root=tmp_path / "run",
         repo_root=REPO_ROOT,

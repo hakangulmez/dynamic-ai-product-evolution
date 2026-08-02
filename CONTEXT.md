@@ -172,3 +172,22 @@ changes.
 The versioned operational permission for an adapter in a given environment
 and rollout scope, distinct from code availability, qualification, and
 per-run authorization.
+
+**Qualification Basis**:
+The kind of evidence a qualification record rests on, and therefore what it is
+entitled to claim. Two disjoint values exist: `bootstrap_pre_evaluation` and
+`evaluated_comparison`. The basis is not a confidence level; it determines
+which properties the record may carry at all.
+
+**Bootstrap Pre-Evaluation**:
+The qualification basis used before any completed evaluation run exists. A
+record on this basis carries no review decision and no supporting evaluation
+reference, because a review decision presupposes a completed valid evaluation.
+It states in closed vocabulary that it is not an evaluation verdict, not an
+acceptance decision, not a release qualification, and not a complete-universe
+finding.
+
+**Bootstrap-Authorized Live Dev**:
+The only qualification status reachable on the bootstrap pre-evaluation basis.
+It permits development-scope live execution and nothing beyond it: pilot and
+release rollout states are unreachable through it.

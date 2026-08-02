@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.15.0",
+  "manifest_version": "0.16.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -32,6 +32,7 @@
     "official_web_candidate": "0.1.0",
     "official_web_collection_manifest": "0.1.0",
     "product_observation": "0.1.0",
+    "prompt_qualification_record": "0.1.0",
     "sec_source_candidate": "0.1.0",
     "snapshot_manifest": "0.1.0",
     "source_document": "0.1.0",

@@ -36,6 +36,7 @@ __all__ = [
     "CORPUS_SCOPE_SEC_ONLY",
     "hydrate_company_identity",
     "hydrate_pinned_artifact",
+    "hydrate_pinned_bytes",
     "PACKET_CONTRACT",
     "PACKET_CONTRACT_V2",
     "STAGES",
@@ -118,15 +119,15 @@ def _safe_target(artifact_root: str | Path, reference: Any, code: str) -> Path:
     return target
 
 
-def _hydrate(
+def _hydrate_bytes(
     artifact_root: str | Path,
     pin: Any,
     *,
     what: str,
     unsafe_code: str,
     sha_code: str,
-) -> dict[str, Any]:
-    """Read, hash-verify, and parse an artifact named only by its pin."""
+) -> bytes:
+    """Read and hash-verify the bytes of an artifact named only by its pin."""
     if not isinstance(pin, dict):
         raise ExtractionError(f"{what} pin must be a mapping", reason_code=unsafe_code)
     target = _safe_target(artifact_root, pin.get("reference"), unsafe_code)
@@ -144,6 +145,21 @@ def _hydrate(
             reason_code=sha_code,
             detail=f"expected {expected}, observed {observed}",
         )
+    return raw
+
+
+def _hydrate(
+    artifact_root: str | Path,
+    pin: Any,
+    *,
+    what: str,
+    unsafe_code: str,
+    sha_code: str,
+) -> dict[str, Any]:
+    """Read, hash-verify, and parse an artifact named only by its pin."""
+    raw = _hydrate_bytes(
+        artifact_root, pin, what=what, unsafe_code=unsafe_code, sha_code=sha_code
+    )
     try:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as exc:
@@ -171,6 +187,30 @@ def hydrate_pinned_artifact(
     loader exists, so no second set of rules can drift from these.
     """
     return _hydrate(
+        artifact_root, pin, what=what, unsafe_code=unsafe_code, sha_code=sha_code
+    )
+
+
+def hydrate_pinned_bytes(
+    artifact_root: str | Path,
+    pin: Any,
+    *,
+    what: str,
+    unsafe_code: str,
+    sha_code: str,
+) -> bytes:
+    """The same containment and hash discipline, without JSON parsing (ADR-044).
+
+    A prompt-qualification record cites two **Markdown** documents that live in
+    the repository tree rather than in the governance root: the SPEC-024
+    qualification policy and the tracked change request. Neither can be read by
+    :func:`hydrate_pinned_artifact`, which parses JSON. The answer is not a
+    second loader: this function and the JSON one share one ``_safe_target`` and
+    one digest comparison, so the relative-reference rules — absolute refusal,
+    drive-qualified refusal, upward-traversal refusal, symlink refusal, escape
+    refusal — cannot drift apart between the two roots.
+    """
+    return _hydrate_bytes(
         artifact_root, pin, what=what, unsafe_code=unsafe_code, sha_code=sha_code
     )
 

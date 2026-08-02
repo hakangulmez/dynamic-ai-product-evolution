@@ -79,6 +79,7 @@ from .prediction_manifest import (
     manifest_bytes,
 )
 from .contents_renderer import RENDERER_VERSION, render_provider_contents
+from .prompt_qualification import validate_prompt_qualification
 from .prompts import load_prompt, single_pass_prompt_plan
 from .provider_adapter import (
     PROVIDER_PROTOCOL_VERSION_V8,
@@ -1360,6 +1361,23 @@ def run_extraction_stage_v2(
         unsafe_code="authorization_chain_broken",
         sha_code="authorization_chain_broken",
     )
+    # ADR-044. The fourth artifact, hydrated from the same governance root under
+    # the same containment and digest discipline as the three rings above. The
+    # enablement has always been required to name it; until now nothing opened
+    # what it named. The equality checks that bind it to the resolved prompt and
+    # the executing client contract need values that do not exist yet, so they
+    # run later, in the post-handshake region.
+    prompt_qualification_pin = {
+        "reference": enablement.get("prompt_qualification_reference"),
+        "sha256": enablement.get("prompt_qualification_sha256"),
+    }
+    prompt_qualification = hydrate_pinned_artifact(
+        governance_artifact_root,
+        prompt_qualification_pin,
+        what="prompt qualification record",
+        unsafe_code="authorization_chain_broken",
+        sha_code="authorization_chain_broken",
+    )
     schema_hash = resolve_stage_schema_hash(stage, schema_root)
     authorization = validate_governance_chain_v2(
         authorization=authorization,
@@ -1398,7 +1416,9 @@ def run_extraction_stage_v2(
             client=client,
             session=budget_session,
             authorization=authorization,
+            enablement=enablement,
             qualification=qualification,
+            prompt_qualification=prompt_qualification,
             root=root,
             packet=packet,
             packet_payload=packet_payload,
@@ -1425,7 +1445,9 @@ def _run_two_operation_stage(
     client: object,
     session: object,
     authorization: dict[str, Any],
+    enablement: dict[str, Any],
     qualification: dict[str, Any],
+    prompt_qualification: dict[str, Any],
     root: Path,
     packet: dict[str, Any],
     packet_payload: bytes,
@@ -1462,6 +1484,28 @@ def _run_two_operation_stage(
     prompt_plan = single_pass_prompt_plan(stage)
     prompt = load_prompt(repo_root, prompt_plan["prompt_id"])
     prompt_payload = prompt["text"].encode("utf-8")
+    # ADR-044. Placed here because both operands finally exist: the client
+    # contract has been canonicalized, hashed and accepted by the authorization
+    # and the adapter qualification just above, and the frozen prompt has just
+    # been resolved. Placed *no later* than here because everything after it
+    # spends something -- the meter, the run root, the network. A refusal on this
+    # line therefore precedes the first filesystem effect and leaves no artifact,
+    # and it is raised inside the caller's try/finally, so the run permit is
+    # revoked on this route exactly as on every other terminal one.
+    validate_prompt_qualification(
+        record=prompt_qualification,
+        enablement=enablement,
+        authorization=authorization,
+        qualification=qualification,
+        prompt=prompt,
+        prompt_plan=prompt_plan,
+        stage=stage,
+        stage_output_schema_sha256=schema_hash,
+        client_contract_sha256=contract_sha_expected,
+        code_commit=code_commit,
+        run_created_at=run_created_at,
+        repo_root=repo_root,
+    )
     if packet["contract"] != PACKET_CONTRACT_REQUIRING_IDENTITY:
         raise ExtractionError(
             "the authorized route requires "

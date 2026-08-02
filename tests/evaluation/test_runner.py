@@ -1166,7 +1166,10 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     paths = re.findall(r"^- `([^`]+)`$", text, flags=re.MULTILINE)
     # 575 = 561 + the fourteen ADR-043 paths: three schemas, five source
     # modules and six test modules.
-    assert declared == len(paths) == 575
+    # 579 = 575 + the four newly tracked ADR-044 (G2) paths: the
+    # prompt-qualification schema, its source module, its test module, and the
+    # tracked change request the record pins by reference and digest.
+    assert declared == len(paths) == 579
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):
