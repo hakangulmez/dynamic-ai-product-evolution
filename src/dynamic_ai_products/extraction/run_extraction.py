@@ -107,7 +107,6 @@ __all__ = [
     "build_capture_sink",
     "run_extraction_stage",
     "run_extraction_stage_v2",
-    "run_two_operation_measurement",
 ]
 
 PACKET_REFERENCE = "inputs/extraction_input_packet.json"
@@ -432,6 +431,37 @@ def run_extraction_stage(
                 NON_RUN_REFERENCE: non_run_sha,
             },
         )
+
+    # --- [R] ADR-045 (G2b): the v1 provider route is retired ------------------
+    #
+    # Placed here and nowhere else. Above this line the packet has already been
+    # built and the non-run branch has already returned, so the two routes that
+    # do not reach a provider keep their exact behaviour: the caller-supplied
+    # contract-pin refusal and every packet-build refusal still produce zero
+    # artifacts, and a run with no admissible passage still creates its run root
+    # and writes exactly the packet and the non-run record. Below this line lie
+    # `require_provider`, the governance walk, the permit handshake, the meter,
+    # `_require_absent_run_root` and `mkdir` -- none of which now execute.
+    #
+    # v1 validates the three released rings but has no prompt-qualification
+    # binding (ADR-044 placed that on the v2 route) and no countTokens
+    # measurement. A route that walks a governance chain and still cannot say
+    # which prompt was qualified is not a lesser route; it is a bypass, and it
+    # looks legitimate from the outside. A runbook cannot close it, because a
+    # runbook is a human document and this is a code path.
+    #
+    # One ordering consequence is deliberate and recorded: on this branch a run
+    # root that already exists now yields `v1_live_route_retired` rather than
+    # `run_root_exists`, because `_require_absent_run_root` sits far below, past
+    # the provider seam and the permit handshake. The existing root is left
+    # exactly as it was found -- this refusal writes nothing and removes nothing.
+    raise ExtractionError(
+        "the v1 single-operation live route is retired: a provider-backed run "
+        "must go through run_extraction_stage_v2, which binds the SPEC-024 "
+        "prompt qualification and measures the input before it generates; "
+        "there is no v1 bypass",
+        reason_code="v1_live_route_retired",
+    )
 
     # --- pre-run gate: [D] through [N], all side-effect free ------------------
     client = require_provider(provider)                          # [D]
@@ -903,7 +933,7 @@ def build_capture_sink(root: Path, *, records: list[CaptureRecord] | None = None
     return sink
 
 
-def run_two_operation_measurement(
+def _run_two_operation_measurement(
     *,
     root: Path,
     provider: Any,
@@ -923,6 +953,19 @@ def run_two_operation_measurement(
     capture record -- so that when this raises, the caller can still publish a
     truthful terminal chain. Without it a failure would take its own evidence
     with it.
+
+    **Private (ADR-045, G2b).** This walks F2 through F5 with no governance of
+    its own: it hydrates nothing, validates no chain, binds no prompt
+    qualification and asks for no permit. The ``authorization`` argument is a
+    caller-supplied mapping read only for the attempt cap. It was exported, and
+    an exported function that sends while validating nothing is a second public
+    route around the gate ADR-044 installed, so it is no longer part of
+    ``__all__`` and only :func:`_run_two_operation_stage` calls it in production.
+
+    The underscore is a boundary, not an enforcement: nothing stops an
+    in-process caller from reaching for it by name. What actually refuses is the
+    connector, whose ``count_tokens`` and ``complete_v8`` spend an
+    operation-labelled permit that only ``assert_run_permitted`` grants.
     """
     state = trace if trace is not None else {}
     state.setdefault("generate_records", ())
@@ -1586,7 +1629,7 @@ def _run_two_operation_stage(
     # --- F2 through F5 --------------------------------------------------------
     trace: dict[str, Any] = {"phase": "start", "generate_records": ()}
     try:
-        measured = run_two_operation_measurement(
+        measured = _run_two_operation_measurement(
             root=root,
             provider=client,
             session=session,

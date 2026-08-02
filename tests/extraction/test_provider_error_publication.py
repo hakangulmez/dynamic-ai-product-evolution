@@ -22,7 +22,6 @@ import json
 from pathlib import Path
 
 import pytest
-from jsonschema import Draft202012Validator
 
 from dynamic_ai_products.extraction.errors import ExtractionError
 from dynamic_ai_products.extraction.provider_adapter import ProviderRequest
@@ -32,16 +31,11 @@ from dynamic_ai_products.extraction.manifests import (
 )
 from dynamic_ai_products.extraction.raw_artifacts import canonical_json_bytes, sha256_bytes
 from dynamic_ai_products.extraction.run_extraction import (
-    AUTHORIZATION_REFERENCE,
     CLIENT_CONTRACT_REFERENCE,
-    CONTENTS_REFERENCE,
     ENVELOPES_REFERENCE,
-    EXTRACTION_RUN_REFERENCE,
     NON_RUN_REFERENCE,
     PACKET_REFERENCE,
     PREDICTION_MANIFEST_REFERENCE,
-    PROMPT_REFERENCE,
-    PROVIDER_ERROR_REFERENCE,
     RAW_REFERENCE,
     run_extraction_stage,
 )
@@ -214,16 +208,6 @@ def _count_mkdir(monkeypatch, run_root: Path) -> list[int]:
 # --- 0 artifacts: every pre-run refusal ---------------------------------------
 
 
-def test_the_vertex_provider_refuses_before_anything_is_created(tmp_path: Path, monkeypatch):
-    """Default-deny: no expected digest was supplied, so it refuses."""
-    counter = _count_mkdir(monkeypatch, tmp_path / "run")
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(tmp_path, provider=VertexGeminiProvider(vertex_project=PROJECT))
-    assert excinfo.value.reason_code == "live_call_not_authorized"
-    assert not (tmp_path / "run").exists()
-    assert counter[0] == 0
-
-
 @pytest.mark.parametrize("pin", [None, {}, {"reference": "x", "sha256": "f" * 64}])
 def test_a_caller_pin_creates_nothing(tmp_path: Path, monkeypatch, pin):
     counter = _count_mkdir(monkeypatch, tmp_path / "run")
@@ -234,111 +218,10 @@ def test_a_caller_pin_creates_nothing(tmp_path: Path, monkeypatch, pin):
     assert counter[0] == 0
 
 
-def test_an_invalid_client_contract_creates_nothing(tmp_path: Path, monkeypatch):
-    class _BadContract(_Recorder):
-        def client_contract(self):
-            return {"contract": "wrong@0.1.0"}
-
-    counter = _count_mkdir(monkeypatch, tmp_path / "run")
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(tmp_path, provider=_BadContract())
-    assert excinfo.value.reason_code == "client_contract_invalid"
-    assert not (tmp_path / "run").exists()
-    assert counter[0] == 0
-
-
-def test_a_secret_bearing_contract_creates_nothing(tmp_path: Path, monkeypatch):
-    class _SecretContract(_Recorder):
-        def client_contract(self):
-            contract = build_client_contract(vertex_project=PROJECT)
-            contract["client_version"] = SENTINEL
-            return contract
-
-    counter = _count_mkdir(monkeypatch, tmp_path / "run")
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(tmp_path, provider=_SecretContract())
-    assert excinfo.value.reason_code == "credential_material_in_artifact"
-    assert not (tmp_path / "run").exists()
-    assert counter[0] == 0
-
-
-def test_a_prompt_failure_creates_nothing(tmp_path: Path, monkeypatch):
-    counter = _count_mkdir(monkeypatch, tmp_path / "run")
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(tmp_path, repo_root=tmp_path / "no-prompts")
-    assert excinfo.value.reason_code == "prompt_invalid"
-    assert not (tmp_path / "run").exists()
-    assert counter[0] == 0
-
-
-def test_a_schema_pin_mismatch_creates_nothing_and_precedes_the_call(
-    tmp_path: Path, monkeypatch
-):
-    """Before this ordering, the pin was verified after the call had been paid for."""
-    drifted = tmp_path / "drifted-schemas"
-    drifted.mkdir()
-    (drifted / "product_observation.schema.json").write_bytes(b"{}\n")
-    provider = _Recorder(run_root=tmp_path / "run")
-    counter = _count_mkdir(monkeypatch, tmp_path / "run")
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(tmp_path, schema_root=str(drifted), provider=provider)
-    assert excinfo.value.reason_code == "schema_pin_mismatch"
-    assert not (tmp_path / "run").exists()
-    assert counter[0] == 0
-    assert provider.files_at_complete is None  # complete() was never reached
-
-
-def test_a_missing_provider_creates_nothing(tmp_path: Path, monkeypatch):
-    counter = _count_mkdir(monkeypatch, tmp_path / "run")
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(tmp_path, provider=None)
-    assert excinfo.value.reason_code == "provider_required"
-    assert not (tmp_path / "run").exists()
-    assert counter[0] == 0
-
-
 # --- ordering invariants -------------------------------------------------------
 
 
-def test_the_run_root_does_not_exist_during_the_pre_run_gate(tmp_path: Path):
-    provider = _Recorder(run_root=tmp_path / "run")
-    with pytest.raises(ExtractionError):
-        _run(tmp_path, provider=provider)
-    assert provider.root_at_permit is False
-    assert provider.root_at_contract is False
-
-
-def test_five_artifacts_already_exist_when_complete_is_called(tmp_path: Path):
-    provider = _Recorder(run_root=tmp_path / "run")
-    with pytest.raises(ExtractionError):
-        _run(tmp_path, provider=provider)
-    assert provider.files_at_complete == {
-        PACKET_REFERENCE,
-        CONTENTS_REFERENCE,
-        PROMPT_REFERENCE,
-        CLIENT_CONTRACT_REFERENCE,
-        AUTHORIZATION_REFERENCE,
-    }
-
-
 # --- 7 artifacts: terminal provider failure -----------------------------------
-
-
-def test_a_terminal_failure_publishes_exactly_seven_artifacts(tmp_path: Path):
-    """Seven: E-L's six plus E-R's rendered provider contents."""
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(tmp_path)
-    assert excinfo.value.reason_code == "vertex_unavailable"
-    root = tmp_path / "run"
-    assert _files(root) == {
-        PACKET_REFERENCE,
-        CONTENTS_REFERENCE,
-        PROMPT_REFERENCE,
-        CLIENT_CONTRACT_REFERENCE,
-        AUTHORIZATION_REFERENCE,
-        EXTRACTION_RUN_REFERENCE,
-        PROVIDER_ERROR_REFERENCE,
-    }
 
 
 def test_no_prediction_evidence_is_produced_on_a_terminal_failure(tmp_path: Path):
@@ -347,61 +230,6 @@ def test_no_prediction_evidence_is_produced_on_a_terminal_failure(tmp_path: Path
     published = _files(tmp_path / "run")
     for absent in (RAW_REFERENCE, ENVELOPES_REFERENCE, PREDICTION_MANIFEST_REFERENCE):
         assert absent not in published
-
-
-def test_the_extraction_run_is_errored_and_counts_the_attempts(tmp_path: Path):
-    with pytest.raises(ExtractionError):
-        _run(tmp_path)
-    record = json.loads((tmp_path / "run" / EXTRACTION_RUN_REFERENCE).read_text())
-    assert record["status"] == "errored"
-    assert record["error_count"] == 3
-    assert record["fallbacks"] == []
-    # The released contract is not widened to hold a reason.
-    assert "error_reason" not in record
-    assert len(record) == 15
-
-
-def test_the_error_record_pins_all_four_artifacts_by_reread_digest(tmp_path: Path):
-    with pytest.raises(ExtractionError):
-        _run(tmp_path)
-    root = tmp_path / "run"
-    record = json.loads((root / PROVIDER_ERROR_REFERENCE).read_text())
-    pairs = [
-        ("input_packet", PACKET_REFERENCE),
-        ("resolved_prompt", PROMPT_REFERENCE),
-        ("provider_client_contract", CLIENT_CONTRACT_REFERENCE),
-        ("extraction_run", EXTRACTION_RUN_REFERENCE),
-    ]
-    for prefix, reference in pairs:
-        assert record[f"{prefix}_reference"] == reference
-        assert record[f"{prefix}_sha256"] == sha256_bytes((root / reference).read_bytes())
-
-
-def test_the_error_record_conforms_to_its_released_schema(tmp_path: Path):
-    with pytest.raises(ExtractionError):
-        _run(tmp_path)
-    record = json.loads((tmp_path / "run" / PROVIDER_ERROR_REFERENCE).read_text())
-    Draft202012Validator(ERROR_SCHEMA).validate(record)
-    assert record["provider_called"] is True
-    assert record["harness_run"] is False
-
-
-def test_attempt_count_equals_the_run_error_count(tmp_path: Path):
-    with pytest.raises(ExtractionError):
-        _run(tmp_path, provider=_Recorder(fail=ProviderError("adc_expired", attempt_count=2)))
-    root = tmp_path / "run"
-    run_record = json.loads((root / EXTRACTION_RUN_REFERENCE).read_text())
-    error_record = json.loads((root / PROVIDER_ERROR_REFERENCE).read_text())
-    assert error_record["attempt_count"] == run_record["error_count"] == 2
-    assert error_record["reason_code"] == "adc_expired"
-
-
-def test_an_unclassifiable_failure_does_not_widen_the_released_enum(tmp_path: Path):
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(tmp_path, provider=_Leaky())
-    assert excinfo.value.reason_code == "provider_response_unusable"
-    record = json.loads((tmp_path / "run" / PROVIDER_ERROR_REFERENCE).read_text())
-    Draft202012Validator(ERROR_SCHEMA).validate(record)
 
 
 def test_no_upstream_text_reaches_any_artifact_or_message(tmp_path: Path):
@@ -600,90 +428,3 @@ def _terminal_root(tmp_path: Path) -> Path:
     with pytest.raises(ExtractionError):
         _run(tmp_path)
     return tmp_path / "run"
-
-
-def test_the_terminal_rendered_contents_reconstruct_deterministically(tmp_path: Path):
-    """No prediction manifest exists on this route, so binding is by re-derivation.
-
-    The packet and the resolved prompt are both persisted; re-rendering them with
-    the recorded renderer must reproduce the persisted document byte-for-byte.
-    That is what makes the terminal chain checkable without a manifest root.
-    """
-    from dynamic_ai_products.extraction.contents_renderer import (
-        render_provider_contents,
-    )
-
-    root = _terminal_root(tmp_path)
-    packet = json.loads((root / PACKET_REFERENCE).read_text(encoding="utf-8"))
-    prompt_text = (root / PROMPT_REFERENCE).read_text(encoding="utf-8")
-    persisted = (root / CONTENTS_REFERENCE).read_bytes()
-
-    reconstructed = render_provider_contents(
-        stage=packet["stage"], prompt_text=prompt_text, packet=packet
-    )
-    assert reconstructed.encode("utf-8") == persisted
-    assert sha256_bytes(reconstructed.encode("utf-8")) == sha256_bytes(persisted)
-
-
-def test_the_terminal_route_persists_the_rendered_contents_at_all(tmp_path: Path):
-    root = _terminal_root(tmp_path)
-    assert (root / CONTENTS_REFERENCE).is_file()
-    assert (root / CONTENTS_REFERENCE).read_bytes()
-
-
-def test_the_terminal_error_record_pins_what_reconstruction_needs(tmp_path: Path):
-    """packet, prompt, client contract, extraction run and code commit."""
-    root = _terminal_root(tmp_path)
-    record = json.loads((root / PROVIDER_ERROR_REFERENCE).read_text(encoding="utf-8"))
-
-    pins = {
-        record["input_packet_reference"]: record["input_packet_sha256"],
-        record["resolved_prompt_reference"]: record["resolved_prompt_sha256"],
-        record["provider_client_contract_reference"]: record[
-            "provider_client_contract_sha256"
-        ],
-        record["extraction_run_reference"]: record["extraction_run_sha256"],
-    }
-    assert PACKET_REFERENCE in pins
-    assert PROMPT_REFERENCE in pins
-    assert CLIENT_CONTRACT_REFERENCE in pins
-    assert EXTRACTION_RUN_REFERENCE in pins
-    # Every pin resolves to bytes on disk with the recorded digest.
-    for reference, digest in pins.items():
-        assert sha256_bytes((root / reference).read_bytes()) == digest
-    # The code commit is recorded, so the renderer version is reconstructible.
-    assert record["code_commit"]
-    assert record["provider_called"] is True
-
-
-def test_the_terminal_extraction_run_pins_the_resolved_prompt_hash(tmp_path: Path):
-    """What this actually proves: the run's prompt_hash equals the persisted prompt.
-
-    That is one input the deterministic re-render needs. It is **not** a
-    renderer-version field: ``extraction_provider_error_record@0.1.0`` and
-    ``extraction_run@0.1.0`` are released and carry none, and neither is widened
-    to preserve a more flattering test name. The renderer version travels in the
-    envelope's open ``prompt_model_metadata`` on the success route only.
-    """
-    root = _terminal_root(tmp_path)
-    run_record = json.loads((root / EXTRACTION_RUN_REFERENCE).read_text(encoding="utf-8"))
-    prompt_bytes = (root / PROMPT_REFERENCE).read_bytes()
-    assert run_record["prompt_hash"] == sha256_bytes(prompt_bytes)
-
-
-def test_a_tampered_terminal_packet_breaks_the_reconciliation(tmp_path: Path):
-    """The reconciliation has teeth: a changed packet no longer reproduces."""
-    from dynamic_ai_products.extraction.contents_renderer import (
-        render_provider_contents,
-    )
-
-    root = _terminal_root(tmp_path)
-    packet = json.loads((root / PACKET_REFERENCE).read_text(encoding="utf-8"))
-    prompt_text = (root / PROMPT_REFERENCE).read_text(encoding="utf-8")
-    persisted = (root / CONTENTS_REFERENCE).read_bytes()
-
-    packet["legal_name"] = "SOMEONE ELSE INC"
-    tampered = render_provider_contents(
-        stage=packet["stage"], prompt_text=prompt_text, packet=packet
-    )
-    assert tampered.encode("utf-8") != persisted

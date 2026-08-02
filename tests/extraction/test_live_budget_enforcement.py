@@ -27,7 +27,6 @@ from dynamic_ai_products.extraction.manifests import (
 from dynamic_ai_products.extraction.raw_artifacts import canonical_json_bytes, sha256_bytes
 from dynamic_ai_products.extraction.run_extraction import (
     CLIENT_CONTRACT_REFERENCE,
-    CONTENTS_REFERENCE,
     run_extraction_stage,
 )
 from dynamic_ai_products.providers.client_contract import build_client_contract
@@ -163,142 +162,10 @@ def _authorization(**overrides):
 # --- the meter seam -----------------------------------------------------------
 
 
-def test_no_meter_refuses_with_zero_artifacts_and_no_provider_call(tmp_path: Path):
-    _refused(tmp_path, "budget_meter_unavailable", budget_meter=None)
-
-
-@pytest.mark.parametrize("meter", [object(), 7, "meter", {}, lambda: None])
-def test_a_non_conforming_meter_is_refused(tmp_path: Path, meter):
-    _refused(tmp_path, "budget_meter_protocol_invalid", budget_meter=meter)
-
-
-def test_a_conforming_fake_meter_lets_the_run_proceed(tmp_path: Path):
-    """The 8-artifact success path is only testable through an injected fake."""
-    provider = _Provider()
-    with pytest.raises(ExtractionError):
-        _run(tmp_path, provider=provider)
-    assert provider.calls == 1
-
-
-@pytest.mark.parametrize(
-    "reason",
-    [
-        "budget_input_tokens_exceeded",
-        "budget_estimated_cost_exceeded",
-        "budget_wall_clock_exceeded",
-    ],
-)
-def test_every_meter_refusal_leaves_zero_artifacts(tmp_path: Path, reason):
-    _refused(tmp_path, reason, budget_meter=FakeMeter(refuse=reason))
-
-
-def test_an_undeclared_meter_reason_collapses_rather_than_widening(tmp_path: Path):
-    _refused(tmp_path, "budget_insufficient", budget_meter=FakeMeter(refuse="invented"))
-
-
 # --- meter identity -----------------------------------------------------------
 
 
-def test_a_meter_whose_identity_differs_is_refused(tmp_path: Path):
-    _refused(
-        tmp_path,
-        "budget_meter_identity_mismatch",
-        budget_meter=FakeMeter(identity="some-other-meter"),
-    )
-
-
-def test_a_meter_whose_version_differs_is_refused(tmp_path: Path):
-    _refused(
-        tmp_path, "budget_meter_identity_mismatch", budget_meter=FakeMeter(version="9.9.9")
-    )
-
-
-def test_the_e_b_gate_needs_the_authorization_to_pin_a_real_meter(tmp_path: Path):
-    """Identity equality is enforced. It is not, and is not claimed to be, a
-    structural bar against an in-process implementation imitating the values."""
-    _refused(
-        tmp_path,
-        "budget_meter_identity_mismatch",
-        chain_overrides={"authorization": {"budget_meter_identity": "e-m-real-meter"}},
-    )
-
-
 # --- what the meter actually sees ---------------------------------------------
-
-
-def test_the_meter_sees_the_exact_request_the_provider_receives(tmp_path: Path):
-    class _Capturing(_Provider):
-        def complete(self, request):
-            self.calls += 1
-            self.seen_request = request
-            raise _Refusal("vertex_unavailable", 1)
-
-    provider = _Capturing()
-    meter = FakeMeter()
-    with pytest.raises(ExtractionError):
-        _run(tmp_path, provider=provider, budget_meter=meter)
-    # The same object, not an equal copy.
-    assert meter.seen_request is provider.seen_request
-    # rendered_contents is the sole provider-input authority (ADR-036, E-R), so
-    # metering it is metering exactly what is sent.
-    assert (
-        meter.seen_request.rendered_contents
-        == provider.seen_request.rendered_contents
-    )
-    assert (
-        meter.seen_request.rendered_contents_sha256
-        == provider.seen_request.rendered_contents_sha256
-    )
-
-
-def test_the_meter_sees_the_declared_max_output_tokens(tmp_path: Path):
-    meter = FakeMeter()
-    with pytest.raises(ExtractionError):
-        _run(tmp_path, budget_meter=meter)
-    assert meter.seen_max_output_tokens == 8192
-
-
-def test_the_meter_runs_before_the_run_root_exists(tmp_path: Path):
-    meter = FakeMeter(run_root=tmp_path / "run")
-    with pytest.raises(ExtractionError):
-        _run(tmp_path, budget_meter=meter)
-    assert meter.root_existed_at_call is False
-
-
-def test_the_metered_packet_digest_is_the_persisted_one(tmp_path: Path):
-    from dynamic_ai_products.extraction.run_extraction import PACKET_REFERENCE
-
-    meter = FakeMeter()
-    with pytest.raises(ExtractionError):
-        _run(tmp_path, budget_meter=meter)
-    persisted = (tmp_path / "run" / PACKET_REFERENCE).read_bytes()
-    assert meter.seen_request.input_packet_sha256 == sha256_bytes(persisted)
-
-
-def test_the_metered_prompt_digest_is_the_persisted_one(tmp_path: Path):
-    from dynamic_ai_products.extraction.run_extraction import PROMPT_REFERENCE
-
-    meter = FakeMeter()
-    with pytest.raises(ExtractionError):
-        _run(tmp_path, budget_meter=meter)
-    persisted = (tmp_path / "run" / PROMPT_REFERENCE).read_bytes()
-    assert meter.seen_request.prompt_sha256 == sha256_bytes(persisted)
-
-
-def test_the_metered_contents_digest_is_the_persisted_one(tmp_path: Path):
-    """The meter measures the document that is actually sent (ADR-036, E-R).
-
-    The prompt digest above is the frozen template; this is the rendered
-    document. Metering the template would measure something the provider never
-    receives, so the two are asserted separately and must differ.
-    """
-    meter = FakeMeter()
-    with pytest.raises(ExtractionError):
-        _run(tmp_path, budget_meter=meter)
-    persisted = (tmp_path / "run" / CONTENTS_REFERENCE).read_bytes()
-    assert meter.seen_request.rendered_contents_sha256 == sha256_bytes(persisted)
-    assert meter.seen_request.rendered_contents.encode("utf-8") == persisted
-    assert meter.seen_request.rendered_contents_sha256 != meter.seen_request.prompt_sha256
 
 
 # --- the arithmetic limits ----------------------------------------------------
@@ -362,23 +229,6 @@ def test_the_wall_clock_floor_tracks_the_cap(requests, floor):
 
 def test_the_three_attempt_ceiling_is_the_documented_worst_case():
     assert PROVIDER_WORST_CASE_WALL_CLOCK_SECONDS == 903
-
-
-def test_a_wall_clock_budget_below_the_ceiling_is_refused_through_the_runner(tmp_path: Path):
-    _refused(
-        tmp_path,
-        "budget_insufficient",
-        chain_overrides={"authorization": {"budget_max_wall_clock_seconds": 10}},
-    )
-
-
-def test_the_breaker_is_validated_configuration_only(tmp_path: Path):
-    """Single-call runs start no second call, so the breaker has no further
-    runtime effect here; multi-call enforcement is outside E-B."""
-    provider = _Provider()
-    with pytest.raises(ExtractionError):
-        _run(tmp_path, provider=provider)
-    assert provider.calls == 1
 
 
 # --- governance chain fixture (ADR-035) --------------------------------------

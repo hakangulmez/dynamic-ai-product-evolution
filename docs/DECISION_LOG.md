@@ -1397,6 +1397,96 @@ rejected: schema validity is not verification. Allowing an empty
 it would have let a record claim an evaluation basis with no evaluation.
 
 
+## ADR-045 — The v1 provider route is closed, not deleted: a retirement refusal, a private measurement helper, and 178 migrated cases (G2b)
+
+**Status:** Accepted.
+
+**The question this answers.** ADR-044 bound the SPEC-024 prompt qualification to
+the two-operation route and recorded, as a known limitation, that
+`run_extraction_stage` remained a public, provider-capable entry point without
+that binding. It walked the three released governance rings and then sent, which
+is what made it dangerous: it looked legitimate. A route that validates a chain
+and still cannot say which prompt was qualified is a bypass, and a runbook cannot
+close it because a runbook is a human document and this is a code path.
+
+**Scope A: refuse, do not delete.** The refusal is three lines. Roughly 537 lines
+of v1 production code become unreachable and are deliberately left in place;
+physical removal is a separate cleanup increment. Deleting code and retiring a
+route are different decisions and are not bundled.
+
+**Placement, and the four consequences it fixes.** The refusal sits after the
+non-run branch returns and before `require_provider`, the governance walk, the
+permit handshake, the meter, `_require_absent_run_root` and `mkdir`. Therefore:
+the caller-supplied contract-pin refusal and all nineteen packet-build refusals
+keep their codes and their zero artifacts; the non-run route keeps its contract —
+two artifacts, `inputs/extraction_input_packet.json` and
+`manifests/extraction_non_run_record.json`, `zero_admissible_passages`, no
+provider call; the retired route creates nothing and calls nothing; and **an
+existing run root now reports `v1_live_route_retired` rather than
+`run_root_exists`**, because `_require_absent_run_root` sits far below the
+provider seam on that path. That last one is a deliberate behaviour change. The
+refusal writes nothing and removes nothing, so the caller's directory is left
+exactly as found, and a test asserts the pre- and post-run digests are equal.
+
+**`run_two_operation_measurement` is private.** It hydrated nothing, validated no
+chain, bound no prompt qualification and asked for no permit; its `authorization`
+argument is a caller-supplied mapping read only for the attempt cap. An exported
+function that sends while validating nothing is a second public route around the
+ADR-044 gate. It is now `_run_two_operation_measurement` and out of `__all__`.
+**The underscore is a boundary, not an enforcement:** an in-process caller can
+still reach it by name, and `test_em_route_matrix.py` deliberately does. What
+actually refuses a send without a permit is the connector, whose `count_tokens`
+and `complete_v8` spend an operation-labelled permit that only
+`assert_run_permitted` grants.
+
+**Test disposition, measured rather than estimated.** A prior report said "173
+tests"; that counted `def test_` and missed parametrisation. Measured through a
+`pytest_runtest_makereport` hook: **318 cases across the five v1 modules, 191
+broken, 127 untouched.** The 127 survive because several v1 refusals fire above
+the retirement. Of the 191: **178 migrated**, **10 retired with reason**, **3
+converted into retirement-refusal tests**. Nothing was dropped silently.
+
+The 10 retirements are the v1 single-operation publication shape —
+`predictions/raw_prediction.json` under the v1 reference, the eight-role v1
+prediction manifest, the nine-artifact count. Their v2 counterparts already
+exist. The 3 conversions are `provider_required`, `provider_protocol_invalid` and
+`budget_meter_unavailable` on the v1 seam, which now collapse into one outcome:
+the route is closed, so what was injected no longer matters.
+
+**Four v1 invariants could not migrate unchanged, and are asserted in their v2
+form rather than pretended to be unchanged.** Budget refusals no longer leave
+zero artifacts, because v2 must send `countTokens` before the budget can decide
+on a measured number; what survives is that nothing is generated, and the refusal
+is published as a `pre_generation_invalid` chain instead of vanishing. Post-F1
+failures republish as the classified terminal reason, so a meter refusal surfaces
+as `budget_termination` rather than its own code. The meter is shown a measured
+count, a reserve and the `provider_request_digest` rather than the request
+object; the digest form is stronger and is checked against the persisted
+artifacts. And `contract_pin_forbidden` has no v2 counterpart because the
+`provider_client_contract` parameter does not exist on `run_extraction_stage_v2`
+at all — the absence of the channel is asserted instead of a refusal.
+
+**A coverage gap this migration surfaced, recorded rather than closed.** v1 ran
+`validate_provider_client_contract` on the declared client contract, whose first
+act is the credential scan. v2 cannot: that validator enforces the v1 property
+set exactly and a `@0.2.0` contract legitimately carries fourteen more fields. So
+**the v2 route performs no credential scan on the client-contract seam.** A
+tampered contract is still refused, but by the digest guard; a contract that
+carried credential material from the start and was pinned that way would not be.
+A test locks the measured behaviour so that closing the gap must revisit this
+record. Closing it is a production change beyond this increment's locked scope
+and is left as an open decision.
+
+**Rejected alternatives.** Deleting the v1 code in the same increment was
+rejected: retirement and removal are separate decisions with different review
+surfaces. Retiring the v7 connector was rejected on measurement —
+`vertex_gemini_v2.py` imports four names from `vertex_gemini.py`, so the module
+cannot be deleted. Folding the 178 migrated cases into `test_em_route_matrix.py`
+was rejected: one module of roughly 400 cases would have made the route matrix
+unreadable. Asserting the v1 zero-artifact budget invariant on v2 was rejected as
+false. Silently dropping the 13 non-migrating cases was rejected outright.
+
+
 ## Open decisions
 
 - Filing-date versus fiscal-year observation convention.
@@ -1409,5 +1499,6 @@ it would have let a record claim an evaluation basis with no evaluation.
 - Numeric gate thresholds, frozen-run budgets, and retest intervals (live in versioned scoring/gate/policy configs; see ADR-013, ADR-015, ADR-019).
 - Protected-class taxonomy enumeration and change-classification policy contents (see ADR-020, ADR-021).
 - Pilot cohort design document (see ADR-022).
-- Retirement of the v1 provider-backed extraction route and migration of its 173 tests (G2b); the live smoke run is blocked until it lands (see ADR-044).
+- Physical removal of the ~537 unreachable lines of v1 provider-route code, left in place by ADR-045 as a separate cleanup increment.
+- Whether the v2 client-contract seam should carry a credential scan. v1 had one through `validate_provider_client_contract`; v2 has none, and a contract pinned with credential material from the start would not be refused (see ADR-045).
 - The evaluation-artifact root and the `evaluated_comparison` property set that would make an evaluated prompt qualification reachable (see ADR-044).

@@ -69,7 +69,7 @@ from dynamic_ai_products.extraction.run_extraction import (
     build_capture_sink,
     run_extraction_stage,
     run_extraction_stage_v2,
-    run_two_operation_measurement,
+    _run_two_operation_measurement,
 )
 from dynamic_ai_products.extraction.raw_artifacts import (
     canonical_json_bytes,
@@ -237,7 +237,7 @@ class FakeProvider:
 def test_the_measurement_walks_count_then_derive_then_admit_then_generate(tmp_path):
     provider = FakeProvider(count_body=b'{"totalTokens": 1000}', generate_bodies=[b"prediction"])
     session = FakeSession(cap=3)
-    result = run_two_operation_measurement(
+    result = _run_two_operation_measurement(
         root=tmp_path,
         provider=provider,
         session=session,
@@ -257,7 +257,7 @@ def test_the_measurement_walks_count_then_derive_then_admit_then_generate(tmp_pa
 
 def test_the_reserve_is_the_cap_times_the_per_attempt_ceiling(tmp_path):
     provider = FakeProvider(count_body=b'{"totalTokens": 100000}', generate_bodies=[b"p"])
-    result = run_two_operation_measurement(
+    result = _run_two_operation_measurement(
         root=tmp_path,
         provider=provider,
         session=FakeSession(cap=3),
@@ -275,7 +275,7 @@ def test_a_witness_disagreement_stops_before_the_generation_call(tmp_path):
         count_body=b'{"totalTokens": 10}', generate_bodies=[b"never"], witness=11
     )
     with pytest.raises(ExtractionError) as caught:
-        run_two_operation_measurement(
+        _run_two_operation_measurement(
             root=tmp_path,
             provider=provider,
             session=FakeSession(cap=3),
@@ -293,7 +293,7 @@ def test_a_witness_disagreement_stops_before_the_generation_call(tmp_path):
 def test_an_unparsable_count_body_stops_before_the_generation_call(tmp_path):
     provider = FakeProvider(count_body=b"{not json", generate_bodies=[b"never"])
     with pytest.raises(ExtractionError) as caught:
-        run_two_operation_measurement(
+        _run_two_operation_measurement(
             root=tmp_path,
             provider=provider,
             session=FakeSession(cap=3),
@@ -433,7 +433,7 @@ def test_a_persistence_failure_permits_no_further_send(tmp_path):
 
     provider = FailingSinkProvider(count_body=b'{"totalTokens": 5}', generate_bodies=[])
     with pytest.raises(CaptureSinkError):
-        run_two_operation_measurement(
+        _run_two_operation_measurement(
             root=tmp_path,
             provider=provider,
             session=FakeSession(cap=3),
@@ -500,7 +500,7 @@ def test_generation_attempt_bodies_are_not_manifest_roles():
 
 def test_nothing_is_written_outside_the_run_root(tmp_path):
     provider = FakeProvider(count_body=b'{"totalTokens": 7}', generate_bodies=[b"p"])
-    run_two_operation_measurement(
+    _run_two_operation_measurement(
         root=tmp_path,
         provider=provider,
         session=FakeSession(cap=1),

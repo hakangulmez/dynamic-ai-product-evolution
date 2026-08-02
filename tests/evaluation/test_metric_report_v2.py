@@ -485,7 +485,9 @@ def test_manifest_count():
     # 579 = 575 + the four newly tracked ADR-044 (G2) paths: the
     # prompt-qualification schema, its source module, its test module, and the
     # tracked change request the record pins by reference and digest.
-    assert declared == len(paths) == 579
+    # 583 = 579 + the four ADR-045 (G2b) test modules: the v1 retirement test
+    # and the three v2 modules the 178 migrated cases moved into.
+    assert declared == len(paths) == 583
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

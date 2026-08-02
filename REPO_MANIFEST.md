@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **579**
+Total tracked/scaffold files listed: **583**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -540,6 +540,10 @@ Total tracked/scaffold files listed: **579**
 - `tests/extraction/test_raw_artifacts.py`
 - `tests/extraction/test_run_extraction.py`
 - `tests/extraction/test_source_snapshot_bridge.py`
+- `tests/extraction/test_v1_live_route_retired.py`
+- `tests/extraction/test_v2_budget_enforcement.py`
+- `tests/extraction/test_v2_governance_validation.py`
+- `tests/extraction/test_v2_run_publication.py`
 - `tests/extraction/test_validation.py`
 - `tests/ingestion/ingestion_test_helpers.py`
 - `tests/ingestion/test_adoption.py`

@@ -35,7 +35,6 @@ from dynamic_ai_products.extraction.manifests import (
 from dynamic_ai_products.extraction.raw_artifacts import canonical_json_bytes, sha256_bytes
 from dynamic_ai_products.extraction.run_extraction import (
     CLIENT_CONTRACT_REFERENCE,
-    CONTENTS_REFERENCE,
     run_extraction_stage,
 )
 from dynamic_ai_products.providers.client_contract import build_client_contract
@@ -144,14 +143,6 @@ def _refused(tmp_path: Path, expected: str, **kwargs):
 # --- the governance root is explicit -----------------------------------------
 
 
-def test_a_pin_without_a_governance_root_is_refused(tmp_path: Path):
-    _refused(tmp_path, "governance_root_required", governance_artifact_root=None)
-
-
-def test_a_governance_root_without_a_pin_is_refused(tmp_path: Path):
-    _refused(tmp_path, "governance_root_required", live_call_authorization_pin=None)
-
-
 def test_there_is_no_cwd_or_environment_fallback():
     """The root is a parameter, not a discovered path.
 
@@ -171,135 +162,10 @@ def test_there_is_no_cwd_or_environment_fallback():
     assert not (names & {"cwd", "getcwd", "environ", "getenv", "expandvars"})
 
 
-@pytest.mark.parametrize(
-    "reference",
-    ["../escape.json", "/etc/passwd", "C:/x.json", "a\\b.json", "", "  "],
-)
-def test_an_unsafe_authorization_reference_is_refused(tmp_path: Path, reference):
-    _refused(
-        tmp_path,
-        "authorization_chain_broken",
-        live_call_authorization_pin={"reference": reference, "sha256": "0" * 64},
-    )
-
-
-def test_a_drifted_authorization_digest_is_refused(tmp_path: Path):
-    governance_root = tmp_path / "governance-root"
-    pin = write_governance_chain(governance_root)
-    _refused(
-        tmp_path,
-        "authorization_chain_broken",
-        governance_artifact_root=governance_root,
-        live_call_authorization_pin={**pin, "sha256": "0" * 64},
-    )
-
-
 # --- the three rings ----------------------------------------------------------
 
 
-def test_a_complete_chain_reaches_the_provider(tmp_path: Path):
-    """A valid chain gets all the way to the call.
-
-    The provider seam is total, so the stand-in's refusal arrives as a sanitized
-    ExtractionError. Reaching it at all is the proof: the run root now holds the
-    six terminal artifacts, which only the post-gate path writes.
-    """
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(tmp_path)
-    assert excinfo.value.reason_code == "provider_response_unusable"
-    published = {
-        str(f.relative_to(tmp_path / "run"))
-        for f in (tmp_path / "run").rglob("*")
-        if f.is_file()
-    }
-    assert len(published) == 7
-    # The rendered document is among them: E-R persists what was sent.
-    assert CONTENTS_REFERENCE in published
-
-
-def test_a_broken_enablement_pin_is_refused(tmp_path: Path):
-    _refused(
-        tmp_path,
-        "authorization_chain_broken",
-        chain_overrides={
-            "authorization": {"adapter_enablement_record_sha256": "0" * 64}
-        },
-    )
-
-
-def test_a_broken_qualification_pin_is_refused(tmp_path: Path):
-    _refused(
-        tmp_path,
-        "authorization_chain_broken",
-        chain_overrides={
-            "enablement": {"adapter_qualification_record_sha256": "0" * 64}
-        },
-    )
-
-
-def test_a_missing_spec_024_prompt_qualification_is_refused(tmp_path: Path):
-    """SPEC-027 places that reference on the enablement record."""
-    _refused(
-        tmp_path,
-        "authorization_chain_broken",
-        chain_overrides={"enablement": {"prompt_qualification_reference": "  "}},
-    )
-
-
-@pytest.mark.parametrize(
-    "override",
-    [
-        {"contract": "something_else@0.1.0"},
-        {"provider_called": False},
-        {"harness_run": True},
-    ],
-)
-def test_a_malformed_authorization_is_refused(tmp_path: Path, override):
-    _refused(tmp_path, "authorization_chain_broken", chain_overrides={"authorization": override})
-
-
-def test_an_undeclared_authorization_property_is_refused(tmp_path: Path):
-    _refused(
-        tmp_path,
-        "authorization_chain_broken",
-        chain_overrides={"authorization": {"surprise": "x"}},
-    )
-
-
-@pytest.mark.parametrize(
-    "key", ["token", "api_key", "credentials", "authorization", "access_token"]
-)
-def test_a_credential_shaped_property_is_refused(tmp_path: Path, key):
-    _refused(
-        tmp_path,
-        "credential_material_in_artifact",
-        chain_overrides={"authorization": {key: "value"}},
-    )
-
-
-def test_a_credential_shaped_value_is_refused(tmp_path: Path):
-    _refused(
-        tmp_path,
-        "credential_material_in_artifact",
-        chain_overrides={"authorization": {"authorized_by": "ya29.LEAKED"}},
-    )
-
-
 # --- scope equality -----------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "override",
-    [
-        {"stage": "task_extraction"},
-        {"company_id": "CIK0000000001"},
-        {"observation_cutoff_date": "2023-12-31"},
-    ],
-)
-def test_a_scope_mismatch_is_refused(tmp_path: Path, override):
-    _refused(
-        tmp_path, "authorization_scope_mismatch", chain_overrides={"authorization": override}
-    )
 
 
 def test_a_corpus_scope_mismatch_is_refused_at_the_validator():
@@ -326,65 +192,7 @@ def test_a_corpus_scope_mismatch_is_refused_at_the_validator():
     assert excinfo.value.reason_code == "authorization_scope_mismatch"
 
 
-def test_a_run_before_the_window_is_refused(tmp_path: Path):
-    _refused(
-        tmp_path,
-        "authorization_scope_mismatch",
-        chain_overrides={"authorization": {"effective_at": "2027-01-01T00:00:00Z"}},
-    )
-
-
-def test_a_run_after_the_window_is_refused(tmp_path: Path):
-    _refused(
-        tmp_path,
-        "authorization_scope_mismatch",
-        chain_overrides={"authorization": {"expires_at": "2026-01-01T00:00:00Z"}},
-    )
-
-
-def test_the_validity_window_is_checked_against_the_injected_instant(tmp_path: Path):
-    """This package reads no clock; the run's own declared instant is used.
-
-    An instant outside both windows now trips the **enablement** window first,
-    which is the stronger refusal: an authorization cannot be in force while the
-    enablement it rests on is not.
-    """
-    _refused(
-        tmp_path,
-        "governance_record_not_effective",
-        run_created_at="2030-01-01T00:00:00Z",
-    )
-
-
-def test_an_authorization_only_window_violation_still_reports_scope(tmp_path: Path):
-    """Inside the enablement window but outside the authorization's own."""
-    _refused(
-        tmp_path,
-        "authorization_scope_mismatch",
-        chain_overrides={"authorization": {"expires_at": "2026-07-02T00:00:00Z"}},
-        run_created_at="2026-07-29T00:00:00Z",
-    )
-
-
 # --- client-contract byte identity -------------------------------------------
-
-
-def test_a_foreign_client_contract_pin_is_refused(tmp_path: Path):
-    _refused(
-        tmp_path,
-        "authorization_client_contract_mismatch",
-        chain_overrides={"authorization": {"provider_client_contract_sha256": "0" * 64}},
-    )
-
-
-def test_a_foreign_client_contract_reference_is_refused(tmp_path: Path):
-    _refused(
-        tmp_path,
-        "authorization_client_contract_mismatch",
-        chain_overrides={
-            "authorization": {"provider_client_contract_reference": "inputs/other.json"}
-        },
-    )
 
 
 def test_the_pinned_contract_is_the_one_this_run_produces():
@@ -756,16 +564,6 @@ def _ineffective(tmp_path: Path, **chain):
 # (1) schema_version -- a structural violation, so it keeps the chain code.
 
 
-@pytest.mark.parametrize("record", ["authorization", "enablement", "qualification"])
-@pytest.mark.parametrize("value", ["0.2.0", "9.9.9", "", None, 1])
-def test_a_wrong_schema_version_is_refused(tmp_path: Path, record, value):
-    _refused(
-        tmp_path,
-        "authorization_chain_broken",
-        chain_overrides={record: {"schema_version": value}},
-    )
-
-
 def test_the_governance_schema_version_is_pinned_at_zero_one_zero():
     assert GOVERNANCE_SCHEMA_VERSION == "0.1.0"
 
@@ -773,59 +571,7 @@ def test_the_governance_schema_version_is_pinned_at_zero_one_zero():
 # (2) qualification status and adapter family.
 
 
-@pytest.mark.parametrize("status", ["superseded", "revoked", "", None, "QUALIFIED"])
-def test_a_qualification_not_in_force_is_refused(tmp_path: Path, status):
-    """superseded and revoked are valid schema values, so they pass today."""
-    _ineffective(tmp_path, qualification={"qualification_status": status})
-
-
-@pytest.mark.parametrize("family", ["source", "source_retrieval", "", None])
-def test_a_non_model_execution_adapter_family_is_refused(tmp_path: Path, family):
-    """The two adapter families have separate readiness and safety gates."""
-    _ineffective(tmp_path, qualification={"adapter_family": family})
-
-
 # (3) the closed rollout -> enablement-status mapping.
-
-
-@pytest.mark.parametrize(
-    "rollout,status",
-    [
-        ("live_dev", "enabled_live_dev"),
-        ("controlled_pilot", "enabled_pilot"),
-        ("release_or_research_production", "enabled_release"),
-    ],
-)
-def test_each_mapped_rollout_state_activates(tmp_path: Path, rollout, status):
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(
-            tmp_path,
-            chain_overrides={
-                "enablement": {"rollout_state": rollout, "enablement_status": status},
-                "authorization": {"rollout_state": rollout},
-            },
-        )
-    # Reached the provider stand-in, so the governance semantics passed.
-    assert excinfo.value.reason_code == "provider_response_unusable"
-
-
-@pytest.mark.parametrize("rollout", ["full_scale", "mock_only", "", None, "invented"])
-def test_an_unmapped_rollout_state_is_refused(tmp_path: Path, rollout):
-    """mock_only performs no network; full_scale is premature scale."""
-    _ineffective(
-        tmp_path,
-        enablement={"rollout_state": rollout},
-        authorization={"rollout_state": rollout},
-    )
-
-
-@pytest.mark.parametrize(
-    "status", ["disabled", "suspended", "expired", "revoked", "enabled_release", "", None]
-)
-def test_an_enablement_status_that_does_not_match_the_rollout_is_refused(
-    tmp_path: Path, status
-):
-    _ineffective(tmp_path, enablement={"enablement_status": status})
 
 
 def test_the_rollout_mapping_is_closed():
@@ -841,81 +587,10 @@ def test_the_rollout_mapping_is_closed():
 # (4) the enablement window, and containment of the authorization window.
 
 
-def test_a_run_outside_the_enablement_window_is_refused(tmp_path: Path):
-    _ineffective(tmp_path, enablement={"expires_at": "2026-07-02T00:00:00Z"})
-
-
-@pytest.mark.parametrize("value", ["2026-07-01T00:00:00", "not-a-date", "", None])
-def test_a_naive_or_malformed_enablement_window_is_refused(tmp_path: Path, value):
-    _ineffective(tmp_path, enablement={"effective_at": value})
-    _ineffective(tmp_path, enablement={"expires_at": value})
-
-
-def test_an_inverted_enablement_window_is_refused(tmp_path: Path):
-    _ineffective(
-        tmp_path,
-        enablement={
-            "effective_at": "2027-07-01T00:00:00Z",
-            "expires_at": "2026-07-01T00:00:00Z",
-        },
-    )
-
-
-def test_an_authorization_starting_before_its_enablement_is_refused(tmp_path: Path):
-    """An authorization may not outlive, or predate, the enablement it rests on."""
-    _ineffective(tmp_path, authorization={"effective_at": "2026-01-01T00:00:00Z"})
-
-
-def test_an_authorization_outliving_its_enablement_is_refused(tmp_path: Path):
-    _ineffective(tmp_path, authorization={"expires_at": "2028-01-01T00:00:00Z"})
-
-
-def test_containment_is_checked_independently_of_the_run_instant(tmp_path: Path):
-    """The run instant sits inside both windows; containment still fails."""
-    _ineffective(
-        tmp_path,
-        authorization={
-            "effective_at": "2026-06-01T00:00:00Z",
-            "expires_at": "2028-01-01T00:00:00Z",
-        },
-    )
-
-
-def test_containment_is_chronological_across_offsets(tmp_path: Path):
-    """An equal boundary written with a different offset is contained."""
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(
-            tmp_path,
-            chain_overrides={
-                "authorization": {"effective_at": "2026-07-01T02:00:00+02:00"}
-            },
-        )
-    assert excinfo.value.reason_code == "provider_response_unusable"
-
-
 # (5) environment and rollout equality.
 
 
-def test_a_deployment_environment_mismatch_is_refused(tmp_path: Path):
-    _ineffective(tmp_path, authorization={"deployment_environment_id": "prod-eu"})
-
-
-def test_a_rollout_state_mismatch_is_refused(tmp_path: Path):
-    _ineffective(tmp_path, authorization={"rollout_state": "controlled_pilot"})
-
-
 # (6) qualification execution contract == the actual client contract.
-
-
-def test_a_qualification_under_a_different_contract_digest_is_refused(tmp_path: Path):
-    """The adapter was never qualified for what it is about to execute."""
-    _ineffective(tmp_path, qualification={"execution_contract_sha256": "9" * 64})
-
-
-def test_a_qualification_naming_a_different_contract_identity_is_refused(tmp_path: Path):
-    _ineffective(
-        tmp_path, qualification={"execution_contract_id": "something_else@0.1.0"}
-    )
 
 
 def test_the_qualified_digest_is_this_run_s_client_contract():
@@ -939,49 +614,11 @@ def test_the_qualified_digest_is_this_run_s_client_contract():
 # (7) stage and stage-output contract agreement.
 
 
-def test_an_enablement_for_a_different_stage_is_refused(tmp_path: Path):
-    _ineffective(tmp_path, enablement={"stage": "task_extraction"})
-
-
-def test_a_stage_output_contract_disagreement_is_refused(tmp_path: Path):
-    _ineffective(tmp_path, enablement={"stage_output_contract_sha256": "8" * 64})
-    _ineffective(tmp_path, qualification={"stage_output_contract_id": "other@0.1.0"})
-
-
-def test_a_stage_output_sha_that_is_not_the_released_schema_is_refused(tmp_path: Path):
-    """Both records agree, but on the wrong schema."""
-    wrong = "7" * 64
-    _ineffective(
-        tmp_path,
-        enablement={"stage_output_contract_sha256": wrong},
-        qualification={"stage_output_contract_sha256": wrong},
-    )
-
-
 def test_the_enforced_stage_output_sha_is_the_released_pin():
     assert _STAGE_OUTPUT_SCHEMA_SHA256["product_extraction"] == STAGE_OUTPUT_SHA
 
 
 # --- every new refusal is pre-provider and zero-artifact ----------------------
-
-
-def test_no_semantic_refusal_creates_a_run_root(tmp_path: Path):
-    counter = [0]
-    original = Path.mkdir
-    prefix = str(tmp_path / "run")
-
-    def counting(self, *args, **kwargs):
-        if str(self) == prefix or str(self).startswith(prefix + "/"):
-            counter[0] += 1
-        return original(self, *args, **kwargs)
-
-    import pytest as _pytest
-
-    with _pytest.MonkeyPatch.context() as patch:
-        patch.setattr(Path, "mkdir", counting)
-        _ineffective(tmp_path, qualification={"qualification_status": "revoked"})
-    assert counter[0] == 0
-    assert not (tmp_path / "run").exists()
 
 
 # --- the stage-output contract identity is bound to the stage (v4.6) -----------
@@ -997,18 +634,6 @@ def test_the_stage_output_identity_map_is_closed():
         "capability_extraction": "capability_observation@0.1.0",
         "task_extraction": "task_observation@0.1.0",
     }
-
-
-@pytest.mark.parametrize("false_id", ["invented@0.1.0", "product_observation", "", None])
-def test_a_shared_false_identity_with_the_correct_released_sha_is_refused(
-    tmp_path: Path, false_id
-):
-    """The exact defect: both records agree, the digest is right, the ID lies."""
-    _ineffective(
-        tmp_path,
-        qualification={"stage_output_contract_id": false_id},
-        enablement={"stage_output_contract_id": false_id},
-    )
 
 
 @pytest.mark.parametrize(
@@ -1069,8 +694,3 @@ def test_every_stage_requires_its_own_output_contract_identity(stage, expected_i
             stage_output_schema_sha256=sha,
         )
     assert excinfo.value.reason_code == "governance_record_not_effective"
-
-
-def test_only_the_qualification_carrying_a_false_identity_is_refused(tmp_path: Path):
-    """The mutual-equality check catches this one; both rules are needed."""
-    _ineffective(tmp_path, qualification={"stage_output_contract_id": "invented@0.1.0"})

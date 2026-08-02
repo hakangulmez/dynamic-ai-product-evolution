@@ -15,7 +15,6 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-from dynamic_ai_products.evaluation.envelopes import PredictionArtifactManifest
 from dynamic_ai_products.extraction.errors import ExtractionError
 from dynamic_ai_products.extraction.provider_adapter import (
     ProviderRequest,
@@ -27,9 +26,7 @@ from dynamic_ai_products.extraction.raw_artifacts import (
     write_artifact,
 )
 from dynamic_ai_products.extraction.run_extraction import (
-    AUTHORIZATION_REFERENCE,
     CLIENT_CONTRACT_REFERENCE,
-    CONTENTS_REFERENCE,
     ENVELOPES_REFERENCE,
     EXTRACTION_RUN_REFERENCE,
     NON_RUN_REFERENCE,
@@ -40,7 +37,6 @@ from dynamic_ai_products.extraction.run_extraction import (
     run_extraction_stage,
 )
 from dynamic_ai_products.extraction.manifests import (
-    STAGE_OUTPUT_CONTRACT_ID as _STAGE_OUTPUT_CONTRACT_ID,
     STAGE_OUTPUT_SCHEMA_SHA256 as _STAGE_OUTPUT_SCHEMA_SHA256,
     validate_provider_client_contract,
 )
@@ -188,94 +184,6 @@ def _files(root: Path) -> set[str]:
 # --- the provider route -------------------------------------------------------
 
 
-def test_a_provider_run_publishes_the_nine_expected_artifacts(tmp_path: Path):
-    outcome = _run(tmp_path)
-    assert outcome.verdict == "provider_run_complete"
-    assert _files(outcome.run_root) == {
-        PACKET_REFERENCE,
-        CONTENTS_REFERENCE,
-        PROMPT_REFERENCE,
-        CLIENT_CONTRACT_REFERENCE,
-        AUTHORIZATION_REFERENCE,
-        RAW_REFERENCE,
-        EXTRACTION_RUN_REFERENCE,
-        ENVELOPES_REFERENCE,
-        PREDICTION_MANIFEST_REFERENCE,
-    }
-    assert set(outcome.artifacts) == _files(outcome.run_root)
-
-
-def test_every_reported_digest_matches_the_persisted_bytes(tmp_path: Path):
-    outcome = _run(tmp_path)
-    for reference, digest in outcome.artifacts.items():
-        assert sha256_bytes((outcome.run_root / reference).read_bytes()) == digest
-
-
-def test_the_provider_sees_the_packet_digest_and_the_prompt_digest(tmp_path: Path):
-    provider = _FakeProvider()
-    outcome = _run(tmp_path, provider=provider)
-    assert len(provider.requests) == 1
-    request = provider.requests[0]
-    assert request.stage == "product_extraction"
-    assert request.input_packet_sha256 == outcome.packet_sha256
-    prompt_bytes = (outcome.run_root / PROMPT_REFERENCE).read_bytes()
-    assert request.prompt_sha256 == sha256_bytes(prompt_bytes)
-    # ADR-036 (E-R): the request no longer carries prompt_text at all. Its sole
-    # provider-input authority is rendered_contents, whose bytes are the ones
-    # persisted -- and which differ from the frozen template.
-    contents_bytes = (outcome.run_root / CONTENTS_REFERENCE).read_bytes()
-    assert request.rendered_contents.encode("utf-8") == contents_bytes
-    assert request.rendered_contents_sha256 == sha256_bytes(contents_bytes)
-    assert request.rendered_contents_sha256 != request.prompt_sha256
-    assert not hasattr(request, "prompt_text")
-    assert not hasattr(request, "payload")
-
-
-def test_the_raw_provider_output_is_preserved_literally(tmp_path: Path):
-    outcome = _run(tmp_path)
-    assert (outcome.run_root / RAW_REFERENCE).read_bytes() == RAW_OUTPUT
-
-
-def test_the_prediction_manifest_is_the_single_reachable_root(tmp_path: Path):
-    outcome = _run(tmp_path)
-    manifest = json.loads((outcome.run_root / PREDICTION_MANIFEST_REFERENCE).read_text())
-    PredictionArtifactManifest.model_validate(manifest)
-    pinned = {entry["reference"]: entry["sha256"] for entry in manifest["source_artifacts"]}
-    assert pinned[RAW_REFERENCE] == outcome.artifacts[RAW_REFERENCE]
-    assert pinned[PACKET_REFERENCE] == outcome.packet_sha256
-    assert pinned[EXTRACTION_RUN_REFERENCE] == outcome.artifacts[EXTRACTION_RUN_REFERENCE]
-    assert pinned[CLIENT_CONTRACT_REFERENCE] == outcome.artifacts[CLIENT_CONTRACT_REFERENCE]
-    assert pinned[COVERAGE["reference"]] == COVERAGE["sha256"]
-
-
-def test_extraction_run_never_references_the_manifest(tmp_path: Path):
-    """Write order is acyclic; the manifest is written last."""
-    outcome = _run(tmp_path)
-    text = (outcome.run_root / EXTRACTION_RUN_REFERENCE).read_text()
-    assert PREDICTION_MANIFEST_REFERENCE not in text
-    assert "prediction_run_id" not in text
-
-
-def test_the_envelope_carries_the_packet_so_scope_reaches_the_harness(tmp_path: Path):
-    outcome = _run(tmp_path)
-    envelope = json.loads((outcome.run_root / ENVELOPES_REFERENCE).read_text().strip())
-    assert PACKET_REFERENCE in envelope["source_references"]
-    assert envelope["input_packet_hash"] == outcome.packet_sha256
-    packet = json.loads((outcome.run_root / PACKET_REFERENCE).read_text())
-    assert packet["corpus_scope"] == "sec_only_partial"
-
-
-def test_the_run_records_the_stage_output_schema_digest(tmp_path: Path):
-    outcome = _run(tmp_path)
-    record = json.loads((outcome.run_root / EXTRACTION_RUN_REFERENCE).read_text())
-    assert record["schema_hash"] == sha256_bytes(
-        (SCHEMAS / "product_observation.schema.json").read_bytes()
-    )
-    assert record["source_manifest_hash"] == SOURCE_MANIFEST["sha256"]
-    assert record["model_provider"] == "fake"
-    assert record["spec_version"] == "SPEC-008"
-
-
 # --- the non-run route --------------------------------------------------------
 
 
@@ -347,12 +255,6 @@ def test_the_non_run_route_never_asks_the_provider_anything(tmp_path: Path):
 # --- refusals ------------------------------------------------------------------
 
 
-def test_a_provider_run_without_a_provider_is_refused(tmp_path: Path):
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(tmp_path, provider=None)
-    assert excinfo.value.reason_code == "provider_required"
-
-
 @pytest.mark.parametrize(
     "pin",
     [None, {}, {"reference": "x.json", "sha256": "f" * 64}, "anything", 7],
@@ -372,22 +274,6 @@ def test_a_contract_pin_is_refused_on_the_non_run_route_too(tmp_path: Path):
         _non_run(tmp_path, provider_client_contract=None)
     assert excinfo.value.reason_code == "contract_pin_forbidden"
     assert not (tmp_path / "run").exists()
-
-
-def test_an_existing_run_root_is_never_overwritten(tmp_path: Path):
-    (tmp_path / "run").mkdir()
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(tmp_path)
-    assert excinfo.value.reason_code == "run_root_exists"
-
-
-def test_a_symlinked_run_root_is_refused(tmp_path: Path):
-    target = tmp_path / "elsewhere"
-    target.mkdir()
-    (tmp_path / "run").symlink_to(target)
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(tmp_path)
-    assert excinfo.value.reason_code == "run_root_exists"
 
 
 def test_nothing_is_published_when_the_packet_itself_is_refused(tmp_path: Path):
@@ -749,74 +635,3 @@ class _HandshakeRecorder:
         self.completes += 1
         self.factory_entries += 1
         raise AssertionError("the provider must never be reached")
-
-
-@pytest.mark.parametrize("stage", ["capability_extraction", "task_extraction"])
-def test_a_fully_valid_non_product_stage_is_blocked_by_the_e_r_renderer(
-    tmp_path: Path, stage
-):
-    """The E-R gate itself, reached end to end through the public runner.
-
-    Every preflight succeeds here: the parent chain is real and hash-verified, the
-    governance chain and stage-output pins match the selected stage, the passage
-    set is nonempty, and the ``@0.2.0`` company-identity pin is valid. The permit
-    handshake therefore happens -- and the renderer is what refuses, because
-    ``MATERIALIZATION_SUPPORTED_STAGES`` holds only the product stage until E-S.
-    """
-    chain = _valid_parent_chain(tmp_path / "parents")
-    # A distinct root: ``_run``'s default kwargs write a product-stage chain to
-    # ``tmp_path / "governance-root"``, which would clobber these bytes and make
-    # the pin below stale.
-    governance_root = tmp_path / "governance-stage"
-    stage_sha = _STAGE_OUTPUT_SCHEMA_SHA256[stage]
-    stage_contract = _STAGE_OUTPUT_CONTRACT_ID[stage]
-    pin = write_governance_chain(
-        governance_root,
-        qualification={
-            "stage_output_contract_id": stage_contract,
-            "stage_output_contract_sha256": stage_sha,
-        },
-        enablement={
-            "stage": stage,
-            "stage_output_contract_id": stage_contract,
-            "stage_output_contract_sha256": stage_sha,
-        },
-        authorization={"stage": stage},
-    )
-    provider = _HandshakeRecorder()
-
-    parent_kwargs = {
-        "artifact_root": chain["artifact_root"],
-        "snapshot_a_pin": chain["snapshot_a_pin"],
-        "product_decision_set_pin": chain["product_decision_set_pin"],
-    }
-    if stage == "task_extraction":
-        parent_kwargs["snapshot_b_pin"] = chain["snapshot_b_pin"]
-        parent_kwargs["capability_decision_set_pin"] = chain[
-            "capability_decision_set_pin"
-        ]
-
-    with pytest.raises(ExtractionError) as excinfo:
-        _run(
-            tmp_path,
-            stage=stage,
-            provider=provider,
-            governance_artifact_root=governance_root,
-            live_call_authorization_pin=pin,
-            **parent_kwargs,
-        )
-
-    # The E-R gate is the refusal, not an earlier preflight.
-    assert excinfo.value.reason_code == "contents_placeholder_unbound"
-    # The permit handshake was reached, proving packet and governance preflight
-    # both succeeded -- this is the route the missing-pins test cannot exercise.
-    assert provider.permits == 1
-    assert provider.contracts >= 1
-    # Zero artifacts: the run root was never created.
-    assert not (tmp_path / "run").exists()
-    # Revoked exactly once on the way out, leaving no spendable permit.
-    assert provider.revoked == 1
-    assert provider.activated is False
-    # The provider and the SDK/client-factory boundary were never entered.
-    assert provider.completes == 0
-    assert provider.factory_entries == 0
