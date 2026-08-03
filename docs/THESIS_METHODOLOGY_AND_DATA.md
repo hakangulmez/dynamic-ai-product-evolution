@@ -217,14 +217,42 @@ The conceptual model deliberately avoids defining an AI adopter as a winner. Hig
 
 ### 5.1 Time period
 
-The initial target period is approximately **2022–2026**. The exact observation convention will be frozen after the pilot.
+The initial target period is approximately **2022–2026**. The pilot comparison of
+observation conventions is complete (ADR-046).
 
-Two conventions will be compared:
+Two conventions were compared:
 
 1. **Filing-date observation:** the annual observation is anchored to the publication date of the annual filing.
 2. **Fiscal-year observation:** the source packet is bounded by the filing date but assigned to the associated fiscal year.
 
-The selected convention must be applied consistently throughout the released dataset.
+**Both bound the source packet by the filing date.** They differ in the label
+assigned to the observation, not in which sources are admissible. The comparison
+therefore separates two ideas that the shorthand "filing-date versus fiscal-year"
+had merged:
+
+- the **source-admission (evidence-availability) cutoff** is the
+  filing/publication date, and is what `observation_cutoff_date` means in the
+  packet and authorization schemas;
+- the **analytical period assignment** is the fiscal year, carried by
+  `period_of_report`, `fiscal_year_end_date` and `observation_year`.
+
+For the first HubSpot observation the source-admission cutoff is `2025-02-12` and
+the analytical period assignment is FY2024. Using a fiscal-period-end date as a
+source-admission cutoff is rejected, because an annual report is filed after the
+period it reports on; that rejection concerns the admission boundary only and is
+not a statement about fiscal-year panel assignment.
+
+Both rules must be applied consistently throughout the released dataset, and
+consistently with each other: the source-admission cutoff rule that decides which
+sources are admissible, and the analytical-period-assignment rule that decides
+which period an observation belongs to. Neither may vary per firm, per year, or
+per source family, and satisfying one does not satisfy the other.
+
+The analytical period assignment currently stops at the admission/ingestion
+artifact: no schema carries it, and no extraction packet, authorization, or
+prediction artifact yet carries a reproducible fiscal-year key. Panel construction
+on a fiscal-year basis requires a successor increment that adds a hash-bound
+carrier for that label.
 
 ### 5.2 Firm universe
 
@@ -1997,7 +2025,7 @@ The project should preserve the following principles throughout implementation:
 The repository currently defines the architecture, source policy, ontology, extraction prompts, schemas, measurement families, and evaluation structure. The following decisions remain intentionally open until pilot evidence is available:
 
 - final company-universe size and inclusion thresholds;
-- filing-date versus fiscal-year observation convention;
+- a hash-bound carrier for the analytical period assignment, which today stops at the admission/ingestion artifact and therefore does not yet support a fiscal-year panel join (see ADR-046; the observation-convention comparison itself is closed);
 - required minimum source coverage;
 - final product, task, and matching acceptance thresholds;
 - exact frontier baseline intervals and access assumptions;

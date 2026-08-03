@@ -1487,9 +1487,85 @@ unreadable. Asserting the v1 zero-artifact budget invariant on v2 was rejected a
 false. Silently dropping the 13 non-migrating cases was rejected outright.
 
 
+## ADR-046 — Two different dates: the source-admission cutoff and the analytical period assignment (G3-1)
+
+**Status:** Accepted.
+
+**The question this answers.** `docs/TEMPORAL_POLICY.md` required the pilot to
+compare two observation conventions before freezing one, and the open decision
+carried the shorthand "filing-date versus fiscal-year". The shorthand hid the
+real structure. Both documents define the second option as *"the source packet is
+bounded by the filing date but assigned to the fiscal year"* — so the two
+conventions **agree** on the source boundary and differ only on the label
+attached to the observation. Treating them as competing cutoffs was a category
+error, and this record separates the two ideas by name before fixing a value.
+
+**Source-admission / evidence-availability cutoff.** This is what
+`observation_cutoff_date` means in the packet and authorization schemas: the
+right-hand side of `publication_date <= observation_cutoff_date`. For the HubSpot
+FY2024 smoke it is the filing/publication date **2025-02-12**, copied from the
+already hash-bound admission and ingestion artifacts rather than restated.
+Measured: the SEC candidate registry, the normalized documents, the discovery and
+preflight manifests, and the admission artifact all carry `2025-02-12`, with
+`period_of_report` and `fiscal_year_end_date` held separately at `2024-12-31`.
+
+**Analytical period assignment.** The observation belongs to **FY2024**. It is
+carried today by `period_of_report`, `fiscal_year_end_date` and
+`observation_year` in the admission/ingestion artifact. It is not a competing
+cutoff and is not expressed through `observation_cutoff_date`.
+
+**The rejected counterfactual.** Using `2024-12-31` as a *source-admission*
+cutoff is rejected: measured on the real corpus, all 124 passages drop as
+`temporally_invalid` and the run takes the non-run route. An annual report is
+filed after the period it reports on, so a period-end admission cutoff would make
+every annual filing invalid evidence for its own observation. **This says nothing
+about fiscal-year panel assignment**, which is a different thing and is not
+rejected.
+
+**No new enforcement.** Three fail-closed routes already refuse a period-end
+cutoff, all before the provider, the meter and `mkdir`: `hydrate_company_identity`
+refuses with `company_identity_mismatch` and zero artifacts, because the
+admission artifact declares `2025-02-12` and the equality is enforced; failing
+that, the packet filter drops every passage and the run publishes the two-artifact
+non-run record with `zero_admissible_passages` and no provider call; failing that,
+`validate_authorization_scope` refuses with `authorization_scope_mismatch`. This
+increment declares which value is correct; it does not build a gate.
+
+**Known limitation — the analytical label stops at the admission artifact.**
+Measured: no schema carries an `observation_year` field. `extraction_input_packet@0.2.0`
+and `live_call_authorization@0.2.0` each carry exactly one date field,
+`observation_cutoff_date`, and nothing downstream reads `observation_year`. So
+**no extraction packet, authorization, prediction artifact or downstream panel
+currently carries a reproducible FY2024 analytical key.** A successor increment
+must add a hash-bound carrier before any extraction output is joined to a
+fiscal-year panel. Until then a fiscal-year join would be an unpinned assertion,
+and this record does not license one.
+
+**Token and cost measurement is unrelated to corpus cardinality.** The smoke's
+admitted corpus has 124 passages. That is a cardinality, not a token or monetary
+measurement. The only authoritative input-token measurement is the verified
+`countTokens` result over the canonical rendered contents; cost admission is that
+result plus the declared output ceiling. Measured:
+`reserve_cost_microdollars` takes `measured_input_tokens`, `max_output_tokens`
+and `generate_attempt_cap` only — no passage count, no byte count.
+
+**Runbook invariant, recorded here because no runbook exists.** When a canonical
+G3/G4 runbook is written it must read the cutoff from the admission artifact,
+pass that exact value as the run argument, and confirm the two are equal. No
+runbook file exists in this repository today, and this increment deliberately
+does not create one.
+
+**Rejected alternatives.** Describing fiscal-year observation as a `2024-12-31`
+source-admission cutoff was rejected as a mislabelling of both governing
+documents. Adding a validator was rejected: three routes already refuse, and a
+fourth would be redundant enforcement of a decision that is really about which
+value is correct. Changing a schema, a contract version, or any artifact was
+rejected: every artifact already carries `2025-02-12`, and nothing needs
+rewriting. Claiming the panel key already exists was rejected as false.
+
+
 ## Open decisions
 
-- Filing-date versus fiscal-year observation convention.
 - Required source packet by firm-year.
 - Frontier-registry granularity.
 - Gold-set size and expert-review protocol.
@@ -1502,3 +1578,4 @@ false. Silently dropping the 13 non-migrating cases was rejected outright.
 - Physical removal of the ~537 unreachable lines of v1 provider-route code, left in place by ADR-045 as a separate cleanup increment.
 - Whether the v2 client-contract seam should carry a credential scan. v1 had one through `validate_provider_client_contract`; v2 has none, and a contract pinned with credential material from the start would not be refused (see ADR-045).
 - The evaluation-artifact root and the `evaluated_comparison` property set that would make an evaluated prompt qualification reachable (see ADR-044).
+- A hash-bound carrier for the analytical period assignment. It stops at the admission artifact today, so no extraction output may be joined to a fiscal-year panel until a successor adds one (see ADR-046).
