@@ -160,7 +160,7 @@ class _Session:
         self.calls: list[dict] = []
 
     def meter_identity(self):
-        return {"meter_identity": "g2b-governance-meter", "meter_version": "0.1.0"}
+        return {"meter_identity": "dynamic_ai_products.extraction.budget_session", "meter_version": "0.1.0"}
 
     def admit(
         self, *, measured_input_tokens, reserved_cost_microdollars, provider_request_digest
@@ -323,7 +323,7 @@ def write_governance_chain(root: Path, **overrides):
         "adapter_enablement_record_sha256": sha256_bytes(enab_bytes),
         "provider_client_contract_reference": "inputs/provider_client_contract.json",
         "provider_client_contract_sha256": _contract_digest(),
-        "budget_meter_identity": "g2b-governance-meter",
+        "budget_meter_identity": "dynamic_ai_products.extraction.budget_session",
         "budget_meter_version": "0.1.0",
         "stage": STAGE,
         "company_id": COMPANY,
@@ -369,7 +369,6 @@ def _run(tmp_path: Path, *, chain_overrides=None, **overrides):
         "evidence_binding": _evidence_binding(),
         "schema_root": str(SCHEMAS),
         "provider": _Provider(),
-        "budget_session": _Session(),
         "governance_artifact_root": governance_root,
         "company_identity_root": tmp_path / "identity",
         "company_identity_pin": write_company_identity(tmp_path / "identity"),

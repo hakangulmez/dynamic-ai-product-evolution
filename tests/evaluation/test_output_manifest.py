@@ -772,7 +772,9 @@ def test_repo_manifest_count_and_paths():
     # pins by reference and digest.
     # 583 = 579 + the four ADR-045 (G2b) test modules: the v1 retirement test
     # and the three v2 modules the 178 migrated cases moved into.
-    assert "Total tracked/scaffold files listed: **583**" in text
+    # 585 = 583 + the two ADR-047 (G3-2) paths: the canonical budget-session
+    # producer and its test module.
+    assert "Total tracked/scaffold files listed: **585**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

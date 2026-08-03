@@ -14,9 +14,11 @@ import pytest
 from dynamic_ai_products.extraction.errors import ExtractionError
 from dynamic_ai_products.extraction.provider_adapter import (
     PROVIDER_PROTOCOL_VERSION,
+    BudgetSession,
     ExtractionProvider,
     ProviderRequest,
     ProviderResponse,
+    require_budget_session,
     require_provider,
 )
 
@@ -210,3 +212,98 @@ def test_the_sink_error_carries_both_reasons_and_no_bytes():
     # The return path carries digests, never bytes.
     annotations = {field.name: str(field.type) for field in fields(CaptureRecord)}
     assert not any("bytes" in text for text in annotations.values())
+
+
+# --- ADR-047 (G3-2): the budget-session shape gate ----------------------------
+#
+# ``session_nonce`` is a Protocol **property**, and the shape gate exists because
+# ``runtime_checkable`` cannot enforce that. Measured on 3.12, ``isinstance``
+# against such a protocol is a plain ``hasattr`` sweep: it admits a session whose
+# nonce is a method, and the runner would then compare a digest against a bound
+# method -- never equal -- refusing every admission for a reason nobody could
+# read off the code.
+
+CANONICAL_NONCE = "c" * 64
+
+
+class _ConformingSession:
+    def meter_identity(self) -> dict[str, str]:
+        return {"meter_identity": "canonical", "meter_version": "0.1.0"}
+
+    @property
+    def session_nonce(self) -> str:
+        return CANONICAL_NONCE
+
+    def admit(self, **kwargs):  # pragma: no cover - the gate never calls it
+        raise AssertionError("the shape gate must not admit")
+
+
+class _MethodNonceSession(_ConformingSession):
+    session_nonce = lambda self: CANONICAL_NONCE  # noqa: E731 - the defect under test
+
+
+class _MissingNonceSession:
+    def meter_identity(self) -> dict[str, str]:
+        return {"meter_identity": "canonical", "meter_version": "0.1.0"}
+
+    def admit(self, **kwargs):  # pragma: no cover - the gate never calls it
+        raise AssertionError("the shape gate must not admit")
+
+
+def test_the_session_protocol_declares_the_nonce_as_a_member():
+    assert "session_nonce" in BudgetSession.__protocol_attrs__
+    assert {"meter_identity", "admit"} <= BudgetSession.__protocol_attrs__
+
+
+def test_a_conforming_session_passes_the_gate():
+    session = _ConformingSession()
+    assert require_budget_session(session) is session
+
+
+def test_an_absent_session_is_refused_before_the_protocol_check():
+    with pytest.raises(ExtractionError) as caught:
+        require_budget_session(None)
+    assert caught.value.reason_code == "budget_meter_unavailable"
+
+
+def test_a_session_missing_the_nonce_fails_the_protocol_check():
+    candidate = _MissingNonceSession()
+    assert not isinstance(candidate, BudgetSession)
+    with pytest.raises(ExtractionError) as caught:
+        require_budget_session(candidate)
+    assert caught.value.reason_code == "budget_meter_protocol_invalid"
+
+
+def test_a_method_nonce_passes_isinstance_and_is_caught_by_the_shape_check():
+    """The measured reason the gate exists at all."""
+    candidate = _MethodNonceSession()
+    assert isinstance(candidate, BudgetSession), "runtime_checkable is only hasattr"
+    with pytest.raises(ExtractionError) as caught:
+        require_budget_session(candidate)
+    assert caught.value.reason_code == "budget_meter_protocol_invalid"
+
+
+@pytest.mark.parametrize("nonce", ["", "abc", "C" * 64, "g" * 64, 7, None])
+def test_a_nonce_that_is_not_lowercase_hex_is_refused(nonce):
+    class _BadNonce(_ConformingSession):
+        pass
+
+    _BadNonce.session_nonce = nonce
+    with pytest.raises(ExtractionError) as caught:
+        require_budget_session(_BadNonce())
+    assert caught.value.reason_code == "budget_meter_protocol_invalid"
+
+
+def test_the_require_surface_is_exactly_four_doors():
+    """``require_budget_session`` is public, like the other three."""
+    from dynamic_ai_products.extraction import provider_adapter
+
+    doors = {name for name in provider_adapter.__all__ if name.startswith("require_")}
+    assert doors == {
+        "require_provider",
+        "require_provider_v8",
+        "require_budget_meter",
+        "require_budget_session",
+    }
+    for name in doors:
+        assert callable(getattr(provider_adapter, name))

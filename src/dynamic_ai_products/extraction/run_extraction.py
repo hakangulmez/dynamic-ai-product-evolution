@@ -42,6 +42,7 @@ from .input_packet import (
     packet_bytes,
 )
 from .manifests import (
+    BUDGET_POLICY_VERSION,
     PACKET_CONTRACT_REQUIRING_IDENTITY,
     PROVIDER_ERROR_REASONS,
     build_extraction_run,
@@ -78,6 +79,7 @@ from .prediction_manifest import (
     build_prediction_artifact_manifest_v2,
     manifest_bytes,
 )
+from .budget_session import build_budget_session
 from .contents_renderer import RENDERER_VERSION, render_provider_contents
 from .prompt_qualification import validate_prompt_qualification
 from .prompts import load_prompt, single_pass_prompt_plan
@@ -88,6 +90,7 @@ from .provider_adapter import (
     ProviderRequest,
     provider_request_digest,
     require_budget_meter,
+    require_budget_session,
     require_provider,
     require_provider_v8,
 )
@@ -645,9 +648,17 @@ def _run_authorized_stage(
     )
 
     # [J] The budget meter, and the identity the authorization names.
+    #
+    # ADR-047 gave the validator a required `expected_budget_policy_version`
+    # parameter. This call is unreachable -- ADR-045 retired the v1 provider route
+    # above it -- and passing the constant changes nothing about v1's behaviour.
+    # It is passed anyway so that removing the unreachable block later surfaces as
+    # a deletion rather than as a TypeError from a call nobody could execute.
     meter = require_budget_meter(budget_meter)
     validate_budget_meter_identity(
-        authorization=authorization, meter_identity=_meter_identity_of(meter)
+        authorization=authorization,
+        meter_identity=_meter_identity_of(meter),
+        expected_budget_policy_version=BUDGET_POLICY_VERSION,
     )
 
     # [K]-[L] Arithmetic limits are already enforced by resolve_attempt_cap; the
@@ -969,6 +980,11 @@ def _run_two_operation_measurement(
     """
     state = trace if trace is not None else {}
     state.setdefault("generate_records", ())
+    # ADR-047. The same shape gate the canonical route applies at F0, applied
+    # here too: this helper is private but it still accepts a caller-supplied
+    # session, and the nonce comparison below is meaningless against an object
+    # whose nonce is a method or a non-digest. No exemption for the private seam.
+    session = require_budget_session(session)
     cap = resolve_attempt_cap_v2(authorization=authorization)
     state["generate_attempt_cap"] = cap
     # The runner's own ledger of what it persisted, kept where the failure paths
@@ -1040,6 +1056,11 @@ def _run_two_operation_measurement(
     if admission.provider_request_digest != request_digest:
         raise ExtractionError(
             "the admission was minted for a different provider request",
+            reason_code="budget_admission_invalid",
+        )
+    if admission.session_nonce != session.session_nonce:
+        raise ExtractionError(
+            "the admission was minted by a different budget session",
             reason_code="budget_admission_invalid",
         )
 
@@ -1116,6 +1137,11 @@ def _classify_terminal(exc: BaseException, trace: dict[str, Any]) -> dict[str, A
         # it to the provider would put a reason in the released error record for
         # something the provider never did.
         "budget_admission_invalid",
+        # Reachable post-F1: the canonical route calls the measurement helper
+        # after mkdir, and the helper's own shape gate can raise there. Left in
+        # the budget branch rather than the provider one, because a malformed
+        # session is not something the provider did.
+        "budget_meter_protocol_invalid",
     ):
         return {
             "route_family": "pre_generation_invalid",
@@ -1292,7 +1318,6 @@ def run_extraction_stage_v2(
     evidence_binding: dict[str, str],
     schema_root: str = "schemas",
     provider: object = None,
-    budget_session: object = None,
     governance_artifact_root: str | Path | None = None,
     live_call_authorization_pin: dict[str, str] | None = None,
     artifact_root: str | Path | None = None,
@@ -1447,7 +1472,29 @@ def run_extraction_stage_v2(
         run_created_at=run_created_at,
     )
     # The two-operation budget, refused here rather than after the first send.
-    resolve_attempt_cap_v2(authorization=authorization)
+    generate_attempt_cap = resolve_attempt_cap_v2(authorization=authorization)
+
+    # --- ADR-047 (G3-2): the canonical session, built here and injected nowhere -
+    #
+    # The runner constructs its own session from values it has already validated,
+    # so there is no public seam through which a different one could arrive. The
+    # identity checked below therefore comes from code, not from the artifact it
+    # is being checked against.
+    #
+    # Placed before `_assert_run_permitted_with` on purpose: every refusal on
+    # these three lines happens with no permit granted, no run root, no artifact
+    # and no provider call, so there is nothing to revoke and nothing to clean up.
+    budget_session = build_budget_session(
+        authorization_sha256=live_call_authorization_pin["sha256"],
+        extraction_run_id=extraction_run_id,
+        generate_attempt_cap=generate_attempt_cap,
+    )
+    require_budget_session(budget_session)
+    validate_budget_meter_identity(
+        authorization=authorization,
+        meter_identity=_meter_identity_of(budget_session),
+        expected_budget_policy_version=BUDGET_POLICY_VERSION,
+    )
     _assert_run_permitted_with(
         client,
         live_call_authorization_pin["sha256"],
@@ -1576,15 +1623,11 @@ def _run_two_operation_stage(
         provider_client_contract_sha256=contract_sha_expected,
         protocol_version=PROVIDER_PROTOCOL_VERSION_V8,
     )
-    if session is None:
-        raise ExtractionError(
-            "a budget session must be injected; the estimated-cost and "
-            "input-token limits cannot be admitted without one",
-            reason_code="budget_meter_unavailable",
-        )
-    validate_budget_meter_identity(
-        authorization=authorization, meter_identity=_meter_identity_of(session)
-    )
+    # ADR-047. The meter identity and the budget policy version were checked at
+    # F0, before the permit handshake, against a session this runner built
+    # itself. Repeating either here would be a second code path for one rule, and
+    # the earlier one is strictly better placed: it refuses before a permit
+    # exists to revoke.
     authorization_payload = canonical_json_bytes(authorization)
     _require_absent_run_root(root)
 

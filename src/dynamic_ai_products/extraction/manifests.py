@@ -30,6 +30,9 @@ __all__ = [
     "ACCEPTED_PACKET_CONTRACTS",
     "AUTHORIZATION_PROPERTIES",
     "AUTHORIZATION_V2_PROPERTIES",
+    "BUDGET_POLICY_VERSION",
+    "CANONICAL_BUDGET_METER_IDENTITY",
+    "CANONICAL_BUDGET_METER_VERSION",
     "CLIENT_CONTRACT_CONTRACT",
     "CLIENT_CONTRACT_PROPERTIES",
     "ENABLEMENT_CONTRACT",
@@ -883,9 +886,26 @@ def validate_authorization_client_contract(
 
 
 def validate_budget_meter_identity(
-    *, authorization: dict[str, Any], meter_identity: Any
+    *,
+    authorization: dict[str, Any],
+    meter_identity: Any,
+    expected_budget_policy_version: str,
 ) -> None:
-    """The injected meter must be the one the authorization names.
+    """The meter must be the one the authorization names, on the policy it names.
+
+    Two different comparisons, deliberately kept apart (ADR-047).
+
+    The **identity** pair travels through the meter mapping, which reports
+    exactly ``meter_identity`` and ``meter_version``. The **policy version** does
+    not: it is not a property of a meter instance, and adding it to the mapping
+    loop would make this function look for a ``policy_version`` key that no
+    session reports, failing every route including the canonical one. It arrives
+    as its own required parameter instead, and the caller supplies the code-owned
+    constant -- never a value re-derived from the session mapping or from the
+    authorization being checked, which would be a tautology.
+
+    ``expected_budget_policy_version`` has no default on purpose: a caller that
+    forgets it gets a ``TypeError`` rather than a silently skipped check.
 
     This enforces the expected operational identity. It does **not**
     structurally prevent an in-process implementation from imitating those
@@ -909,6 +929,19 @@ def validate_budget_meter_identity(
                 f"the injected meter {field} does not match the authorization",
                 reason_code=code,
             )
+    policy_code = "budget_policy_version_mismatch"
+    declared_policy = authorization.get("budget_policy_version")
+    if not isinstance(declared_policy, str) or not declared_policy.strip():
+        raise ExtractionError(
+            "authorization budget_policy_version must be a non-blank string",
+            reason_code=policy_code,
+        )
+    if declared_policy != expected_budget_policy_version:
+        raise ExtractionError(
+            "the authorization declares a budget policy version this build does "
+            "not implement",
+            reason_code=policy_code,
+        )
 
 
 def resolve_attempt_cap(*, authorization: dict[str, Any]) -> int:
@@ -1146,6 +1179,23 @@ PROVIDER_WORST_CASE_WALL_CLOCK_SECONDS_V2 = (
     + PROVIDER_MAX_ATTEMPTS_PIN * PROVIDER_TIMEOUT_SECONDS_PIN
     + sum(PROVIDER_RETRY_DELAYS_PIN)
 )
+
+
+# --- ADR-047 (G3-2): the code-owned budget identity ---------------------------
+#
+# Three constants with one home. The authorization declares what it expects; the
+# canonical session reports what this build actually is. Before ADR-047 the
+# session would have echoed the authorization's own values back at it and the
+# comparison would have been a tautology, so the identity a session reports is
+# now owned here and never read from the artifact it is checked against.
+#
+# ``BUDGET_POLICY_VERSION`` is deliberately **not** a third meter-identity field.
+# ``meter_identity`` carries exactly two, and the policy version travels through
+# its own validator parameter -- folding it into the mapping would make the
+# validator look for a ``policy_version`` key that no session reports.
+CANONICAL_BUDGET_METER_IDENTITY = "dynamic_ai_products.extraction.budget_session"
+CANONICAL_BUDGET_METER_VERSION = "0.1.0"
+BUDGET_POLICY_VERSION = "budget_policy_v1"
 
 
 def wall_clock_floor_for_cap(cap: int) -> int:

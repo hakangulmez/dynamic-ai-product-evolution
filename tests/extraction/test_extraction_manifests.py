@@ -18,6 +18,9 @@ from dynamic_ai_products.extraction.errors import ExtractionError
 from dynamic_ai_products.extraction.manifests import (
     AUTHORIZATION_PROPERTIES,
     AUTHORIZATION_V2_PROPERTIES,
+    BUDGET_POLICY_VERSION,
+    CANONICAL_BUDGET_METER_IDENTITY,
+    CANONICAL_BUDGET_METER_VERSION,
     ENABLEMENT_CONTRACT,
     ENABLEMENT_PROPERTIES,
     EXTRACTION_RUN_PROPERTIES,
@@ -35,6 +38,7 @@ from dynamic_ai_products.extraction.manifests import (
     build_non_run_record,
     record_bytes,
     resolve_stage_schema_hash,
+    validate_budget_meter_identity,
 )
 from dynamic_ai_products.extraction.prompt_qualification import (
     PROMPT_QUALIFICATION_PROPERTIES_BOOTSTRAP,
@@ -476,3 +480,117 @@ def test_no_governance_property_set_admits_a_free_text_field():
     ):
         for forbidden in ("message", "detail", "note", "comment", "error"):
             assert not any(forbidden in name for name in properties), forbidden
+
+
+# --- ADR-047 (G3-2): the code-owned budget identity ---------------------------
+
+
+def _canonical_authorization(**overrides) -> dict:
+    payload = {
+        "budget_meter_identity": CANONICAL_BUDGET_METER_IDENTITY,
+        "budget_meter_version": CANONICAL_BUDGET_METER_VERSION,
+        "budget_policy_version": BUDGET_POLICY_VERSION,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _canonical_mapping() -> dict:
+    return {
+        "meter_identity": CANONICAL_BUDGET_METER_IDENTITY,
+        "meter_version": CANONICAL_BUDGET_METER_VERSION,
+    }
+
+
+def test_the_budget_identity_constants_have_one_home():
+    assert CANONICAL_BUDGET_METER_IDENTITY == "dynamic_ai_products.extraction.budget_session"
+    assert CANONICAL_BUDGET_METER_VERSION == "0.1.0"
+    assert BUDGET_POLICY_VERSION == "budget_policy_v1"
+
+
+def test_the_canonical_identity_and_policy_are_accepted_together():
+    validate_budget_meter_identity(
+        authorization=_canonical_authorization(),
+        meter_identity=_canonical_mapping(),
+        expected_budget_policy_version=BUDGET_POLICY_VERSION,
+    )
+
+
+@pytest.mark.parametrize(
+    "override,expected",
+    [
+        ({"budget_meter_identity": "someone-elses-meter"}, "budget_meter_identity_mismatch"),
+        ({"budget_meter_version": "9.9.9"}, "budget_meter_identity_mismatch"),
+        ({"budget_policy_version": "budget_policy_v2"}, "budget_policy_version_mismatch"),
+        ({"budget_policy_version": ""}, "budget_policy_version_mismatch"),
+        ({"budget_policy_version": None}, "budget_policy_version_mismatch"),
+    ],
+)
+def test_each_budget_mismatch_carries_its_own_reason(override, expected):
+    """The policy version is not silently folded into the identity code."""
+    with pytest.raises(ExtractionError) as caught:
+        validate_budget_meter_identity(
+            authorization=_canonical_authorization(**override),
+            meter_identity=_canonical_mapping(),
+            expected_budget_policy_version=BUDGET_POLICY_VERSION,
+        )
+    assert caught.value.reason_code == expected
+
+
+def test_the_policy_version_is_not_read_from_the_meter_mapping():
+    """The mapping carries exactly two keys and the loop must not want a third.
+
+    Folding ``budget_policy_version`` into the ``removeprefix("budget_")`` loop
+    would make it look for ``meter_identity["policy_version"]`` -- a key no
+    session reports -- and every route including the canonical one would fail.
+    """
+    mapping = _canonical_mapping()
+    assert set(mapping) == {"meter_identity", "meter_version"}
+    validate_budget_meter_identity(
+        authorization=_canonical_authorization(),
+        meter_identity=mapping,
+        expected_budget_policy_version=BUDGET_POLICY_VERSION,
+    )
+
+
+def test_the_expected_policy_version_parameter_has_no_default():
+    """A caller that forgets it gets a TypeError, not a silently skipped check."""
+    with pytest.raises(TypeError):
+        validate_budget_meter_identity(
+            authorization=_canonical_authorization(), meter_identity=_canonical_mapping()
+        )
+
+
+def test_the_validator_has_exactly_two_call_sites_each_with_three_keywords():
+    """One v1 legacy call, one canonical F0 call, and none in between.
+
+    The third assertion is the load-bearing one: it proves the F0 placement was a
+    *move*, so no second code path can validate the identity after the permit
+    handshake. Read with AST rather than grep, because a comment or docstring
+    naming the function is not a call.
+    """
+    import ast
+
+    from dynamic_ai_products.extraction import run_extraction
+
+    tree = ast.parse(Path(run_extraction.__file__).read_text(encoding="utf-8"))
+    scope: list[str] = []
+    seen: list[tuple[str, tuple[str, ...]]] = []
+
+    class Visitor(ast.NodeVisitor):
+        def visit_FunctionDef(self, node):
+            scope.append(node.name)
+            self.generic_visit(node)
+            scope.pop()
+
+        def visit_Call(self, node):
+            if getattr(node.func, "id", None) == "validate_budget_meter_identity":
+                seen.append((scope[-1], tuple(sorted(k.arg for k in node.keywords))))
+            self.generic_visit(node)
+
+    Visitor().visit(tree)
+    expected = ("authorization", "expected_budget_policy_version", "meter_identity")
+    assert len(seen) == 2
+    assert all(keywords == expected for _fn, keywords in seen)
+    assert {fn for fn, _ in seen} == {"_run_authorized_stage", "run_extraction_stage_v2"}
+    assert "_run_two_operation_stage" not in {fn for fn, _ in seen}

@@ -132,6 +132,7 @@ class FakeSession:
         *,
         reserve_override: int | None = None,
         digest_override: str | None = None,
+        nonce: str | None = None,
     ) -> None:
         self.cap = cap
         self.admitted: list[int] = []
@@ -140,9 +141,20 @@ class FakeSession:
         self.calls: list[dict[str, object]] = []
         self._reserve_override = reserve_override
         self._digest_override = digest_override
+        self._nonce = nonce or "c" * 64
 
     def meter_identity(self):
         return {"meter_identity": "fake", "meter_version": "1"}
+
+    @property
+    def session_nonce(self) -> str:
+        """ADR-047: a real 64-hex nonce, and the one it stamps on admissions.
+
+        The private seam applies the same shape gate and the same
+        admission-versus-session comparison as the canonical route, so a fake
+        that returned a placeholder here would be refused rather than tolerated.
+        """
+        return self._nonce
 
     def admit(
         self,
@@ -174,7 +186,7 @@ class FakeSession:
                 if self._digest_override is None
                 else self._digest_override
             ),
-            session_nonce="nonce",
+            session_nonce=self._nonce,
         )
 
 
@@ -538,7 +550,7 @@ CHANGE_REQUEST_REFERENCE = (
 )
 CODE_COMMIT = "be627003f3246b371c2b3ac13e813ef0bb112582"
 RUN_CREATED_AT = "2026-07-29T00:00:00Z"
-METER_IDENTITY = "e-m-reference-meter"
+METER_IDENTITY = "dynamic_ai_products.extraction.budget_session"
 METER_VERSION = "0.1.0"
 COUNT_BODY = b'{"totalTokens": 1000}'
 PREDICTION_BODY = (
@@ -636,6 +648,55 @@ class ProviderV2:
             },
         )
         return response, tuple(records)
+
+
+class SinkFailingProvider(ProviderV2):
+    """Attempt 1 persists; attempt 2's destination already exists, so it cannot.
+
+    The collision is arranged the way a real one would arise -- the target path
+    is occupied -- rather than by calling the sink twice with one ordinal, which
+    would produce two attempts wearing the same number.
+    """
+
+    def __init__(self, *, provider_reason=None, run_root=None, **kwargs):
+        super().__init__(**kwargs)
+        self._provider_reason = provider_reason
+        self._run_root = run_root
+
+    def complete_v8(self, request, *, admission, sink):
+        admission.spend()
+        # Attempt 1: a retryable provider failure whose body is captured and
+        # written to its own ordinal path.
+        self.generate_sends += 1
+        sink(
+            operation_label="generate_content",
+            attempt_ordinal=1,
+            raw_bytes=b"transient",
+            send_outcome="response_5xx",
+            sdk_call_outcome="raised",
+            provider_reason_code="vertex_unavailable",
+        )
+        # Occupy attempt 2's destination before it is written. Which path that
+        # is depends on whether the call returns: a returning attempt is the
+        # terminal one and owns the raw-prediction path, a raising one goes to
+        # its own ordinal path.
+        occupied = self._run_root / (
+            generate_attempt_reference(2)
+            if self._provider_reason
+            else RAW_PREDICTION_REFERENCE
+        )
+        occupied.parent.mkdir(parents=True, exist_ok=True)
+        occupied.write_bytes(b"already here")
+        self.generate_sends += 1
+        sink(
+            operation_label="generate_content",
+            attempt_ordinal=2,
+            raw_bytes=b"second",
+            send_outcome="response_5xx" if self._provider_reason else "response_2xx",
+            sdk_call_outcome="raised" if self._provider_reason else "returned",
+            provider_reason_code=self._provider_reason,
+        )
+        raise AssertionError("unreachable")  # pragma: no cover
 
 
 class SessionV2(FakeSession):
@@ -829,10 +890,12 @@ def _run_v2(
     tmp_path: Path,
     *,
     provider=None,
-    session=None,
     authorization_overrides=None,
     prompt_qualification_overrides=None,
 ):
+    """ADR-047: no ``session`` argument. The canonical route builds its own, so a
+    test that wants to observe or misbehave a session drives the private
+    measurement helper instead -- see the admission-boundary section below."""
     governance = tmp_path / "governance-root"
     pin = _write_governance_v2(
         governance,
@@ -856,7 +919,6 @@ def _run_v2(
         evidence_binding=_evidence_binding(),
         schema_root=str(SCHEMAS),
         provider=provider if provider is not None else ProviderV2(),
-        budget_session=session if session is not None else SessionV2(cap=3),
         governance_artifact_root=governance,
         live_call_authorization_pin=pin,
         company_identity_root=tmp_path / "identity",
@@ -960,17 +1022,6 @@ def test_the_count_bytes_are_persisted_and_verified_before_anything_derives_from
     )
 
 
-def test_the_reserve_reaches_the_admission_boundary(tmp_path):
-    session = SessionV2(cap=3)
-    provider = ProviderV2()
-    _run_v2(tmp_path, provider=provider, session=session)
-    expected = reserve_cost_microdollars(
-        measured_input_tokens=1000, max_output_tokens=8192, generate_attempt_cap=3
-    )
-    assert session.reserves == [expected]
-    assert provider.seen_reserve == expected
-
-
 # --- terminal routes: every one publishes an outcome, none generates ----------
 
 
@@ -1028,16 +1079,13 @@ def test_a_reconciliation_mismatch_publishes_an_invalid_outcome_and_never_genera
 def test_an_estimated_cost_refusal_stops_before_generatecontent(tmp_path):
     """The reserve for the authorized cap exceeds the authorized spend."""
     provider = ProviderV2()
-    session = SessionV2(cap=3)
     _error, record, files = _expect_stop(
         tmp_path,
         provider=provider,
-        session=session,
         # cap 3 x (ceil(1000 x 3/10) + ceil(8192 x 5/2)) = 62 340
         authorization_overrides={"budget_max_estimated_cost_micros": 62_339},
     )
     assert provider.generate_sends == 0
-    assert session.admitted == [], "the meter is never consulted once the ceiling is breached"
     assert record["route_family"] == "pre_generation_invalid"
     assert record["terminal_reason"] == "budget_termination"
     assert COUNT_RAW_REFERENCE in files
@@ -1152,7 +1200,6 @@ def test_a_v1_shaped_authorization_cannot_drive_the_two_operation_route(tmp_path
             evidence_binding=_evidence_binding(),
             schema_root=str(SCHEMAS),
             provider=ProviderV2(),
-            budget_session=SessionV2(cap=3),
             governance_artifact_root=governance,
             live_call_authorization_pin={
                 "reference": GOV_AUTH,
@@ -1173,9 +1220,33 @@ def test_a_pre_mkdir_budget_refusal_leaves_no_run_root(tmp_path):
 # --- the admission boundary carries both values, exactly ----------------------
 
 
+def _measure(tmp_path, *, session, provider=None, authorization_overrides=None):
+    """Drive the private measurement helper with a caller-supplied session.
+
+    ADR-047 closed the public seam, so this is the only place a session can be
+    observed or misbehaved. The helper publishes nothing -- it returns facts and
+    raises -- so these tests assert the raised reason code, never a route family.
+    """
+    root = tmp_path / "measure"
+    root.mkdir()
+    auth = authorization(4)
+    auth.update(authorization_overrides or {})
+    return _run_two_operation_measurement(
+        root=root,
+        provider=provider if provider is not None else FakeProvider(
+            count_body=COUNT_BODY, generate_bodies=(PREDICTION_BODY,)
+        ),
+        session=session,
+        request=request(),
+        authorization=auth,
+        max_output_tokens=MAX_OUTPUT_TOKENS,
+        request_digest=HELPER_DIGEST,
+    )
+
+
 def test_the_admission_boundary_receives_both_required_values(tmp_path):
-    session = SessionV2(cap=3)
-    _run_v2(tmp_path, session=session)
+    session = FakeSession(cap=3)
+    _measure(tmp_path, session=session)
     expected = reserve_cost_microdollars(
         measured_input_tokens=1000, max_output_tokens=8192, generate_attempt_cap=3
     )
@@ -1183,26 +1254,75 @@ def test_the_admission_boundary_receives_both_required_values(tmp_path):
     call = session.calls[0]
     assert call["measured_input_tokens"] == 1000
     assert call["reserved_cost_microdollars"] == expected
-    # The full identity, not the rendered contents alone.
-    assert call["provider_request_digest"] != sha256_bytes(CONTENTS.encode("utf-8"))
+    assert call["provider_request_digest"] == HELPER_DIGEST
     assert len(call["provider_request_digest"]) == 64
 
 
+def test_the_reserve_reaches_the_admission_boundary(tmp_path):
+    session = FakeSession(cap=3)
+    provider = FakeProvider(count_body=COUNT_BODY, generate_bodies=(PREDICTION_BODY,))
+    _measure(tmp_path, session=session, provider=provider)
+    expected = reserve_cost_microdollars(
+        measured_input_tokens=1000, max_output_tokens=8192, generate_attempt_cap=3
+    )
+    assert session.reserves == [expected]
+
+
+def test_a_ceiling_refusal_never_consults_the_meter(tmp_path):
+    """The runner enforces before it admits, so the session is never called."""
+    session = FakeSession(cap=3)
+    with pytest.raises(ExtractionError) as caught:
+        _measure(
+            tmp_path,
+            session=session,
+            authorization_overrides={"budget_max_estimated_cost_micros": 62_339},
+        )
+    assert caught.value.reason_code == "budget_estimated_cost_exceeded"
+    assert session.admitted == []
+
+
 def test_an_admission_that_reserves_a_different_amount_cannot_be_spent(tmp_path):
-    """The runner compares what it computed with what the admission carries.
-
-    A meter is injected. If it could return an admission reserving less than the
-    run priced, the estimated-cost ceiling would be enforced against a number
-    nobody checked.
-    """
-    provider = ProviderV2()
-    session = SessionV2(cap=3, reserve_override=1)
-    _error, record, _files_ = _expect_stop(tmp_path, provider=provider, session=session)
-    assert provider.generate_sends == 0
-    assert record["terminal_reason"] == "budget_termination"
+    """The runner compares what it computed with what the admission carries."""
+    provider = FakeProvider(count_body=COUNT_BODY, generate_bodies=(PREDICTION_BODY,))
+    with pytest.raises(ExtractionError) as caught:
+        _measure(tmp_path, session=FakeSession(cap=3, reserve_override=1), provider=provider)
+    assert caught.value.reason_code == "budget_estimated_cost_exceeded"
+    assert provider.sends == 1, "only the count send happened"
 
 
-# --- ceilings refuse after verified count bytes, before any generate send -----
+def test_the_runner_derives_the_full_identity_and_hands_it_to_the_meter(tmp_path):
+    """The canonical route's digest is rebuilt from what it actually persisted."""
+    outcome = _run_v2(tmp_path)
+    contract_sha = outcome.artifacts[CLIENT_CONTRACT_REFERENCE]
+    persisted_contract = json.loads(
+        (outcome.run_root / CLIENT_CONTRACT_REFERENCE).read_text(encoding="utf-8")
+    )
+    assert client_contract_digest(persisted_contract) == contract_sha
+    expected = provider_request_digest(
+        ProviderRequest(
+            stage="product_extraction",
+            rendered_contents=(outcome.run_root / CONTENTS_REFERENCE).read_text(
+                encoding="utf-8"
+            ),
+            rendered_contents_sha256=outcome.artifacts[CONTENTS_REFERENCE],
+            prompt_sha256=json.loads(
+                (outcome.run_root / EXTRACTION_RUN_REFERENCE).read_text(encoding="utf-8")
+            )["prompt_hash"],
+            input_packet_sha256=outcome.artifacts[PACKET_REFERENCE],
+        ),
+        provider_client_contract_sha256=contract_sha,
+        protocol_version=PROVIDER_PROTOCOL_VERSION_V8,
+    )
+    assert len(expected) == 64
+
+
+def test_an_admission_carrying_another_requests_identity_is_refused(tmp_path):
+    """The runner checks the returned admission against what it derived."""
+    provider = FakeProvider(count_body=COUNT_BODY, generate_bodies=(PREDICTION_BODY,))
+    with pytest.raises(ExtractionError) as caught:
+        _measure(tmp_path, session=FakeSession(cap=3, digest_override="a" * 64), provider=provider)
+    assert caught.value.reason_code == "budget_admission_invalid"
+    assert provider.sends == 1, "only the count send happened"
 
 
 def _assert_count_verified_and_no_generation(root: Path, record: dict, provider) -> None:
@@ -1219,81 +1339,44 @@ def _assert_count_verified_and_no_generation(root: Path, record: dict, provider)
 
 
 def test_the_cost_ceiling_refuses_after_verified_count_bytes(tmp_path):
+    """The count evidence survives the refusal, and the meter is never reached.
+
+    ADR-047 closed the public session seam, so "the meter is never reached" is
+    proved on the private measurement helper with an observable session, while
+    the published evidence is proved on the canonical route. Both halves of the
+    original assertion survive; neither is dropped.
+    """
     provider = ProviderV2()
-    session = SessionV2(cap=3)
     _error, record, _files_ = _expect_stop(
         tmp_path,
         provider=provider,
-        session=session,
         authorization_overrides={"budget_max_estimated_cost_micros": 62_339},
     )
     _assert_count_verified_and_no_generation(tmp_path / "run", record, provider)
-    assert session.calls == [], "the meter is never reached once the ceiling is breached"
+
+    observed = FakeSession(cap=3)
+    with pytest.raises(ExtractionError):
+        _measure(
+            tmp_path,
+            session=observed,
+            authorization_overrides={"budget_max_estimated_cost_micros": 62_339},
+        )
+    assert observed.calls == [], "the meter is never reached once the ceiling is breached"
 
 
 def test_the_input_token_ceiling_refuses_after_verified_count_bytes(tmp_path):
     provider = ProviderV2()
-    session = SessionV2(cap=3)
     _error, record, _files_ = _expect_stop(
-        tmp_path,
-        provider=provider,
-        session=session,
-        authorization_overrides={"budget_max_input_tokens": 999},
+        tmp_path, provider=provider, authorization_overrides={"budget_max_input_tokens": 999}
     )
     _assert_count_verified_and_no_generation(tmp_path / "run", record, provider)
-    assert session.calls == []
 
-
-# --- generation-side sink failures --------------------------------------------
-
-
-class SinkFailingProvider(ProviderV2):
-    """Attempt 1 persists; attempt 2's destination already exists, so it cannot.
-
-    The collision is arranged the way a real one would arise -- the target path
-    is occupied -- rather than by calling the sink twice with one ordinal, which
-    would produce two attempts wearing the same number.
-    """
-
-    def __init__(self, *, provider_reason=None, run_root=None, **kwargs):
-        super().__init__(**kwargs)
-        self._provider_reason = provider_reason
-        self._run_root = run_root
-
-    def complete_v8(self, request, *, admission, sink):
-        admission.spend()
-        # Attempt 1: a retryable provider failure whose body is captured and
-        # written to its own ordinal path.
-        self.generate_sends += 1
-        sink(
-            operation_label="generate_content",
-            attempt_ordinal=1,
-            raw_bytes=b"transient",
-            send_outcome="response_5xx",
-            sdk_call_outcome="raised",
-            provider_reason_code="vertex_unavailable",
+    observed = FakeSession(cap=3)
+    with pytest.raises(ExtractionError):
+        _measure(
+            tmp_path, session=observed, authorization_overrides={"budget_max_input_tokens": 999}
         )
-        # Occupy attempt 2's destination before it is written. Which path that
-        # is depends on whether the call returns: a returning attempt is the
-        # terminal one and owns the raw-prediction path, a raising one goes to
-        # its own ordinal path.
-        occupied = self._run_root / (
-            generate_attempt_reference(2)
-            if self._provider_reason
-            else RAW_PREDICTION_REFERENCE
-        )
-        occupied.parent.mkdir(parents=True, exist_ok=True)
-        occupied.write_bytes(b"already here")
-        self.generate_sends += 1
-        sink(
-            operation_label="generate_content",
-            attempt_ordinal=2,
-            raw_bytes=b"second",
-            send_outcome="response_5xx" if self._provider_reason else "response_2xx",
-            sdk_call_outcome="raised" if self._provider_reason else "returned",
-            provider_reason_code=self._provider_reason,
-        )
-        raise AssertionError("unreachable")  # pragma: no cover
+    assert observed.calls == []
 
 
 def test_a_generation_persistence_failure_is_our_failure_not_the_providers(tmp_path):
@@ -1340,18 +1423,21 @@ def test_a_provider_failure_and_a_persistence_failure_are_both_recorded(tmp_path
     assert terminal["persistence_reason_code"] == "destination_exists"
 
 
-# --- the v1 route is untouched ------------------------------------------------
-
-
 def test_the_v1_entry_point_gained_no_e_m_parameter():
-    """E-M is a successor route, not a widening of the released one."""
+    """E-M is a successor route, not a widening of the released one.
+
+    ADR-047 additionally closed v2's own session seam, so ``budget_session`` is
+    now absent from **both** signatures -- v1 because it never had one, v2
+    because the runner builds its session itself.
+    """
     parameters = set(inspect.signature(run_extraction_stage).parameters)
     for added in ("evidence_binding", "budget_session"):
         assert added not in parameters
     assert "budget_meter" in parameters
     v2_parameters = set(inspect.signature(run_extraction_stage_v2).parameters)
     assert "budget_meter" not in v2_parameters
-    assert {"evidence_binding", "budget_session"} <= v2_parameters
+    assert "budget_session" not in v2_parameters
+    assert "evidence_binding" in v2_parameters
 
 
 def test_the_v1_published_shape_holds_no_e_m_artifact():
@@ -1404,45 +1490,3 @@ def test_the_two_provider_gates_do_not_admit_each_other(tmp_path):
     with pytest.raises(ExtractionError) as caught:
         require_provider(ProviderV2())
     assert caught.value.reason_code == "provider_protocol_invalid"
-
-
-# --- the runner derives the identity, and only after the contract is verified --
-
-
-def test_the_runner_derives_the_full_identity_and_hands_it_to_the_meter(tmp_path):
-    session = SessionV2(cap=3)
-    outcome = _run_v2(tmp_path, session=session)
-    contract_sha = outcome.artifacts[CLIENT_CONTRACT_REFERENCE]
-    persisted_contract = json.loads(
-        (outcome.run_root / CLIENT_CONTRACT_REFERENCE).read_text(encoding="utf-8")
-    )
-    # The digest is derived from the contract the run actually canonicalized,
-    # wrote, and verified -- not from an unbound copy.
-    assert client_contract_digest(persisted_contract) == contract_sha
-    expected = provider_request_digest(
-        ProviderRequest(
-            stage="product_extraction",
-            rendered_contents=(outcome.run_root / CONTENTS_REFERENCE).read_text(
-                encoding="utf-8"
-            ),
-            rendered_contents_sha256=outcome.artifacts[CONTENTS_REFERENCE],
-            prompt_sha256=json.loads(
-                (outcome.run_root / EXTRACTION_RUN_REFERENCE).read_text(encoding="utf-8")
-            )["prompt_hash"],
-            input_packet_sha256=outcome.artifacts[PACKET_REFERENCE],
-        ),
-        provider_client_contract_sha256=contract_sha,
-        protocol_version=PROVIDER_PROTOCOL_VERSION_V8,
-    )
-    assert session.digests == [expected]
-    # Never the contents digest alone.
-    assert session.digests[0] != outcome.artifacts[CONTENTS_REFERENCE]
-
-
-def test_an_admission_carrying_another_requests_identity_is_refused(tmp_path):
-    """The runner checks the returned admission against what it derived."""
-    provider = ProviderV2()
-    session = SessionV2(cap=3, digest_override="a" * 64)
-    _error, record, _files_ = _expect_stop(tmp_path, provider=provider, session=session)
-    assert provider.generate_sends == 0
-    assert record["terminal_reason"] == "budget_termination"

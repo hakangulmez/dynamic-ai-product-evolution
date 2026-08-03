@@ -626,7 +626,7 @@ class PermitSession:
         self.admissions = 0
 
     def meter_identity(self):
-        return {"meter_identity": "g2-fake", "meter_version": "0.1.0"}
+        return {"meter_identity": "dynamic_ai_products.extraction.budget_session", "meter_version": "0.1.0"}
 
     def admit(self, **kwargs):  # pragma: no cover - never reached
         self.admissions += 1
@@ -703,7 +703,7 @@ def _write_chain(root: Path, prompt_qualification: dict | None, *, pin_override=
         "adapter_enablement_record_sha256": sha256_bytes(enab_bytes),
         "provider_client_contract_reference": "inputs/provider_client_contract.json",
         "provider_client_contract_sha256": CLIENT_CONTRACT_SHA,
-        "budget_meter_identity": "g2-fake",
+        "budget_meter_identity": "dynamic_ai_products.extraction.budget_session",
         "budget_meter_version": "0.1.0",
         "stage": STAGE,
         "company_id": COMPANY,
@@ -775,7 +775,6 @@ def _drive(tmp_path: Path, prompt_qualification, *, pin_override=None):
             evidence_binding={},
             schema_root=str(ROOT / "schemas"),
             provider=provider,
-            budget_session=PermitSession(),
             governance_artifact_root=governance,
             live_call_authorization_pin=pin,
             company_identity_root=tmp_path / "identity",

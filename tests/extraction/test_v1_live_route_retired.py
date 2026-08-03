@@ -367,3 +367,38 @@ def test_only_the_v2_entry_point_can_reach_a_provider(tmp_path: Path):
 
     assert "provider" in inspect.signature(run_extraction_stage_v2).parameters
     assert "provider" in inspect.signature(run_extraction_stage).parameters
+
+
+def test_neither_public_route_accepts_an_injected_budget_session():
+    """ADR-047 closed the v2 seam; v1 never had one and still does not.
+
+    The two routes carry different budget parameters and neither is a session:
+    v1 keeps its retired ``budget_meter``, v2 builds its own canonical session at
+    F0. A public ``budget_session`` on either would be a way to hand the run a
+    metering identity it did not derive.
+    """
+    import inspect
+
+    v1 = inspect.signature(run_extraction_stage).parameters
+    v2 = inspect.signature(run_extraction_stage_v2).parameters
+
+    assert "budget_session" not in v1
+    assert "budget_session" not in v2
+    # v1's meter argument survives, inert, because the block below the retirement
+    # refusal is left in place by ADR-045 rather than deleted.
+    assert "budget_meter" in v1
+    assert "budget_meter" not in v2
+
+    with pytest.raises(TypeError):
+        run_extraction_stage_v2(budget_session=object())
+    with pytest.raises(TypeError):
+        run_extraction_stage(budget_session=object())
+
+
+def test_the_v1_route_refuses_before_its_inert_meter_argument_matters(tmp_path: Path):
+    """Whatever is passed as ``budget_meter``, the route is closed first."""
+    for meter in (None, object(), _ExplodingMeter()):
+        with pytest.raises(ExtractionError) as excinfo:
+            _run(tmp_path, budget_meter=meter)
+        assert excinfo.value.reason_code == RETIRED
+        assert not (tmp_path / "run").exists()

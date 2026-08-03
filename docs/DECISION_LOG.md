@@ -1564,6 +1564,109 @@ rejected: every artifact already carries `2025-02-12`, and nothing needs
 rewriting. Claiming the panel key already exists was rejected as false.
 
 
+## ADR-047 — A canonical budget session, a code-owned meter identity, and a closed injection seam (G3-2)
+
+**Status:** Accepted.
+
+**The question this answers.** G3-0 measured that `src/` declared a
+`BudgetSession` protocol and shipped no implementation of it. Every run therefore
+metered through whatever object a caller injected, and the authorization's
+`budget_policy_version` had no producer anywhere in the code — it was a required
+field that bound nothing. This increment supplies the producer and closes the
+seam.
+
+**The identity is owned by code, and that is the whole point.** An earlier draft
+had the factory read `budget_meter_identity` and `budget_meter_version` out of
+the authorization. That would have made `validate_budget_meter_identity` compare
+the artifact with itself: a session echoing untrusted values back at the check
+that is supposed to test them. `build_budget_session` does not accept the
+authorization mapping at all — only the digest that identifies it, the run
+identity, and the cap `resolve_attempt_cap_v2` derived — so the tautology is
+unrepresentable rather than merely avoided.
+
+**The policy version is not a third identity field.** `meter_identity` reports
+exactly two, and the validator reads them through a `removeprefix("budget_")`
+loop. Adding `budget_policy_version` to that loop would have made it look for a
+`policy_version` key no session reports, failing **every** route including the
+canonical one. It travels as its own required parameter instead, with no default
+so that forgetting it is a `TypeError` rather than a skipped check, and it has
+its own reason code: `budget_policy_version_mismatch`. Reusing
+`budget_meter_identity_mismatch` was rejected — the current contracts do not
+force it, because these refusals happen before F1 and never reach the terminal
+classifier.
+
+**Where the check sits.** F0, after the cap is resolved and the session is built,
+and **before** `_assert_run_permitted_with`. A refusal there leaves no permit to
+revoke, no run root, no artifact and no provider call. The old post-handshake
+block — `if session is None` plus a second `validate_budget_meter_identity` — is
+deleted rather than kept alongside it: two code paths for one rule is how they
+drift. A test asserts by AST that the validator is called exactly twice, always
+with three arguments, in `_run_authorized_stage` and `run_extraction_stage_v2`
+and **never** in `_run_two_operation_stage` — which is what proves the move was a
+move and not a copy.
+
+**`session_nonce` is a property, and that is load-bearing.** `BudgetAdmission`
+carries it as a plain field and the runner compares the two by attribute access.
+Measured on 3.12: a `runtime_checkable` `isinstance` is a plain `hasattr` sweep
+and cannot tell a value from a method, so a session defining
+`def session_nonce(self)` would pass the protocol check and then compare a digest
+against a bound method — never equal, refusing every admission for a reason
+nobody could read off the code. `require_budget_session` closes that with a
+64-hex shape check.
+
+**The nonce is derived, not sampled.** Six inputs that are already fixed: the
+authorization digest, the run identity, the cap, and the three code-owned
+constants. No clock, no VCS, no network, no environment, no credential — the same
+reason `code_commit` and `run_created_at` are injected. **Collision is bounded,
+not impossible:** two sessions share a nonce exactly when the authorization
+digest and the `extraction_run_id` are both equal, which is to say when they are
+two sessions for one run. A caller reusing one run identity gets one nonce twice;
+that caller is already violating run-identity uniqueness and the reused run root
+is refused elsewhere. No global uniqueness is claimed. Before this increment the
+field was never compared anywhere and was decorative; the runner now refuses an
+admission whose nonce is not the session's own.
+
+**One enforcement owner.** The runner already refuses on
+`budget_max_input_tokens` and `budget_max_estimated_cost_micros` before it calls
+`admit`, so neither ceiling is passed into the session and the session re-checks
+neither. What the session actually is, stated plainly: a code-owned identity, a
+cap bound at construction, a derived nonce, and an `admit` that may be spent
+once. It is not a budget engine, and this record does not present it as one.
+
+**The public seam is closed.** `run_extraction_stage_v2` no longer accepts
+`budget_session`; it builds its own. The private
+`_run_two_operation_measurement` still takes one, because the route-matrix tests
+drive F2–F5 through it, and it gets **no exemption**: the same shape gate and the
+same nonce comparison run at its entry. `budget_meter_protocol_invalid` can
+therefore reach the terminal classifier post-F1 — the canonical route calls that
+helper after `mkdir` — so it is added to the classifier's budget branch and maps
+onto `pre_generation_invalid`/`budget_termination` rather than falling through to
+the provider branch and publishing a provider reason for something the provider
+never did. The underscore remains a boundary, not an enforcement, exactly as
+ADR-045 recorded.
+
+**The v1 legacy call is left compatible, not changed.** `_run_authorized_stage`
+is unreachable after ADR-045, and its `validate_budget_meter_identity` call is
+given the constant so that removing the unreachable block later surfaces as a
+deletion rather than as a `TypeError` from a call nobody can execute.
+
+**Measured test disposition.** Five retired v1 modules carry meter identities in
+their fixtures and were left byte-identical: none of them calls
+`run_extraction_stage_v2` or the private helper, so their values cannot reach the
+canonical comparison. The tests that observed or misbehaved an injected session
+moved to the private helper, where they assert the raised reason code — never a
+route family, because that helper publishes nothing.
+
+**Rejected alternatives.** A narrower test-only injection seam was rejected:
+"production callers cannot use it" is not structurally enforceable in Python, so
+it would have been a second weak path instead of a closed one. A `_PIN` constant
+beside the policy version was rejected — the pin pattern exists for the
+`extraction ↛ providers` boundary, and there is no such boundary here. Sampling
+the nonce with `uuid4` or `secrets` was rejected as ambient nondeterminism.
+Passing the two ceilings into the session was rejected: two copies of a ceiling
+can disagree.
+
+
 ## Open decisions
 
 - Required source packet by firm-year.

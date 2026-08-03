@@ -80,7 +80,7 @@ RUN_CREATED_AT = "2026-07-29T00:00:00Z"
 STAGE = "product_extraction"
 STAGE_SHA = STAGE_OUTPUT_SCHEMA_SHA256[STAGE]
 ROUTING_SHA = "4" * 64
-METER_IDENTITY = "g2b-publication-meter"
+METER_IDENTITY = "dynamic_ai_products.extraction.budget_session"
 METER_VERSION = "0.1.0"
 SOURCE_MANIFEST = {"reference": "snapshots/m.json", "sha256": "e" * 64}
 COVERAGE = {"reference": "coverage/c.json", "sha256": "d" * 64}
@@ -447,7 +447,6 @@ def _run(tmp_path: Path, **overrides):
         "evidence_binding": _evidence_binding(),
         "schema_root": str(SCHEMAS),
         "provider": _Provider(),
-        "budget_session": _Session(),
         "governance_artifact_root": governance,
         "company_identity_root": tmp_path / "identity",
         "company_identity_pin": _write_identity(tmp_path / "identity"),
@@ -590,7 +589,6 @@ def test_v2_the_run_root_does_not_exist_during_the_pre_run_gate(tmp_path: Path):
     [
         ({"provider": None}, "provider_required"),
         ({"provider": object()}, "provider_protocol_invalid"),
-        ({"budget_session": None}, "budget_meter_unavailable"),
         ({"governance_artifact_root": None}, "governance_root_required"),
         ({"live_call_authorization_pin": None}, "governance_root_required"),
     ],

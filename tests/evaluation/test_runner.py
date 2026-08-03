@@ -1171,7 +1171,9 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # tracked change request the record pins by reference and digest.
     # 583 = 579 + the four ADR-045 (G2b) test modules: the v1 retirement test
     # and the three v2 modules the 178 migrated cases moved into.
-    assert declared == len(paths) == 583
+    # 585 = 583 + the two ADR-047 (G3-2) paths: the canonical budget-session
+    # producer and its test module.
+    assert declared == len(paths) == 585
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

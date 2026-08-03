@@ -118,12 +118,17 @@ def test_package_is_enumerable_and_complete():
     # module, because a shared module would have blurred "derives a number" with
     # "publishes a verdict".
     #
+    # ADR-047 (G3-2) adds budget_session.py: 17 -> 18. The canonical metering
+    # producer is its own module because the runner builds it and the governance
+    # core validates against it: folding it into either would have made one of
+    # those two the other's dependency.
+    #
     # ADR-044 (G2) adds prompt_qualification.py: 16 -> 17. It is separate from
     # manifests.py for the same reason: manifests owns the three released
     # governance rings, whose validators must keep being exactly what they were
     # released as, and folding a fourth artifact's rules in beside them would
     # have put a new refusal inside the function the v1 route still calls.
-    assert len(MODULES) == 17
+    assert len(MODULES) == 18
     assert (PACKAGE / "__init__.py") in MODULES
 
 
@@ -348,6 +353,11 @@ def test_no_provider_is_constructed_inside_the_package():
     assert functions == {
         "require_provider",
         "require_budget_meter",
+        # ADR-047 (G3-2). ``require_budget_session`` joins the other three
+        # require_* doors, and ``session_nonce`` is a Protocol member rather
+        # than a method the package calls -- neither constructs anything.
+        "require_budget_session",
+        "session_nonce",
         "assert_run_permitted",
         "revoke_run_permission",
         "client_contract",

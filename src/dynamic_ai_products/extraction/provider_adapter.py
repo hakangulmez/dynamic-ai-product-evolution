@@ -35,6 +35,7 @@ __all__ = [
     "ProviderRequest",
     "ProviderResponse",
     "require_budget_meter",
+    "require_budget_session",
     "client_contract_digest",
     "provider_request_digest",
     "require_provider",
@@ -424,9 +425,25 @@ class BudgetSession(Protocol):
     ``budget_max_estimated_cost_micros`` at all, and two copies of that rule
     could disagree. The runner enforces the ceiling itself as well -- the meter
     is injected, so a fail-closed gate cannot depend on the meter behaving.
+
+    ``session_nonce`` is a **property**, not a method, and that is load-bearing
+    (ADR-047). ``BudgetAdmission.session_nonce`` is a plain field, and the runner
+    compares the two by attribute access; a session exposing a *method* of the
+    same name would satisfy ``isinstance`` -- measured on 3.12, a
+    ``runtime_checkable`` check is a plain ``hasattr`` and cannot tell the two
+    apart -- and then compare a string against a bound method, which is never
+    equal. :func:`require_budget_session` closes that with a shape check.
+
+    ``meter_identity`` still reports exactly two fields. The budget **policy**
+    version is not a third identity field and is never carried here; the runner
+    compares it against a code-owned constant through a separate parameter.
     """
 
     def meter_identity(self) -> dict[str, str]:  # pragma: no cover
+        ...
+
+    @property
+    def session_nonce(self) -> str:  # pragma: no cover
         ...
 
     def admit(
@@ -498,6 +515,38 @@ def require_budget_meter(meter: object) -> BudgetMeter:
             reason_code="budget_meter_protocol_invalid",
         )
     return meter
+
+
+def require_budget_session(session: object) -> BudgetSession:
+    """Fail closed unless an object satisfies the v8 session shape (ADR-047).
+
+    Three checks, and the second two exist because the first cannot do their
+    work. ``isinstance`` against a ``runtime_checkable`` protocol is a plain
+    ``hasattr`` sweep -- measured on 3.12 -- so it admits a session whose
+    ``session_nonce`` is a method rather than a value. That session would then be
+    compared, attribute against field, to ``BudgetAdmission.session_nonce``, and
+    a bound method never equals a digest: the run would refuse every admission
+    for a reason nobody could read off the code. So the nonce is required to be a
+    lowercase 64-hex string here, once, before anything is spent.
+    """
+    if session is None:
+        raise ExtractionError(
+            "a budget session must be supplied; the admission seam cannot run "
+            "without one",
+            reason_code="budget_meter_unavailable",
+        )
+    if not isinstance(session, BudgetSession):
+        raise ExtractionError(
+            "injected budget session does not satisfy the session protocol",
+            reason_code="budget_meter_protocol_invalid",
+        )
+    nonce = session.session_nonce
+    if not isinstance(nonce, str) or not _SHA256_LOWER_RE.fullmatch(nonce):
+        raise ExtractionError(
+            "the budget session nonce must be 64 lowercase hex characters",
+            reason_code="budget_meter_protocol_invalid",
+        )
+    return session
 
 
 def require_provider_v8(provider: object) -> ExtractionProviderV8:
