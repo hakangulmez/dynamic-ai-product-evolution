@@ -1784,6 +1784,107 @@ never did. Keeping the identity literal in `run_extraction` was rejected once a
 second module needed it.
 
 
+
+## ADR-049 — A canonical governance materializer: two roots, a sealed bundle, and eight post-write checks (G4-1)
+
+**Status:** Accepted.
+
+**The question this answers.** Since ADR-035 this package has *validated* four
+governance records and *produced* none. Every test wrote them by hand and no code
+path could state what a correct chain looks like, so the only executable
+definition of a valid chain was the negative one embedded in the validators. This
+module is the producer.
+
+**Two roots, never one.** `governance_artifact_root` must already exist and be
+empty when the four records are written, and is handed to
+`run_extraction_stage_v2` afterwards so F0 can hydrate them again. `run_root` must
+**not** exist when a run starts — `_require_absent_run_root` refuses it with
+`run_root_exists`. The two requirements are opposites, so one path can never serve
+both. The materializer has no concept of a run root at all, and an AST test
+asserts the identifier is never bound in the module.
+
+**Deterministic read-only, not pure.** Three digests in the prompt-qualification
+record cannot be derived: they are the bytes of the frozen prompt, of SPEC-024,
+and of the change request. `build_governance_records` therefore reads three files
+under `repo_root`. What is asserted is the narrower true thing — nothing is
+written, no clock, environment, socket or credential is reached, `providers` is
+not imported, and the repository tree is byte-identical before and after. An
+earlier draft claimed "no filesystem" and was wrong.
+
+**The bundle is sealed.** `build_governance_records` returns canonical *bytes*, not
+mappings. A caller that mutated a returned dict between building and writing would
+change what the validators saw without changing what was written; bytes make that
+unrepresentable. `GovernanceBuild` is frozen, `record()` re-parses on every call so
+two callers never share an object, and the writer writes `payload()` verbatim and
+then validates what it re-read **from disk**.
+
+**Why the writer takes only the bundle.** `materialize_governance_records(build, *,
+attempt_root)` has no third parameter. There is therefore no second place to pass
+`stage` or `run_created_at`, and the value used to build a record cannot drift from
+the value used to validate it. A signature test pins this.
+
+**No caller-controlled reference — the second attempt.** The four references were
+first published as a public `dict`, and that was a real defect rather than a
+stylistic one: assigning into it changed both the pins a build returned *and* the
+references embedded inside the written records, so the claim in this paragraph was
+false in exactly the way it denies. The production source of truth is now a private
+tuple reached through one private lookup, and `GOVERNANCE_REFERENCES` is a
+read-only `MappingProxyType` that no internal path reads. Four tests hold the line:
+item assignment and deletion are refused, rebinding the module attribute changes
+neither the returned pins nor the embedded ones, every pin a build returns is one
+of the four canonical paths, and the paths that land on disk survive a rebound
+public view.
+
+**Eight post-write checks, not one.** `validate_governance_chain_v2` has no
+parameter for a prompt-qualification record, so calling it alone would leave P1–P14
+unexercised — an earlier revision of this design made exactly that mistake. The
+materializer runs the full set: chain, semantics, scope, prompt qualification,
+policy versions, routing contract, budget meter identity, and the attempt-cap
+arithmetic. The meter identity is passed as **code constants** rather than from the
+bundle, because a caller-supplied value would restore the tautology ADR-047 closed.
+
+**What `run_created_at` does and does not buy.** P14 checks `decided_at <=
+run_created_at` and nothing more; no record stores a materialization timestamp.
+A later instant inside both windows therefore passes, and the runtime cannot detect
+that G5 used a different one. Using the same instant is a runbook rule, and the
+suite asserts the limit rather than a guarantee. Full timestamp equality would need
+a successor schema and is out of scope.
+
+**Emptiness is total.** Not "the four targets are absent": a partial root left by a
+failed attempt still lacks some of the four, and writing a second chain beside the
+first one's remains would mix two attempts in one place. `os.listdir` never returns
+`.` or `..` and does return dotfiles, so a stray `.gitkeep` disqualifies a root —
+which is why a tracked container keeps its `.gitkeep` beside the attempt roots and
+never inside one.
+
+**Partial failure keeps what it wrote.** `write_bytes_once` is not a transaction: a
+failure removes only the destination that call created. Earlier records stay, no
+later record is written, and no authorization pin is returned — so a partial root
+can never reach a run. The retry uses a new attempt root, and the emptiness rule
+enforces that rather than merely recommending it.
+
+**Declared symlink limit.** The materializer refuses a symlinked attempt root and
+symlinked components beneath it, but does not walk the root's ancestry: refusing
+every symlinked ancestor would reject ordinary platform paths — measured, `/tmp` is
+itself a symlink on macOS. Creating the attempt root stays the runbook's explicit
+step. The component guard is defence in depth over `write_artifact`'s `mkdir`,
+because emptiness fires first for anything that pre-exists.
+
+**Rejected alternatives.** A new top-level `governance` package was rejected once it
+became clear the materializer needs no `providers` import: everything it wants is
+inside the client-contract mapping its caller built, exactly as ADR-048 established.
+Accepting `vertex_project` directly was rejected for the same reason — it arrives
+inside the contract, and the module has no opinion about whether the project is real
+or synthetic. Creating the attempt root was rejected as a side effect that would
+leave "who made this root, under which container" answerable only by mtime.
+Exposing the four private record builders was rejected: separately callable, they
+would let a caller pin a chain in the wrong order.
+
+**This ADR authorizes no materialization.** No real governance artifact has been
+produced, no `vertex_project` value has been supplied, no ADC resolved, no client
+built and no provider called. G5 remains unauthorized.
+
+
 ## Open decisions
 
 - Required source packet by firm-year.

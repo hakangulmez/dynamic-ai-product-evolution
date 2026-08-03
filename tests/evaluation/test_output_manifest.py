@@ -776,7 +776,9 @@ def test_repo_manifest_count_and_paths():
     # producer and its test module.
     # 587 = 585 + the two ADR-048 (G3-3) paths: the canonical routing-contract
     # producer and its tests.
-    assert "Total tracked/scaffold files listed: **587**" in text
+    # 589 = 587 + the two ADR-049 (G4-1) paths: the canonical governance
+    # materializer and its tests.
+    assert "Total tracked/scaffold files listed: **589**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

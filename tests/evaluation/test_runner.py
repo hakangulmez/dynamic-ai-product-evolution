@@ -1175,7 +1175,9 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # producer and its test module.
     # 587 = 585 + the two ADR-048 (G3-3) paths: the canonical routing-contract
     # producer and its tests.
-    assert declared == len(paths) == 587
+    # 589 = 587 + the two ADR-049 (G4-1) paths: the canonical governance
+    # materializer and its tests.
+    assert declared == len(paths) == 589
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

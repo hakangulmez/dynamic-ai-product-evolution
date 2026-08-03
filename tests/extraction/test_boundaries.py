@@ -136,7 +136,13 @@ def test_package_is_enumerable_and_complete():
     # manifests.py depend on nothing while everything depended on it -- fine --
     # but would have hidden a *derivation* inside the module whose job is
     # *validation*.
-    assert len(MODULES) == 19
+    #
+    # ADR-049 (G4-1) adds governance_materializer.py: 19 -> 20. It is the first
+    # module here that *produces* a governance record rather than validating one,
+    # and it is separate for the reason the others are: manifests.py owns the
+    # released validators, and a producer living beside them would let a future
+    # edit change what a record must be and what a record is in one place.
+    assert len(MODULES) == 20
     assert (PACKAGE / "__init__.py") in MODULES
 
 

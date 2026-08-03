@@ -491,7 +491,9 @@ def test_manifest_count():
     # producer and its test module.
     # 587 = 585 + the two ADR-048 (G3-3) paths: the canonical routing-contract
     # producer and its tests.
-    assert declared == len(paths) == 587
+    # 589 = 587 + the two ADR-049 (G4-1) paths: the canonical governance
+    # materializer and its tests.
+    assert declared == len(paths) == 589
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 
