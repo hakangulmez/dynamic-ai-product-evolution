@@ -35,6 +35,8 @@ __all__ = [
     "CANONICAL_BUDGET_METER_VERSION",
     "CLIENT_CONTRACT_CONTRACT",
     "CLIENT_CONTRACT_PROPERTIES",
+    "CLIENT_CONTRACT_V2_CONTRACT",
+    "CLIENT_CONTRACT_V2_SCHEMA_VERSION",
     "ENABLEMENT_CONTRACT",
     "ENABLEMENT_PROPERTIES",
     "ENABLEMENT_STATUS_FOR_ROLLOUT",
@@ -50,7 +52,9 @@ __all__ = [
     "PROVIDER_ERROR_CONTRACT",
     "PROVIDER_ERROR_REASONS",
     "PROVIDER_MAX_ATTEMPTS_PIN",
+    "PROVIDER_RATE_LIMIT_POLICY_VERSION_PIN",
     "PROVIDER_RETRY_DELAYS_PIN",
+    "PROVIDER_RETRY_POLICY_VERSION_PIN",
     "PROVIDER_TIMEOUT_SECONDS_PIN",
     "PROVIDER_WORST_CASE_WALL_CLOCK_SECONDS",
     "PROVIDER_WORST_CASE_WALL_CLOCK_SECONDS_V2",
@@ -73,12 +77,22 @@ __all__ = [
     "validate_governance_chain_v2",
     "validate_governance_semantics",
     "validate_provider_client_contract",
+    "validate_provider_policy_versions",
     "validate_qualification_execution_contract",
+    "validate_v2_contract_execution_fields",
     "wall_clock_floor_for_cap",
 ]
 
 NON_RUN_CONTRACT = "extraction_non_run_record@0.1.0"
 CLIENT_CONTRACT_CONTRACT = "extraction_provider_client_contract@0.1.0"
+# ADR-048 (G3-3). The v2 identity lived in ``run_extraction`` until now, which
+# was tolerable while only the runner needed it. It is not tolerable once
+# ``routing_contract`` needs the same identity for a call that never goes
+# through the runner: two module-level strings would be two sources of truth for
+# one contract. One owner here, imported by both, and an AST invariant keeps the
+# literal from being spelled a second time anywhere under ``extraction``.
+CLIENT_CONTRACT_V2_CONTRACT = "extraction_provider_client_contract@0.2.0"
+CLIENT_CONTRACT_V2_SCHEMA_VERSION = "0.2.0"
 PROVIDER_ERROR_CONTRACT = "extraction_provider_error_record@0.1.0"
 QUALIFICATION_CONTRACT = "adapter_qualification_record@0.1.0"
 ENABLEMENT_CONTRACT = "adapter_enablement_record@0.1.0"
@@ -118,6 +132,23 @@ ENABLEMENT_STATUS_FOR_ROLLOUT: dict[str, str] = {
 # Closed static pins of the E-P execution policy. ``extraction`` may not import
 # ``providers``, so the values are pinned here and a drift test re-derives each
 # one from providers.retry_policy.
+#
+# ADR-048 (G3-3) adds the two policy-version pins to the same family. They are
+# not decoration: before this increment ``retry_policy_version`` and
+# ``rate_limit_policy_version`` were declared by the authorization, declared
+# again by the client contract, and **never compared to anything** -- measured
+# across the whole repository. The pin is what makes the comparison mean
+# something: two artifacts that echo one wrong value at each other agree
+# perfectly, and only a third, code-owned side can say they are both wrong.
+#
+# The rate-limit name is shared with a different layer. ``collection.transport``
+# declares its own ``rate_limit_policy_version = "rate_limit_policy_v1"`` for
+# HTTP source retrieval; the provider policy below is a different value in a
+# different namespace. Pinning it here states which one a model-execution run
+# means, so an authorization carrying the collection spelling is refused instead
+# of silently accepted.
+PROVIDER_RETRY_POLICY_VERSION_PIN = "extraction_provider_retry_policy_v1"
+PROVIDER_RATE_LIMIT_POLICY_VERSION_PIN = "extraction_provider_rate_limit_policy_v1"
 PROVIDER_MAX_ATTEMPTS_PIN = 3
 PROVIDER_TIMEOUT_SECONDS_PIN = 300
 PROVIDER_RETRY_DELAYS_PIN: tuple[int, ...] = (1, 2)
@@ -1156,6 +1187,135 @@ def validate_qualification_execution_contract(
             "the adapter was qualified under a different execution contract digest",
             reason_code=code,
         )
+
+
+# --- ADR-048 (G3-3): the narrow v2 identity gate and the policy pins ----------
+
+_CLIENT_CONTRACT_INVALID = "client_contract_invalid"
+
+# Exactly the non-empty string fields the routing projection and the policy
+# validator read. Not "the v2 contract" -- see the docstring below.
+_V2_EXECUTION_TEXT_FIELDS: tuple[str, ...] = (
+    "api_version",
+    "endpoint_match_mode",
+    "endpoint_query_policy",
+    "protocol_switch_policy",
+    "rate_limit_policy_version",
+    "retry_policy_version",
+)
+_V2_OPERATION_LABELS: frozenset[str] = frozenset({"count_tokens", "generate_content"})
+
+
+def validate_v2_contract_execution_fields(contract: Any) -> dict[str, Any]:
+    """Refuse anything the two downstream v2 readers cannot safely read.
+
+    **This is not a v2 schema execution.** ``extraction_provider_client_contract_v2``
+    declares forty-two properties under ``additionalProperties: false``; this
+    gate looks at nine. The other thirty-three are protected exactly as before,
+    by ``provider_client_contract_sha256`` -- the authorization pins the digest
+    of the whole contract, so a changed field anywhere in it breaks that pin.
+    What this gate adds is narrower and specific: the fields
+    :func:`~dynamic_ai_products.extraction.routing_contract.derive_routing_contract`
+    and :func:`validate_provider_policy_versions` are about to read.
+
+    The identity pair is checked here and not only in the runner because
+    ``derive_routing_contract`` will be called by G4 materialization with no
+    runner in the picture at all. A v1 contract has no ``operation_endpoints``,
+    no ``endpoint_match_mode`` and no ``protocol_switch_policy``; handed to the
+    projection unchecked it would either raise ``KeyError`` or -- worse -- some
+    future partial mapping would hash cleanly into a digest that describes a
+    route nobody can execute. So the producer refuses a non-v2 surface itself
+    rather than trusting a caller to have checked.
+
+    Endpoint **grammar** is deliberately absent. Scheme, host, port, path, the
+    operation suffixes and the shared model base belong to
+    ``providers.endpoint_grammar_v2``, which ``extraction`` may not import;
+    writing a second normalizer here would create the second grammar owner that
+    module exists to prevent. Only the mapping shape is checked, and the digest
+    downstream binds the endpoint strings as bytes.
+    """
+    if not isinstance(contract, dict):
+        raise ExtractionError(
+            "a v2 client contract must be a mapping", reason_code=_CLIENT_CONTRACT_INVALID
+        )
+    if contract.get("contract") != CLIENT_CONTRACT_V2_CONTRACT:
+        raise ExtractionError(
+            f"the two-operation surface requires {CLIENT_CONTRACT_V2_CONTRACT}",
+            reason_code=_CLIENT_CONTRACT_INVALID,
+        )
+    if contract.get("schema_version") != CLIENT_CONTRACT_V2_SCHEMA_VERSION:
+        raise ExtractionError(
+            f"a v2 client contract must declare schema_version "
+            f"{CLIENT_CONTRACT_V2_SCHEMA_VERSION}",
+            reason_code=_CLIENT_CONTRACT_INVALID,
+        )
+    for field in _V2_EXECUTION_TEXT_FIELDS:
+        value = contract.get(field)
+        if not isinstance(value, str) or not value:
+            raise ExtractionError(
+                f"a v2 client contract must declare a non-empty {field}",
+                reason_code=_CLIENT_CONTRACT_INVALID,
+            )
+    endpoints = contract.get("operation_endpoints")
+    # Equality, not superset: a third operation would be a destination this route
+    # never authorized, and a missing one would leave half the route undeclared.
+    if not isinstance(endpoints, dict) or set(endpoints) != _V2_OPERATION_LABELS:
+        raise ExtractionError(
+            "operation_endpoints must name exactly count_tokens and generate_content",
+            reason_code=_CLIENT_CONTRACT_INVALID,
+        )
+    for label in sorted(_V2_OPERATION_LABELS):
+        url = endpoints[label]
+        if not isinstance(url, str) or not url:
+            raise ExtractionError(
+                f"the {label} endpoint must be a non-empty string",
+                reason_code=_CLIENT_CONTRACT_INVALID,
+            )
+    return dict(contract)
+
+
+def validate_provider_policy_versions(
+    *, authorization: dict[str, Any], client_contract: dict[str, Any]
+) -> None:
+    """Bind both policy versions to the code, on both sides, separately.
+
+    Four comparisons rather than one. Comparing the authorization with the
+    contract would accept two artifacts that echo one wrong value at each other;
+    each side is therefore compared with the pin instead, and their agreement
+    follows rather than being assumed.
+
+    Order is part of the contract, not an implementation detail: retry is
+    resolved before rate limit, so a run whose two policy versions have *both*
+    drifted always reports ``retry_policy_version_mismatch``. A caller reading
+    the reason code learns something stable rather than something that depends
+    on dict ordering.
+
+    Called after the shape gate, so every field read here is already known to be
+    a non-empty string, and before ``mkdir``, so a refusal leaves zero artifacts.
+    """
+    for field, pin, code in (
+        (
+            "retry_policy_version",
+            PROVIDER_RETRY_POLICY_VERSION_PIN,
+            "retry_policy_version_mismatch",
+        ),
+        (
+            "rate_limit_policy_version",
+            PROVIDER_RATE_LIMIT_POLICY_VERSION_PIN,
+            "rate_limit_policy_version_mismatch",
+        ),
+    ):
+        if client_contract.get(field) != pin:
+            raise ExtractionError(
+                f"the executing client contract declares a {field} this build does "
+                f"not implement",
+                reason_code=code,
+            )
+        if authorization.get(field) != pin:
+            raise ExtractionError(
+                f"the authorization declares a {field} this build does not implement",
+                reason_code=code,
+            )
 
 
 def record_bytes(record: dict[str, Any]) -> bytes:

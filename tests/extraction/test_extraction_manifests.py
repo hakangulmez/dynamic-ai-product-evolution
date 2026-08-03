@@ -27,6 +27,9 @@ from dynamic_ai_products.extraction.manifests import (
     LIVE_AUTHORIZATION_CONTRACT,
     PROVIDER_ERROR_CONTRACT,
     PROVIDER_ERROR_REASONS,
+    CLIENT_CONTRACT_V2_CONTRACT,
+    PROVIDER_RATE_LIMIT_POLICY_VERSION_PIN,
+    PROVIDER_RETRY_POLICY_VERSION_PIN,
     QUALIFICATION_CONTRACT,
     QUALIFICATION_PROPERTIES,
     build_provider_error_record,
@@ -39,6 +42,8 @@ from dynamic_ai_products.extraction.manifests import (
     record_bytes,
     resolve_stage_schema_hash,
     validate_budget_meter_identity,
+    validate_provider_policy_versions,
+    validate_v2_contract_execution_fields,
 )
 from dynamic_ai_products.extraction.prompt_qualification import (
     PROMPT_QUALIFICATION_PROPERTIES_BOOTSTRAP,
@@ -594,3 +599,298 @@ def test_the_validator_has_exactly_two_call_sites_each_with_three_keywords():
     assert all(keywords == expected for _fn, keywords in seen)
     assert {fn for fn, _ in seen} == {"_run_authorized_stage", "run_extraction_stage_v2"}
     assert "_run_two_operation_stage" not in {fn for fn, _ in seen}
+
+
+# --- ADR-048 (G3-3): the narrow v2 gate and the policy pins -------------------
+
+
+def _v2_contract() -> dict:
+    """A real contract from the provider builder, not a hand-written stand-in.
+
+    The builder is pure -- grammar validation and string composition, no network,
+    no filesystem, no clock, no credential -- so a test may call it freely, and a
+    hand-written mapping would drift from what actually executes.
+    """
+    from dynamic_ai_products.providers.client_contract_v2 import build_client_contract_v2
+
+    return build_client_contract_v2(vertex_project="my-research-project")
+
+
+def test_a_real_v2_contract_passes_the_narrow_gate_unchanged():
+    contract = _v2_contract()
+    assert validate_v2_contract_execution_fields(contract) == contract
+
+
+def test_the_gate_returns_a_fresh_outer_mapping():
+    """Shallow, and only shallow.
+
+    ``dict(contract)`` gives a new outer mapping, so rebinding a top-level key on
+    the result does not touch the caller's. It does **not** give an isolated
+    contract: ``operation_endpoints`` is the same nested dict on both sides, and
+    mutating it through the result is visible to the caller -- measured. Nothing
+    here relies on deep isolation, so the assertion is limited to what is true.
+    """
+    contract = _v2_contract()
+    checked = validate_v2_contract_execution_fields(contract)
+    assert checked is not contract
+    checked["api_version"] = "mutated"
+    assert contract["api_version"] != "mutated"
+
+
+_TEXT_FIELDS = (
+    "api_version",
+    "endpoint_match_mode",
+    "endpoint_query_policy",
+    "protocol_switch_policy",
+    "rate_limit_policy_version",
+    "retry_policy_version",
+)
+
+
+@pytest.mark.parametrize("field", _TEXT_FIELDS)
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(lambda c, f: c.pop(f), id="missing"),
+        pytest.param(lambda c, f: c.__setitem__(f, 7), id="wrong-type"),
+        pytest.param(lambda c, f: c.__setitem__(f, ""), id="empty"),
+    ],
+)
+def test_the_gate_refuses_every_malformed_execution_string(field, mutate):
+    """Eighteen cases: six fields the projection and the policy validator read."""
+    contract = _v2_contract()
+    mutate(contract, field)
+    with pytest.raises(ExtractionError) as caught:
+        validate_v2_contract_execution_fields(contract)
+    assert caught.value.reason_code == "client_contract_invalid"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(None, id="missing"),
+        pytest.param(7, id="wrong-type"),
+        pytest.param("", id="empty"),
+        pytest.param("extraction_provider_client_contract@0.1.0", id="v1-identity"),
+        pytest.param("some_other_contract@9.9.9", id="foreign-identity"),
+    ],
+)
+def test_the_gate_refuses_every_contract_identity_that_is_not_the_v2_one(value):
+    """A non-empty *wrong* identity is the case that matters for G4.
+
+    ``derive_routing_contract`` will be called with no runner in the picture, so
+    a v1 contract -- which has no ``operation_endpoints`` at all -- must be
+    refused by the producer itself rather than by a caller that may not exist.
+    """
+    contract = _v2_contract()
+    if value is None:
+        contract.pop("contract")
+    else:
+        contract["contract"] = value
+    with pytest.raises(ExtractionError) as caught:
+        validate_v2_contract_execution_fields(contract)
+    assert caught.value.reason_code == "client_contract_invalid"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(None, id="missing"),
+        pytest.param(7, id="wrong-type"),
+        pytest.param("", id="empty"),
+        pytest.param("0.1.0", id="v1-schema-version"),
+        pytest.param("9.9.9", id="foreign-schema-version"),
+    ],
+)
+def test_the_gate_refuses_every_schema_version_that_is_not_the_v2_one(value):
+    contract = _v2_contract()
+    if value is None:
+        contract.pop("schema_version")
+    else:
+        contract["schema_version"] = value
+    with pytest.raises(ExtractionError) as caught:
+        validate_v2_contract_execution_fields(contract)
+    assert caught.value.reason_code == "client_contract_invalid"
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(lambda c: c.pop("operation_endpoints"), id="missing"),
+        pytest.param(
+            lambda c: c.__setitem__("operation_endpoints", ["a", "b"]), id="not-a-mapping"
+        ),
+        pytest.param(
+            lambda c: c["operation_endpoints"].__setitem__("embed_content", "https://x/y"),
+            id="extra-key",
+        ),
+        pytest.param(
+            lambda c: c["operation_endpoints"].pop("count_tokens"), id="missing-key"
+        ),
+        pytest.param(
+            lambda c: c["operation_endpoints"].__setitem__("count_tokens", 7),
+            id="non-string-url",
+        ),
+        pytest.param(
+            lambda c: c["operation_endpoints"].__setitem__("generate_content", ""),
+            id="empty-url",
+        ),
+    ],
+)
+def test_the_gate_requires_exactly_the_two_named_operation_endpoints(mutate):
+    """Equality, not superset.
+
+    A third operation would be a destination this route never authorized, and a
+    missing one would leave half the route undeclared. Both are refusals.
+    """
+    contract = _v2_contract()
+    mutate(contract)
+    with pytest.raises(ExtractionError) as caught:
+        validate_v2_contract_execution_fields(contract)
+    assert caught.value.reason_code == "client_contract_invalid"
+
+
+def test_the_gate_is_narrow_and_says_so_by_passing_a_contract_missing_other_fields():
+    """The honest boundary of this gate, asserted rather than claimed.
+
+    ``model_parameters`` and ``thinking_config`` are real v2 properties that this
+    gate does **not** look at -- their protection is the contract digest the
+    authorization pins, not this function. If this test ever starts failing, the
+    gate has quietly become a schema executor and the docstring is a lie.
+    """
+    contract = _v2_contract()
+    del contract["model_parameters"]
+    del contract["thinking_config"]
+    assert validate_v2_contract_execution_fields(contract)["contract"] == (
+        CLIENT_CONTRACT_V2_CONTRACT
+    )
+
+
+def _authorization(**overrides) -> dict:
+    base = {
+        "retry_policy_version": PROVIDER_RETRY_POLICY_VERSION_PIN,
+        "rate_limit_policy_version": PROVIDER_RATE_LIMIT_POLICY_VERSION_PIN,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_matching_policy_versions_on_both_sides_are_accepted():
+    validate_provider_policy_versions(
+        authorization=_authorization(), client_contract=_v2_contract()
+    )
+
+
+@pytest.mark.parametrize(
+    ("side", "field", "value", "expected"),
+    [
+        pytest.param(
+            "authorization",
+            "retry_policy_version",
+            "retry_policy_v2",
+            "retry_policy_version_mismatch",
+            id="S2-authorization-retry-drift",
+        ),
+        pytest.param(
+            "contract",
+            "retry_policy_version",
+            "retry_policy_v9",
+            "retry_policy_version_mismatch",
+            id="S3-connector-retry-drift",
+        ),
+        pytest.param(
+            "authorization",
+            "rate_limit_policy_version",
+            "rate_limit_policy_v1",
+            "rate_limit_policy_version_mismatch",
+            id="S5-collection-namespace-spelling",
+        ),
+        pytest.param(
+            "contract",
+            "rate_limit_policy_version",
+            "rate_limit_policy_v9",
+            "rate_limit_policy_version_mismatch",
+            id="S5b-connector-rate-drift",
+        ),
+    ],
+)
+def test_a_policy_version_that_this_build_does_not_implement_is_refused(
+    side, field, value, expected
+):
+    authorization = _authorization()
+    contract = _v2_contract()
+    (authorization if side == "authorization" else contract)[field] = value
+    with pytest.raises(ExtractionError) as caught:
+        validate_provider_policy_versions(
+            authorization=authorization, client_contract=contract
+        )
+    assert caught.value.reason_code == expected
+
+
+def test_two_artifacts_that_agree_on_a_wrong_policy_version_are_still_refused():
+    """S4 -- the case a single authorization/contract comparison would miss.
+
+    Both sides carry the same value, so they agree perfectly. They are both
+    wrong, and only a third, code-owned side can say so. This is why there are
+    four comparisons against the pin rather than one between the two artifacts.
+    """
+    authorization = _authorization(retry_policy_version="agreed_but_wrong_v1")
+    contract = _v2_contract()
+    contract["retry_policy_version"] = "agreed_but_wrong_v1"
+    with pytest.raises(ExtractionError) as caught:
+        validate_provider_policy_versions(
+            authorization=authorization, client_contract=contract
+        )
+    assert caught.value.reason_code == "retry_policy_version_mismatch"
+
+
+def test_when_both_policy_versions_drift_the_retry_code_is_the_one_that_is_raised():
+    """Order is part of the contract, not an implementation detail.
+
+    A caller reading the reason code should learn something stable rather than
+    something that depends on which comparison happened to run first.
+    """
+    authorization = _authorization(
+        retry_policy_version="wrong_retry_v1", rate_limit_policy_version="wrong_rate_v1"
+    )
+    contract = _v2_contract()
+    contract["retry_policy_version"] = "wrong_retry_v1"
+    contract["rate_limit_policy_version"] = "wrong_rate_v1"
+    with pytest.raises(ExtractionError) as caught:
+        validate_provider_policy_versions(
+            authorization=authorization, client_contract=contract
+        )
+    assert caught.value.reason_code == "retry_policy_version_mismatch"
+    assert caught.value.reason_code != "rate_limit_policy_version_mismatch"
+
+
+def test_when_only_the_rate_limit_drifts_the_rate_limit_code_is_raised():
+    """The symmetric case, so the ordering test above cannot hide a "always
+    retry" bug."""
+    authorization = _authorization(rate_limit_policy_version="wrong_rate_v1")
+    contract = _v2_contract()
+    contract["rate_limit_policy_version"] = "wrong_rate_v1"
+    with pytest.raises(ExtractionError) as caught:
+        validate_provider_policy_versions(
+            authorization=authorization, client_contract=contract
+        )
+    assert caught.value.reason_code == "rate_limit_policy_version_mismatch"
+
+
+def test_the_v2_identity_literal_is_spelled_exactly_once_under_extraction():
+    """One owner for the identity string, enforced rather than agreed.
+
+    Scoped to the identity literal only. ``"0.2.0"`` is deliberately **not**
+    counted: it already spells the authorization's and the input packet's own
+    schema versions, so counting it would either fail or force edits to two
+    unrelated modules. The schema version is protected by the drift test in
+    ``test_live_authorization_validation`` instead.
+    """
+    package = Path(__file__).resolve().parents[2] / "src" / "dynamic_ai_products" / "extraction"
+    literal = '"' + CLIENT_CONTRACT_V2_CONTRACT + '"'
+    holders = {
+        module.name: module.read_text(encoding="utf-8").count(literal)
+        for module in package.rglob("*.py")
+        if literal in module.read_text(encoding="utf-8")
+    }
+    assert holders == {"manifests.py": 1}

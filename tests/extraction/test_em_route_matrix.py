@@ -29,6 +29,10 @@ from dynamic_ai_products.extraction.execution_outcome import (
     RAW_PREDICTION_REFERENCE,
     generate_attempt_reference,
 )
+from dynamic_ai_products.extraction.routing_contract import (
+    ROUTING_CONTRACT_ID,
+    derive_routing_contract,
+)
 from dynamic_ai_products.extraction.manifests import (
     PROVIDER_WORST_CASE_WALL_CLOCK_SECONDS_V2,
     resolve_attempt_cap_v2,
@@ -764,7 +768,7 @@ def _prompt_qualification_record(stage_sha: str, routing_sha: str, **overrides):
         "stage_output_contract_sha256": stage_sha,
         "execution_contract_id": "extraction_provider_client_contract@0.2.0",
         "execution_contract_sha256": _v2_contract_digest(),
-        "routing_contract_id": "vertex_gemini_route@0.2.0",
+        "routing_contract_id": ROUTING_CONTRACT_ID,
         "routing_contract_sha256": routing_sha,
         "governing_spec_reference": GOVERNING_SPEC_REFERENCE,
         "governing_spec_sha256": _repo_digest(GOVERNING_SPEC_REFERENCE),
@@ -807,7 +811,9 @@ def _write_governance_v2(
     qual_bytes = canonical_json_bytes(qualification)
     (root / GOV_QUALIFICATION).write_bytes(qual_bytes)
 
-    routing_sha = "4" * 64
+    routing_sha = derive_routing_contract(client_contract=_v2_contract())[
+        "routing_contract_sha256"
+    ]
     prompt_qualification = _prompt_qualification_record(
         stage_sha, routing_sha, **(prompt_qualification_overrides or {})
     )
@@ -827,7 +833,7 @@ def _write_governance_v2(
         "stage": "product_extraction",
         "stage_output_contract_id": "product_observation@0.1.0",
         "stage_output_contract_sha256": stage_sha,
-        "routing_contract_id": "vertex_gemini_route@0.2.0",
+        "routing_contract_id": ROUTING_CONTRACT_ID,
         "routing_contract_sha256": routing_sha,
         "deployment_environment_id": "dev-local",
         "rollout_state": "live_dev",

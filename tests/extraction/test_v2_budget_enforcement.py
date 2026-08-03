@@ -33,6 +33,10 @@ import pytest
 
 from dynamic_ai_products.extraction.count_reconciliation import reserve_cost_microdollars
 from dynamic_ai_products.extraction.errors import ExtractionError
+from dynamic_ai_products.extraction.routing_contract import (
+    ROUTING_CONTRACT_ID,
+    derive_routing_contract,
+)
 from dynamic_ai_products.extraction.manifests import (
     CANONICAL_BUDGET_METER_IDENTITY,
     CANONICAL_BUDGET_METER_VERSION,
@@ -75,7 +79,9 @@ CODE_COMMIT = "be627003f3246b371c2b3ac13e813ef0bb112582"
 RUN_CREATED_AT = "2026-07-29T00:00:00Z"
 STAGE = "product_extraction"
 STAGE_SHA = STAGE_OUTPUT_SCHEMA_SHA256[STAGE]
-ROUTING_SHA = "4" * 64
+ROUTING_SHA = derive_routing_contract(
+    client_contract=build_client_contract_v2(vertex_project=PROJECT)
+)["routing_contract_sha256"]
 METER_IDENTITY = "dynamic_ai_products.extraction.budget_session"
 METER_VERSION = "0.1.0"
 MAX_OUTPUT_TOKENS = 8192
@@ -283,7 +289,7 @@ def _prompt_qualification() -> dict:
         "stage_output_contract_sha256": STAGE_SHA,
         "execution_contract_id": "extraction_provider_client_contract@0.2.0",
         "execution_contract_sha256": _contract_digest(),
-        "routing_contract_id": "vertex_gemini_route@0.2.0",
+        "routing_contract_id": ROUTING_CONTRACT_ID,
         "routing_contract_sha256": ROUTING_SHA,
         "governing_spec_reference": GOVERNING_SPEC_REFERENCE,
         "governing_spec_sha256": _repo_digest(GOVERNING_SPEC_REFERENCE),
@@ -334,7 +340,7 @@ def _write_chain(root: Path, **authorization_overrides):
         "stage": STAGE,
         "stage_output_contract_id": STAGE_OUTPUT_CONTRACT_ID[STAGE],
         "stage_output_contract_sha256": STAGE_SHA,
-        "routing_contract_id": "vertex_gemini_route@0.2.0",
+        "routing_contract_id": ROUTING_CONTRACT_ID,
         "routing_contract_sha256": ROUTING_SHA,
         "deployment_environment_id": "dev-local",
         "rollout_state": "live_dev",

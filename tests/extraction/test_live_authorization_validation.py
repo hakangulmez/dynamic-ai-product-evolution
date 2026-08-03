@@ -250,6 +250,59 @@ def test_the_closed_policy_pins_do_not_drift_from_providers():
     assert PROVIDER_DECLARED_MAX_OUTPUT_TOKENS_PIN == MODEL_PARAMETERS["max_output_tokens"]
 
 
+def test_the_v2_contract_identity_pins_do_not_drift_from_the_provider_builder():
+    """ADR-048. The schema-version pin is derived, never re-typed.
+
+    Comparing ``CLIENT_CONTRACT_V2_SCHEMA_VERSION`` with a literal ``"0.2.0"``
+    would be a second independent source and would stay green if the builder
+    started emitting ``"0.3.0"`` -- precisely the drift this test exists to
+    catch. There is no ``SCHEMA_VERSION`` constant on the providers side either:
+    measured, the value lives only as a literal inside the builder's returned
+    mapping. So the only drift-catching route is the builder's own output.
+
+    The builder is pure: project/location grammar validation and string
+    composition. No network, no filesystem, no clock, no credential. The
+    synthetic project is the one this module already uses.
+    """
+    from dynamic_ai_products.extraction.manifests import (
+        CLIENT_CONTRACT_V2_CONTRACT,
+        CLIENT_CONTRACT_V2_SCHEMA_VERSION,
+    )
+    from dynamic_ai_products.providers.client_contract_v2 import (
+        CLIENT_CONTRACT_V2_ID,
+        build_client_contract_v2,
+    )
+
+    contract = build_client_contract_v2(vertex_project=PROJECT)
+    assert CLIENT_CONTRACT_V2_SCHEMA_VERSION == contract["schema_version"]
+    # Emitted identity and declared constant, both. If the builder ever stopped
+    # using its own constant, the two would diverge and this would show it.
+    assert CLIENT_CONTRACT_V2_CONTRACT == contract["contract"]
+    assert CLIENT_CONTRACT_V2_CONTRACT == CLIENT_CONTRACT_V2_ID
+
+
+def test_the_policy_version_pins_do_not_drift_from_providers():
+    """ADR-048. Both policy versions, re-derived from their authoritative home.
+
+    The rate-limit assertion carries a second job: ``collection.transport``
+    declares a field of the same name with a *different* value for HTTP source
+    retrieval. The inequality below states which namespace a model-execution run
+    means, so the two can never be silently swapped.
+    """
+    from dynamic_ai_products.collection.transport import (
+        RATE_LIMIT_POLICY_VERSION as COLLECTION_RATE_LIMIT_POLICY_VERSION,
+    )
+    from dynamic_ai_products.extraction.manifests import (
+        PROVIDER_RATE_LIMIT_POLICY_VERSION_PIN,
+        PROVIDER_RETRY_POLICY_VERSION_PIN,
+    )
+    from dynamic_ai_products.providers import retry_policy as rp
+
+    assert PROVIDER_RETRY_POLICY_VERSION_PIN == rp.RETRY_POLICY_VERSION
+    assert PROVIDER_RATE_LIMIT_POLICY_VERSION_PIN == rp.RATE_LIMIT_POLICY_VERSION
+    assert PROVIDER_RATE_LIMIT_POLICY_VERSION_PIN != COLLECTION_RATE_LIMIT_POLICY_VERSION
+
+
 # --- governance chain fixture (ADR-035) --------------------------------------
 #
 # Built locally in each test module rather than in a shared helper file: the E-L

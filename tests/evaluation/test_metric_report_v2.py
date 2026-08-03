@@ -489,7 +489,9 @@ def test_manifest_count():
     # and the three v2 modules the 178 migrated cases moved into.
     # 585 = 583 + the two ADR-047 (G3-2) paths: the canonical budget-session
     # producer and its test module.
-    assert declared == len(paths) == 585
+    # 587 = 585 + the two ADR-048 (G3-3) paths: the canonical routing-contract
+    # producer and its tests.
+    assert declared == len(paths) == 587
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

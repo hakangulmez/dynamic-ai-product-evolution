@@ -128,7 +128,15 @@ def test_package_is_enumerable_and_complete():
     # governance rings, whose validators must keep being exactly what they were
     # released as, and folding a fourth artifact's rules in beside them would
     # have put a new refusal inside the function the v1 route still calls.
-    assert len(MODULES) == 18
+    #
+    # ADR-048 (G3-3) adds routing_contract.py: 18 -> 19. The routing producer is
+    # its own module for the reason that keeps recurring here: manifests.py owns
+    # the released governance rings and the code-owned pins, and the routing
+    # digest is neither. Putting the producer there would also have made
+    # manifests.py depend on nothing while everything depended on it -- fine --
+    # but would have hidden a *derivation* inside the module whose job is
+    # *validation*.
+    assert len(MODULES) == 19
     assert (PACKAGE / "__init__.py") in MODULES
 
 

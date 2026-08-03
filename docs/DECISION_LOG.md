@@ -1667,6 +1667,123 @@ Passing the two ceilings into the session was rejected: two copies of a ceiling
 can disagree.
 
 
+## ADR-048 — A produced routing contract and two bound policy versions: closing three unbound provenance fields (G3-3)
+
+**Status:** Accepted.
+
+**The question this answers.** G3-0 listed three fields the repository *declared*
+and never *bound*. Measured again at the start of G3-3, across the whole tree:
+
+- `routing_contract_id` and `routing_contract_sha256` are required properties of
+  the released `adapter_enablement_record@0.1.0` and
+  `prompt_qualification_record@0.1.0`, and SPEC-027 §37/§52 and SPEC-024 §81 both
+  ask for a "routing contract identity/hash". **Nothing produced one.** The only
+  check in the repository compared the prompt qualification's two routing fields
+  with the enablement's two routing fields — both caller-supplied — so a digest
+  of `"4" * 64` satisfied the entire suite, and did.
+- `retry_policy_version` and `rate_limit_policy_version` are required properties
+  of the authorization at both `@0.1.0` and `@0.2.0`, and are declared again by
+  the client contract. **They were never compared to anything**, in either
+  direction, anywhere.
+
+**Decision.** A canonical routing-contract producer in `extraction`, a narrow v2
+identity gate, and a policy-version validator bound to two code-owned pins.
+
+**Why the producer lives in `extraction`.** Validation belongs where governance
+lives, and `extraction` may not import `providers`. It does not need to: every
+input to the digest already crosses the seam inside the contract mapping —
+`operation_endpoints`, `endpoint_match_mode`, `endpoint_query_policy`,
+`protocol_switch_policy`, `api_version`, and both policy versions. A second
+producer on the `providers` side would have been a second source of truth.
+
+**The digest is derived from what executes and compared with what governance
+declared.** `derive_routing_contract` does not take `enablement` at all. This is
+ADR-047's lesson applied again: a producer that could read the artifact it will
+be checked against makes the tautology *representable*, and the only reliable
+way to prevent it is to remove the parameter.
+
+**The projection is closed at nine keys:** the code-owned `routing_contract_id`,
+the executed `client_contract_id`, `api_version`, both operation endpoints, the
+three endpoint/protocol policies, and both policy versions. `vertex_project`,
+`vertex_location` and `model_name` are deliberately absent — each is already
+encoded inside the two endpoint URLs, and a value that lives in two places can
+drift in one of them.
+
+**A byte binding, not a grammar binding — stated, not hidden.** Endpoint URLs
+enter the projection exactly as the contract spells them. Re-implementing
+`providers.endpoint_grammar_v2` inside `extraction` would create the second
+grammar owner that module exists to prevent, so scheme, host, port, path, the
+operation suffixes and the shared model base stay the connector's business.
+
+The consequence is stated exactly rather than overstated: two spellings of one
+endpoint produce **two different digests**, and that by itself is not a refusal.
+An enablement pinned to the respelled contract's own digest matches it and the
+run proceeds — measured, and asserted by a test. The refusal happens when a
+*pre-existing* pin was minted from the other spelling. So what this binds is that
+a route may not change underneath a fixed governance pin; it does **not**
+deduplicate two spellings of one destination, and no claim to the contrary is
+made. Deduplication is the connector's grammar, which normalizes before
+comparing.
+
+**The v2 identity gate is narrow, and is not a schema execution.**
+`extraction_provider_client_contract_v2` declares forty-two properties under
+`additionalProperties: false`; `validate_v2_contract_execution_fields` looks at
+nine. The other thirty-three keep exactly the protection they had — the contract
+digest the authorization pins. The gate exists because G4 materialization will
+call `derive_routing_contract` directly, with no runner in the picture, and a v1
+contract has no `operation_endpoints` at all: projected unchecked it would raise
+`KeyError` at best, and at worst some future partial mapping would hash cleanly
+into a digest describing a route nobody can execute.
+
+**One owner for the v2 identity.** `CLIENT_CONTRACT_V2_CONTRACT` moved from
+`run_extraction` to `manifests`, and `CLIENT_CONTRACT_V2_SCHEMA_VERSION` was
+created because no constant existed — measured, the value lived only as a literal
+inside the provider builder's returned mapping. Both are now imported by the
+runner rather than re-spelled, an AST invariant keeps the identity literal to a
+single occurrence under `extraction/`, and the schema version is checked against
+`build_client_contract_v2(...)["schema_version"]` rather than against a literal,
+because a literal would stay green if the builder started emitting `0.3.0`.
+
+**Why four policy comparisons rather than one.** Comparing the authorization with
+the client contract would accept two artifacts that echo one wrong value at each
+other. Each side is compared with the pin instead, and their agreement follows.
+The rate-limit pin carries a second job: `collection.transport` declares a field
+of the same name with a different value for HTTP source retrieval, so the pin
+states which namespace a model-execution run means.
+
+**Order is part of the contract.** Shape/identity → digest comparisons → retry →
+rate limit → routing → prompt plan. The gate precedes the digest comparisons so a
+malformed contract is reported as malformed rather than as a digest mismatch;
+policy precedes routing because a drifted policy version would also change the
+routing digest, and blaming the route for carrying it would name the wrong cause;
+retry precedes rate limit so a run whose two versions have both drifted always
+reports `retry_policy_version_mismatch` instead of something that depends on
+iteration order. Each of these three orderings is asserted by a test that makes
+both defects true at once.
+
+**Zero artifacts, and what is not claimed.** All three refusals happen after the
+permit handshake and before `mkdir`, in a region no `try` encloses, so they never
+reach `_classify_terminal`, publish no execution outcome, need no outcome-schema
+successor, and leave no run root and no artifact. The permit is revoked by the
+caller's `finally`. What is **not** claimed: that an injected provider's
+`client_contract()` has no side effect. The runner calls it and cannot police it;
+purity is the canonical connector's property, not a runtime guarantee.
+
+**No schema and no spec change.** All four fields were already required by
+released schemas, and both specs already asked for the routing identity/hash.
+This increment implements an existing requirement rather than widening anything.
+
+**Rejected alternatives.** Adding routing fields to the authorization was
+rejected: it would have forced a `live_call_authorization@0.3.0` successor and a
+full fixture migration to gain nothing, since the authorization already pins the
+enablement by digest and the enablement already owns the route. Normalizing
+endpoints inside `extraction` was rejected as a second grammar owner. Reusing
+`budget_meter_protocol_invalid` for a routing failure was rejected: it maps to
+`budget_termination`, which would publish a budget cause for something the budget
+never did. Keeping the identity literal in `run_extraction` was rejected once a
+second module needed it.
+
+
 ## Open decisions
 
 - Required source packet by firm-year.

@@ -1173,7 +1173,9 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # and the three v2 modules the 178 migrated cases moved into.
     # 585 = 583 + the two ADR-047 (G3-2) paths: the canonical budget-session
     # producer and its test module.
-    assert declared == len(paths) == 585
+    # 587 = 585 + the two ADR-048 (G3-3) paths: the canonical routing-contract
+    # producer and its tests.
+    assert declared == len(paths) == 587
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

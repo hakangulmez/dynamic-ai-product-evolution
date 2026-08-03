@@ -22,6 +22,10 @@ from pathlib import Path
 import pytest
 
 from dynamic_ai_products.extraction.errors import ExtractionError
+from dynamic_ai_products.extraction.routing_contract import (
+    ROUTING_CONTRACT_ID,
+    derive_routing_contract,
+)
 from dynamic_ai_products.extraction.manifests import (
     STAGE_OUTPUT_SCHEMA_SHA256,
     AUTHORIZATION_V2_PROPERTIES,
@@ -57,7 +61,9 @@ CODE_COMMIT = "be627003f3246b371c2b3ac13e813ef0bb112582"
 RUN_CREATED_AT = "2026-07-29T00:00:00Z"
 STAGE = "product_extraction"
 STAGE_SHA = STAGE_OUTPUT_SCHEMA_SHA256[STAGE]
-ROUTING_SHA = "4" * 64
+ROUTING_SHA = derive_routing_contract(
+    client_contract=build_client_contract_v2(vertex_project=PROJECT)
+)["routing_contract_sha256"]
 CHANGE_REQUEST_REFERENCE = (
     "evals/change_requests/CR-0001-product-discovery-recall-bootstrap-qualification.md"
 )
@@ -92,7 +98,9 @@ class _Provider:
     def __init__(self) -> None:
         self.count_sends = 0
         self.generate_sends = 0
+        self.permits = 0
         self.revoked = 0
+        self.contracts = 0
         self.seen_digest = None
         self.seen_allowlist = None
         self.seen_enablement_allowlist = None
@@ -104,6 +112,7 @@ class _Provider:
         endpoint_allowlist=None,
         enablement_endpoint_allowlist=None,
     ) -> None:
+        self.permits += 1
         self.seen_digest = authorization_sha256
         self.seen_allowlist = endpoint_allowlist
         self.seen_enablement_allowlist = enablement_endpoint_allowlist
@@ -112,6 +121,7 @@ class _Provider:
         self.revoked += 1
 
     def client_contract(self) -> dict:
+        self.contracts += 1
         return _contract()
 
     def count_tokens(self, request, *, sink):
@@ -232,7 +242,7 @@ def _prompt_qualification(**overrides) -> dict:
         "stage_output_contract_sha256": STAGE_SHA,
         "execution_contract_id": "extraction_provider_client_contract@0.2.0",
         "execution_contract_sha256": _contract_digest(),
-        "routing_contract_id": "vertex_gemini_route@0.2.0",
+        "routing_contract_id": ROUTING_CONTRACT_ID,
         "routing_contract_sha256": ROUTING_SHA,
         "governing_spec_reference": GOVERNING_SPEC_REFERENCE,
         "governing_spec_sha256": _repo_digest(GOVERNING_SPEC_REFERENCE),
@@ -296,7 +306,7 @@ def write_governance_chain(root: Path, **overrides):
         "stage": STAGE,
         "stage_output_contract_id": STAGE_OUTPUT_CONTRACT_ID[STAGE],
         "stage_output_contract_sha256": STAGE_SHA,
-        "routing_contract_id": "vertex_gemini_route@0.2.0",
+        "routing_contract_id": ROUTING_CONTRACT_ID,
         "routing_contract_sha256": ROUTING_SHA,
         "deployment_environment_id": "dev-local",
         "rollout_state": "live_dev",
@@ -839,3 +849,268 @@ def test_v2_the_authorization_property_set_carries_no_prompt_field():
     assert not any("prompt" in name for name in AUTHORIZATION_V2_PROPERTIES)
     assert "budget_max_external_requests" in AUTHORIZATION_V2_PROPERTIES
     assert "budget_max_requests" not in AUTHORIZATION_V2_PROPERTIES
+
+
+# --- ADR-048 (G3-3): route, policy and the narrow gate, on the real route -----
+
+
+class _ContractProvider(_Provider):
+    """Serves a contract the test chose, and counts every seam it is asked for."""
+
+    def __init__(self, contract: dict) -> None:
+        super().__init__()
+        self._served = contract
+
+    def client_contract(self) -> dict:
+        self.contracts += 1
+        return dict(self._served)
+
+
+def _run_with_contract(tmp_path: Path, served: dict, *, repin: bool, **chain):
+    """Drive the public v2 route with a chosen contract.
+
+    ``repin=True`` points the authorization and the adapter qualification at the
+    served contract's own digest. That is what isolates a refusal: with the pins
+    matching, the digest comparisons cannot fire, so the only thing left that can
+    refuse is the gate under test. With ``repin=False`` the digest comparisons
+    *could* fire, which is what makes the ordering test meaningful.
+    """
+    provider = _ContractProvider(served)
+    overrides = dict(chain)
+    if repin:
+        digest = sha256_bytes(canonical_json_bytes(served))
+        overrides.setdefault("authorization", {})
+        overrides.setdefault("qualification", {})
+        overrides["authorization"] = {
+            **overrides["authorization"],
+            "provider_client_contract_sha256": digest,
+        }
+        overrides["qualification"] = {
+            **overrides["qualification"],
+            "execution_contract_sha256": digest,
+        }
+    with pytest.raises(ExtractionError) as caught:
+        _run(tmp_path, provider=provider, chain_overrides=overrides)
+    return caught.value, provider
+
+
+def _assert_refused_with_nothing_spent(tmp_path: Path, provider, error, expected: str):
+    """The whole matrix for a band-B refusal, in one place.
+
+    What is asserted is only what the runner itself does. The seam method
+    ``client_contract()`` **was** called -- it is how the contract got here -- and
+    nothing is claimed about whether an arbitrary injected provider's version of
+    that method is side-effect free. That is the canonical connector's property,
+    not a runtime guarantee.
+    """
+    assert error.reason_code == expected
+    assert provider.contracts == 1
+    assert provider.permits == 1
+    assert provider.revoked == 1
+    assert provider.count_sends == 0
+    assert provider.generate_sends == 0
+    assert not (tmp_path / "run").exists()
+
+
+_GATE_TEXT_FIELDS = (
+    "api_version",
+    "endpoint_match_mode",
+    "endpoint_query_policy",
+    "protocol_switch_policy",
+    "rate_limit_policy_version",
+    "retry_policy_version",
+)
+
+
+@pytest.mark.parametrize("field", _GATE_TEXT_FIELDS)
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(lambda c, f: c.pop(f), id="missing"),
+        pytest.param(lambda c, f: c.__setitem__(f, 7), id="wrong-type"),
+        pytest.param(lambda c, f: c.__setitem__(f, ""), id="empty"),
+    ],
+)
+def test_v2_a_malformed_execution_field_is_refused_with_nothing_spent(
+    tmp_path: Path, field, mutate
+):
+    served = _contract()
+    mutate(served, field)
+    error, provider = _run_with_contract(tmp_path, served, repin=True)
+    _assert_refused_with_nothing_spent(
+        tmp_path, provider, error, "client_contract_invalid"
+    )
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(lambda c: c.pop("operation_endpoints"), id="missing"),
+        pytest.param(
+            lambda c: c.__setitem__("operation_endpoints", ["a", "b"]), id="not-a-mapping"
+        ),
+        pytest.param(
+            lambda c: c["operation_endpoints"].__setitem__("embed_content", "https://x/y"),
+            id="extra-key",
+        ),
+        pytest.param(
+            lambda c: c["operation_endpoints"].pop("count_tokens"), id="missing-key"
+        ),
+        pytest.param(
+            lambda c: c["operation_endpoints"].__setitem__("count_tokens", 7),
+            id="non-string-url",
+        ),
+        pytest.param(
+            lambda c: c["operation_endpoints"].__setitem__("generate_content", ""),
+            id="empty-url",
+        ),
+    ],
+)
+def test_v2_malformed_operation_endpoints_are_refused_with_nothing_spent(
+    tmp_path: Path, mutate
+):
+    served = _contract()
+    mutate(served)
+    error, provider = _run_with_contract(tmp_path, served, repin=True)
+    _assert_refused_with_nothing_spent(
+        tmp_path, provider, error, "client_contract_invalid"
+    )
+
+
+def test_v2_the_shape_gate_is_reported_before_any_digest_comparison(tmp_path: Path):
+    """Ordering, proved by making both defects true at once.
+
+    The served contract is malformed **and** its digest is not the one the
+    authorization pins. Both refusals are available; the shape gate runs first,
+    so the reason code names the shape defect rather than the digest mismatch.
+    Without the reordering this test would report
+    ``authorization_client_contract_mismatch``.
+    """
+    served = _contract()
+    served.pop("endpoint_match_mode")
+    error, provider = _run_with_contract(tmp_path, served, repin=False)
+    assert error.reason_code == "client_contract_invalid"
+    assert error.reason_code != "authorization_client_contract_mismatch"
+    _assert_refused_with_nothing_spent(
+        tmp_path, provider, error, "client_contract_invalid"
+    )
+
+
+@pytest.mark.parametrize(
+    ("side", "field", "value", "expected"),
+    [
+        pytest.param(
+            "contract",
+            "retry_policy_version",
+            "retry_policy_v9",
+            "retry_policy_version_mismatch",
+            id="connector-retry-drift",
+        ),
+        pytest.param(
+            "contract",
+            "rate_limit_policy_version",
+            "rate_limit_policy_v1",
+            "rate_limit_policy_version_mismatch",
+            id="connector-collection-namespace",
+        ),
+        pytest.param(
+            "authorization",
+            "retry_policy_version",
+            "retry_policy_v2",
+            "retry_policy_version_mismatch",
+            id="authorization-retry-drift",
+        ),
+        pytest.param(
+            "authorization",
+            "rate_limit_policy_version",
+            "rate_limit_policy_v1",
+            "rate_limit_policy_version_mismatch",
+            id="authorization-collection-namespace",
+        ),
+    ],
+)
+def test_v2_a_policy_version_this_build_does_not_implement_is_refused(
+    tmp_path: Path, side, field, value, expected
+):
+    served = _contract()
+    chain = {}
+    if side == "contract":
+        served[field] = value
+    else:
+        chain["authorization"] = {field: value}
+    error, provider = _run_with_contract(tmp_path, served, repin=True, **chain)
+    _assert_refused_with_nothing_spent(tmp_path, provider, error, expected)
+
+
+def test_v2_two_artifacts_agreeing_on_a_wrong_policy_version_are_still_refused(
+    tmp_path: Path,
+):
+    """The pin is what makes the agreement worthless."""
+    served = _contract()
+    served["retry_policy_version"] = "agreed_but_wrong_v1"
+    error, provider = _run_with_contract(
+        tmp_path,
+        served,
+        repin=True,
+        authorization={"retry_policy_version": "agreed_but_wrong_v1"},
+    )
+    _assert_refused_with_nothing_spent(
+        tmp_path, provider, error, "retry_policy_version_mismatch"
+    )
+
+
+def test_v2_policy_versions_are_reported_before_the_route(tmp_path: Path):
+    """A drifted policy version would also change the routing digest.
+
+    Both refusals are true at once here. Policy runs first, so the run reports
+    the policy version rather than blaming the route for carrying it.
+    """
+    served = _contract()
+    served["retry_policy_version"] = "retry_policy_v9"
+    error, provider = _run_with_contract(tmp_path, served, repin=True)
+    assert error.reason_code == "retry_policy_version_mismatch"
+    assert error.reason_code != "routing_contract_mismatch"
+    _assert_refused_with_nothing_spent(
+        tmp_path, provider, error, "retry_policy_version_mismatch"
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        pytest.param(
+            "routing_contract_id", "vertex_gemini_route@0.1.0", id="foreign-route-identity"
+        ),
+        pytest.param("routing_contract_sha256", "4" * 64, id="placeholder-digest"),
+        pytest.param(
+            "routing_contract_sha256",
+            "b" * 64,
+            id="digest-of-some-other-route",
+        ),
+    ],
+)
+def test_v2_an_enablement_pinning_a_different_route_is_refused(
+    tmp_path: Path, field, value
+):
+    """``"4" * 64`` is here on purpose.
+
+    Before ADR-048 that exact value satisfied the whole suite, because nothing
+    produced the digest and the only check compared two caller-supplied records
+    with each other. It is now a refusal on the real route.
+    """
+    error, provider = _run_with_contract(
+        tmp_path, _contract(), repin=True, enablement={field: value}
+    )
+    _assert_refused_with_nothing_spent(
+        tmp_path, provider, error, "routing_contract_mismatch"
+    )
+
+
+def test_v2_a_conforming_route_still_reaches_the_provider(tmp_path: Path):
+    """The positive control: none of the three new gates blocks a good run."""
+    provider = _Provider()
+    outcome = _run(tmp_path, provider=provider)
+    assert provider.contracts == 1
+    assert provider.count_sends == 1
+    assert provider.generate_sends == 1
+    assert outcome.artifacts

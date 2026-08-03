@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **585**
+Total tracked/scaffold files listed: **587**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -404,6 +404,7 @@ Total tracked/scaffold files listed: **585**
 - `src/dynamic_ai_products/extraction/contents_renderer.py`
 - `src/dynamic_ai_products/extraction/provider_adapter.py`
 - `src/dynamic_ai_products/extraction/raw_artifacts.py`
+- `src/dynamic_ai_products/extraction/routing_contract.py`
 - `src/dynamic_ai_products/extraction/run_extraction.py`
 - `src/dynamic_ai_products/extraction/source_snapshot_bridge.py`
 - `src/dynamic_ai_products/extraction/validation.py`
@@ -540,6 +541,7 @@ Total tracked/scaffold files listed: **585**
 - `tests/extraction/test_provider_adapter.py`
 - `tests/extraction/test_provider_error_publication.py`
 - `tests/extraction/test_raw_artifacts.py`
+- `tests/extraction/test_routing_contract.py`
 - `tests/extraction/test_run_extraction.py`
 - `tests/extraction/test_source_snapshot_bridge.py`
 - `tests/extraction/test_v1_live_route_retired.py`

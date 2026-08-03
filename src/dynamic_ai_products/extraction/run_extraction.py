@@ -43,6 +43,8 @@ from .input_packet import (
 )
 from .manifests import (
     BUDGET_POLICY_VERSION,
+    CLIENT_CONTRACT_V2_CONTRACT,
+    CLIENT_CONTRACT_V2_SCHEMA_VERSION,
     PACKET_CONTRACT_REQUIRING_IDENTITY,
     PROVIDER_ERROR_REASONS,
     build_extraction_run,
@@ -59,8 +61,11 @@ from .manifests import (
     validate_governance_chain_v2,
     validate_governance_semantics,
     validate_provider_client_contract,
+    validate_provider_policy_versions,
     validate_qualification_execution_contract,
+    validate_v2_contract_execution_fields,
 )
+from .routing_contract import validate_routing_contract
 from .count_reconciliation import (
     parse_input_token_count,
     reconcile_count,
@@ -1557,6 +1562,12 @@ def _run_two_operation_stage(
 ) -> ExtractionOutcome:
     """The post-handshake region. Its caller guarantees permit revocation."""
     contract = _client_contract_of_v2(client)
+    # ADR-048. Placed above the canonicalization on purpose. A contract whose
+    # execution fields are malformed must be refused *as malformed*, and if the
+    # digest comparisons ran first they would answer with
+    # ``authorization_client_contract_mismatch`` -- true, but a report about the
+    # wrong defect. Order makes the reason code deterministic.
+    validate_v2_contract_execution_fields(contract)
     contract_payload = canonical_json_bytes(contract)
     contract_sha_expected = sha256_bytes(contract_payload)
     validate_authorization_client_contract(
@@ -1569,6 +1580,14 @@ def _run_two_operation_stage(
         client_contract=contract,
         client_contract_sha256=contract_sha_expected,
     )
+    # ADR-048. Both policy versions, then the route. Policy first because the
+    # routing digest covers the policy versions: a contract whose retry policy is
+    # not the one this build implements would also fail the routing comparison,
+    # and reporting that as a route mismatch would name the wrong cause.
+    validate_provider_policy_versions(
+        authorization=authorization, client_contract=contract
+    )
+    validate_routing_contract(enablement=enablement, client_contract=contract)
     declared_max_output_tokens = contract["model_parameters"]["max_output_tokens"]
 
     prompt_plan = single_pass_prompt_plan(stage)
@@ -1906,12 +1925,10 @@ def _client_contract_of_v2(client: object) -> dict[str, Any]:
             f"the two-operation route requires {CLIENT_CONTRACT_V2_CONTRACT}",
             reason_code="client_contract_invalid",
         )
-    if contract.get("schema_version") != "0.2.0":
+    if contract.get("schema_version") != CLIENT_CONTRACT_V2_SCHEMA_VERSION:
         raise ExtractionError(
-            "a v2 client contract must declare schema_version 0.2.0",
+            f"a v2 client contract must declare schema_version "
+            f"{CLIENT_CONTRACT_V2_SCHEMA_VERSION}",
             reason_code="client_contract_invalid",
         )
     return dict(contract)
-
-
-CLIENT_CONTRACT_V2_CONTRACT = "extraction_provider_client_contract@0.2.0"

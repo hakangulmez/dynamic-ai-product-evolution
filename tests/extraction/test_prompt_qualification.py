@@ -19,6 +19,10 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from dynamic_ai_products.extraction.errors import ExtractionError
+from dynamic_ai_products.extraction.routing_contract import (
+    ROUTING_CONTRACT_ID,
+    derive_routing_contract,
+)
 from dynamic_ai_products.extraction.manifests import (
     STAGE_OUTPUT_CONTRACT_ID,
     STAGE_OUTPUT_SCHEMA_SHA256,
@@ -61,7 +65,9 @@ CUTOFF = "2024-12-31"
 PROJECT = "my-research-project"
 CODE_COMMIT = "be627003f3246b371c2b3ac13e813ef0bb112582"
 RUN_CREATED_AT = "2026-07-29T00:00:00Z"
-ROUTING_SHA = "4" * 64
+ROUTING_SHA = derive_routing_contract(
+    client_contract=build_client_contract_v2(vertex_project=PROJECT)
+)["routing_contract_sha256"]
 CLIENT_CONTRACT_SHA = sha256_bytes(
     canonical_json_bytes(build_client_contract_v2(vertex_project=PROJECT))
 )
@@ -101,7 +107,7 @@ def record(**overrides) -> dict:
         "stage_output_contract_sha256": STAGE_SHA,
         "execution_contract_id": "extraction_provider_client_contract@0.2.0",
         "execution_contract_sha256": CLIENT_CONTRACT_SHA,
-        "routing_contract_id": "vertex_gemini_route@0.2.0",
+        "routing_contract_id": ROUTING_CONTRACT_ID,
         "routing_contract_sha256": ROUTING_SHA,
         "governing_spec_reference": GOVERNING_SPEC_REFERENCE,
         "governing_spec_sha256": _repo_digest(GOVERNING_SPEC_REFERENCE),
@@ -137,7 +143,7 @@ def call(**overrides):
     """Invoke the gate with the arguments the production call site supplies."""
     kwargs = {
         "record": record(),
-        "enablement": {"rollout_state": "live_dev", "routing_contract_id": "vertex_gemini_route@0.2.0",
+        "enablement": {"rollout_state": "live_dev", "routing_contract_id": ROUTING_CONTRACT_ID,
                        "routing_contract_sha256": ROUTING_SHA},
         "authorization": {"rollout_state": "live_dev"},
         "qualification": {
@@ -323,7 +329,7 @@ def test_a_bootstrap_basis_authorizes_only_live_dev(rollout):
         PROMPT_QUALIFICATION_INVALID,
         enablement={
             "rollout_state": rollout,
-            "routing_contract_id": "vertex_gemini_route@0.2.0",
+            "routing_contract_id": ROUTING_CONTRACT_ID,
             "routing_contract_sha256": ROUTING_SHA,
         },
     )
@@ -677,7 +683,7 @@ def _write_chain(root: Path, prompt_qualification: dict | None, *, pin_override=
         "stage": STAGE,
         "stage_output_contract_id": STAGE_OUTPUT_CONTRACT_ID[STAGE],
         "stage_output_contract_sha256": STAGE_SHA,
-        "routing_contract_id": "vertex_gemini_route@0.2.0",
+        "routing_contract_id": ROUTING_CONTRACT_ID,
         "routing_contract_sha256": ROUTING_SHA,
         "deployment_environment_id": "dev-local",
         "rollout_state": "live_dev",
