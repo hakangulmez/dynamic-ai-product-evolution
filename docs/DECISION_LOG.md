@@ -2240,6 +2240,110 @@ suite would be green, and the defect this increment exists to fix would be
 untouched. A green suite over a known-broken execution path is worse than a red
 one, because it stops being a question.
 
+## ADR-054 — Identity is derived, not requested: the candidate conformance gate and its wiring (G6-M)
+
+**Status:** Accepted.
+
+The first run of the schema-bound prompt produced nineteen schema-valid
+candidates and, measured against the locked C1–C6 gate, failed four of six
+checks. Three of those failures were not the model's fault and not the gate's:
+the prompt asks for identity fields the gate expects the pipeline to own. This
+ADR settles that, and wires the collection step that had never been connected to
+anything.
+
+**Three fields are derived, and the reason is the one `candidate_id` already
+established.** `candidate_id` has never been requested from a model, because an
+identifier a model invents cannot be recomputed, therefore cannot be checked,
+and a field that cannot be checked is not provenance. The same rule now applies
+to `company_id`, `normalized_name` and `product_observation_id`:
+
+```
+company_id             = packet.company_id
+normalized_name        = slugify(product_name)
+product_observation_id = "{company_id}:{observation_cutoff}:{normalized_name}"   (ID-1)
+```
+
+**This is not silent repair.** Silent repair would be reading a wrong value and
+quietly correcting it toward what validation wants. Here the three fields are
+*not model output at all*: whatever the model emitted is discarded before
+anything reads it, exactly as `candidate_id` has always been computed rather
+than read. What the model is trusted for — the product's name, its status, its
+evidence — is untouched, and every one of those still faces a gate.
+
+The prompt is deliberately **not** changed to stop asking for these fields. It is
+pinned by digest into a qualification record and a governance chain; editing it
+to remove three lines would invalidate that chain for no gain, because the values
+are overwritten either way.
+
+**Measured consequence.** C1, C2 and C4 become tautologies after derivation.
+They are kept: they cost nothing and they are the only thing that would catch a
+derivation bug, which is now the sole remaining way those fields can be wrong.
+
+**`slugify` is total.** A name it cannot slug yields the empty string rather than
+raising, so the grammar `^[a-z0-9]+(-[a-z0-9]+)*$` has exactly one owner — C3 —
+instead of being enforced in two places that could drift. ASCII-only by
+construction: a Unicode fold would let two visually distinct names collide
+silently, which is the opposite of what an identity component should do.
+
+**Collisions are refused, not disambiguated.** Two distinct `product_name`
+values that slug alike produce one `product_observation_id`, and under ID-1 that
+means two different products sharing one longitudinal identity. Appending a
+counter would make the identity depend on emission order and stop being
+recomputable, so the collision is a refusal
+(`candidate_conformance_observation_id_collision`) naming both ordinals and the
+slug.
+
+**Three layers, separately owned.** Collapsing them would destroy the released
+`rejected[]` contract, whose `reason` enum is closed to `not_an_object` and
+`schema_invalid`:
+
+| layer | scope | on failure |
+|---|---|---|
+| parse gates | the envelope | refuse; a truncated response is **not** an empty result |
+| pre-schema check | which items are observations | non-objects and schema failures fall through to `rejected[]` |
+| C1–C6 | the collection | atomic refusal; never written as `schema_invalid` |
+
+A conformance failure is not representable inside a collection and is not made to
+look like one. Atomicity is at the **collection** level, not per observation:
+one non-conforming record stops the whole materialization, because a partial
+collection would silently under-report what the run actually produced.
+
+**C5 asks one question.** Membership in `admitted_status_values` — not active,
+not roadmap. All eight statuses are admitted, `unknown` included; it enters the
+collection as an ordinary entry and its disposition is a human decision made
+later. The set is hydrated from the ADR-052 artifact through the shared
+containment-and-digest loader and re-validated by its own loader, so it is never
+a constant in the consuming module.
+
+**Ordering: derivation runs before schema validation.** `product_observation_id`
+is schema-required, so deriving it afterwards would record an observation that
+omitted it as `schema_invalid` for a field the pipeline was always going to
+supply.
+
+**The collection is published outside the run root.** Two tests fix the run
+root's contents as an exact eleven-member set, and that count is the audit record
+of one provider call. A collection is a *derivative* of that record; putting it
+inside would make the invariant negotiable again for every future derivative. It
+is written write-once into its own root and bound back by a repo-root-relative
+reference to the raw artifact it derives from.
+
+**Wiring is opt-in.** `run_extraction_stage_v2` gains three parameters that
+default to `None`; with no collection root supplied the run behaves exactly as it
+did before they existed. Publication happens **after** the run permit is revoked:
+deriving candidates needs no provider, so holding a live permit across it would
+widen the window in which a call is possible for work that can never make one.
+
+**Known limitation, recorded rather than implied.** The vocabulary pin is a
+parameter of the collection step. The design's D1–D6 derivation — recovering it
+from the run root's persisted authorization — requires
+`live_call_authorization@0.3.0`, which is deferred. Until then a caller could
+point the step at a different vocabulary and only review would catch it.
+
+**Scope.** `REPO_MANIFEST.md` 596 → 597; the three count guards are rebaselined.
+No released contract, schema, prompt, governance record or published run root
+changes; `extraction_candidate_collection@0.1.0` is not extended and its
+`rejected.reason` enum is not widened.
+
 ## Open decisions
 
 - Required source packet by firm-year.

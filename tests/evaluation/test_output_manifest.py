@@ -787,7 +787,9 @@ def test_repo_manifest_count_and_paths():
     # prompt and the offline prompt-vocabulary binding test module.
     # 596 = 595 + the ADR-053 (G6-P) change request CR-0002, the tracked
     # document the successor prompt's qualification record pins.
-    assert "Total tracked/scaffold files listed: **596**" in text
+    # 597 = 596 + the ADR-054 (G6-M) path: the candidate-conformance test
+    # module for the derived identity fields and the C1-C6 gate.
+    assert "Total tracked/scaffold files listed: **597**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

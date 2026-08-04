@@ -1185,7 +1185,9 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # prompt and the offline prompt-vocabulary binding test module.
     # 596 = 595 + the ADR-053 (G6-P) change request CR-0002, the tracked
     # document the successor prompt's qualification record pins.
-    assert declared == len(paths) == 596
+    # 597 = 596 + the ADR-054 (G6-M) path: the candidate-conformance test
+    # module for the derived identity fields and the C1-C6 gate.
+    assert declared == len(paths) == 597
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

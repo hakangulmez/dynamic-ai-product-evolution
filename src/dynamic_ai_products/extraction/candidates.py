@@ -12,21 +12,30 @@ One parameterized contract carries both kinds, discriminated by
 from __future__ import annotations
 
 import json
+import re
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator
 
+from .availability_vocabulary import validate_availability_vocabulary
 from .errors import ExtractionError
-from .raw_artifacts import canonical_json_bytes
+from .input_packet import hydrate_pinned_artifact
+from .raw_artifacts import canonical_json_bytes, write_artifact
 
 __all__ = [
     "CANDIDATE_COLLECTION_CONTRACT",
+    "CANDIDATE_COLLECTION_REFERENCE",
     "OBSERVATION_KINDS",
+    "assert_candidate_conformance",
     "build_candidate_collection",
     "candidate_id_for",
     "collection_bytes",
+    "derive_identity_fields",
+    "materialize_candidate_collection",
+    "parse_model_observations",
+    "slugify_product_name",
 ]
 
 CANDIDATE_COLLECTION_CONTRACT = "extraction_candidate_collection@0.1.0"
@@ -120,3 +129,311 @@ def build_candidate_collection(
 
 def collection_bytes(collection: dict[str, Any]) -> bytes:
     return canonical_json_bytes(collection)
+
+
+# --- G6-M: derivation, parse gates, and the C1-C6 conformance gate -----------
+#
+# Three layers with deliberately separate ownership, because collapsing them
+# would destroy the released ``rejected[]`` contract:
+#
+#   parse gates      -- the envelope is unusable at all; nothing downstream runs
+#   pre-schema check -- who is a candidate; non-objects and schema failures are
+#                       left for ``build_candidate_collection`` to record
+#   C1-C6            -- collection-level, atomic; a violation refuses the whole
+#                       materialization and is NEVER written as ``schema_invalid``
+#
+# ``rejected.reason`` is a released enum closed to ``not_an_object`` and
+# ``schema_invalid``. A conformance failure is therefore not representable inside
+# a collection and must not be made to look like one.
+
+CANDIDATE_COLLECTION_REFERENCE = "collection/extraction_candidate_collection.json"
+
+_SLUG_GRAMMAR = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+
+_PARSE_ENVELOPE = "candidate_parse_envelope_unusable"
+_PARSE_JSON = "candidate_parse_json_invalid"
+_PARSE_NOT_A_LIST = "candidate_parse_not_a_list"
+
+_C1 = "candidate_conformance_company_mismatch"
+_C2 = "candidate_conformance_cutoff_mismatch"
+_C3 = "candidate_conformance_normalized_name_invalid"
+_C4 = "candidate_conformance_observation_id_mismatch"
+_C5 = "candidate_conformance_status_not_governed"
+_C6 = "candidate_conformance_evidence_pair_unknown"
+_COLLISION = "candidate_conformance_observation_id_collision"
+
+
+def slugify_product_name(product_name: Any) -> str:
+    """Lowercase, single-hyphen-joined, trimmed. Deterministic and total.
+
+    Total on purpose: a name this cannot slug yields the empty string rather
+    than an exception, so the judgement stays with C3 and the grammar has one
+    owner. A function that raised here would put the same rule in two places.
+
+    ASCII-only by construction. ``product_name`` is model-emitted text and a
+    Unicode fold would make two visually distinct names collide silently, which
+    is the opposite of what an identity component should do.
+    """
+    if not isinstance(product_name, str):
+        return ""
+    return _NON_ALNUM.sub("-", product_name.lower()).strip("-")
+
+
+def derive_identity_fields(
+    observation: Any, *, company_id: str, observation_cutoff: str
+) -> Any:
+    """Overwrite the three identity fields with derived values (ADR-054, R-D).
+
+    **Not a repair.** ``candidate_id`` has always been derived rather than
+    requested, for the reason that applies here too: an identifier a model
+    invents cannot be recomputed, so it cannot be checked, and a field that
+    cannot be checked is not provenance. These three follow the same rule.
+    ``company_id`` and ``observation_cutoff`` come from the packet the run was
+    actually built from; ``normalized_name`` and ``product_observation_id`` are
+    computed from it and the model's ``product_name``.
+
+    Whatever the model emitted in these three fields is discarded, so the prompt
+    does not have to change and the qualification chain it is pinned to stays
+    untouched.
+
+    Non-dict items pass through unchanged: they are not observations, and
+    ``build_candidate_collection`` owns saying so.
+
+    **Runs before schema validation, deliberately.** ``product_observation_id``
+    is schema-required; deriving it afterwards would mean an observation that
+    omitted it was recorded as ``schema_invalid`` for a field the pipeline was
+    always going to supply.
+    """
+    if not isinstance(observation, dict):
+        return observation
+    derived = dict(observation)
+    normalized = slugify_product_name(derived.get("product_name"))
+    derived["company_id"] = company_id
+    derived["observation_cutoff"] = observation_cutoff
+    derived["normalized_name"] = normalized
+    derived["product_observation_id"] = f"{company_id}:{observation_cutoff}:{normalized}"
+    return derived
+
+
+def parse_model_observations(raw_prediction: Any) -> list[Any]:
+    """The envelope gates. Either a usable list of items, or a refusal.
+
+    These precede everything: an envelope that did not terminate normally, or
+    carries no single text part, says nothing about candidates at all. Treating
+    a truncated response as "zero candidates" would record an absence that was
+    never observed.
+    """
+    if not isinstance(raw_prediction, dict):
+        raise ExtractionError(
+            "the raw prediction envelope must be a mapping", reason_code=_PARSE_ENVELOPE
+        )
+    candidates = raw_prediction.get("candidates")
+    if not isinstance(candidates, list) or len(candidates) != 1:
+        raise ExtractionError(
+            "the envelope must carry exactly one candidate", reason_code=_PARSE_ENVELOPE
+        )
+    candidate = candidates[0]
+    if not isinstance(candidate, dict) or candidate.get("finishReason") != "STOP":
+        raise ExtractionError(
+            "the candidate did not finish normally; a truncated response is not "
+            "an empty result",
+            reason_code=_PARSE_ENVELOPE,
+        )
+    parts = (candidate.get("content") or {}).get("parts")
+    if not isinstance(parts, list) or len(parts) != 1:
+        raise ExtractionError(
+            "the candidate must carry exactly one part", reason_code=_PARSE_ENVELOPE
+        )
+    text = parts[0].get("text") if isinstance(parts[0], dict) else None
+    if not isinstance(text, str) or not text.strip():
+        raise ExtractionError(
+            "the candidate part carries no text", reason_code=_PARSE_ENVELOPE
+        )
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ExtractionError(
+            f"the model output is not valid JSON: {exc}", reason_code=_PARSE_JSON
+        ) from exc
+    if not isinstance(parsed, list):
+        raise ExtractionError(
+            "the model output must be a JSON array", reason_code=_PARSE_NOT_A_LIST
+        )
+    return parsed
+
+
+def assert_candidate_conformance(
+    observations: list[Any],
+    *,
+    packet: dict[str, Any],
+    vocabulary: dict[str, Any],
+    schema_root: str | Path = "schemas",
+) -> None:
+    """C1 through C6, atomic at the **collection** level.
+
+    Applied only to items that already pass a pure pre-schema check, so a
+    non-object or a schema failure reaches ``build_candidate_collection`` and is
+    recorded in ``rejected[]`` exactly as the released contract says. Any
+    conformance violation, on any item, refuses the entire materialization: no
+    partial collection is written and nothing is silently dropped.
+
+    C5 asks one question and no more: is the status in
+    ``admitted_status_values``? Not whether it is active, not whether it is
+    roadmap. ``unknown`` is admitted, enters the collection, and its disposition
+    is a human decision made later.
+    """
+    company_id = packet["company_id"]
+    cutoff = packet["observation_cutoff_date"]
+    admitted = set(vocabulary["admitted_status_values"])
+    universe = {
+        (p.get("source_id"), p.get("passage_id"))
+        for p in packet.get("passages", [])
+        if isinstance(p, dict)
+    }
+    validator = _validator(schema_root, "product")
+
+    seen: dict[str, str] = {}
+    for ordinal, observation in enumerate(observations):
+        if not isinstance(observation, dict):
+            continue
+        if any(validator.iter_errors(observation)):
+            continue
+
+        if observation.get("company_id") != company_id:
+            raise ExtractionError(
+                f"C1: observation {ordinal} declares another company", reason_code=_C1
+            )
+        if observation.get("observation_cutoff") != cutoff:
+            raise ExtractionError(
+                f"C2: observation {ordinal} declares another cutoff", reason_code=_C2
+            )
+        normalized = observation.get("normalized_name")
+        if not isinstance(normalized, str) or not _SLUG_GRAMMAR.fullmatch(normalized):
+            raise ExtractionError(
+                f"C3: observation {ordinal} has no usable normalized_name "
+                f"({normalized!r}); its product_name cannot be slugged",
+                reason_code=_C3,
+            )
+        expected_id = f"{company_id}:{cutoff}:{normalized}"
+        if observation.get("product_observation_id") != expected_id:
+            raise ExtractionError(
+                f"C4: observation {ordinal} carries an id that is not its "
+                "derived identity",
+                reason_code=_C4,
+            )
+        if expected_id in seen:
+            raise ExtractionError(
+                f"C4: observations {seen[expected_id]} and {ordinal} slug to one "
+                f"identity ({expected_id!r}); two distinct products cannot share "
+                "an observation id",
+                reason_code=_COLLISION,
+            )
+        seen[expected_id] = str(ordinal)
+        status = observation.get("availability_status")
+        if status not in admitted:
+            raise ExtractionError(
+                f"C5: observation {ordinal} declares a status outside the "
+                f"governed vocabulary: {status!r}",
+                reason_code=_C5,
+            )
+        for entry in observation.get("evidence") or ():
+            pair = (entry.get("source_id"), entry.get("passage_id"))
+            if pair not in universe:
+                raise ExtractionError(
+                    f"C6: observation {ordinal} cites a passage that is not in "
+                    "the packet this run was built from",
+                    reason_code=_C6,
+                )
+
+
+def materialize_candidate_collection(
+    *,
+    raw_prediction: Any,
+    packet: dict[str, Any],
+    raw_artifact_reference: str,
+    raw_artifact_sha256: str,
+    collection_root: str | Path,
+    vocabulary_root: str | Path,
+    vocabulary_pin: dict[str, str],
+    repo_root: str | Path,
+    schema_root: str | Path = "schemas",
+) -> dict[str, str]:
+    """Parse, derive, gate, build, validate, write once. Returns the pin.
+
+    The vocabulary is hydrated through the shared containment-and-digest loader
+    and re-validated by its own loader, so the set C5 uses is the artifact's and
+    never a constant in this module.
+
+    **Known limitation, recorded rather than implied:** the vocabulary pin is a
+    parameter here. The design's D1-D6 derivation -- recovering it from the run
+    root's persisted authorization -- requires ``live_call_authorization@0.3.0``,
+    which is deferred. Until then a caller could point this at a different
+    vocabulary, and only review would catch it.
+    """
+    vocabulary = validate_availability_vocabulary(
+        hydrate_pinned_artifact(
+            vocabulary_root,
+            vocabulary_pin,
+            what="availability vocabulary",
+            unsafe_code="vocabulary_pin_unresolved",
+            sha_code="vocabulary_pin_unresolved",
+        ),
+        repo_root=repo_root,
+    )
+
+    observations = parse_model_observations(raw_prediction)
+    derived = [
+        derive_identity_fields(
+            observation,
+            company_id=packet["company_id"],
+            observation_cutoff=packet["observation_cutoff_date"],
+        )
+        for observation in observations
+    ]
+    assert_candidate_conformance(
+        derived, packet=packet, vocabulary=vocabulary, schema_root=schema_root
+    )
+
+    collection = build_candidate_collection(
+        observation_kind="product",
+        raw_artifact_reference=raw_artifact_reference,
+        raw_artifact_sha256=raw_artifact_sha256,
+        observations=derived,
+        schema_root=schema_root,
+    )
+
+    schema_path = Path(schema_root) / "extraction_candidate_collection.schema.json"
+    errors = sorted(
+        Draft202012Validator(
+            json.loads(schema_path.read_text(encoding="utf-8"))
+        ).iter_errors(collection),
+        key=lambda e: list(e.path),
+    )
+    if errors:
+        raise ExtractionError(
+            f"the assembled collection does not satisfy its own contract: "
+            f"{errors[0].message}",
+            reason_code="candidate_collection_invalid",
+        )
+    if (
+        len(collection["entries"]) != collection["accepted_candidate_count"]
+        or len(collection["rejected"]) != collection["rejected_candidate_count"]
+    ):
+        raise ExtractionError(
+            "the collection's declared counts disagree with its own lists",
+            reason_code="candidate_collection_invalid",
+        )
+
+    digest = write_artifact(
+        collection_root, CANDIDATE_COLLECTION_REFERENCE, collection_bytes(collection)
+    )
+    pin = {"reference": CANDIDATE_COLLECTION_REFERENCE, "sha256": digest}
+    hydrate_pinned_artifact(
+        collection_root,
+        pin,
+        what="candidate collection",
+        unsafe_code="candidate_collection_invalid",
+        sha_code="candidate_collection_invalid",
+    )
+    return pin

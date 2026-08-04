@@ -31,10 +31,12 @@ injected, and both default to refusing (ADR-035).
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Any
 
+from .candidates import materialize_candidate_collection
 from .errors import ExtractionError
 from .input_packet import (
     build_extraction_input_packet,
@@ -1332,6 +1334,9 @@ def run_extraction_stage_v2(
     snapshot_b_pin: dict[str, str] | None = None,
     product_decision_set_pin: dict[str, str] | None = None,
     capability_decision_set_pin: dict[str, str] | None = None,
+    candidate_collection_root: str | Path | None = None,
+    vocabulary_root: str | Path | None = None,
+    vocabulary_pin: dict[str, str] | None = None,
 ) -> ExtractionOutcome:
     """The E-M production entry point: one measured, two-operation run.
 
@@ -1507,7 +1512,7 @@ def run_extraction_stage_v2(
         enablement.get("endpoint_allowlist"),
     )
     try:
-        return _run_two_operation_stage(
+        outcome = _run_two_operation_stage(
             client=client,
             session=budget_session,
             authorization=authorization,
@@ -1533,6 +1538,45 @@ def run_extraction_stage_v2(
         )
     finally:
         _revoke_run_permission(client)
+
+    # ADR-054 (G6-M). The candidate collection is published **outside** the run
+    # root, into its own write-once root, bound back by a repo-relative
+    # reference to the raw artifact it derives from.
+    #
+    # Not a stylistic choice: two tests fix the run root's contents as an exact
+    # eleven-member set, and that count is the audit record of one provider
+    # call. A collection is a *derivative* of that record; putting it inside
+    # would make the invariant negotiable again for every future derivative.
+    #
+    # After the permit is revoked, deliberately. Deriving candidates needs no
+    # provider, so holding a live permit across it would widen the window in
+    # which a call is possible for work that can never make one.
+    #
+    # Opt-in by construction: with no collection root supplied the run behaves
+    # exactly as it did before this parameter existed, so no existing caller and
+    # no published run changes.
+    if candidate_collection_root is not None:
+        if vocabulary_root is None or vocabulary_pin is None:
+            raise ExtractionError(
+                "publishing a candidate collection requires the governed "
+                "availability vocabulary and its pin",
+                reason_code="vocabulary_pin_unresolved",
+            )
+        raw_path = Path(outcome.run_root) / RAW_REFERENCE
+        materialize_candidate_collection(
+            raw_prediction=json.loads(raw_path.read_text(encoding="utf-8")),
+            packet=outcome.packet,
+            raw_artifact_reference=raw_path.resolve()
+            .relative_to(Path(repo_root).resolve())
+            .as_posix(),
+            raw_artifact_sha256=outcome.artifacts[RAW_REFERENCE],
+            collection_root=candidate_collection_root,
+            vocabulary_root=vocabulary_root,
+            vocabulary_pin=vocabulary_pin,
+            repo_root=repo_root,
+            schema_root=schema_root,
+        )
+    return outcome
 
 
 def _run_two_operation_stage(
@@ -1889,6 +1933,7 @@ def _run_two_operation_stage(
     artifacts[PREDICTION_MANIFEST_REFERENCE] = write_artifact(
         root, PREDICTION_MANIFEST_REFERENCE, manifest_bytes(manifest)
     )
+
     return ExtractionOutcome(
         verdict="two_operation_run_complete",
         run_root=root,

@@ -501,7 +501,9 @@ def test_manifest_count():
     # prompt and the offline prompt-vocabulary binding test module.
     # 596 = 595 + the ADR-053 (G6-P) change request CR-0002, the tracked
     # document the successor prompt's qualification record pins.
-    assert declared == len(paths) == 596
+    # 597 = 596 + the ADR-054 (G6-M) path: the candidate-conformance test
+    # module for the derived identity fields and the C1-C6 gate.
+    assert declared == len(paths) == 597
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 
