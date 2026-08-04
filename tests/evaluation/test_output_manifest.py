@@ -10,6 +10,7 @@ re-read each bound artifact's bytes and reject a hash mismatch, an unexpected
 omitted artifact, or a missing one — this is an audit binding.
 """
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -778,7 +779,9 @@ def test_repo_manifest_count_and_paths():
     # producer and its tests.
     # 589 = 587 + the two ADR-049 (G4-1) paths: the canonical governance
     # materializer and its tests.
-    assert "Total tracked/scaffold files listed: **589**" in text
+    # 590 = 589 + the ADR-050 (G4-3) path: the G3 live smoke runbook,
+    # which carries the governance-root convention and the retention policy.
+    assert "Total tracked/scaffold files listed: **590**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text
@@ -802,3 +805,148 @@ def test_protected_contract_hashes_unchanged():
         "ffeae7ab54fa03948f4498a3ceb5a634b17444791fd91f94a57c086afedbda3e"
     assert model_contract_hash(ValidatorFinding, "validator_finding", "0.1.0") == \
         "96f63fee300d363a662f4f956bacccdca596acfb0f22bf7039aa1335b6d61292"
+
+
+# --- ADR-050 (G4-3): tracked governance documents carry no operator values ---
+#
+# These live here, in a module about the evaluation output manifest, because this
+# file already holds the repository-document guards -- the REPO_MANIFEST count
+# assertion above reads the same ROOT. They are a continuation of that family
+# rather than a new one, and the scanner is a private helper of this module: no
+# production code and no extra test file exist for it.
+#
+# What is deliberately NOT done here: a scan for the Vertex project-identifier
+# grammar. Measured, that grammar matches twenty out of twenty ordinary English
+# words -- "governance", "retention", "operator-managed", "runbook" -- and 203
+# distinct words in a single existing operations document. A prose-wide grammar
+# scan would be noise, not a guard. The four checks below are structural instead.
+
+_GOVERNANCE_DOCS = (
+    ROOT / "docs" / "operations" / "G3_LIVE_SMOKE_RUNBOOK.md",
+    ROOT / "docs" / "DECISION_LOG.md",
+)
+
+# A value is acceptable in a project position only if it is an explicit
+# placeholder or one of the synthetic projects the test suite already uses.
+_PLACEHOLDER = re.compile(r"^(<[^>]*>|\{[^}]*\}|PROJECT|_+|x+|\.\.\.|…)$", re.IGNORECASE)
+_SYNTHETIC_PROJECTS = frozenset(
+    {"my-research-project", "p-example", "another-real-project", "placeholder-project-xx"}
+)
+
+# (a) a real endpoint URL names the project between "projects/" and the next "/".
+_ENDPOINT = re.compile(r"projects/([^/\s`\"']+)/")
+# (b) the field itself, however it is spelled in a template.
+_PROJECT_FIELD = re.compile(r"vertex_project\s*[:=]\s*([^\s,)`\"']+)")
+# (c) a real absolute local path. Relative repository paths are untouched.
+_ABSOLUTE_LOCAL = re.compile(r"(?<![\w/])(?:/Users/|/home/|/Volumes/)\S+")
+# (d) a concrete storage location: bucket URI, drive letter, or host:/path. The
+# policy words themselves -- "operator-managed encrypted backup" -- match nothing
+# here, which is the whole point: the shape of a location is caught, not the
+# vocabulary of a policy.
+_LOCATION = re.compile(r"(?<![\w])(?:s3://|gs://|az://|[A-Za-z]:\\|[\w.-]+:/[^/\s])\S*")
+
+
+def _scan_project_values(pattern, text):
+    """Every capture that is neither a placeholder nor a known synthetic value."""
+    found = []
+    for match in pattern.finditer(text):
+        value = match.group(1).strip("\"'")
+        if _PLACEHOLDER.match(value) or value in _SYNTHETIC_PROJECTS:
+            continue
+        found.append(value)
+    return found
+
+
+def _scan_matches(pattern, text):
+    return [match.group(0) for match in pattern.finditer(text)]
+
+
+def test_tracked_governance_docs_carry_no_real_endpoint_url():
+    for document in _GOVERNANCE_DOCS:
+        found = _scan_project_values(_ENDPOINT, document.read_text(encoding="utf-8"))
+        assert found == [], f"{document.name}: {found}"
+
+
+def test_tracked_governance_docs_carry_only_placeholder_project_fields():
+    for document in _GOVERNANCE_DOCS:
+        found = _scan_project_values(_PROJECT_FIELD, document.read_text(encoding="utf-8"))
+        assert found == [], f"{document.name}: {found}"
+
+
+def test_tracked_governance_docs_carry_no_absolute_local_path():
+    for document in _GOVERNANCE_DOCS:
+        found = _scan_matches(_ABSOLUTE_LOCAL, document.read_text(encoding="utf-8"))
+        assert found == [], f"{document.name}: {found}"
+
+
+def test_tracked_governance_docs_name_no_backup_or_ledger_location():
+    """The policy may be described; the location may not be named."""
+    for document in _GOVERNANCE_DOCS:
+        text = document.read_text(encoding="utf-8")
+        found = _scan_matches(_LOCATION, text)
+        assert found == [], f"{document.name}: {found}"
+    runbook = _GOVERNANCE_DOCS[0].read_text(encoding="utf-8")
+    # The policy vocabulary must survive the scan, or the guard would be pushing
+    # the documentation to say less than it should.
+    assert "operator-managed encrypted backup" in runbook
+
+
+@pytest.mark.parametrize(
+    ("planted", "scanner"),
+    [
+        pytest.param(
+            "https://us-central1-aiplatform.googleapis.com/v1/projects/acme-prod-1234/locations/x",
+            "endpoint",
+            id="real-endpoint-url",
+        ),
+        pytest.param("vertex_project: acme-prod-1234", "field", id="real-project-field"),
+        pytest.param("backup: /Users/someone/vault/gov", "absolute", id="absolute-local-path"),
+        pytest.param("backup: gs://some-bucket/gov", "location", id="bucket-location"),
+        pytest.param(r"backup: C:\vault\gov", "location", id="drive-letter-location"),
+    ],
+)
+def test_the_leak_scan_rejects_a_planted_violation(planted, scanner):
+    """Sensitivity. Four checks returning zero prove nothing on their own.
+
+    A scanner whose patterns had rotted would report a clean document forever.
+    Each planted string is the violation its own check exists to catch.
+    """
+    # The drive-letter case is the one that would survive a "looks fine" regex.
+    # An earlier revision required two literal backslashes, so a real
+    # single-backslash Windows path went unnoticed; the sensitivity proof for
+    # that specific regression lives in the test below, not only in a
+    # NEVERMATCH mutation.
+    if scanner == "endpoint":
+        assert _scan_project_values(_ENDPOINT, planted) == ["acme-prod-1234"]
+    elif scanner == "field":
+        assert _scan_project_values(_PROJECT_FIELD, planted) == ["acme-prod-1234"]
+    elif scanner == "absolute":
+        assert len(_scan_matches(_ABSOLUTE_LOCAL, planted)) == 1
+    else:
+        assert len(_scan_matches(_LOCATION, planted)) == 1
+
+
+def test_the_location_scan_still_catches_a_single_backslash_windows_path():
+    """A named regression, not a generic mutation.
+
+    The first version of ``_LOCATION`` spelled the drive-letter branch with two
+    literal backslashes. That pattern matches ``C:\\\\vault`` -- an escaped
+    form nobody writes in prose -- and silently misses the real thing,
+    ``C:\\vault``. A NEVERMATCH mutation would not have found this: the regex
+    was present, compiled, and wrong.
+
+    Reverting only the drive-letter branch must make the planted case stop
+    matching, which is what pins the fix.
+    """
+    planted = r"backup: C:\vault\gov"
+    assert planted.count("\\") == 2, "the planted path must use single backslashes"
+    assert len(_scan_matches(_LOCATION, planted)) == 1
+
+    broken = re.compile(
+        r"(?<![\w])(?:s3://|gs://|az://|[A-Za-z]:\\\\|[\w.-]+:/[^/\s])\S*"
+    )
+    assert broken.search(planted) is None, "the old pattern must miss it"
+    # The other three branches are unaffected by the drive-letter spelling, so a
+    # regression there is genuinely isolated to Windows paths.
+    for unaffected in ("backup: gs://b/g", "backup: s3://b/g"):
+        assert len(_scan_matches(broken, unaffected)) == 1

@@ -493,7 +493,9 @@ def test_manifest_count():
     # producer and its tests.
     # 589 = 587 + the two ADR-049 (G4-1) paths: the canonical governance
     # materializer and its tests.
-    assert declared == len(paths) == 589
+    # 590 = 589 + the ADR-050 (G4-3) path: the G3 live smoke runbook,
+    # which carries the governance-root convention and the retention policy.
+    assert declared == len(paths) == 590
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

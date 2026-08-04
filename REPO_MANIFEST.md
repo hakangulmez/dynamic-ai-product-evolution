@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **589**
+Total tracked/scaffold files listed: **590**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -103,6 +103,7 @@ Total tracked/scaffold files listed: **589**
 - `docs/methodology/UNIT_OF_ANALYSIS.md`
 - `docs/methodology/VALIDATION_STRATEGY.md`
 - `docs/operations/CLAUDE_CODE_LOCAL_SAFETY.md`
+- `docs/operations/G3_LIVE_SMOKE_RUNBOOK.md`
 - `docs/source_playbooks/DEVELOPER_DOCS.md`
 - `docs/source_playbooks/NEWSROOM.md`
 - `docs/source_playbooks/OFFICIAL_IR.md`

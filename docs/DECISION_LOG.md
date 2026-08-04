@@ -1885,6 +1885,102 @@ produced, no `vertex_project` value has been supplied, no ADC resolved, no clien
 built and no provider called. G5 remains unauthorized.
 
 
+
+## ADR-050 — Governance root placement and audit-trail retention (G4-3)
+
+**Status:** Accepted.
+
+**The question this answers.** G4-1 shipped a materializer that writes four
+governance records into any existing, empty directory it is handed. It has no
+opinion about *where* that directory is, and no policy existed for what happens
+to the records afterwards. Both were left open by G4-0 and are decided here.
+
+### D1 — placement
+
+The governance root convention is
+
+```
+container    : artifacts/governance/
+attempt root : artifacts/governance/gov-<company_id>-<stage>-<nnnn>/
+```
+
+Inside an attempt root the layout is fixed by code and cannot be configured: one
+`governance/` directory holding the four write-once records.
+
+**This is a runbook convention, not a runtime guarantee.** Measured:
+`_require_attempt_root` checks only that the root exists, is a real directory, is
+not a symlink, and is completely empty. It contains no `startswith`, no
+`relative_to` and no parent comparison — nothing about location at all. Placement
+is enforced by step R7 of the G3 runbook and by nothing else. Making it
+runtime-enforced would need a separate code increment: a new constraint, a new
+reason code, new tests, and the container path becoming a code-owned constant.
+
+**Two roots, never one.** `governance_artifact_root` must exist and be populated
+when a run starts; `run_root` must not exist at all (`run_root_exists`). The two
+requirements are opposites, so one path can never serve both, and the
+materializer has no concept of a run root.
+
+**Why B and not A.** Measured: `artifacts/**` is ignored (`.gitignore:39`), while
+`data/registry/governance/…` is trackable. Option A would put the real project
+identifier into git history permanently and irreversibly. That matters because
+the identifier is not confined to opaque digests — it appears as **plaintext
+inside the `endpoint_allowlist`** of both the live-call authorization and the
+adapter enablement record, in full URL form. The contract and routing digests are
+one-way; an allowlist entry is not.
+
+### D2 — retention
+
+The four records are the audit trail, so the policy protects them rather than
+assuming they can be regenerated:
+
+- **Access owner** — a single operator; the container is narrowly permissioned.
+  Whether synchronization or backup tooling covers that path is confirmed in
+  writing before materialization.
+- **Backup and recovery** — an operator-managed encrypted backup. Recovery
+  restores bytes; it never regenerates them.
+- **Retention** — successful attempt roots for the duration of the thesis work;
+  failed and partial roots retained as evidence, never deleted.
+- **Deletion** — only with explicit user approval, and recorded as a deletion
+  event.
+
+**`code_commit` is not sufficient for audit.** Measured:
+`build_governance_records` requires seventeen parameters besides `code_commit`
+and `repo_root` — the budget ceilings, the window, the identities, the people and
+the client contract. None of them is derivable from a commit. A commit fixes what
+the *code* was, not what the *decisions* were. If the records are lost the audit
+trail is lost with them, and because they are outside git the loss is silent:
+`git status` stays empty.
+
+**Ledger boundary.** The exact backup location, the access list and the real
+deletion events are held in a protected operator ledger outside this repository.
+Neither this decision record nor the G3 runbook contains any of them, and the
+ledger's own location does not appear in either. The tracked documents describe
+the deletion-event *schema* and *policy*; they never accumulate events.
+
+**A mechanical guard rather than a promise.** Four structural checks run as tests
+over both tracked documents: no real endpoint URL of the form
+`projects/<value>/`, no `vertex_project` field carrying anything but a
+placeholder, no absolute local path, and no concrete backup or ledger location.
+A fifth test plants a violation of each and asserts the scanner catches it —
+without that, a scanner whose patterns had rotted would stay green.
+
+A general project-identifier grammar scan was **rejected**: measured, the
+identifier grammar matches twenty out of twenty ordinary English words and 203
+distinct words in a single existing operations document. It would have been noise
+rather than a guard.
+
+**Rejected alternatives.** Option A was rejected for the plaintext-allowlist
+reason above; option C — an absolute path outside the repository — was rejected
+because the location would then be recorded nowhere. Retention policy R1 (no
+backup, partial roots deleted immediately) was rejected: it makes a lost root
+unrecoverable, and partial roots are the evidence that a materialization was
+attempted and refused.
+
+**This ADR authorizes nothing further.** No governance artifact has been
+produced, no `vertex_project` supplied, no directory created, no ADC resolved, no
+client built and no provider called. R8 and G5 remain unauthorized.
+
+
 ## Open decisions
 
 - Required source packet by firm-year.
