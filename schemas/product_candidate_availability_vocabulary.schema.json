@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "product_candidate_availability_vocabulary.schema.json",
+  "title": "product_candidate_availability_vocabulary@0.1.0",
+  "comment": "ADR-052 (G6-V). The candidate-admission vocabulary for the product_extraction stage. availability_status is an unconstrained string in product_observation.schema.json, so which statuses may enter a candidate record is governed here instead. This is not the Rule-10 evaluator classification of ADR-028: that one decides whether a capability or task record is supported only by future-roadmap evidence at the evaluation stages, this one decides candidate admission at extraction. Neither is derived from the other and they are not required to carry the same tokens. admitted_status_values is the exact canonical taxonomy of docs/methodology/PRODUCT_CAPABILITY_TASK_ONTOLOGY.md -- eight tokens, ascending, closed enum, minItems equal to maxItems -- so adding or removing a status under 0.1.0 is impossible and requires a contract successor; planned, which the ontology does not define, cannot appear in any list. The four partition lists cover admitted_status_values completely and pairwise disjointly, which the loader enforces because JSON Schema cannot; unknown_status_values is fixed at exactly [\"unknown\"] because insufficient evidence is a result that is carried, never reclassified as inactive. availability_taxonomy_reference and availability_taxonomy_sha256 bind the artifact to the literal bytes of the taxonomy text it was minted against, so the ontology cannot change underneath a live vocabulary; the pin proves which text, not that the eight tokens were mechanically extracted from it, and no code parses the ontology at runtime. decided_by and decided_at record the human who made the one judgement this artifact contains -- what each admitted token means for candidate admission -- and decided_at must carry an explicit UTC offset.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "active_status_values",
+    "admitted_status_values",
+    "availability_taxonomy_reference",
+    "availability_taxonomy_sha256",
+    "contract",
+    "decided_at",
+    "decided_by",
+    "non_active_known_status_values",
+    "roadmap_status_values",
+    "schema_version",
+    "stage",
+    "unknown_status_values",
+    "vocabulary_version"
+  ],
+  "$defs": {
+    "availability_status_token": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "enum": [
+        "announced",
+        "broadly_deployed_or_default",
+        "deprecated",
+        "discontinued",
+        "general_availability",
+        "private_beta",
+        "public_beta",
+        "unknown"
+      ]
+    },
+    "availability_status_list": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/availability_status_token"
+      }
+    }
+  },
+  "properties": {
+    "contract": {
+      "const": "product_candidate_availability_vocabulary@0.1.0"
+    },
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "stage": {
+      "const": "product_extraction"
+    },
+    "vocabulary_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "availability_taxonomy_reference": {
+      "type": "string",
+      "minLength": 1,
+      "const": "docs/methodology/PRODUCT_CAPABILITY_TASK_ONTOLOGY.md"
+    },
+    "availability_taxonomy_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "admitted_status_values": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/availability_status_token"
+      }
+    },
+    "active_status_values": {
+      "$ref": "#/$defs/availability_status_list"
+    },
+    "roadmap_status_values": {
+      "$ref": "#/$defs/availability_status_list"
+    },
+    "non_active_known_status_values": {
+      "$ref": "#/$defs/availability_status_list"
+    },
+    "unknown_status_values": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "const": "unknown"
+      }
+    },
+    "decided_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decided_at": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

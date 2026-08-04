@@ -781,7 +781,13 @@ def test_repo_manifest_count_and_paths():
     # materializer and its tests.
     # 590 = 589 + the ADR-050 (G4-3) path: the G3 live smoke runbook,
     # which carries the governance-root convention and the retention policy.
-    assert "Total tracked/scaffold files listed: **590**" in text
+    # 593 = 590 + the three ADR-052 (G6-V) paths: the product-candidate
+    # availability vocabulary schema, its producer, and its test module.
+    # 595 = 593 + the two ADR-053 (G6-P) paths: the schema-bound successor
+    # prompt and the offline prompt-vocabulary binding test module.
+    # 596 = 595 + the ADR-053 (G6-P) change request CR-0002, the tracked
+    # document the successor prompt's qualification record pins.
+    assert "Total tracked/scaffold files listed: **596**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

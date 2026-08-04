@@ -495,7 +495,13 @@ def test_manifest_count():
     # materializer and its tests.
     # 590 = 589 + the ADR-050 (G4-3) path: the G3 live smoke runbook,
     # which carries the governance-root convention and the retention policy.
-    assert declared == len(paths) == 590
+    # 593 = 590 + the three ADR-052 (G6-V) paths: the product-candidate
+    # availability vocabulary schema, its producer, and its test module.
+    # 595 = 593 + the two ADR-053 (G6-P) paths: the schema-bound successor
+    # prompt and the offline prompt-vocabulary binding test module.
+    # 596 = 595 + the ADR-053 (G6-P) change request CR-0002, the tracked
+    # document the successor prompt's qualification record pins.
+    assert declared == len(paths) == 596
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

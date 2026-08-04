@@ -19,24 +19,55 @@ from .errors import ExtractionError
 
 __all__ = [
     "EXTRACTION_PROMPTS",
+    "KNOWN_PROMPT_REGISTRY_VERSIONS",
     "PROMPT_REGISTRY_VERSION",
+    "VOCABULARY_BOUND_PROMPT_IDS",
     "load_prompt",
     "single_pass_prompt_plan",
     "prompt_hash_of_bytes",
     "resolve_prompt_path",
 ]
 
-PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v1"
+# Every registry version this code has ever published, oldest first. A
+# qualification record documents the version that was current when it was
+# minted, so a governance validator has to recognise the historical ones as
+# well as today's -- otherwise moving the registry would retroactively
+# invalidate records that were correct when issued. The set lives here, with the
+# registry it describes, so there is one owner and no second list to drift.
+KNOWN_PROMPT_REGISTRY_VERSIONS: tuple[str, ...] = (
+    "extraction_prompt_registry_v1",
+    "extraction_prompt_registry_v2",
+)
+
+# ADR-053 (G6-P). ``v1`` -> ``v2``: the product_extraction sequence gained a
+# schema-bound successor at position one. The version is a property of the
+# registry, not of any single prompt, so it moves for every stage at once --
+# which is the point: a record that declares v1 was minted against a different
+# ordering than the one this build resolves.
+PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v2"
 
 # Stage -> ordered prompt ids. Labels live here, never inside a frozen prompt.
 EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
     "product_extraction": (
+        # Position one is what ``single_pass_prompt_plan`` executes. The
+        # successor states the output schema explicitly and carries the closed
+        # availability vocabulary as literal text.
+        "product_discovery_schema_v2",
+        # Retained, not retired: ``ext-smoke-0002`` resolved this prompt and its
+        # bytes must stay reachable for that chain to remain verifiable. It is no
+        # longer the prompt a single pass executes.
         "product_discovery_recall",
         "product_consolidation_precision",
     ),
     "capability_extraction": ("capability_extraction",),
     "task_extraction": ("task_discovery_recall", "task_consolidation_precision"),
 }
+
+# Code-owned and closed. A prompt in this set carries the availability
+# vocabulary as literal text and therefore must not execute without the binding
+# having been checked; a prompt outside it carries no such text. One source,
+# used in both directions, so the two rules cannot drift apart.
+VOCABULARY_BOUND_PROMPT_IDS = frozenset({"product_discovery_schema_v2"})
 
 _PROMPT_DIR = "prompts/extraction"
 

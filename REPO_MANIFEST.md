@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **590**
+Total tracked/scaffold files listed: **596**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -121,6 +121,7 @@ Total tracked/scaffold files listed: **590**
 - `evals/cases/frozen_test/.gitkeep`
 - `evals/cases/regression/.gitkeep`
 - `evals/change_requests/CR-0001-product-discovery-recall-bootstrap-qualification.md`
+- `evals/change_requests/CR-0002-product-discovery-schema-v2-bootstrap-qualification.md`
 - `evals/change_requests/README.md`
 - `evals/expected/.gitkeep`
 - `evals/fixtures/README.md`
@@ -218,6 +219,7 @@ Total tracked/scaffold files listed: **590**
 - `prompts/extraction/capability_extraction.md`
 - `prompts/extraction/product_consolidation_precision.md`
 - `prompts/extraction/product_discovery_recall.md`
+- `prompts/extraction/product_discovery_schema_v2.md`
 - `prompts/extraction/task_consolidation_precision.md`
 - `prompts/extraction/task_discovery_recall.md`
 - `prompts/extraction/task_role_classification.md`
@@ -263,6 +265,7 @@ Total tracked/scaffold files listed: **590**
 - `schemas/live_call_authorization_v2.schema.json`
 - `schemas/official_web_candidate.schema.json`
 - `schemas/official_web_collection_manifest.schema.json`
+- `schemas/product_candidate_availability_vocabulary.schema.json`
 - `schemas/product_observation.schema.json`
 - `schemas/prompt_qualification_record.schema.json`
 - `schemas/schema_version_manifest.json`
@@ -391,6 +394,7 @@ Total tracked/scaffold files listed: **590**
 - `src/dynamic_ai_products/evaluation/validator_parameters.py`
 - `src/dynamic_ai_products/evaluation/validators.py`
 - `src/dynamic_ai_products/extraction/__init__.py`
+- `src/dynamic_ai_products/extraction/availability_vocabulary.py`
 - `src/dynamic_ai_products/extraction/budget_session.py`
 - `src/dynamic_ai_products/extraction/candidates.py`
 - `src/dynamic_ai_products/extraction/count_reconciliation.py`
@@ -520,6 +524,7 @@ Total tracked/scaffold files listed: **590**
 - `tests/evaluation/test_validator_bundle_artifact.py`
 - `tests/evaluation/test_validator_parameters.py`
 - `tests/evaluation/test_validators.py`
+- `tests/extraction/test_availability_vocabulary.py`
 - `tests/extraction/test_boundaries.py`
 - `tests/extraction/test_company_identity_binding.py`
 - `tests/extraction/test_contents_renderer.py`
@@ -540,6 +545,7 @@ Total tracked/scaffold files listed: **590**
 - `tests/extraction/test_parent_snapshots.py`
 - `tests/extraction/test_prediction_manifest.py`
 - `tests/extraction/test_prompt_qualification.py`
+- `tests/extraction/test_prompt_vocabulary_binding.py`
 - `tests/extraction/test_prompts.py`
 - `tests/extraction/test_provider_adapter.py`
 - `tests/extraction/test_provider_error_publication.py`

@@ -2014,6 +2014,232 @@ so its digest is unchanged and remains available as a stable pin target.
 rejected: the ontology is the document CLAUDE.md's required-reading map names as
 the ontology, and two of the three tracked lists already agreed with it.
 
+## ADR-052 — A pinned candidate-admission vocabulary: the exact eight, a four-way partition, and one recorded human judgement (G6-V)
+
+**Status:** Accepted.
+
+`availability_status` is `{"type": "string"}` in
+`schemas/product_observation.schema.json` — measured, unconstrained. So "may this
+status enter a candidate record" had no answer in the schema layer, and no answer
+anywhere else either. `product_candidate_availability_vocabulary@0.1.0` is that
+answer for the `product_extraction` stage, produced by
+`src/dynamic_ai_products/extraction/availability_vocabulary.py`.
+
+**It is not the Rule-10 evaluator vocabulary.** ADR-028 gave Rule 10 governed
+`active_status_values` and `roadmap_status_values` so that a capability or task
+record supported only by future-roadmap evidence can be identified at the
+evaluation stages. This artifact decides candidate admission at extraction. The
+two are separate contracts with separate consumers; neither is derived from the
+other, and they are not required to carry the same tokens. SPEC-023's Rule-10
+paragraph now records that boundary so a later reader cannot merge them by
+accident. `product_extraction` is **not** added to the evaluator's governed stage
+set, which stays the closed four, and no rule text, stage matrix, applicability
+table, blocking-reason vocabulary, per-rule hash or aggregate hash changes.
+
+**The taxonomy is pinned, not remembered.** The artifact carries
+`availability_taxonomy_reference` and `availability_taxonomy_sha256`, bound to the
+literal bytes of `docs/methodology/PRODUCT_CAPABILITY_TASK_ONTOLOGY.md` through
+the same containment-and-digest loader every governance artifact uses. If the
+ontology text changes, existing artifacts stop validating and a new one must be
+minted; the taxonomy cannot drift underneath a live vocabulary.
+
+**What the pin does not do, stated exactly.** Nothing parses the ontology at
+runtime. The eight tokens are a code-owned reviewed constant, exactly like the
+ADR-047 budget-meter identity and the ADR-048 routing-contract identity. The pin
+proves *which* taxonomy text an artifact was minted against; it does not prove
+the constant was mechanically extracted from that text. Claiming otherwise would
+be the ambient document reading this design rejects. A test asserts the equality
+in the test layer, where reading the document is legitimate.
+
+**Exact set, not subset.** `admitted_status_values` is the canonical eight —
+`announced`, `broadly_deployed_or_default`, `deprecated`, `discontinued`,
+`general_availability`, `private_beta`, `public_beta`, `unknown` — ascending and
+duplicate-free. Two independent layers enforce it: the schema pins
+`minItems == maxItems == 8` over a closed `enum`, and the loader compares an
+ordered tuple. Adding or removing a status under `@0.1.0` is therefore impossible
+and requires a contract successor. `planned`, which the ontology does not define,
+cannot enter any list of any artifact.
+
+**Seven loader checks the schema cannot express**, each with its own reason code
+so the operator learns which invariant broke: ascending order
+(`vocabulary_not_ascending`), the exact canonical set
+(`vocabulary_not_canonical_set`), partition completeness
+(`vocabulary_partition_incomplete`), pairwise disjointness
+(`vocabulary_partition_overlapping`), per-list grammar
+(`vocabulary_list_invalid`), the fixed placement of `unknown`
+(`vocabulary_unknown_misplaced`), and the taxonomy pin
+(`availability_taxonomy_pin_mismatch`). Disjointness is checked **before**
+completeness because a duplicated token also shortens the union elsewhere, and
+reporting the arithmetic defect would point the operator at the wrong list.
+
+**The one human judgement, and its exact scope.** Which tokens are admitted is
+settled by the taxonomy, not by an operator. What each admitted token *means* for
+candidate admission is the decision this artifact records, together with who made
+it and when:
+
+```
+vocabulary_version             : product-candidate-availability-v1
+active_status_values           : broadly_deployed_or_default, general_availability,
+                                 private_beta, public_beta
+roadmap_status_values          : announced
+non_active_known_status_values : deprecated, discontinued
+unknown_status_values          : unknown
+```
+
+`active` is **only** the candidate-admission class of availability-supported,
+not-roadmap-only statuses. It does not mean automatic human acceptance
+(accept/reject stays a human decision), it does not mean a complete product
+universe (a single pass is recall, not closure), and it does not mean a deployed
+task — that claim belongs to SPEC-010 and requires its own evidence. Treating
+`private_beta` and `public_beta` as `active` follows directly from that
+definition: a beta is availability-supported and is not a roadmap statement.
+
+**`unknown` is carried, never reclassified.** `unknown_status_values` is fixed at
+exactly `["unknown"]` and is not a builder parameter at all, so the constraint is
+structural rather than merely validated. An `unknown` candidate is admitted into
+the collection as an ordinary entry and its disposition is left to human review.
+This is CLAUDE.md rule 7 made concrete: insufficient evidence is a result to
+record, not a rejection. It is deliberately the opposite arrangement from Rule 10,
+where `unknown` sits outside both governed sets — the two layers answer different
+questions.
+
+**Write-once, validated on both sides of the write.** Materialization validates
+the document, writes it into an attempt root that must already exist as a real,
+non-symlink, completely empty directory, then re-reads the persisted bytes and
+validates *those*. What is certified is what was persisted, not what was
+intended. Creating the root stays an explicit operator step so that "who made
+this root and when" has an answer outside the code, and a retry uses a new root
+rather than writing beside a failed attempt's remains. The artifact lives under
+the already-ignored `data/runs/`, so no `.gitignore` change is needed and the
+REPO_MANIFEST completeness test cannot be tripped by it.
+
+**Scope.** `schema_version_manifest.json` moves `0.16.0` → `0.17.0` with one new
+entry, 46 → 47; both schema-version-manifest SHA guards are rebaselined and
+neither is weakened. `REPO_MANIFEST.md` 590 → 593; the three count guards are
+rebaselined. Extraction modules 20 → 21. `product_observation.schema.json` is
+**not** modified — `availability_status` stays an unconstrained string, because
+admission is governed by an artifact rather than by mutating an accepted schema.
+No released contract, validator, prompt, runner route or governance record
+changes, and no run artifact is produced by this increment.
+
+**Rejected alternative.** Expressing the vocabulary as a twelfth-rule extension of
+`validator_rule_parameters` was rejected: `product_extraction` is absent from the
+evaluator's governed stage universe, so the parameter set could not have carried
+it without widening that universe — which would have made one artifact answer two
+different questions at two different layers.
+
+## ADR-053 — A schema-bound successor prompt, and the released validator that was silently freezing the prompt registry (G6-P)
+
+**Status:** Accepted.
+
+Four changes that look separable and are not. Each one alone leaves the test
+suite red; only together do they produce a `product_extraction` pass that can
+return output the run's own schema check accepts. They are recorded as one
+decision because they were shown, by measurement, to be one.
+
+**1. The predecessor prompt could not have produced valid output.** Measured:
+`schemas/product_observation.schema.json` is `additionalProperties: false` and
+declares no `candidate_status`, yet `product_discovery_recall.md` asks for that
+field. A conforming response to that prompt cannot validate against the released
+stage-output schema. Separately, `availability_status` is an unconstrained string
+in the schema and the prompt named no vocabulary, so any word at all arrived
+structurally valid. `prompts/extraction/product_discovery_schema_v2.md` asks for
+exactly the schema's required fields, names only optional fields the schema
+declares, asks for no `candidate_status`, and carries the eight-token
+availability vocabulary of ADR-052 as four labelled lists.
+
+The predecessor's bytes are **unchanged** and it stays registered at position
+two. `ext-smoke-0002` resolved it, and that chain must remain verifiable —
+verifiable, not replayable. No replay of that run is promised.
+
+**2. The registry moves, and the vocabulary-bound set is closed.**
+`EXTRACTION_PROMPTS["product_extraction"]` becomes a three-element sequence with
+the successor first, so `single_pass_prompt_plan` executes it;
+`PROMPT_REGISTRY_VERSION` moves `extraction_prompt_registry_v1` →
+`extraction_prompt_registry_v2`. `VOCABULARY_BOUND_PROMPT_IDS` is a code-owned
+frozenset naming the successor: a prompt inside it carries the availability
+vocabulary as literal text, a prompt outside it does not, and both directions
+read that one source.
+
+**3. A released validator was freezing a registry it does not own.** This is the
+finding that made the increment indivisible, and it was found by running the
+change rather than by reading the code. `validate_prompt_qualification` demanded,
+in the same call path, that a record declare `extraction_prompt_registry_v1`
+(a `const`) *and* that it equal the registry version the current build resolved
+(an equality against `load_prompt`'s stamp). The moment the registry moved for
+any reason those two became unsatisfiable together, so **no prompt could be
+added or reordered** while `prompt_qualification_record@0.1.0` was in force.
+
+The equality asked the wrong question. `load_prompt` stamps
+`prompt_registry_version` from a module constant at call time, so it describes
+the *build*, not the prompt artifact — it added nothing to the binding that
+`prompt_id`, `prompt_reference` and `prompt_artifact_sha256` already establish
+byte-exactly, while making every historical record invalid on an unrelated
+change. A qualification record documents the registry version that was current
+when it was minted; that is what it is for.
+
+The equality is removed and the `const` becomes membership in
+`KNOWN_PROMPT_REGISTRY_VERSIONS`, a closed tuple owned by `prompts.py` — the
+module that owns the registry — so no second list can fall behind it. A record
+naming a version this code never published is refused.
+
+**What this loosens, stated plainly.** One literal becomes a two-element set.
+That is a real widening and it is bounded: the set is code-owned, contains only
+versions actually published, and the three checks that tie a record to its prompt
+are untouched. A v1 record still cannot qualify a prompt other than the one the
+route resolved; a test asserts exactly that.
+
+**4. The successor needs its own qualification, and CR-0001 does not cover it.**
+Measured: CR-0001 names `product_discovery_recall` and never mentions the
+successor, so after the registry move P1–P4 refused every chain — correctly.
+`evals/change_requests/CR-0002-product-discovery-schema-v2-bootstrap-qualification.md`
+is the tracked document behind the successor's record, on the same
+`bootstrap_pre_evaluation` basis as CR-0001: status
+`bootstrap_authorized_live_dev`, scope `qualified_for_development`, lifecycle
+`candidate`, no `review_decision`, `live_dev` only. It records a fifth known
+limitation honestly — whether the successor actually elicits schema-valid model
+output is **untested against a model**; only the shape it asks for has been
+validated offline.
+
+**Two schema-file edits, not glossed.** `prompt_qualification_record@0.1.0` keeps
+its identity, version and property set, and every record that validated before
+still validates. But its `prompt_id` is a closed `enum` that deliberately mirrors
+the registry — the guarding assertion is named *the prompt-id vocabulary is the
+registry and not a second list* — so the successor id is added to it; and its
+`prompt_registry_version` carried the same `const` the validator did, so it
+becomes the same two-element `enum`. Both edits are additive: every previously
+admissible value stays admissible. The file's digest is pinned by nothing, so no
+released artifact's hash chain moves.
+
+**Offline binding, and what it is not.** `parse_prompt_status_vocabulary` and
+`validate_prompt_vocabulary_binding` are pure functions over prompt text and a
+vocabulary mapping — no file is opened, no prompt is resolved, no provider is
+reached, and a test demonstrates the purity rather than asserting it in prose.
+They check B4a–B4d as **ordered** list equalities plus B4e over the ordered
+union. Ordered, because a label swap between `active` and `roadmap` leaves every
+set and the union unchanged; only a position-by-position comparison refuses it.
+Parsing is scoped to the one fenced block that carries all four labels, because
+the prompt also names those labels in prose and a document-wide scan would read
+the explanation as data.
+
+**This binding is not yet enforced on the live run path.** It is a pure function
+and a test, deliberately. Whether it becomes a hash-pinned artifact the runner
+hydrates before a provider send is a separate decision, deferred with the rest of
+the execution-bound design.
+
+**Scope.** `REPO_MANIFEST.md` 595 → 596; the three count guards are rebaselined.
+No authorization contract, chain validator, runner route, governance record,
+ledger or run artifact changes. `data/` and `artifacts/` are untouched, and
+`prompt_qualification_record@0.1.0`'s contract identity, `schema_version` and
+property set are unchanged.
+
+**Rejected alternative.** Reverting the registry move and leaving the successor
+registered below the predecessor was rejected: `single_pass_prompt_plan` would
+still resolve the prompt that asks for a field the released schema refuses, the
+suite would be green, and the defect this increment exists to fix would be
+untouched. A green suite over a known-broken execution path is worse than a red
+one, because it stops being a question.
+
 ## Open decisions
 
 - Required source packet by firm-year.

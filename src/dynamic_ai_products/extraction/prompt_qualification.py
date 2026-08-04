@@ -55,6 +55,10 @@ from .manifests import (
     _require_exact_properties,
 )
 
+# The prompt registry owns the set of versions it has published; this module
+# recognises them rather than keeping a second copy that could fall behind.
+from .prompts import KNOWN_PROMPT_REGISTRY_VERSIONS
+
 __all__ = [
     "BASIS_UNSUPPORTED",
     "BOOTSTRAP_BASIS",
@@ -276,7 +280,22 @@ def validate_prompt_qualification(
     _require_const(record, "contract", PROMPT_QUALIFICATION_CONTRACT)
     _require_const(record, "schema_version", PROMPT_QUALIFICATION_SCHEMA_VERSION)
     _require_const(record, "governing_spec_reference", GOVERNING_SPEC_REFERENCE)
-    _require_const(record, "prompt_registry_version", "extraction_prompt_registry_v1")
+
+    # ADR-053 (G6-P). This was a const pinned to ``extraction_prompt_registry_v1``
+    # and, forty lines below, an equality against the version *this build*
+    # resolved. Together they made the prompt registry unchangeable: any move --
+    # a reorder, an addition -- left the two demands unsatisfiable at once, so a
+    # released validator silently froze a registry it does not own.
+    #
+    # A record documents the registry version that was current when it was
+    # minted. Membership in the closed, code-owned set of published versions is
+    # the question worth asking; equality with today's constant is not.
+    if record.get("prompt_registry_version") not in KNOWN_PROMPT_REGISTRY_VERSIONS:
+        raise ExtractionError(
+            "prompt_registry_version must be one of the registry versions this "
+            f"code has published: {list(KNOWN_PROMPT_REGISTRY_VERSIONS)}",
+            reason_code=PROMPT_QUALIFICATION_INVALID,
+        )
 
     # The bootstrap iff. These three values are what makes the basis honest, and
     # together they keep a pre-evaluation record from ever reaching pilot or
@@ -356,12 +375,13 @@ def validate_prompt_qualification(
         prompt["prompt_hash"],
         "the digest of the resolved prompt bytes",
     )
-    _require_equal(
-        "prompt_registry_version",
-        record.get("prompt_registry_version"),
-        prompt["prompt_registry_version"],
-        "the registry version this route resolved",
-    )
+    # ADR-053 (G6-P). The registry-version equality that stood here compared the
+    # record against ``load_prompt``'s stamp -- and that stamp is read from a
+    # module constant at call time, so it describes the *build*, not the prompt
+    # artifact. It therefore added nothing to the binding that P1-P3 do not
+    # already establish byte-exactly, while making every historical record
+    # invalid the moment the registry moved for an unrelated reason. What the
+    # record must satisfy is membership in the published set, checked above.
 
     # P5-P7. One stage, one output contract, equal to the released schema this
     # run actually validates against.

@@ -142,7 +142,13 @@ def test_package_is_enumerable_and_complete():
     # and it is separate for the reason the others are: manifests.py owns the
     # released validators, and a producer living beside them would let a future
     # edit change what a record must be and what a record is in one place.
-    assert len(MODULES) == 20
+    #
+    # ADR-052 (G6-V) adds availability_vocabulary.py: 20 -> 21. It is separate
+    # from candidates.py, which is where the vocabulary is eventually consumed,
+    # because the artifact governs admission and candidates.py performs it: a
+    # producer living inside its own consumer could be quietly relaxed to admit
+    # whatever that consumer already produced.
+    assert len(MODULES) == 21
     assert (PACKAGE / "__init__.py") in MODULES
 
 

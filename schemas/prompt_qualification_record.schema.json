@@ -114,6 +114,7 @@
     },
     "prompt_id": {
       "enum": [
+        "product_discovery_schema_v2",
         "product_discovery_recall",
         "product_consolidation_precision",
         "capability_extraction",
@@ -135,7 +136,10 @@
       "pattern": "^(?![\\s\\S]*[\\r\\n])prompts/extraction/[a-z0-9_]+\\.md$"
     },
     "prompt_registry_version": {
-      "const": "extraction_prompt_registry_v1"
+      "enum": [
+        "extraction_prompt_registry_v1",
+        "extraction_prompt_registry_v2"
+      ]
     },
     "qualification_basis": {
       "enum": [

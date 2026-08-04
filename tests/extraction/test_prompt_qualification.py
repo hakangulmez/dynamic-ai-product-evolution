@@ -43,6 +43,8 @@ from dynamic_ai_products.extraction.prompt_qualification import (
 )
 from dynamic_ai_products.extraction.prompts import (
     EXTRACTION_PROMPTS,
+    KNOWN_PROMPT_REGISTRY_VERSIONS,
+    PROMPT_REGISTRY_VERSION,
     load_prompt,
     single_pass_prompt_plan,
 )
@@ -56,7 +58,7 @@ from dynamic_ai_products.providers.client_contract_v2 import (
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = ROOT / "schemas" / "prompt_qualification_record.schema.json"
 CHANGE_REQUEST_REFERENCE = (
-    "evals/change_requests/CR-0001-product-discovery-recall-bootstrap-qualification.md"
+    "evals/change_requests/CR-0002-product-discovery-schema-v2-bootstrap-qualification.md"
 )
 STAGE = "product_extraction"
 STAGE_SHA = STAGE_OUTPUT_SCHEMA_SHA256[STAGE]
@@ -83,7 +85,7 @@ def _repo_digest(reference: str) -> str:
 
 
 def _prompt():
-    return load_prompt(ROOT, "product_discovery_recall")
+    return load_prompt(ROOT, "product_discovery_schema_v2")
 
 
 def record(**overrides) -> dict:
@@ -98,7 +100,7 @@ def record(**overrides) -> dict:
         "qualification_status": "bootstrap_authorized_live_dev",
         "prompt_lifecycle_state": "candidate",
         "supersedes_qualification_id": None,
-        "prompt_id": "product_discovery_recall",
+        "prompt_id": "product_discovery_schema_v2",
         "prompt_registry_version": prompt["prompt_registry_version"],
         "prompt_reference": prompt["reference"],
         "prompt_artifact_sha256": prompt["prompt_hash"],
@@ -209,10 +211,19 @@ def test_the_prompt_id_vocabulary_is_the_registry_and_not_a_second_list():
     assert declared == {pid for ids in EXTRACTION_PROMPTS.values() for pid in ids}
 
 
-def test_the_stage_sequence_still_puts_discovery_first():
-    """A reordered registry would silently requalify a different prompt."""
-    assert EXTRACTION_PROMPTS[STAGE][0] == "product_discovery_recall"
-    assert single_pass_prompt_plan(STAGE)["prompt_id"] == "product_discovery_recall"
+def test_the_record_qualifies_the_prompt_the_plan_actually_resolves():
+    """A reordered registry must not silently requalify a different prompt.
+
+    ADR-053 (G6-P) moved the schema-bound successor to position one, so the
+    invariant is asserted against the plan rather than against a remembered
+    name: whichever prompt the sequence puts first is the one the record has to
+    qualify, and the reference record is built from that same resolution.
+    """
+    assert EXTRACTION_PROMPTS[STAGE][0] == "product_discovery_schema_v2"
+    assert single_pass_prompt_plan(STAGE)["prompt_id"] == EXTRACTION_PROMPTS[STAGE][0]
+    assert record()["prompt_id"] == single_pass_prompt_plan(STAGE)["prompt_id"]
+    # The predecessor stays registered so ext-smoke-0002 remains verifiable.
+    assert "product_discovery_recall" in EXTRACTION_PROMPTS[STAGE]
 
 
 def test_the_pinned_prompt_digest_is_recomputed_from_the_repository_artifact():
@@ -303,7 +314,6 @@ def test_no_property_name_admits_free_text():
     [
         ("contract", "prompt_qualification_record@0.2.0"),
         ("schema_version", "0.2.0"),
-        ("prompt_registry_version", "extraction_prompt_registry_v2"),
         ("qualification_scope", "qualified_for_release"),
         ("qualification_status", "qualified"),
         ("prompt_lifecycle_state", "accepted"),
@@ -311,6 +321,60 @@ def test_no_property_name_admits_free_text():
 )
 def test_each_const_is_enforced_at_runtime(field, value):
     refuses(PROMPT_QUALIFICATION_INVALID, record=record(**{field: value}))
+
+
+# --- ADR-053 (G6-P): the registry version is a set, not a const ---------------
+
+
+@pytest.mark.parametrize("version", KNOWN_PROMPT_REGISTRY_VERSIONS)
+def test_every_published_registry_version_is_accepted(version):
+    """A record documents the version current when it was minted.
+
+    ``extraction_prompt_registry_v1`` records were correct when issued and stay
+    valid; requiring them to name today's constant would retroactively invalidate
+    a chain that nothing about the prompt had changed.
+    """
+    assert call(record=record(prompt_registry_version=version)) is not None
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["extraction_prompt_registry_v3", "extraction_prompt_registry", "", "v2", None, 2],
+)
+def test_a_registry_version_this_code_never_published_is_refused(version):
+    refuses(PROMPT_QUALIFICATION_INVALID, record=record(prompt_registry_version=version))
+
+
+def test_the_accepted_set_is_the_registrys_own_and_not_a_second_list():
+    """One owner. A local copy here could fall behind the registry it describes."""
+    import dynamic_ai_products.extraction.prompt_qualification as pq_mod
+    import dynamic_ai_products.extraction.prompts as prompts_mod
+
+    assert pq_mod.KNOWN_PROMPT_REGISTRY_VERSIONS is (
+        prompts_mod.KNOWN_PROMPT_REGISTRY_VERSIONS
+    )
+    assert PROMPT_REGISTRY_VERSION in KNOWN_PROMPT_REGISTRY_VERSIONS
+    assert len(set(KNOWN_PROMPT_REGISTRY_VERSIONS)) == len(
+        KNOWN_PROMPT_REGISTRY_VERSIONS
+    )
+
+
+def test_a_record_from_an_older_registry_still_binds_the_prompt_byte_exactly():
+    """Widening the version set did not loosen what actually binds a record.
+
+    The three checks that tie a record to its prompt -- id, reference, artifact
+    digest -- are untouched, so an old-registry record still cannot qualify a
+    prompt other than the one this route resolved.
+    """
+    stale = record(prompt_registry_version="extraction_prompt_registry_v1")
+    assert call(record=stale) is not None
+    refuses(
+        PROMPT_QUALIFICATION_MISMATCH,
+        record=record(
+            prompt_registry_version="extraction_prompt_registry_v1",
+            prompt_artifact_sha256="b" * 64,
+        ),
+    )
 
 
 @pytest.mark.parametrize("status", ["superseded", "revoked", "bootstrap_authorized_pilot"])

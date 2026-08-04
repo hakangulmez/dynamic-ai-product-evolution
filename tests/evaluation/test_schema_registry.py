@@ -174,12 +174,14 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-044: manifest_version 0.15.0 -> 0.16.0, 45 -> 46 entries,
-    # registering prompt_qualification_record alongside every unchanged entry.
-    # The previous ADR-043 rebaseline (0.14.0 -> 0.15.0, 42 -> 45) registered the
-    # two E-M successor contracts and the execution outcome. In both cases the
-    # released @0.1.0 schemas are byte-identical; only the registry grew.
-    "5171df860dc71f0a988a8067a92b89d5fd05a1be049cc7e7050bd0c6d49efa17"
+    # Rebaselined by ADR-052 (G6-V): manifest_version 0.16.0 -> 0.17.0, 46 -> 47
+    # entries, registering product_candidate_availability_vocabulary alongside
+    # every unchanged entry. The previous ADR-044 rebaseline (0.15.0 -> 0.16.0,
+    # 45 -> 46) registered prompt_qualification_record, and the ADR-043 one
+    # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
+    # execution outcome. In every case the released @0.1.0 schemas are
+    # byte-identical; only the registry grew.
+    "748800c758f2abf251a229cb3004983c3e63b13e9ef61cf8bb887b3ae95197e3"
 )
 
 
