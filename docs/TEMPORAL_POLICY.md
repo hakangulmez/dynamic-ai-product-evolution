@@ -73,9 +73,14 @@ Store availability explicitly:
 - `private_beta`
 - `public_beta`
 - `general_availability`
-- `default_or_broadly_deployed`
+- `broadly_deployed_or_default`
 - `deprecated`
 - `discontinued`
+- `unknown`
+
+This list is a copy. The canonical availability taxonomy is the one in
+`docs/methodology/PRODUCT_CAPABILITY_TASK_ONTOLOGY.md`; if the two ever disagree,
+that document governs and this one is corrected to match it.
 
 A roadmap statement does not become a deployed task.
 

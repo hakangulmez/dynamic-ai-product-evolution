@@ -1981,6 +1981,39 @@ produced, no `vertex_project` supplied, no directory created, no ADC resolved, n
 client built and no provider called. R8 and G5 remain unauthorized.
 
 
+
+## ADR-051 — The temporal policy's availability list is synchronised with the canonical ontology (G6-T)
+
+**Status:** Accepted.
+
+`docs/TEMPORAL_POLICY.md` carried a copy of the availability taxonomy that had
+drifted from the canonical list in
+`docs/methodology/PRODUCT_CAPABILITY_TASK_ONTOLOGY.md`: one status token was
+spelled with its two words transposed, and the `unknown` status was missing
+entirely. `docs/THESIS_METHODOLOGY_AND_DATA.md` already matched the ontology, so
+the temporal policy was the single outlier of three.
+
+Both defects are corrected. The list now carries the same eight statuses as the
+ontology, in the same spelling, and the temporal policy states explicitly that it
+holds a copy and that the ontology governs any disagreement.
+
+**Why this is a prerequisite rather than housekeeping.** The product
+candidate-admission vocabulary planned in G6-V pins the canonical taxonomy by
+reference and SHA-256 and enforces its token set by exact match. A second tracked
+document offering a different spelling of the same concept, or omitting a status,
+would make it ambiguous which literal an operator is expected to use. The
+correction therefore lands before any vocabulary artifact is produced.
+
+**Scope.** Documentation only. No schema, no code, no artifact, and no other
+section of the temporal policy changes: the source-admission cutoff rule, the
+ADR-046 cutoff-versus-period vocabulary, the historical-web-content rule and the
+frontier-baseline section are untouched. The ontology file itself is not edited,
+so its digest is unchanged and remains available as a stable pin target.
+
+**Rejected alternative.** Correcting the ontology to match the temporal policy was
+rejected: the ontology is the document CLAUDE.md's required-reading map names as
+the ontology, and two of the three tracked lists already agreed with it.
+
 ## Open decisions
 
 - Required source packet by firm-year.
