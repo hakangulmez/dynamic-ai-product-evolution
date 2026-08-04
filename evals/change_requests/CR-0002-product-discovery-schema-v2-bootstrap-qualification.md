@@ -116,6 +116,21 @@ through it.
   possible. The predecessor was never executed to a schema-valid result, so there is nothing to
   compare against.
 
+**The prompt-to-vocabulary binding is checked offline only, and the governance chain issued against
+this change request does not re-check it at call time.** B4 — that the four labelled status lists in
+the prompt text equal, list by list and in order, the corresponding lists of the
+`product_candidate_availability_vocabulary@0.1.0` artifact — is a pure function and a test. E4, the
+same comparison performed again at the run's F0 gate before any provider send, belonged to the
+authorization successor that this increment deliberately defers. There is therefore no code path in
+the current chain that asks, at the moment of a live call, whether the prompt still agrees with the
+vocabulary artifact.
+
+The practical consequence, stated rather than implied: if the prompt text and the artifact drift
+apart after this record is issued, the offline test fails but nothing in the governance chain
+refuses the call. Until E4 exists, keeping them in agreement is a review obligation, exactly as
+`code_commit` freshness and `run_created_at` are. This is not covered by a
+`known_limitation_codes` entry, because that vocabulary is closed and is not widened to absorb it.
+
 ## Risks and trade-offs
 
 Moving the successor to position one means `single_pass_prompt_plan` resolves it and the predecessor
