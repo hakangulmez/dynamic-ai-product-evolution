@@ -74,7 +74,7 @@ def test_insufficient_evidence_stays_uncertain(sentinel_run) -> None:
 def test_exited_incumbent_is_retained_with_lineage(sentinel_run) -> None:
     assert sentinel_run.tier_by_cik["0001000018"] == "TIER_A_CORE"
     lineage = read_jsonl(sentinel_run.run_dir / "firm_lineage.jsonl")
-    relations = {(l["company_id"], l["relationship"]) for l in lineage}
+    relations = {(row["company_id"], row["relationship"]) for row in lineage}
     assert ("CIK0001000018", "target") in relations
     assert ("CIK0001000017", "name_change") in relations
     assert ("CIK0001000001", "share_class_same_issuer") in relations

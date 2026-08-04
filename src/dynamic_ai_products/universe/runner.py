@@ -519,7 +519,7 @@ def run_universe_sentinel(
             audit_results[cik] for cik in sorted(audit_results) if cik in sampled_ciks
         ],
         "firm_year_eligibility.jsonl": [f.model_dump(mode="json") for f in firm_years],
-        "firm_lineage.jsonl": [l.model_dump(mode="json") for l in lineage_records],
+        "firm_lineage.jsonl": [record.model_dump(mode="json") for record in lineage_records],
         "companies.jsonl": companies,
     }
     output_hashes: dict[str, str] = {}
