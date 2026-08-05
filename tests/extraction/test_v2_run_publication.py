@@ -1352,7 +1352,20 @@ def test_v2_a_fully_valid_non_product_stage_is_blocked_by_the_e_r_renderer(
     set is nonempty, and the company-identity pin is valid. The permit handshake
     therefore happens -- and the renderer is what refuses, because
     ``MATERIALIZATION_SUPPORTED_STAGES`` holds only the product stage until E-S.
+
+    ADR-058 (E-S1) makes the capability stage materializable, so the code that
+    refuses it changes -- but *that* it is refused does not. The capability
+    prompt still carries no markers, and a capability extracted without its
+    parents is attributable to nothing, so the required-placeholder gate refuses
+    it with ``contents_placeholder_required``. Every other assertion below is
+    unchanged: the permit was reached, zero artifacts exist, neither send
+    happened, and the permit was revoked.
     """
+    expected_code = (
+        "contents_placeholder_required"
+        if stage == "capability_extraction"
+        else "contents_placeholder_unbound"
+    )
     chain = _valid_parent_chain(tmp_path / "parents")
     governance_root = tmp_path / "governance-stage"
     stage_sha = STAGE_OUTPUT_SCHEMA_SHA256[stage]
@@ -1390,7 +1403,7 @@ def test_v2_a_fully_valid_non_product_stage_is_blocked_by_the_e_r_renderer(
             live_call_authorization_pin=pin,
             **parent_kwargs,
         )
-    assert excinfo.value.reason_code == "contents_placeholder_unbound"
+    assert excinfo.value.reason_code == expected_code
     # The handshake was reached, so packet and governance preflight both passed.
     assert provider.permits == 1
     assert provider.contracts >= 1

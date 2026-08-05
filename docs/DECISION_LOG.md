@@ -2571,6 +2571,89 @@ kind of silent repair CLAUDE.md rule 9 forbids.
 `run_created_at`, was rejected for the reason above: it would put the dataset's
 own admission provenance outside the dataset.
 
+## ADR-058 — The capability stage becomes materializable, and its parents are labelled (E-S1)
+
+**Status:** Accepted.
+
+`capability_extraction` has failed closed at the renderer since E-R, and the
+reason was never that the stage was unwanted: it had no governed parent context
+to render. That changed when a human-validated Snapshot A came into existence.
+The packet builder already reconciles A (E1 + E5) and hands the renderer
+`parent_context.product_parents`, so `MATERIALIZATION_SUPPORTED_STAGES` gains
+the stage and a fourth binding, `validated_products`, joins its map.
+`task_extraction` stays closed: it needs Snapshot B, which does not exist.
+
+**A deliberate subset, not the payload — and the measurements decided it.**
+Rendering the full observation payload for eleven products costs 14,528
+characters; the three-field subset costs 1,197. But cost is the weakest of the
+three reasons:
+
+- **`evidence` is 64% of the full payload and is text the model already has.**
+  Those quotes come from the same passages rendered under
+  `{{passages_with_ids}}` with `P0NN` labels. Showing them again under an `A0N`
+  label gives the model a second place to quote from — one with no citation
+  label attached — which reopens exactly the defect ADR-055 closed. This is the
+  reason that would stand even if tokens were free.
+- **`product_observation_id` is 44 characters.** It is the string the `A0N`
+  label exists so the model never transcribes. Putting it back in the block
+  invites the transcription.
+- **The parent's `availability_status` would bias a judgement the capability
+  must make from its own evidence.** A capability's availability is its own
+  field, decided from what the passages say, not inherited.
+
+What remains is `product_name`, plus `product_family` and `entity_type` when
+present — enough to tell `Breeze Copilot`, `Breeze Agents` and
+`Breeze Intelligence` apart, which is what attribution actually needs.
+`target_customers` and `ambiguity` were measured absent on all eleven.
+
+**No second sorter.** `derive_parent_context` already returns parents ordered by
+`(observation_id, reference)`, from members that were re-read and hash-verified
+against Snapshot A. The binding labels that sequence and renders it; it does not
+choose an order. This is ADR-055's `canonical_passage_order` rule applied
+again — one place decides, everyone else obeys.
+
+**Enabling the stage removed a guard, and running the change is what found it.**
+The E-R docstring had warned that rendering the placeholder-free capability
+prompt verbatim "would send an instruction naming no products at all". That
+warning was enforced only as a side effect of the stage being unsupported. With
+the stage enabled, an existing end-to-end test stopped raising: a fully valid
+capability run reached the provider carrying the old markerless prompt.
+
+So the protection is made deliberate and narrow.
+`STAGE_REQUIRED_PLACEHOLDERS` names placeholders a stage's prompt **must** use,
+and the capability stage must use `validated_products`
+(`contents_placeholder_required`). The rule encodes an invariant, not a style
+preference: `capability_observation@0.1.0` requires `product_observation_id`, so
+a capability extracted without its parents is attributable to nothing, and a
+paid call that cannot produce a conforming record should not be made. The
+product stage requires nothing — none of its three placeholders is load-bearing
+in that way.
+
+**`RENDERER_VERSION` is unchanged.** It identifies how rendered content is
+determined, and the product stage's output is byte-identical: same bindings,
+same block format, same order. Which stages are supported is
+`MATERIALIZATION_SUPPORTED_STAGES`'s own business, and it is not folded into the
+renderer identity.
+
+**What this does not do.** The capability prompt is still
+`prompts/extraction/capability_extraction.md`, unchanged and unusable: measured,
+it carries zero placeholders, names three of six required schema fields, defines
+no output format, no closed status vocabulary and no evidence format, and points
+the model at a schema file it cannot see. E-S1 makes the stage renderable; it
+does not make it runnable. The required-placeholder gate is what keeps that
+distinction from being discovered by a live call.
+
+**Test dispositions — five, none deleted.** The three renderer assertions the
+scope named (the closed binding map, the supported-stage tuple, the two-stage
+unbound parametrization) are rebaselined. The placeholder-free capability test
+keeps asserting a refusal and changes only *which* refusal. The end-to-end
+run-publication case keeps every other assertion — permit reached, zero
+artifacts, neither send, permit revoked — and changes only the expected reason
+code for the capability parameter.
+
+**Scope.** Three modified paths, no new files, no manifest count change. No
+prompt, schema, governance record, run root or published artifact changes.
+
 ## Open decisions
 
 - Required source packet by firm-year.

@@ -17,12 +17,19 @@ of the raw template bytes; the rendered document carries a separate
 `rendered_contents_sha256`. Substitution never rewrites a prompt file.
 
 **Binding is a closed, stage-scoped map.** A placeholder the map does not name is
-refused rather than left in place or guessed. Only ``product_extraction`` is
-materializable in E-R. ``capability_extraction`` happens to carry no placeholders
-and ``task_extraction`` carries four unbound ones, but neither difference matters:
-both need governed parent materialization that E-S supplies, so **both** fail
-closed with ``contents_placeholder_unbound``. Rendering a placeholder-free
-capability prompt verbatim would send an instruction naming no products at all.
+refused rather than left in place or guessed.
+
+**Two stages materialize (ADR-058, E-S1).** ``product_extraction`` has since
+E-R. ``capability_extraction`` joins it now, because the thing it was waiting
+for exists: a human-validated Snapshot A, reconciled by the packet builder and
+handed here as ``parent_context.product_parents``. Before that there was no
+governed parent context to render, and rendering the placeholder-free capability
+prompt verbatim would have sent an instruction naming no products at all.
+
+``task_extraction`` still fails closed with ``contents_placeholder_unbound``: it
+needs Snapshot B, which does not exist yet. Its map stays empty, and the
+materialization gate refuses it before any binding is consulted — so an empty map
+never means "render verbatim".
 """
 
 from __future__ import annotations
@@ -35,11 +42,14 @@ from .errors import ExtractionError
 __all__ = [
     "MARKER_FRAGMENTS",
     "MATERIALIZATION_SUPPORTED_STAGES",
+    "PARENT_REF_PATTERN",
     "PASSAGE_REF_PATTERN",
     "PLACEHOLDER_PATTERN",
     "RENDERER_VERSION",
     "STAGE_PLACEHOLDER_BINDINGS",
+    "STAGE_REQUIRED_PLACEHOLDERS",
     "canonical_passage_order",
+    "parent_ref_label",
     "passage_ref_label",
     "render_provider_contents",
 ]
@@ -57,10 +67,15 @@ PLACEHOLDER_PATTERN = re.compile(r"\{\{([a-z_]+)\}\}")
 # not it looks like a placeholder this module could ever have bound.
 MARKER_FRAGMENTS: tuple[str, ...] = ("{{", "}}")
 
-# E-R materializes only the product stage. The capability and task stages need
-# governed parent materialization that E-S supplies, so they fail closed here
-# rather than rendering a prompt that cannot carry their parent context.
-MATERIALIZATION_SUPPORTED_STAGES: tuple[str, ...] = ("product_extraction",)
+# E-S1 adds the capability stage. It became materializable the moment a real
+# Snapshot A existed: the packet builder already reconciles A and hands the
+# renderer ``parent_context.product_parents``, so there is now governed parent
+# context to render. ``task_extraction`` still fails closed -- it needs Snapshot
+# B, which does not exist yet.
+MATERIALIZATION_SUPPORTED_STAGES: tuple[str, ...] = (
+    "product_extraction",
+    "capability_extraction",
+)
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -193,6 +208,76 @@ def _bind_passages_with_ids(packet: dict[str, Any]) -> str:
     return _PASSAGE_SEPARATOR.join(blocks)
 
 
+# ADR-058 (E-S1). The parent-product label, one per validated product.
+#
+# ``A`` for Snapshot A, so a reader never confuses it with a passage ``P``
+# label. Same rule as ADR-055: the model is shown what it needs to reason with
+# and is never asked to transcribe a long identifier -- here
+# ``product_observation_id``, which is 44 characters of colon-joined slug.
+PARENT_REF_PATTERN = re.compile(r"^A(\d{2,})$")
+
+
+def parent_ref_label(ordinal: int) -> str:
+    """The label for a one-based position in the parent-product order."""
+    return f"A{ordinal:02d}"
+
+
+def _bind_validated_products(packet: dict[str, Any]) -> str:
+    """The human-validated products, labelled, in the packet's own order.
+
+    **No second sorter.** ``parent_context.product_parents`` is already ordered
+    by ``derive_parent_context`` -- ascending ``(observation_id, reference)`` --
+    and every entry there was re-read and hash-verified against a Snapshot A
+    member before it arrived. This function labels that sequence and renders it;
+    it does not choose an order, exactly as ``_bind_passages_with_ids`` defers to
+    ``canonical_passage_order``.
+
+    **A deliberate subset, not the payload.** Three fields per product:
+    ``product_name``, and ``product_family``/``entity_type`` when present. What
+    is left out matters more than what is kept:
+
+    - ``evidence`` -- measured at 64% of the full payload, and it is the *same*
+      text the model already receives under ``{{passages_with_ids}}``. Showing it
+      twice under two different labels invites the model to quote from the block
+      that carries no ``P0NN`` ref, reopening the citation defect ADR-055 closed.
+    - ``product_observation_id`` -- 44 characters whose transcription is the
+      exact thing the ``A0N`` label exists to avoid.
+    - ``availability_status`` -- a capability judges its own availability from
+      evidence. Showing the parent's would bias that judgement rather than
+      inform it.
+
+    Measured on the pilot Snapshot A: 1,197 characters instead of 14,528.
+    """
+    context = packet.get("parent_context")
+    if not isinstance(context, dict):
+        raise ExtractionError(
+            "the capability stage requires parent context",
+            reason_code="contents_context_invalid",
+        )
+    parents = context.get("product_parents")
+    if not isinstance(parents, list) or not parents:
+        raise ExtractionError(
+            "rendering requires at least one validated product",
+            reason_code="contents_context_invalid",
+        )
+    blocks: list[str] = []
+    for ordinal, parent in enumerate(parents, start=1):
+        if not isinstance(parent, dict) or not isinstance(parent.get("payload"), dict):
+            raise ExtractionError(
+                "each parent product must carry its verified payload",
+                reason_code="contents_context_invalid",
+            )
+        payload = parent["payload"]
+        name = _require_str(payload.get("product_name"), "product_name")
+        header = f"[ref: {parent_ref_label(ordinal)}]"
+        for field in ("product_family", "entity_type"):
+            value = payload.get(field)
+            if value is not None:
+                header += f" [{field}: {_require_str(value, field)}]"
+        blocks.append(f"{header}\n{name}")
+    return _PASSAGE_SEPARATOR.join(blocks)
+
+
 # Closed, stage-scoped binding map. A stage absent from this map cannot render,
 # and a placeholder absent from its stage's entry is refused.
 STAGE_PLACEHOLDER_BINDINGS: dict[str, dict[str, Callable[[dict[str, Any]], str]]] = {
@@ -201,14 +286,42 @@ STAGE_PLACEHOLDER_BINDINGS: dict[str, dict[str, Callable[[dict[str, Any]], str]]
         "cutoff": _bind_cutoff,
         "passages_with_ids": _bind_passages_with_ids,
     },
-    # Both entries are empty and neither stage is materializable: the
-    # MATERIALIZATION_SUPPORTED_STAGES gate above refuses them before any binding
-    # is consulted, so an empty map here never means "render verbatim". The
-    # capability prompt carries no markers and task_discovery_recall carries four;
-    # that difference is irrelevant, because both need the governed parent
-    # materialization E-S supplies.
-    "capability_extraction": {},
+    # ADR-058 (E-S1). The capability stage binds the same three the product
+    # stage does, plus the validated products it attributes capabilities to.
+    # ``validated_products`` is deliberately not offered to the product stage:
+    # that stage has no parents, and a placeholder a stage cannot legitimately
+    # fill has no business in its map.
+    "capability_extraction": {
+        "company_name": _bind_company_name,
+        "cutoff": _bind_cutoff,
+        "passages_with_ids": _bind_passages_with_ids,
+        "validated_products": _bind_validated_products,
+    },
+    # Still empty and still not materializable: the
+    # MATERIALIZATION_SUPPORTED_STAGES gate refuses this stage before any binding
+    # is consulted, so the empty map never means "render verbatim". The task
+    # stage needs Snapshot B, which does not exist yet.
     "task_extraction": {},
+}
+
+# ADR-058. Placeholders a stage's prompt **must** use, not merely may.
+#
+# Found by running the change: enabling the capability stage removed the gate
+# that had been stopping a placeholder-free capability prompt, and a live run
+# then reached the provider carrying an instruction that named no products at
+# all. That was the exact hazard the old E-R docstring warned about; making the
+# stage materializable is what took the accidental guard away.
+#
+# So the guard is made deliberate and narrow. Parent context is the *reason*
+# this stage became materializable: ``capability_observation@0.1.0`` requires
+# ``product_observation_id``, so a capability extracted without its parents is
+# attributable to nothing. A prompt that ignores them cannot produce a
+# conforming record, and a paid call that cannot conform should not be made.
+#
+# The product stage requires nothing here: its three placeholders are used by
+# its prompt, but none of them is load-bearing in this way.
+STAGE_REQUIRED_PLACEHOLDERS: dict[str, tuple[str, ...]] = {
+    "capability_extraction": ("validated_products",),
 }
 
 
@@ -251,6 +364,12 @@ def render_provider_contents(
         raise ExtractionError(
             f"prompt requires placeholders this stage does not bind: {unbound}",
             reason_code="contents_placeholder_unbound",
+        )
+    missing = sorted(set(STAGE_REQUIRED_PLACEHOLDERS.get(stage, ())) - set(requested))
+    if missing:
+        raise ExtractionError(
+            f"stage {stage!r} requires a prompt that uses {missing}",
+            reason_code="contents_placeholder_required",
         )
 
     # Values are resolved once each, so a placeholder repeated in the template
