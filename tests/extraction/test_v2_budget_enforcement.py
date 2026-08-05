@@ -87,7 +87,7 @@ METER_VERSION = "0.1.0"
 MAX_OUTPUT_TOKENS = 8192
 MEASURED_TOKENS = 1000
 CHANGE_REQUEST_REFERENCE = (
-    "evals/change_requests/CR-0003-product-discovery-schema-v3-bootstrap-qualification.md"
+    "evals/change_requests/CR-0004-product-discovery-schema-v4-bootstrap-qualification.md"
 )
 
 GOV_AUTH = "governance/live_call_authorization.json"
@@ -270,7 +270,7 @@ def _write_identity(root: Path) -> dict[str, str]:
 
 
 def _prompt_qualification() -> dict:
-    prompt = load_prompt(REPO_ROOT, "product_discovery_schema_v3")
+    prompt = load_prompt(REPO_ROOT, "product_discovery_schema_v4")
     return {
         "contract": "prompt_qualification_record@0.1.0",
         "schema_version": "0.1.0",
@@ -280,7 +280,7 @@ def _prompt_qualification() -> dict:
         "qualification_status": "bootstrap_authorized_live_dev",
         "prompt_lifecycle_state": "candidate",
         "supersedes_qualification_id": None,
-        "prompt_id": "product_discovery_schema_v3",
+        "prompt_id": "product_discovery_schema_v4",
         "prompt_registry_version": prompt["prompt_registry_version"],
         "prompt_reference": prompt["reference"],
         "prompt_artifact_sha256": prompt["prompt_hash"],

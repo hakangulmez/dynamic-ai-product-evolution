@@ -58,7 +58,7 @@ from dynamic_ai_products.providers.client_contract_v2 import (
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = ROOT / "schemas" / "prompt_qualification_record.schema.json"
 CHANGE_REQUEST_REFERENCE = (
-    "evals/change_requests/CR-0003-product-discovery-schema-v3-bootstrap-qualification.md"
+    "evals/change_requests/CR-0004-product-discovery-schema-v4-bootstrap-qualification.md"
 )
 STAGE = "product_extraction"
 STAGE_SHA = STAGE_OUTPUT_SCHEMA_SHA256[STAGE]
@@ -85,7 +85,7 @@ def _repo_digest(reference: str) -> str:
 
 
 def _prompt():
-    return load_prompt(ROOT, "product_discovery_schema_v3")
+    return load_prompt(ROOT, "product_discovery_schema_v4")
 
 
 def record(**overrides) -> dict:
@@ -100,7 +100,7 @@ def record(**overrides) -> dict:
         "qualification_status": "bootstrap_authorized_live_dev",
         "prompt_lifecycle_state": "candidate",
         "supersedes_qualification_id": None,
-        "prompt_id": "product_discovery_schema_v3",
+        "prompt_id": "product_discovery_schema_v4",
         "prompt_registry_version": prompt["prompt_registry_version"],
         "prompt_reference": prompt["reference"],
         "prompt_artifact_sha256": prompt["prompt_hash"],
@@ -219,7 +219,7 @@ def test_the_record_qualifies_the_prompt_the_plan_actually_resolves():
     name: whichever prompt the sequence puts first is the one the record has to
     qualify, and the reference record is built from that same resolution.
     """
-    assert EXTRACTION_PROMPTS[STAGE][0] == "product_discovery_schema_v3"
+    assert EXTRACTION_PROMPTS[STAGE][0] == "product_discovery_schema_v4"
     assert single_pass_prompt_plan(STAGE)["prompt_id"] == EXTRACTION_PROMPTS[STAGE][0]
     assert record()["prompt_id"] == single_pass_prompt_plan(STAGE)["prompt_id"]
     # The predecessor stays registered so ext-smoke-0002 remains verifiable.
@@ -340,7 +340,7 @@ def test_every_published_registry_version_is_accepted(version):
 
 @pytest.mark.parametrize(
     "version",
-    ["extraction_prompt_registry_v4", "extraction_prompt_registry", "", "v3", None, 2],
+    ["extraction_prompt_registry_v5", "extraction_prompt_registry", "", "v4", None, 2],
 )
 def test_a_registry_version_this_code_never_published_is_refused(version):
     refuses(PROMPT_QUALIFICATION_INVALID, record=record(prompt_registry_version=version))

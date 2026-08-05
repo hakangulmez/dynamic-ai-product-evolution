@@ -505,7 +505,9 @@ def test_manifest_count():
     # module for the derived identity fields and the C1-C6 gate.
     # 599 = 597 + the two ADR-055 paths: the label-citing successor prompt
     # and the change request its qualification record pins.
-    assert declared == len(paths) == 599
+    # 601 = 599 + the two ADR-056 paths: the label-emitting successor prompt
+    # and the change request its qualification record pins.
+    assert declared == len(paths) == 601
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

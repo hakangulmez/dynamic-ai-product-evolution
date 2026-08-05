@@ -19,7 +19,10 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from .availability_vocabulary import validate_availability_vocabulary
+from .availability_vocabulary import (
+    resolve_status_label,
+    validate_availability_vocabulary,
+)
 from .contents_renderer import PASSAGE_REF_PATTERN, canonical_passage_order
 from .errors import ExtractionError
 from .input_packet import hydrate_pinned_artifact
@@ -37,6 +40,7 @@ __all__ = [
     "materialize_candidate_collection",
     "parse_model_observations",
     "resolve_evidence_refs",
+    "resolve_status_labels",
     "slugify_product_name",
 ]
 
@@ -294,6 +298,31 @@ def resolve_evidence_refs(observation: Any, *, packet: dict[str, Any]) -> Any:
     return updated
 
 
+def resolve_status_labels(observation: Any) -> Any:
+    """Turn the ``availability_status`` label into the status it names.
+
+    The third application of one rule (ADR-054, ADR-055, this): a value the
+    model cannot be trusted to transcribe is not requested from it. Here the
+    string is short but internally repetitive -- ``broadly_deployed_or_default``
+    came back once as ``broadly_deployed_or_or_default`` -- and unlike a passage
+    reference the set is fixed, code-owned and packet-independent, so the label
+    resolves against :data:`CANONICAL_AVAILABILITY_STATUS_VALUES` directly.
+
+    Runs before schema validation and before C5, because ``availability_status``
+    is schema-required and C5 judges the resolved token, never the label.
+
+    Non-dict items and observations without the field pass through: they belong
+    to ``build_candidate_collection`` and the released ``rejected[]`` contract.
+    """
+    if not isinstance(observation, dict) or "availability_status" not in observation:
+        return observation
+    updated = dict(observation)
+    updated["availability_status"] = resolve_status_label(
+        observation["availability_status"]
+    )
+    return updated
+
+
 def parse_model_observations(raw_prediction: Any) -> list[Any]:
     """The envelope gates. Either a usable list of items, or a refusal.
 
@@ -466,7 +495,7 @@ def materialize_candidate_collection(
     # supplies ``product_observation_id``, and all four are schema-required.
     derived = [
         derive_identity_fields(
-            resolve_evidence_refs(observation, packet=packet),
+            resolve_status_labels(resolve_evidence_refs(observation, packet=packet)),
             company_id=packet["company_id"],
             observation_cutoff=packet["observation_cutoff_date"],
         )

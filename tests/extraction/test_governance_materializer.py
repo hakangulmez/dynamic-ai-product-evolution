@@ -252,9 +252,9 @@ def test_the_module_never_binds_a_run_root():
 @pytest.mark.parametrize(
     "reference",
     [
-        "prompts/extraction/product_discovery_schema_v3.md",
+        "prompts/extraction/product_discovery_schema_v4.md",
         "specs/SPEC-024-run-versioning-and-comparison.md",
-        "evals/change_requests/CR-0003-product-discovery-schema-v3-bootstrap-qualification.md",
+        "evals/change_requests/CR-0004-product-discovery-schema-v4-bootstrap-qualification.md",
     ],
 )
 def test_each_cited_document_actually_reaches_the_record(reference, tmp_path):

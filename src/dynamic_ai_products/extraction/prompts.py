@@ -38,6 +38,7 @@ KNOWN_PROMPT_REGISTRY_VERSIONS: tuple[str, ...] = (
     "extraction_prompt_registry_v1",
     "extraction_prompt_registry_v2",
     "extraction_prompt_registry_v3",
+    "extraction_prompt_registry_v4",
 )
 
 # ADR-053 (G6-P). ``v1`` -> ``v2``: the product_extraction sequence gained a
@@ -48,7 +49,10 @@ KNOWN_PROMPT_REGISTRY_VERSIONS: tuple[str, ...] = (
 #
 # ADR-055. ``v2`` -> ``v3``: a second successor takes position one, citing
 # passages by short positional label instead of transcribed identifiers.
-PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v3"
+#
+# ADR-056. ``v3`` -> ``v4``: the availability status is emitted as a short
+# label instead of a transcribed token.
+PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v4"
 
 # Stage -> ordered prompt ids. Labels live here, never inside a frozen prompt.
 EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
@@ -56,7 +60,11 @@ EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
         # Position one is what ``single_pass_prompt_plan`` executes. This
         # successor states the output schema explicitly, carries the closed
         # availability vocabulary as literal text, and cites passages by short
-        # positional label (ADR-055).
+        # positional label (ADR-055) and names the availability status by short
+        # label rather than transcribing it (ADR-056).
+        "product_discovery_schema_v4",
+        # Retained: ext-smoke-0005 resolved this prompt. It asked the model to
+        # write the status token in full, which it doubled a syllable of once.
         "product_discovery_schema_v3",
         # Retained: ext-smoke-0003 and ext-smoke-0004 resolved this prompt and
         # both chains must stay verifiable. It asked the model to transcribe a
@@ -77,7 +85,11 @@ EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
 # having been checked; a prompt outside it carries no such text. One source,
 # used in both directions, so the two rules cannot drift apart.
 VOCABULARY_BOUND_PROMPT_IDS = frozenset(
-    {"product_discovery_schema_v2", "product_discovery_schema_v3"}
+    {
+        "product_discovery_schema_v2",
+        "product_discovery_schema_v3",
+        "product_discovery_schema_v4",
+    }
 )
 
 _PROMPT_DIR = "prompts/extraction"

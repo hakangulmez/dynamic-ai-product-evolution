@@ -415,11 +415,12 @@ def _vocab_root(tmp_path: Path, vocabulary: dict) -> tuple[Path, dict]:
 
 
 def test_a_conforming_run_materializes_exactly_one_collection(tmp_path, vocabulary):
+    """End to end the model now emits a status *label*, resolved before C5."""
     vroot, vpin = _vocab_root(tmp_path, vocabulary)
     croot = tmp_path / "cand"
     croot.mkdir()
     pin = materialize_candidate_collection(
-        raw_prediction=envelope(json.dumps([observation()])),
+        raw_prediction=envelope(json.dumps([observation(availability_status="S5")])),
         packet=packet(),
         raw_artifact_reference="data/runs/x/predictions/raw_prediction.json",
         raw_artifact_sha256="b" * 64,
@@ -439,6 +440,10 @@ def test_a_conforming_run_materializes_exactly_one_collection(tmp_path, vocabula
     assert body["entries"][0]["observation"]["product_observation_id"] == (
         f"{COMPANY}:{CUTOFF}:marketing-hub"
     )
+    # The label is resolved on the way in; the artifact stores the real token.
+    assert body["entries"][0]["observation"]["availability_status"] == (
+        "general_availability"
+    )
 
 
 def test_a_conformance_violation_writes_nothing_at_all(tmp_path, vocabulary):
@@ -449,8 +454,8 @@ def test_a_conformance_violation_writes_nothing_at_all(tmp_path, vocabulary):
     with pytest.raises(ExtractionError) as excinfo:
         materialize_candidate_collection(
             raw_prediction=envelope(json.dumps([
-                observation(),
-                observation(product_name="Other", availability_status="planned"),
+                observation(availability_status="S5"),
+                observation(product_name="Other", availability_status="S9"),
             ])),
             packet=packet(),
             raw_artifact_reference="data/runs/x/predictions/raw_prediction.json",
@@ -461,7 +466,9 @@ def test_a_conformance_violation_writes_nothing_at_all(tmp_path, vocabulary):
             repo_root=ROOT,
             schema_root=ROOT / "schemas",
         )
-    assert excinfo.value.reason_code == "candidate_conformance_status_not_governed"
+    assert excinfo.value.reason_code == (
+        "candidate_conformance_status_label_unresolvable"
+    )
     assert list(croot.rglob("*")) == []
 
 
@@ -470,7 +477,7 @@ def test_a_second_materialization_is_refused(tmp_path, vocabulary):
     croot = tmp_path / "cand"
     croot.mkdir()
     kwargs = dict(
-        raw_prediction=envelope(json.dumps([observation()])),
+        raw_prediction=envelope(json.dumps([observation(availability_status="S5")])),
         packet=packet(),
         raw_artifact_reference="data/runs/x/predictions/raw_prediction.json",
         raw_artifact_sha256="b" * 64,
@@ -679,3 +686,110 @@ def test_the_successor_prompt_asks_for_labels_and_forbids_identifiers():
     assert '{"ref": ..., "quote": ...}' in text
     assert "Never emit `source_id` or `passage_id`" in text
     assert "[ref: P001]" in text
+
+
+# --- ADR-056: the status is named by label, not transcribed -----------------
+
+
+from dynamic_ai_products.extraction.availability_vocabulary import (  # noqa: E402
+    CANONICAL_AVAILABILITY_STATUS_VALUES,
+    resolve_status_label,
+    status_label,
+    status_label_table,
+)
+from dynamic_ai_products.extraction.candidates import resolve_status_labels  # noqa: E402
+
+
+def test_the_label_table_is_derived_from_the_canonical_tuple():
+    """One ordering, not two. The table is a view of the constant."""
+    table = status_label_table()
+    assert [token for _, token in table] == list(CANONICAL_AVAILABILITY_STATUS_VALUES)
+    assert [label for label, _ in table] == [f"S{i}" for i in range(1, 9)]
+    assert len(table) == 8
+
+
+@pytest.mark.parametrize("ordinal, token", list(enumerate(CANONICAL_AVAILABILITY_STATUS_VALUES, 1)))
+def test_every_label_resolves_to_its_canonical_status(ordinal, token):
+    assert resolve_status_label(status_label(ordinal)) == token
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["S0", "S9", "S99", "s1", "S", "1", "", "SX", "general_availability",
+     "broadly_deployed_or_default", "broadly_deployed_or_or_default", None, 5],
+    ids=["zero", "nine", "far", "lowercase", "bare_letter", "bare_digit", "empty",
+         "letters", "spelled_token", "spelled_long_token", "the_measured_corruption",
+         "null", "int"],
+)
+def test_anything_that_is_not_a_label_is_refused(label):
+    """Strict both ways.
+
+    A spelled-out token is refused even when it is spelled correctly: accepting
+    both conventions would restore the transcription this change removes, and
+    the doubled-syllable value measured on ``ext-smoke-0005`` is refused with
+    the same code rather than being reported as an ungoverned status.
+    """
+    with pytest.raises(ExtractionError) as excinfo:
+        resolve_status_label(label)
+    assert excinfo.value.reason_code == (
+        "candidate_conformance_status_label_unresolvable"
+    )
+
+
+def test_the_measured_corruption_is_refused_before_c5_sees_it():
+    """``broadly_deployed_or_or_default`` blocked a whole run once."""
+    with pytest.raises(ExtractionError) as excinfo:
+        resolve_status_labels(observation(availability_status="broadly_deployed_or_or_default"))
+    assert excinfo.value.reason_code == (
+        "candidate_conformance_status_label_unresolvable"
+    )
+
+
+def test_resolution_replaces_the_label_and_leaves_the_rest_alone():
+    out = resolve_status_labels(observation(availability_status="S2"))
+    assert out["availability_status"] == "broadly_deployed_or_default"
+    assert out["product_name"] == "Marketing Hub"
+
+
+def test_status_resolution_does_not_mutate_its_input():
+    original = observation(availability_status="S5")
+    snapshot = json.dumps(original, sort_keys=True)
+    resolve_status_labels(original)
+    assert json.dumps(original, sort_keys=True) == snapshot
+
+
+def test_status_resolution_leaves_untouched_what_it_does_not_own():
+    for item in ("a string", 12, None):
+        assert resolve_status_labels(item) is item
+    without = {"product_name": "x"}
+    assert resolve_status_labels(without) is without
+
+
+def test_the_v4_prompt_renders_exactly_the_generated_table():
+    """The instruction and the code cannot disagree about what S2 means."""
+    text = (ROOT / "prompts" / "extraction" / "product_discovery_schema_v4.md").read_text()
+    for label, token in status_label_table():
+        assert f"{label}  =  {token}" in text
+    assert "Do not write a status word" in text
+    assert "not a word" in text
+
+
+def test_the_v4_prompt_keeps_the_four_lists_so_the_binding_still_holds():
+    """B4 compares the prompt's real tokens against the artifact.
+
+    Replacing those lists with labels would delete the only check that proves
+    the prompt's copy of the vocabulary has not drifted.
+    """
+    from dynamic_ai_products.extraction.availability_vocabulary import (
+        parse_prompt_status_vocabulary,
+    )
+
+    text = (ROOT / "prompts" / "extraction" / "product_discovery_schema_v4.md").read_text()
+    parsed = parse_prompt_status_vocabulary(text)
+    assert parsed["active_status_values"] == [
+        "broadly_deployed_or_default",
+        "general_availability",
+        "private_beta",
+        "public_beta",
+    ]
+    assert parsed["unknown_status_values"] == ["unknown"]

@@ -154,7 +154,7 @@ _WINDOW_FIELDS: tuple[str, ...] = (
 # than accepted as a parameter: a caller free to cite any document could satisfy
 # the digest check against a file that says nothing about this prompt.
 CHANGE_REQUEST_REFERENCE = (
-    "evals/change_requests/CR-0003-product-discovery-schema-v3-bootstrap-qualification.md"
+    "evals/change_requests/CR-0004-product-discovery-schema-v4-bootstrap-qualification.md"
 )
 
 

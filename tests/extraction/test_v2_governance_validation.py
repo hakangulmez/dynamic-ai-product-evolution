@@ -65,7 +65,7 @@ ROUTING_SHA = derive_routing_contract(
     client_contract=build_client_contract_v2(vertex_project=PROJECT)
 )["routing_contract_sha256"]
 CHANGE_REQUEST_REFERENCE = (
-    "evals/change_requests/CR-0003-product-discovery-schema-v3-bootstrap-qualification.md"
+    "evals/change_requests/CR-0004-product-discovery-schema-v4-bootstrap-qualification.md"
 )
 
 GOV_AUTH = "governance/live_call_authorization.json"
@@ -223,7 +223,7 @@ def write_company_identity(root: Path, **overrides) -> dict[str, str]:
 
 
 def _prompt_qualification(**overrides) -> dict:
-    prompt = load_prompt(REPO_ROOT, "product_discovery_schema_v3")
+    prompt = load_prompt(REPO_ROOT, "product_discovery_schema_v4")
     record = {
         "contract": "prompt_qualification_record@0.1.0",
         "schema_version": "0.1.0",
@@ -233,7 +233,7 @@ def _prompt_qualification(**overrides) -> dict:
         "qualification_status": "bootstrap_authorized_live_dev",
         "prompt_lifecycle_state": "candidate",
         "supersedes_qualification_id": None,
-        "prompt_id": "product_discovery_schema_v3",
+        "prompt_id": "product_discovery_schema_v4",
         "prompt_registry_version": prompt["prompt_registry_version"],
         "prompt_reference": prompt["reference"],
         "prompt_artifact_sha256": prompt["prompt_hash"],

@@ -791,7 +791,9 @@ def test_repo_manifest_count_and_paths():
     # module for the derived identity fields and the C1-C6 gate.
     # 599 = 597 + the two ADR-055 paths: the label-citing successor prompt
     # and the change request its qualification record pins.
-    assert "Total tracked/scaffold files listed: **599**" in text
+    # 601 = 599 + the two ADR-056 paths: the label-emitting successor prompt
+    # and the change request its qualification record pins.
+    assert "Total tracked/scaffold files listed: **601**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

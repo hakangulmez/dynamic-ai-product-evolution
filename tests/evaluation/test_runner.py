@@ -1189,7 +1189,9 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # module for the derived identity fields and the C1-C6 gate.
     # 599 = 597 + the two ADR-055 paths: the label-citing successor prompt
     # and the change request its qualification record pins.
-    assert declared == len(paths) == 599
+    # 601 = 599 + the two ADR-056 paths: the label-emitting successor prompt
+    # and the change request its qualification record pins.
+    assert declared == len(paths) == 601
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

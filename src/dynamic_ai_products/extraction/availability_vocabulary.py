@@ -66,10 +66,14 @@ __all__ = [
     "AVAILABILITY_VOCABULARY_SCHEMA_VERSION",
     "AVAILABILITY_VOCABULARY_STAGE",
     "CANONICAL_AVAILABILITY_STATUS_VALUES",
+    "STATUS_LABEL_PATTERN",
     "build_availability_vocabulary",
     "derive_availability_taxonomy_pin",
     "materialize_availability_vocabulary",
     "parse_prompt_status_vocabulary",
+    "resolve_status_label",
+    "status_label",
+    "status_label_table",
     "validate_availability_vocabulary",
     "validate_prompt_vocabulary_binding",
 ]
@@ -102,6 +106,62 @@ CANONICAL_AVAILABILITY_STATUS_VALUES = (
     "public_beta",
     "unknown",
 )
+
+# ADR-056. A short label per canonical status, derived from the tuple above.
+#
+# Measured on ``ext-smoke-0005``: fourteen of fifteen candidates wrote
+# ``broadly_deployed_or_default`` correctly and one wrote
+# ``broadly_deployed_or_or_default`` -- the syllable ``or`` doubled. That is the
+# same fault that corrupted a ``passage_id`` twice before ADR-055: copying a
+# long, internally repetitive string. So the model is no longer asked to copy
+# this one either.
+#
+# The ordinal comes from ``CANONICAL_AVAILABILITY_STATUS_VALUES`` itself, not
+# from a second list. Inventing an ordering here would be the defect ADR-055
+# closed structurally for passages: one rule, one owner.
+STATUS_LABEL_PATTERN = re.compile(r"^S(\d+)$")
+
+
+def status_label(ordinal: int) -> str:
+    """The label for a one-based position in the canonical status tuple."""
+    return f"S{ordinal}"
+
+
+def status_label_table() -> tuple[tuple[str, str], ...]:
+    """``(label, token)`` for every admitted status, in canonical order.
+
+    The prompt renders this table and the resolver reads it, both from here, so
+    a label cannot mean one status in the instruction and another in the code.
+    """
+    return tuple(
+        (status_label(ordinal), token)
+        for ordinal, token in enumerate(CANONICAL_AVAILABILITY_STATUS_VALUES, start=1)
+    )
+
+
+def resolve_status_label(label: Any) -> str:
+    """Turn ``S2`` into the status it names, or refuse.
+
+    Strict on purpose: a real token is **not** accepted here. Accepting both
+    spellings would let a run mix two conventions, and the whole point of the
+    label is that the long token is never transcribed. A model that emits the
+    token instead has not followed the contract, and that should be loud.
+    """
+    match = STATUS_LABEL_PATTERN.fullmatch(label) if isinstance(label, str) else None
+    if match is None:
+        raise ExtractionError(
+            f"availability_status must be a status label such as 'S1'; got {label!r}",
+            reason_code=_STATUS_LABEL_UNRESOLVABLE,
+        )
+    ordinal = int(match.group(1))
+    if not 1 <= ordinal <= len(CANONICAL_AVAILABILITY_STATUS_VALUES):
+        raise ExtractionError(
+            f"availability_status cites {label!r}, but only "
+            f"{len(CANONICAL_AVAILABILITY_STATUS_VALUES)} statuses exist",
+            reason_code=_STATUS_LABEL_UNRESOLVABLE,
+        )
+    return CANONICAL_AVAILABILITY_STATUS_VALUES[ordinal - 1]
+
 
 # Ascending, so that iteration order in the partition checks is the order a
 # reader sees in the artifact and in every error message.
@@ -140,6 +200,10 @@ _PARTITION_OVERLAPPING = "vocabulary_partition_overlapping"
 _LIST_INVALID = "vocabulary_list_invalid"
 _UNKNOWN_MISPLACED = "vocabulary_unknown_misplaced"
 _TAXONOMY_PIN_MISMATCH = "availability_taxonomy_pin_mismatch"
+# ADR-056. Separate from the C5 code for the same reason ADR-055 kept its ref
+# code separate: "named a status outside the vocabulary" and "gave something
+# that is not a label at all" are different faults with different fixes.
+_STATUS_LABEL_UNRESOLVABLE = "candidate_conformance_status_label_unresolvable"
 
 # L6 is a constant, not a parameter: ``unknown`` has exactly one admissible
 # placement and no operator may move it.
