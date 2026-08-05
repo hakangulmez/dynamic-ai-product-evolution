@@ -20,6 +20,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from .availability_vocabulary import validate_availability_vocabulary
+from .contents_renderer import PASSAGE_REF_PATTERN, canonical_passage_order
 from .errors import ExtractionError
 from .input_packet import hydrate_pinned_artifact
 from .raw_artifacts import canonical_json_bytes, write_artifact
@@ -35,6 +36,7 @@ __all__ = [
     "derive_identity_fields",
     "materialize_candidate_collection",
     "parse_model_observations",
+    "resolve_evidence_refs",
     "slugify_product_name",
 ]
 
@@ -162,6 +164,12 @@ _C4 = "candidate_conformance_observation_id_mismatch"
 _C5 = "candidate_conformance_status_not_governed"
 _C6 = "candidate_conformance_evidence_pair_unknown"
 _COLLISION = "candidate_conformance_observation_id_collision"
+# ADR-055. Deliberately not folded into _C6. A citation naming a passage that
+# does not exist and a label the pipeline cannot resolve are different faults:
+# the first says the model invented an identifier, the second says it named a
+# position outside what it was shown. One is a transcription failure, the other
+# a counting failure, and an operator needs to know which.
+_REF_UNRESOLVABLE = "candidate_conformance_evidence_ref_unresolvable"
 
 
 def slugify_product_name(product_name: Any) -> str:
@@ -214,6 +222,76 @@ def derive_identity_fields(
     derived["normalized_name"] = normalized
     derived["product_observation_id"] = f"{company_id}:{observation_cutoff}:{normalized}"
     return derived
+
+
+def resolve_evidence_refs(observation: Any, *, packet: dict[str, Any]) -> Any:
+    """Turn each ``{"ref", "quote"}`` citation into the real identity pair.
+
+    The same move as :func:`derive_identity_fields`, for the same measured
+    reason: a model asked to copy a 32-character opaque hex string does not do
+    it reliably. Here it copies a three-digit label instead, and the pair it
+    stands for is read from the packet through
+    :func:`~.contents_renderer.canonical_passage_order` -- the *same* function
+    that decided what the model saw, so the label cannot mean one passage at
+    render time and another here.
+
+    **The schema is untouched.** Resolution happens before validation and the
+    result carries exactly ``{source_id, passage_id, quote}``, so
+    ``product_observation.schema.json`` stays valid unchanged.
+
+    Scope is narrow on purpose. Only a dict observation whose ``evidence`` is a
+    list is considered, and inside it only entries that are dicts carrying
+    ``ref``. Anything else passes through untouched for
+    ``build_candidate_collection`` to record as ``not_an_object`` or
+    ``schema_invalid`` -- the released ``rejected[]`` contract is not widened by
+    this step.
+
+    An entry that *does* carry a ``ref`` the packet cannot resolve is a refusal,
+    not a pass-through. The model followed the format and named a position that
+    does not exist; leaving that to schema validation would report it as a
+    missing ``source_id``, which is true but says nothing about what went wrong.
+    """
+    if not isinstance(observation, dict):
+        return observation
+    evidence = observation.get("evidence")
+    if not isinstance(evidence, list):
+        return observation
+    if not any(isinstance(entry, dict) and "ref" in entry for entry in evidence):
+        return observation
+
+    ordered = canonical_passage_order(packet)
+    resolved_entries: list[Any] = []
+    for entry in evidence:
+        if not isinstance(entry, dict) or "ref" not in entry:
+            resolved_entries.append(entry)
+            continue
+        label = entry["ref"]
+        match = (
+            PASSAGE_REF_PATTERN.fullmatch(label) if isinstance(label, str) else None
+        )
+        if match is None:
+            raise ExtractionError(
+                f"evidence cites {label!r}, which is not a passage label",
+                reason_code=_REF_UNRESOLVABLE,
+            )
+        ordinal = int(match.group(1))
+        if not 1 <= ordinal <= len(ordered):
+            raise ExtractionError(
+                f"evidence cites {label!r}, but only {len(ordered)} passages were "
+                "shown to the model",
+                reason_code=_REF_UNRESOLVABLE,
+            )
+        passage = ordered[ordinal - 1]
+        resolved = {
+            key: value for key, value in entry.items() if key != "ref"
+        }
+        resolved["source_id"] = passage["source_id"]
+        resolved["passage_id"] = passage["passage_id"]
+        resolved_entries.append(resolved)
+
+    updated = dict(observation)
+    updated["evidence"] = resolved_entries
+    return updated
 
 
 def parse_model_observations(raw_prediction: Any) -> list[Any]:
@@ -383,9 +461,12 @@ def materialize_candidate_collection(
     )
 
     observations = parse_model_observations(raw_prediction)
+    # Both derivations run before any schema check, and in this order: reference
+    # resolution supplies ``source_id``/``passage_id``, identity derivation
+    # supplies ``product_observation_id``, and all four are schema-required.
     derived = [
         derive_identity_fields(
-            observation,
+            resolve_evidence_refs(observation, packet=packet),
             company_id=packet["company_id"],
             observation_cutoff=packet["observation_cutoff_date"],
         )

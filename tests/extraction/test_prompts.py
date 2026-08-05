@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_registry_version_is_declared():
     # ADR-053 (G6-P): v1 -> v2 when the schema-bound successor took position one
     # in the product_extraction sequence.
-    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v2"
+    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v3"
 
 
 def test_every_stage_declares_at_least_one_prompt():
@@ -53,6 +53,7 @@ def test_prompts_for_stage_returns_the_registered_order():
     # ext-smoke-0002 resolved it, and removing it would make that chain
     # unverifiable. What changed is which prompt a single pass executes.
     assert prompts_for_stage("product_extraction") == (
+        "product_discovery_schema_v3",
         "product_discovery_schema_v2",
         "product_discovery_recall",
         "product_consolidation_precision",
@@ -134,9 +135,9 @@ def test_the_single_pass_plan_is_explicit_not_incidental():
 
     plan = single_pass_prompt_plan("product_extraction")
     assert plan == {
-        "prompt_id": "product_discovery_schema_v2",
+        "prompt_id": "product_discovery_schema_v3",
         "prompt_pass_index": 1,
-        "prompt_sequence_length": 3,
+        "prompt_sequence_length": 4,
         "prompt_sequence_complete": False,
     }
 

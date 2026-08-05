@@ -550,7 +550,7 @@ GOV_QUALIFICATION = "governance/adapter_qualification_record.json"
 # that a run refuses when those bytes are not the ones that were qualified.
 GOV_PROMPT_QUALIFICATION = "governance/prompt_qualification_record.json"
 CHANGE_REQUEST_REFERENCE = (
-    "evals/change_requests/CR-0002-product-discovery-schema-v2-bootstrap-qualification.md"
+    "evals/change_requests/CR-0003-product-discovery-schema-v3-bootstrap-qualification.md"
 )
 CODE_COMMIT = "be627003f3246b371c2b3ac13e813ef0bb112582"
 RUN_CREATED_AT = "2026-07-29T00:00:00Z"
@@ -749,7 +749,7 @@ def _repo_digest(reference: str) -> str:
 
 
 def _prompt_qualification_record(stage_sha: str, routing_sha: str, **overrides):
-    prompt = load_prompt(REPO_ROOT, "product_discovery_schema_v2")
+    prompt = load_prompt(REPO_ROOT, "product_discovery_schema_v3")
     record = {
         "contract": "prompt_qualification_record@0.1.0",
         "schema_version": "0.1.0",
@@ -759,7 +759,7 @@ def _prompt_qualification_record(stage_sha: str, routing_sha: str, **overrides):
         "qualification_status": "bootstrap_authorized_live_dev",
         "prompt_lifecycle_state": "candidate",
         "supersedes_qualification_id": None,
-        "prompt_id": "product_discovery_schema_v2",
+        "prompt_id": "product_discovery_schema_v3",
         "prompt_registry_version": prompt["prompt_registry_version"],
         "prompt_reference": prompt["reference"],
         "prompt_artifact_sha256": prompt["prompt_hash"],

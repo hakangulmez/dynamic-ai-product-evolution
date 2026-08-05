@@ -2344,6 +2344,89 @@ No released contract, schema, prompt, governance record or published run root
 changes; `extraction_candidate_collection@0.1.0` is not extended and its
 `rejected.reason` enum is not widened.
 
+## ADR-055 — A passage is cited by position, not by transcription (G6-R)
+
+**Status:** Accepted.
+
+Measured twice, on two independent live calls, and the two measurements agree
+character for character. Under `product_discovery_schema_v2` the model was asked
+to copy a 32-character `passage_id` into each evidence entry. In both
+`ext-smoke-0003` and `ext-smoke-0004` the same candidate returned the same
+corruption: `04917fd59df6da2499d38ea749a2c819` came back as
+`04917fd59df6da249982a2c819` — first eighteen characters right, last six right,
+the eight middle characters `d38ea749` collapsed to `82`. The other three
+citations on that same candidate were correct.
+
+The rendered document was read back from `inputs/rendered_provider_contents.md`,
+so the model was shown the right value. This is not a renderer defect. It is a
+reproducible transcription failure on a long opaque string, and `source_id` is
+49 characters of the same material.
+
+The consequence was disproportionate and correct: C6 refuses a citation that
+resolves to nothing, and C6 is atomic, so one unreliable copy operation blocked
+all nineteen candidates — including the eighteen whose evidence was sound.
+
+**The fix is the rule this repository already follows twice.** `candidate_id` has
+never been requested from a model; ADR-054 moved `company_id`,
+`normalized_name` and `product_observation_id` from requested to derived. Long
+identifiers are the same problem in a different place. Each rendered passage now
+carries a short positional label in its header —
+`[ref: P001] [passage_id: ...] [source_id: ...] [publication_date: ...]` — and
+`product_discovery_schema_v3` asks for `evidence` entries of exactly
+`{"ref": ..., "quote": ...}`, forbidding `source_id` and `passage_id` outright.
+`resolve_evidence_refs` turns each label back into the real pair before schema
+validation, so a conforming observation still carries
+`{source_id, passage_id, quote}` and `product_observation.schema.json` is
+**not** modified.
+
+**The identifiers stay in the rendered header.** The model no longer copies them;
+a human auditing the archived document still needs to reach the underlying
+passage without recomputing a label.
+
+**One sorter, and this is the part that matters.** The renderer has always
+emitted passages ordered by `(source_id, passage_id)`, not in the packet's own
+list order — its docstring says so and a test has fixed it since E-R. A resolver
+that indexed `packet["passages"]` would therefore have attached quotes to the
+wrong passages. Measured on the pilot packet: **121 of 124 positions differ**
+between the two orders. That failure would have been silent, because every
+position named would still be a real one, and the corrupted candidate happens to
+sit at canonical position `P003`.
+
+So the order is decided in exactly one place. `canonical_passage_order(packet)`
+is the single sorter; the renderer and the resolver both call it. Two `sorted`
+calls that agree today would be one rule living in two places, and this
+increment exists because a rule living in the model's memory did not hold.
+
+**A new failure mode gets a new code, not a borrowed one.** An out-of-range or
+malformed label is refused with
+`candidate_conformance_evidence_ref_unresolvable`, separate from
+`candidate_conformance_evidence_pair_unknown`. "Invented an identifier" and
+"named a position it was not shown" are different faults with different fixes,
+and folding them together would tell an operator less than the old code did.
+
+**What this does not establish.** The two archived failures prove the long form
+is unreliable. They do not prove the short form is reliable — that is untested
+against a model and is recorded as a known limitation in CR-0003. A label also
+names a position rather than a passage, so it is safe only because it is
+resolved against the packet the run was built from, in the same process, through
+the same function that rendered it. A label is never stored as an identity and
+never carried across runs; the persisted artifact holds the real pair.
+
+**Scope.** New prompt `product_discovery_schema_v3` at position one; the
+registry moves `extraction_prompt_registry_v2` → `v3` and the ADR-053 known-set
+mechanism absorbs it with no validator change. `product_discovery_schema_v2` and
+`product_discovery_recall` keep their bytes and their registration so
+`ext-smoke-0002`, `-0003` and `-0004` stay verifiable; CR-0001 and CR-0002 are
+untouched. `prompt_qualification_record@0.1.0` keeps its identity, version and
+property set; its `prompt_id` and `prompt_registry_version` enums mirror the
+registry and gain the new values additively. `REPO_MANIFEST.md` 597 → 599.
+
+**Rejected alternative.** Relaxing C6 to accept a near-miss identifier — for
+example by prefix matching — was rejected outright. It would convert a refusal
+that correctly caught a real defect into a heuristic that silently attaches
+evidence to whichever passage looks closest, which is fabrication with extra
+steps.
+
 ## Open decisions
 
 - Required source packet by firm-year.

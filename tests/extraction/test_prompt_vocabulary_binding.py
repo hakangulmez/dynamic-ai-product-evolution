@@ -30,8 +30,9 @@ from dynamic_ai_products.extraction.prompts import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-SUCCESSOR_ID = "product_discovery_schema_v2"
-PREDECESSOR_ID = "product_discovery_recall"
+SUCCESSOR_ID = "product_discovery_schema_v3"
+PREDECESSOR_ID = "product_discovery_schema_v2"
+RECALL_ID = "product_discovery_recall"
 STAGE = "product_extraction"
 
 LOCKED_ACTIVE = [
@@ -66,14 +67,17 @@ def vocabulary() -> dict:
 # --- the registry move ------------------------------------------------------
 
 
-def test_the_registry_version_moved_to_v2():
-    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v2"
+def test_the_registry_version_tracks_the_sequence():
+    # ADR-055 moved it again when the label-citing successor took position one.
+    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v3"
 
 
-def test_the_successor_is_first_and_the_predecessor_is_retained():
+def test_the_successor_is_first_and_every_predecessor_is_retained():
+    """Nothing is ever unregistered: each archived run must stay verifiable."""
     assert EXTRACTION_PROMPTS[STAGE] == (
         SUCCESSOR_ID,
         PREDECESSOR_ID,
+        RECALL_ID,
         "product_consolidation_precision",
     )
 
@@ -83,12 +87,13 @@ def test_a_single_pass_now_executes_the_successor():
     assert plan == {
         "prompt_id": SUCCESSOR_ID,
         "prompt_pass_index": 1,
-        "prompt_sequence_length": 3,
+        "prompt_sequence_length": 4,
         "prompt_sequence_complete": False,
     }
 
 
-def test_the_predecessor_prompt_bytes_are_untouched():
+@pytest.mark.parametrize("prompt_id", [PREDECESSOR_ID, RECALL_ID])
+def test_the_predecessor_prompt_bytes_are_untouched(prompt_id):
     """``ext-smoke-0002`` resolved these bytes; the chain stays verifiable.
 
     The digest is asserted against the committed file rather than a literal, so
@@ -98,17 +103,18 @@ def test_the_predecessor_prompt_bytes_are_untouched():
     import subprocess
 
     committed = subprocess.check_output(
-        ["git", "show", f"HEAD:prompts/extraction/{PREDECESSOR_ID}.md"],
+        ["git", "show", f"HEAD:prompts/extraction/{prompt_id}.md"],
         cwd=ROOT,
     )
-    on_disk = (ROOT / "prompts" / "extraction" / f"{PREDECESSOR_ID}.md").read_bytes()
+    on_disk = (ROOT / "prompts" / "extraction" / f"{prompt_id}.md").read_bytes()
     assert on_disk == committed
 
 
-def test_the_vocabulary_bound_set_is_closed_and_names_only_the_successor():
-    assert VOCABULARY_BOUND_PROMPT_IDS == frozenset({SUCCESSOR_ID})
+def test_the_vocabulary_bound_set_names_every_prompt_carrying_the_block():
+    """Both schema-bound prompts carry the literal vocabulary; the recall one does not."""
+    assert VOCABULARY_BOUND_PROMPT_IDS == frozenset({SUCCESSOR_ID, PREDECESSOR_ID})
     assert isinstance(VOCABULARY_BOUND_PROMPT_IDS, frozenset)
-    assert PREDECESSOR_ID not in VOCABULARY_BOUND_PROMPT_IDS
+    assert RECALL_ID not in VOCABULARY_BOUND_PROMPT_IDS
 
 
 def test_every_registered_prompt_resolves_to_a_file():
@@ -331,8 +337,8 @@ def test_b4e_catches_an_admitted_field_that_disagrees_with_its_own_partition(
     assert "B4e" in str(excinfo.value)
 
 
-def test_the_predecessor_prompt_carries_no_block_and_cannot_bind(vocabulary):
-    text = load_prompt(ROOT, PREDECESSOR_ID)["text"]
+def test_the_recall_prompt_carries_no_block_and_cannot_bind(vocabulary):
+    text = load_prompt(ROOT, RECALL_ID)["text"]
     with pytest.raises(ExtractionError) as excinfo:
         validate_prompt_vocabulary_binding(prompt_text=text, vocabulary=vocabulary)
     assert excinfo.value.reason_code == "prompt_vocabulary_block_invalid"

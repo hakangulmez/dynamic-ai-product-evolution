@@ -503,7 +503,9 @@ def test_manifest_count():
     # document the successor prompt's qualification record pins.
     # 597 = 596 + the ADR-054 (G6-M) path: the candidate-conformance test
     # module for the derived identity fields and the C1-C6 gate.
-    assert declared == len(paths) == 597
+    # 599 = 597 + the two ADR-055 paths: the label-citing successor prompt
+    # and the change request its qualification record pins.
+    assert declared == len(paths) == 599
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

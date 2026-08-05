@@ -30,7 +30,7 @@ BODY = b'{"candidates": [{"content": {"parts": [{"text": "{}"}]}}]}'
 
 RENDERED = (
     "Firm HUBSPOT INC as of 2024-12-31.\n\n"
-    "[passage_id: p-1] [source_id: sec-a]\nthe product ships an assistant\n"
+    "[ref: P001] [passage_id: p-1] [source_id: sec-a]\nthe product ships an assistant\n"
 )
 
 
@@ -128,7 +128,7 @@ def test_no_literal_placeholder_can_reach_the_sdk():
 
 def test_a_different_rendering_reaches_the_sdk_unchanged():
     seen: dict = {}
-    other = "Firm OTHER CO as of 2023-12-31.\n\n[passage_id: q-9] [source_id: sec-z]\nbody\n"
+    other = "Firm OTHER CO as of 2023-12-31.\n\n[ref: P001] [passage_id: q-9] [source_id: sec-z]\nbody\n"
     _provider(seen).complete(_request(other))
     assert seen["contents"] == other
 

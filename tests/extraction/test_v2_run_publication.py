@@ -92,7 +92,7 @@ SOURCE_MANIFEST = {"reference": "snapshots/m.json", "sha256": "e" * 64}
 COVERAGE = {"reference": "coverage/c.json", "sha256": "d" * 64}
 SENTINEL = "ya29.LEAKED-LOOKING-VALUE"
 CHANGE_REQUEST_REFERENCE = (
-    "evals/change_requests/CR-0002-product-discovery-schema-v2-bootstrap-qualification.md"
+    "evals/change_requests/CR-0003-product-discovery-schema-v3-bootstrap-qualification.md"
 )
 
 GOV_AUTH = "governance/live_call_authorization.json"
@@ -276,7 +276,7 @@ def _write_identity(root: Path) -> dict[str, str]:
 
 
 _STAGE_PROMPT = {
-    "product_extraction": "product_discovery_schema_v2",
+    "product_extraction": "product_discovery_schema_v3",
     "capability_extraction": "capability_extraction",
     "task_extraction": "task_discovery_recall",
 }

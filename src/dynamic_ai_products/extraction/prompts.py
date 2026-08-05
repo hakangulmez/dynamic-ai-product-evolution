@@ -37,6 +37,7 @@ __all__ = [
 KNOWN_PROMPT_REGISTRY_VERSIONS: tuple[str, ...] = (
     "extraction_prompt_registry_v1",
     "extraction_prompt_registry_v2",
+    "extraction_prompt_registry_v3",
 )
 
 # ADR-053 (G6-P). ``v1`` -> ``v2``: the product_extraction sequence gained a
@@ -44,14 +45,22 @@ KNOWN_PROMPT_REGISTRY_VERSIONS: tuple[str, ...] = (
 # registry, not of any single prompt, so it moves for every stage at once --
 # which is the point: a record that declares v1 was minted against a different
 # ordering than the one this build resolves.
-PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v2"
+#
+# ADR-055. ``v2`` -> ``v3``: a second successor takes position one, citing
+# passages by short positional label instead of transcribed identifiers.
+PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v3"
 
 # Stage -> ordered prompt ids. Labels live here, never inside a frozen prompt.
 EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
     "product_extraction": (
-        # Position one is what ``single_pass_prompt_plan`` executes. The
-        # successor states the output schema explicitly and carries the closed
-        # availability vocabulary as literal text.
+        # Position one is what ``single_pass_prompt_plan`` executes. This
+        # successor states the output schema explicitly, carries the closed
+        # availability vocabulary as literal text, and cites passages by short
+        # positional label (ADR-055).
+        "product_discovery_schema_v3",
+        # Retained: ext-smoke-0003 and ext-smoke-0004 resolved this prompt and
+        # both chains must stay verifiable. It asked the model to transcribe a
+        # 32-character passage_id, which it did wrong the same way twice.
         "product_discovery_schema_v2",
         # Retained, not retired: ``ext-smoke-0002`` resolved this prompt and its
         # bytes must stay reachable for that chain to remain verifiable. It is no
@@ -67,7 +76,9 @@ EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
 # vocabulary as literal text and therefore must not execute without the binding
 # having been checked; a prompt outside it carries no such text. One source,
 # used in both directions, so the two rules cannot drift apart.
-VOCABULARY_BOUND_PROMPT_IDS = frozenset({"product_discovery_schema_v2"})
+VOCABULARY_BOUND_PROMPT_IDS = frozenset(
+    {"product_discovery_schema_v2", "product_discovery_schema_v3"}
+)
 
 _PROMPT_DIR = "prompts/extraction"
 

@@ -530,3 +530,152 @@ def test_the_collection_never_lands_inside_the_run_root():
     assert "collection_root=candidate_collection_root" in source
     assert "collection_root=root" not in source
     assert "collection_root=outcome.run_root" not in source
+
+
+# --- ADR-055: positional labels replace transcribed identifiers -------------
+
+
+from dynamic_ai_products.extraction.candidates import resolve_evidence_refs  # noqa: E402
+from dynamic_ai_products.extraction.contents_renderer import (  # noqa: E402
+    canonical_passage_order,
+    passage_ref_label,
+    render_provider_contents,
+)
+
+
+def _packet_of(pairs) -> dict:
+    return {
+        "company_id": COMPANY,
+        "observation_cutoff_date": CUTOFF,
+        "legal_name": "TEST CO",
+        "passages": [
+            {
+                "source_id": source_id,
+                "passage_id": passage_id,
+                "text": f"body of {passage_id}",
+                "publication_date": "2024-01-01",
+            }
+            for source_id, passage_id in pairs
+        ],
+    }
+
+
+UNSORTED = _packet_of([("s-b", "p-9"), ("s-a", "p-2"), ("s-a", "p-1")])
+
+
+def test_the_canonical_order_is_not_the_packets_own_order():
+    """The defect the shared sorter exists to prevent.
+
+    Measured on the pilot packet: 121 of 124 positions differ between the
+    packet's list order and the render order. A resolver that indexed the list
+    would attach almost every quote to the wrong passage, and every position it
+    named would still be a real one -- so nothing downstream would notice.
+    """
+    own = [(p["source_id"], p["passage_id"]) for p in UNSORTED["passages"]]
+    canonical = [(p["source_id"], p["passage_id"]) for p in canonical_passage_order(UNSORTED)]
+    assert own != canonical
+    assert canonical == sorted(own)
+
+
+def test_the_renderer_and_the_resolver_read_the_same_order():
+    """One function decides, both callers obey -- asserted, not assumed."""
+    rendered = render_provider_contents(
+        stage="product_extraction",
+        prompt_text="{{company_name}} {{cutoff}}\n{{passages_with_ids}}",
+        packet=UNSORTED,
+    )
+    ordered = canonical_passage_order(UNSORTED)
+    for ordinal, passage in enumerate(ordered, start=1):
+        label = passage_ref_label(ordinal)
+        assert f"[ref: {label}] [passage_id: {passage['passage_id']}]" in rendered
+
+
+def test_the_renderer_keeps_the_identifiers_for_human_readers():
+    """The model no longer copies them; an auditor still needs them."""
+    rendered = render_provider_contents(
+        stage="product_extraction",
+        prompt_text="{{company_name}} {{cutoff}}\n{{passages_with_ids}}",
+        packet=UNSORTED,
+    )
+    assert rendered.count("[ref: ") == 3
+    assert rendered.count("[passage_id: ") == 3
+    assert rendered.count("[source_id: ") == 3
+
+
+@pytest.mark.parametrize("ordinal, expected", [(1, "P001"), (42, "P042"), (1000, "P1000")])
+def test_labels_are_one_based_and_widen_past_three_digits(ordinal, expected):
+    assert passage_ref_label(ordinal) == expected
+
+
+def test_a_ref_resolves_to_the_pair_at_that_canonical_position():
+    ordered = canonical_passage_order(UNSORTED)
+    out = resolve_evidence_refs(
+        observation(evidence=[{"ref": "P002", "quote": "q"}]), packet=UNSORTED
+    )
+    assert out["evidence"] == [
+        {
+            "quote": "q",
+            "source_id": ordered[1]["source_id"],
+            "passage_id": ordered[1]["passage_id"],
+        }
+    ]
+
+
+def test_the_resolved_observation_validates_against_the_unchanged_schema():
+    """The schema is untouched; resolution just runs first."""
+    from jsonschema import Draft202012Validator
+
+    schema = json.loads((ROOT / "schemas" / "product_observation.schema.json").read_text())
+    resolved = derive_identity_fields(
+        resolve_evidence_refs(
+            observation(evidence=[{"ref": "P001", "quote": "q"}]), packet=UNSORTED
+        ),
+        company_id=COMPANY,
+        observation_cutoff=CUTOFF,
+    )
+    Draft202012Validator(schema).validate(resolved)
+    assert set(resolved["evidence"][0]) == {"source_id", "passage_id", "quote"}
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["P004", "P999", "P000", "p001", "P1", "P01", "001", "", "PABC", None, 1],
+    ids=["out_of_range", "far_out", "zero", "lowercase", "one_digit", "two_digits",
+         "no_prefix", "empty", "letters", "null", "int"],
+)
+def test_an_unresolvable_label_has_its_own_reason_code(label):
+    """Not folded into the unknown-pair code.
+
+    "Invented an identifier" and "named a position it was not shown" are
+    different faults, and an operator needs to know which one happened.
+    """
+    with pytest.raises(ExtractionError) as excinfo:
+        resolve_evidence_refs(
+            observation(evidence=[{"ref": label, "quote": "q"}]), packet=UNSORTED
+        )
+    assert excinfo.value.reason_code == "candidate_conformance_evidence_ref_unresolvable"
+
+
+def test_resolution_leaves_untouched_what_it_does_not_own():
+    """Non-objects and ref-free evidence fall through to the released contract."""
+    for item in ("a string", 12, None):
+        assert resolve_evidence_refs(item, packet=UNSORTED) is item
+    already = observation(evidence=[{"source_id": "s-a", "passage_id": "p-1", "quote": "q"}])
+    assert resolve_evidence_refs(already, packet=UNSORTED) is already
+    assert resolve_evidence_refs({"evidence": "not a list"}, packet=UNSORTED) == (
+        {"evidence": "not a list"}
+    )
+
+
+def test_resolution_does_not_mutate_its_input():
+    original = observation(evidence=[{"ref": "P001", "quote": "q"}])
+    snapshot = json.dumps(original, sort_keys=True)
+    resolve_evidence_refs(original, packet=UNSORTED)
+    assert json.dumps(original, sort_keys=True) == snapshot
+
+
+def test_the_successor_prompt_asks_for_labels_and_forbids_identifiers():
+    text = (ROOT / "prompts" / "extraction" / "product_discovery_schema_v3.md").read_text()
+    assert '{"ref": ..., "quote": ...}' in text
+    assert "Never emit `source_id` or `passage_id`" in text
+    assert "[ref: P001]" in text
