@@ -70,7 +70,7 @@ def vocabulary() -> dict:
 
 def test_the_registry_version_tracks_the_sequence():
     # ADR-055 moved it again when the label-citing successor took position one.
-    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v4"
+    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v5"
 
 
 def test_the_successor_is_first_and_every_predecessor_is_retained():
@@ -113,8 +113,15 @@ def test_the_predecessor_prompt_bytes_are_untouched(prompt_id):
 
 
 def test_the_vocabulary_bound_set_names_every_prompt_carrying_the_block():
-    """Both schema-bound prompts carry the literal vocabulary; the recall one does not."""
-    assert VOCABULARY_BOUND_PROMPT_IDS == frozenset({SUCCESSOR_ID, PREDECESSOR_ID, OLDER_ID})
+    """Every schema-bound prompt carries the literal vocabulary; the recall ones do not.
+
+    ADR-059 adds the capability successor: ``availability_status`` is an
+    unconstrained string in the capability schema too, so C5 governs it there
+    and the prompt must carry the same four labelled lists.
+    """
+    assert VOCABULARY_BOUND_PROMPT_IDS == frozenset(
+        {SUCCESSOR_ID, PREDECESSOR_ID, OLDER_ID, "capability_discovery_schema_v1"}
+    )
     assert isinstance(VOCABULARY_BOUND_PROMPT_IDS, frozenset)
     assert RECALL_ID not in VOCABULARY_BOUND_PROMPT_IDS
 
@@ -487,3 +494,131 @@ def test_every_optional_field_the_prompt_names_exists_in_the_schema(prompt_text)
     for field in named:
         assert f"`{field}`" in prompt_text, field
         assert field in PRODUCT_OBSERVATION_SCHEMA["properties"], field
+
+
+# --- ADR-059 (E-S2): the schema-bound capability prompt ---------------------
+
+
+CAPABILITY_ID = "capability_discovery_schema_v1"
+RETIRED_CAPABILITY_ID = "capability_extraction"
+CAPABILITY_OBSERVATION_SCHEMA = json.loads(
+    (ROOT / "schemas" / "capability_observation.schema.json").read_text(encoding="utf-8")
+)
+
+
+@pytest.fixture(scope="module")
+def capability_prompt_text() -> str:
+    return load_prompt(ROOT, CAPABILITY_ID)["text"]
+
+
+def test_the_capability_successor_is_first_and_the_retired_one_is_retained():
+    assert EXTRACTION_PROMPTS["capability_extraction"] == (
+        CAPABILITY_ID,
+        RETIRED_CAPABILITY_ID,
+    )
+    plan = single_pass_prompt_plan("capability_extraction")
+    assert plan["prompt_id"] == CAPABILITY_ID
+    assert plan["prompt_sequence_complete"] is False
+
+
+def test_the_retired_capability_prompt_bytes_are_untouched():
+    import subprocess
+
+    committed = subprocess.check_output(
+        ["git", "show", f"HEAD:prompts/extraction/{RETIRED_CAPABILITY_ID}.md"], cwd=ROOT
+    )
+    on_disk = (
+        ROOT / "prompts" / "extraction" / f"{RETIRED_CAPABILITY_ID}.md"
+    ).read_bytes()
+    assert on_disk == committed
+
+
+def test_the_capability_prompt_binds_to_the_same_vocabulary(
+    capability_prompt_text, vocabulary
+):
+    """One vocabulary artifact governs both stages.
+
+    ``availability_status`` is an unconstrained string in the capability schema
+    too, so C5 has the same job there and the prompt carries the same four
+    labelled lists.
+    """
+    parsed = validate_prompt_vocabulary_binding(
+        prompt_text=capability_prompt_text, vocabulary=vocabulary
+    )
+    for label in AVAILABILITY_PARTITION_FIELDS:
+        assert parsed[label] == vocabulary[label]
+
+
+def test_the_capability_prompt_uses_every_bound_placeholder(capability_prompt_text):
+    """Including ``validated_products``, which the ADR-058 gate requires."""
+    import re
+
+    from dynamic_ai_products.extraction.contents_renderer import (
+        STAGE_PLACEHOLDER_BINDINGS,
+        STAGE_REQUIRED_PLACEHOLDERS,
+    )
+
+    used = set(re.findall(r"\{\{([a-z_]+)\}\}", capability_prompt_text))
+    assert used == set(STAGE_PLACEHOLDER_BINDINGS["capability_extraction"])
+    assert set(STAGE_REQUIRED_PLACEHOLDERS["capability_extraction"]) <= used
+
+
+def test_the_capability_prompt_asks_for_labels_and_no_identifier(capability_prompt_text):
+    """Three label mechanisms, zero transcription -- ADR-054/055/056 carried over."""
+    text = capability_prompt_text
+    assert "`parent_ref`" in text and '"A01"' in text
+    assert '{"ref": ..., "quote": ...}' in text
+    assert "Never emit `source_id` or `passage_id`" in text
+    assert "Do **not** emit an identifier of any kind" in text
+
+
+def test_the_capability_prompt_renders_the_generated_status_table(capability_prompt_text):
+    from dynamic_ai_products.extraction.availability_vocabulary import (
+        status_label_table,
+    )
+
+    for label, token in status_label_table():
+        assert f"{label}  =  {token}" in capability_prompt_text
+
+
+def test_the_capability_prompt_names_every_field_the_model_must_supply(
+    capability_prompt_text,
+):
+    for field in ("parent_ref", "capability", "availability_status", "confidence",
+                  "evidence"):
+        assert f"`{field}`" in capability_prompt_text
+    # Optional, on the evidence-supported-or-omitted rule. SPEC-009's prose calls
+    # input/output types required; the released schema does not list them, and
+    # the schema is the contract.
+    for field in ("input_types", "output_types", "ambiguity"):
+        assert f"`{field}`" in capability_prompt_text
+        assert field in CAPABILITY_OBSERVATION_SCHEMA["properties"], field
+        assert field not in CAPABILITY_OBSERVATION_SCHEMA["required"], field
+
+
+def test_the_derived_fields_are_named_only_as_derived(capability_prompt_text):
+    """The three the pipeline owns are mentioned to forbid them, not request them."""
+    forbidden_block = capability_prompt_text.split(
+        "Do **not** emit an identifier of any kind", 1
+    )[1]
+    for derived in ("capability_observation_id", "product_observation_id",
+                    "normalized_capability"):
+        assert derived in forbidden_block, derived
+
+
+def test_the_retired_capability_prompt_could_not_have_conformed():
+    """The defect CR-0005 records, asserted rather than described."""
+    text = (
+        ROOT / "prompts" / "extraction" / f"{RETIRED_CAPABILITY_ID}.md"
+    ).read_text(encoding="utf-8")
+    missing = [
+        field
+        for field in CAPABILITY_OBSERVATION_SCHEMA["required"]
+        if field not in text
+    ]
+    assert set(missing) == {
+        "capability_observation_id",
+        "product_observation_id",
+        "availability_status",
+    }
+    assert "{{" not in text

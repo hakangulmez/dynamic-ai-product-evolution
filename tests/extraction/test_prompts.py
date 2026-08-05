@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_registry_version_is_declared():
     # ADR-053 (G6-P): v1 -> v2 when the schema-bound successor took position one
     # in the product_extraction sequence.
-    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v4"
+    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v5"
 
 
 def test_every_stage_declares_at_least_one_prompt():
@@ -147,10 +147,12 @@ def test_the_product_stage_is_never_reported_as_a_complete_universe():
     """A recall pass without its consolidation pass is a candidate set."""
     from dynamic_ai_products.extraction.prompts import single_pass_prompt_plan
 
-    assert single_pass_prompt_plan("product_extraction")["prompt_sequence_complete"] is False
-    assert single_pass_prompt_plan("task_extraction")["prompt_sequence_complete"] is False
-    # The capability stage registers one prompt, so a single pass completes it.
-    assert single_pass_prompt_plan("capability_extraction")["prompt_sequence_complete"] is True
+    for stage in ("product_extraction", "capability_extraction", "task_extraction"):
+        assert single_pass_prompt_plan(stage)["prompt_sequence_complete"] is False, stage
+    # ADR-059 rebaselines the capability stage. It registered one prompt and a
+    # single pass therefore completed it; the schema-bound successor makes it a
+    # two-element sequence, so a single pass is a recall set here too.
+    assert len(EXTRACTION_PROMPTS["capability_extraction"]) == 2
 
 
 def test_the_plan_selects_the_first_registered_prompt_for_every_stage():

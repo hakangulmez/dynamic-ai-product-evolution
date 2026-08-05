@@ -1193,7 +1193,9 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # and the change request its qualification record pins.
     # 602 = 601 + the ADR-057 path: the extraction_validation_decision_set
     # successor schema, which carries who decided and when.
-    assert declared == len(paths) == 602
+    # 604 = 602 + the two ADR-059 paths: the schema-bound capability prompt
+    # and the change request its qualification record pins.
+    assert declared == len(paths) == 604
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

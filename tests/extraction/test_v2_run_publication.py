@@ -275,6 +275,9 @@ def _write_identity(root: Path) -> dict[str, str]:
     return {"reference": "pilot_universe_packet.json", "sha256": hashlib.sha256(payload).hexdigest()}
 
 
+# ADR-059. The capability entry deliberately names the **retired** prompt: the
+# case above uses it to prove that a chain minted for a superseded prompt cannot
+# execute the one the registry now resolves.
 _STAGE_PROMPT = {
     "product_extraction": "product_discovery_schema_v4",
     "capability_extraction": "capability_extraction",
@@ -1342,7 +1345,7 @@ def _valid_parent_chain(root: Path) -> dict:
 
 
 @pytest.mark.parametrize("stage", ["capability_extraction", "task_extraction"])
-def test_v2_a_fully_valid_non_product_stage_is_blocked_by_the_e_r_renderer(
+def test_v2_a_fully_valid_non_product_stage_still_refuses_before_the_provider(
     tmp_path: Path, stage
 ):
     """The E-R gate itself, reached end to end through the v2 runner.
@@ -1353,16 +1356,24 @@ def test_v2_a_fully_valid_non_product_stage_is_blocked_by_the_e_r_renderer(
     therefore happens -- and the renderer is what refuses, because
     ``MATERIALIZATION_SUPPORTED_STAGES`` holds only the product stage until E-S.
 
-    ADR-058 (E-S1) makes the capability stage materializable, so the code that
-    refuses it changes -- but *that* it is refused does not. The capability
-    prompt still carries no markers, and a capability extracted without its
-    parents is attributable to nothing, so the required-placeholder gate refuses
-    it with ``contents_placeholder_required``. Every other assertion below is
-    unchanged: the permit was reached, zero artifacts exist, neither send
-    happened, and the permit was revoked.
+    Which gate refuses has moved twice; *that* both stages refuse has not, and
+    every assertion below the reason code is unchanged: the permit was reached,
+    zero artifacts exist, neither send happened, and the permit was revoked.
+
+    - ``task_extraction`` is still stopped by the renderer: it needs Snapshot B,
+      which does not exist, so its stage is not materializable
+      (``contents_placeholder_unbound``).
+    - ``capability_extraction`` is now materializable (ADR-058) and has a
+      schema-bound prompt (ADR-059), so neither renderer gate fires. It is
+      stopped earlier instead, by P1-P4: ``_STAGE_PROMPT`` below deliberately
+      still names the **retired** capability prompt, so this chain qualifies one
+      prompt while the route resolves another
+      (``prompt_qualification_mismatch``). That a governance chain minted for a
+      retired prompt cannot execute its successor is the protection ADR-053
+      built, exercised here end to end.
     """
     expected_code = (
-        "contents_placeholder_required"
+        "prompt_qualification_mismatch"
         if stage == "capability_extraction"
         else "contents_placeholder_unbound"
     )

@@ -2654,6 +2654,89 @@ code for the capability parameter.
 **Scope.** Three modified paths, no new files, no manifest count change. No
 prompt, schema, governance record, run root or published artifact changes.
 
+## ADR-059 — A schema-bound capability prompt: the fourth application of one rule (E-S2)
+
+**Status:** Accepted.
+
+`prompts/extraction/capability_extraction.md` has never been executed, and
+measured against the released schema it could not have produced a conforming
+record. `capability_observation@0.1.0` is `additionalProperties: false` and
+requires six fields. The prompt names three of them. It declares no output
+format, no closed status vocabulary and no evidence format, carries **zero**
+placeholders — so no company, cutoff, passages or parent products reach the
+model at all — and instructs the model to "Return JSON conforming to
+`capability_observation.schema.json`", a file the model cannot see.
+
+That is the CR-0003/CR-0004 defect class one step worse: the product prompt
+asked for a field the schema refuses; this one does not ask for most of the
+fields at all. `capability_discovery_schema_v1` replaces it at position one;
+the retired prompt keeps its bytes and its registration.
+
+**Everything the pipeline can derive is derived — the fourth application.** The
+model supplies `parent_ref`, `capability`, a status label, `confidence` and
+labelled evidence. It supplies no identifier of any kind:
+
+| field | how the model names it | what the pipeline does |
+|---|---|---|
+| parent product | `A01`…`A0N` (ADR-058 block) | resolves to `product_observation_id` |
+| evidence | `{"ref": "P0NN", "quote": …}` (ADR-055) | resolves to `{source_id, passage_id, quote}` |
+| status | `S1`…`S8` (ADR-056) | resolves to the token |
+| `normalized_capability` | — | `slugify(capability)` (ADR-054) |
+| `capability_observation_id` | — | `{product_observation_id}:{normalized_capability}` |
+
+`product_observation_id` is 44 characters of colon-joined slug. Asking a model
+to transcribe it is the failure this repository has now measured three times, so
+it is not asked. The prompt says so explicitly and states that a candidate
+carrying any derived identifier is rejected.
+
+**One vocabulary, two stages.** `availability_status` is an unconstrained string
+in the capability schema exactly as in the product one, so the ADR-052 artifact
+governs both and the prompt carries the same four labelled partition lists. B4
+binds it unchanged. The prompt states in words what ADR-058 enforced in the
+rendered block: the status describes **the capability**, judged from its own
+evidence, not the availability of its parent.
+
+**`input_types` and `output_types` are optional, and the schema is why.**
+SPEC-009's prose lists them among required fields; the released schema does not
+put them in `required`. Throughout this work the schema has been the contract
+and the prose the commentary, and that does not change here. They are requested
+on the evidence-supported-or-omitted rule, because a model asked for a field it
+cannot support will supply one anyway — which is how `candidate_status` and a
+doubled syllable got into earlier runs.
+
+**Attribution is the new failure surface, and it is not closed here.** A
+capability attributed to the wrong neighbouring product would be structurally
+valid: a real `A0N`, a real passage, a conforming record. Only review would
+catch it. The prompt states the rule three times — one capability, one parent;
+omit rather than guess; flag uncertainty in `ambiguity` — and the conformance
+gate that checks the parent is genuinely a Snapshot A member is deferred to
+E-S3 rather than assumed here. Recall is also bounded by Snapshot A by
+construction: a capability of a product a human rejected cannot be found. That
+is intended, and it means capability coverage inherits every limitation of the
+product decision set.
+
+**Scope.** New prompt at position one; registry `extraction_prompt_registry_v4`
+→ `v5`; `KNOWN_PROMPT_REGISTRY_VERSIONS`, `VOCABULARY_BOUND_PROMPT_IDS` and both
+`prompt_qualification_record` enums gain the new values additively. CR-0005 is
+the tracked document the qualification record will pin. `REPO_MANIFEST.md`
+602 → 604. No schema, governance record, run root or published artifact
+changes; every product prompt and CR-0001 through CR-0004 are untouched.
+
+**Two rebaselines worth naming.** The capability stage registered exactly one
+prompt, so `prompt_sequence_complete` was `True` for it; with a two-element
+sequence a single pass is a recall set there too, as it already was for product
+and task. And the end-to-end case that asserted "a fully valid non-product stage
+is blocked by the renderer" now refuses the capability stage *earlier* — its
+fixture deliberately still names the retired prompt, so P1–P4 refuse with
+`prompt_qualification_mismatch`. That a chain minted for a superseded prompt
+cannot execute its successor is the protection ADR-053 built, and the test now
+exercises it end to end instead of asserting a renderer gate that no longer
+applies.
+
+**What this does not do.** No derivation, no conformance gate, no governance
+round and no live call. E-S2 makes the capability stage *qualifiable*; E-S3 and
+E-S4 make it runnable.
+
 ## Open decisions
 
 - Required source packet by firm-year.
