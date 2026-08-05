@@ -1065,3 +1065,91 @@ def test_the_materializer_defaults_to_product_so_nothing_existing_changes():
 
     parameters = inspect.signature(materialize_candidate_collection).parameters
     assert parameters["observation_kind"].default == "product"
+
+
+# --- ADR-061: the runner resolves the kind, never defaults to it ------------
+
+
+from dynamic_ai_products.extraction.candidates import (  # noqa: E402
+    OBSERVATION_KINDS,
+    STAGE_OBSERVATION_KIND,
+    observation_kind_for_stage,
+)
+
+
+def test_the_stage_map_is_closed_and_excludes_task():
+    """A task is not an observation kind and must not become one by inference."""
+    assert STAGE_OBSERVATION_KIND == {
+        "product_extraction": "product",
+        "capability_extraction": "capability",
+    }
+    assert set(STAGE_OBSERVATION_KIND.values()) == set(OBSERVATION_KINDS)
+    assert "task_extraction" not in STAGE_OBSERVATION_KIND
+
+
+@pytest.mark.parametrize(
+    "stage, kind", [("product_extraction", "product"),
+                    ("capability_extraction", "capability")]
+)
+def test_each_declared_stage_resolves_to_its_kind(stage, kind):
+    assert observation_kind_for_stage(stage) == kind
+
+
+@pytest.mark.parametrize("stage", ["task_extraction", "", "product", "mystery_stage"])
+def test_an_undeclared_stage_fails_closed_with_its_own_code(stage):
+    """Not a default, and not a borrowed reason code.
+
+    Defaulting is what created the defect this map closes: the runner asked for
+    no kind, got ``product``, and a capability run would have collected against
+    the product schema.
+    """
+    with pytest.raises(ExtractionError) as excinfo:
+        observation_kind_for_stage(stage)
+    assert excinfo.value.reason_code == "stage_observation_kind_undeclared"
+    assert stage in str(excinfo.value) or stage == ""
+
+
+def test_the_runner_resolves_the_kind_from_the_stage():
+    """The call site, not just the helper.
+
+    Parameterizing the function without threading it through its one caller is
+    exactly the gap this closes, so the caller is asserted directly.
+    """
+    from pathlib import Path as _Path
+
+    from dynamic_ai_products.extraction import run_extraction as mod
+
+    source = _Path(mod.__file__).read_text(encoding="utf-8")
+    assert "observation_kind=observation_kind_for_stage(stage)" in source
+    assert "observation_kind=\"product\"" not in source
+
+
+def test_a_capability_collection_would_have_been_silently_empty(tmp_path, vocabulary):
+    """The defect, reproduced against the released schemas.
+
+    Collected as ``product``, eleven conforming capability observations become
+    eleven ``schema_invalid`` rejects and the collection reports
+    ``accepted=0`` -- structurally valid, and wrong. Nothing downstream refuses
+    it, because C1-C7 gate only what survives the pre-schema check.
+    """
+    capabilities = [cap_chain(capability()), cap_chain(capability(parent_ref="A02"))]
+
+    wrong = build_candidate_collection(
+        observation_kind="product",
+        raw_artifact_reference="data/runs/x/raw.json",
+        raw_artifact_sha256="a" * 64,
+        observations=capabilities,
+        schema_root=ROOT / "schemas",
+    )
+    assert wrong["accepted_candidate_count"] == 0
+    assert [entry["reason"] for entry in wrong["rejected"]] == ["schema_invalid"] * 2
+
+    right = build_candidate_collection(
+        observation_kind="capability",
+        raw_artifact_reference="data/runs/x/raw.json",
+        raw_artifact_sha256="a" * 64,
+        observations=capabilities,
+        schema_root=ROOT / "schemas",
+    )
+    assert right["accepted_candidate_count"] == 2
+    assert right["rejected"] == []

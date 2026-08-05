@@ -36,12 +36,14 @@ __all__ = [
     "CANDIDATE_COLLECTION_CONTRACT",
     "CANDIDATE_COLLECTION_REFERENCE",
     "OBSERVATION_KINDS",
+    "STAGE_OBSERVATION_KIND",
     "assert_candidate_conformance",
     "build_candidate_collection",
     "candidate_id_for",
     "collection_bytes",
     "derive_identity_fields",
     "materialize_candidate_collection",
+    "observation_kind_for_stage",
     "parse_model_observations",
     "resolve_evidence_refs",
     "resolve_parent_refs",
@@ -51,6 +53,41 @@ __all__ = [
 
 CANDIDATE_COLLECTION_CONTRACT = "extraction_candidate_collection@0.1.0"
 OBSERVATION_KINDS: tuple[str, ...] = ("product", "capability")
+
+# ADR-061. Which observation kind a stage produces. Closed, and deliberately
+# missing ``task_extraction``: a task is not an ``observation_kind`` and must not
+# become one by inference. A stage absent here fails closed with its own reason
+# code, following ``MATERIALIZATION_SUPPORTED_STAGES`` and
+# ``STAGE_REQUIRED_PLACEHOLDERS``.
+#
+# This map exists because the runner had no way to say which kind it was
+# collecting, so it silently used the default. A capability run would then have
+# built a *product* collection: every capability observation fails the product
+# schema, lands in ``rejected[]`` as ``schema_invalid``, and the collection looks
+# valid at ``accepted=0`` while C1-C7 never run at all -- nothing survives the
+# pre-schema check for them to gate.
+STAGE_OBSERVATION_KIND: dict[str, str] = {
+    "product_extraction": "product",
+    "capability_extraction": "capability",
+}
+
+_STAGE_KIND_UNDECLARED = "stage_observation_kind_undeclared"
+
+
+def observation_kind_for_stage(stage: str) -> str:
+    """The kind a stage collects, or a refusal naming the stage.
+
+    Never falls back to a default. Defaulting is exactly what turned a wrong
+    kind into a silently empty collection.
+    """
+    kind = STAGE_OBSERVATION_KIND.get(stage)
+    if kind is None:
+        raise ExtractionError(
+            f"stage {stage!r} declares no observation kind, so a candidate "
+            "collection cannot be published for it",
+            reason_code=_STAGE_KIND_UNDECLARED,
+        )
+    return kind
 
 _SCHEMA_FOR_KIND = {
     "product": "product_observation.schema.json",

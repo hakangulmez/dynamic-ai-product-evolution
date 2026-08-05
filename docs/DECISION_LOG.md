@@ -2817,6 +2817,51 @@ published artifact changes.
 no live call. E-S3 makes the capability branch *executable offline*; E-S4 runs
 it.
 
+## ADR-061 — A stage declares its observation kind: closing the gap ADR-060 left at the call site (E-S4 preflight)
+
+**Status:** Accepted.
+
+ADR-060 parameterized the candidate pipeline and did not thread the parameter
+through its one caller. `run_extraction_stage_v2` called
+`materialize_candidate_collection` without `observation_kind`, so the default
+applied — and the default is `product`.
+
+**Why that would have been silent.** A capability run would have collected
+capability observations against the *product* schema. Each one fails it, so each
+lands in `rejected[]` as `schema_invalid` and the collection is published
+reporting `accepted_candidate_count: 0` — a structurally valid document, its
+counts internally consistent, its schema satisfied. C1 through C7 would never
+have run: they gate only what survives the pre-schema check, and nothing would.
+No gate fires, no artifact is missing, and the only symptom is a collection that
+found nothing.
+
+Found before the live call rather than by it. A test reproduces it against the
+released schemas: the same two capability observations collected as `product`
+give `accepted=0` with two `schema_invalid` rejects; collected as `capability`
+they give `accepted=2` with none.
+
+**The fix is a closed map, not an inference.** `STAGE_OBSERVATION_KIND` names
+the kind each stage produces, and `observation_kind_for_stage` resolves it or
+refuses with `stage_observation_kind_undeclared`. **It never falls back**, which
+is the whole point: a default is what turned a wrong kind into an empty
+collection.
+
+A mechanical derivation — stripping `_extraction` from the stage — was rejected
+for the same reason. It would silently mint `task` as an observation kind, and
+`OBSERVATION_KINDS` has exactly two members.
+
+**`task_extraction` is deliberately absent.** A task is not an observation kind
+and must not become one by inference; when it is, it will be added on purpose
+with a schema behind it. The absence follows the pattern
+`MATERIALIZATION_SUPPORTED_STAGES` and `STAGE_REQUIRED_PLACEHOLDERS` already
+set: a stage missing from a closed map is refused with a named code, never
+defaulted and never guessed.
+
+**Scope.** One map, one resolver, one call site, one test section. No new files,
+no manifest count change, no schema, prompt, governance record, run root or
+published artifact changes. The default on `materialize_candidate_collection`
+stays `product`, so nothing that calls it directly is affected.
+
 ## Open decisions
 
 - Required source packet by firm-year.

@@ -36,7 +36,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .candidates import materialize_candidate_collection
+from .candidates import (
+    materialize_candidate_collection,
+    observation_kind_for_stage,
+)
 from .errors import ExtractionError
 from .input_packet import (
     build_extraction_input_packet,
@@ -1575,6 +1578,10 @@ def run_extraction_stage_v2(
             vocabulary_pin=vocabulary_pin,
             repo_root=repo_root,
             schema_root=schema_root,
+            # ADR-061. Resolved from the stage, never defaulted. Without this the
+            # capability route would have collected against the product schema and
+            # published an empty-but-valid-looking collection.
+            observation_kind=observation_kind_for_stage(stage),
         )
     return outcome
 
