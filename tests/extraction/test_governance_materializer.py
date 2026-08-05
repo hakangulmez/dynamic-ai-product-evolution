@@ -1075,3 +1075,67 @@ def test_the_written_paths_survive_a_rebound_public_view(tmp_path, monkeypatch):
     pin = materialize_governance_records(_build(), attempt_root=root)
     assert set(_files(root)) == _CANONICAL_PATHS
     assert pin["reference"] == "governance/live_call_authorization.json"
+
+
+# --- ADR-062: the change request is resolved per stage ----------------------
+
+
+from dynamic_ai_products.extraction.governance_materializer import (  # noqa: E402
+    STAGE_CHANGE_REQUEST,
+    change_request_for_stage,
+)
+
+
+def test_the_change_request_map_is_closed_and_names_a_tracked_document():
+    assert set(STAGE_CHANGE_REQUEST) == {"product_extraction", "capability_extraction"}
+    assert "task_extraction" not in STAGE_CHANGE_REQUEST
+    for stage, reference in STAGE_CHANGE_REQUEST.items():
+        assert (REPO_ROOT / reference).is_file(), stage
+        assert reference.startswith("evals/change_requests/CR-")
+
+
+@pytest.mark.parametrize("stage", ["task_extraction", "", "product", "mystery"])
+def test_an_undeclared_stage_cannot_mint_a_prompt_qualification(stage):
+    """Never a default. A default is what produced the defect this closes."""
+    with pytest.raises(ExtractionError) as excinfo:
+        change_request_for_stage(stage)
+    assert excinfo.value.reason_code == "stage_change_request_undeclared"
+
+
+def test_each_stage_cites_its_own_change_request():
+    """The defect, and the fix, on real builds.
+
+    Measured before this map existed: a capability chain cited
+    ``CR-0004-product-discovery-schema-v4`` and every one of the eight
+    post-write validators passed, because the reference resolves and its digest
+    matches. The chain was internally consistent and pointed a reader at a
+    document about a different prompt.
+    """
+    product = _build().record("prompt_qualification")
+    assert "CR-0004-product-discovery-schema-v4" in product["change_request_reference"]
+
+    capability = _build(stage="capability_extraction").record("prompt_qualification")
+    assert (
+        "CR-0005-capability-discovery-schema-v1"
+        in capability["change_request_reference"]
+    )
+    assert capability["change_request_reference"] != product["change_request_reference"]
+
+
+def test_the_cited_digest_is_the_stage_document_not_the_other_one():
+    """The digest follows the reference, so the two cannot disagree."""
+    capability = _build(stage="capability_extraction").record("prompt_qualification")
+    reference = capability["change_request_reference"]
+    assert capability["change_request_sha256"] == sha256_bytes(
+        (REPO_ROOT / reference).read_bytes()
+    )
+    product = _build().record("prompt_qualification")
+    assert capability["change_request_sha256"] != product["change_request_sha256"]
+
+
+def test_a_capability_build_is_bound_to_the_capability_prompt_and_contract():
+    """The whole stage identity moves together, not just the change request."""
+    record = _build(stage="capability_extraction").record("prompt_qualification")
+    assert record["stage"] == "capability_extraction"
+    assert record["prompt_id"] == "capability_discovery_schema_v1"
+    assert record["stage_output_contract_id"] == "capability_observation@0.1.0"

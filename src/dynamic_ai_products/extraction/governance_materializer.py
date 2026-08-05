@@ -80,9 +80,11 @@ from .routing_contract import derive_routing_contract, validate_routing_contract
 
 __all__ = [
     "GOVERNANCE_REFERENCES",
+    "STAGE_CHANGE_REQUEST",
     "GovernanceBuild",
     "GovernanceValidationContext",
     "build_governance_records",
+    "change_request_for_stage",
     "materialize_governance_records",
 ]
 
@@ -150,12 +152,56 @@ _WINDOW_FIELDS: tuple[str, ...] = (
     "enablement_expires_at",
 )
 
-# The change request the bootstrap prompt qualification cites. Fixed here rather
-# than accepted as a parameter: a caller free to cite any document could satisfy
-# the digest check against a file that says nothing about this prompt.
-CHANGE_REQUEST_REFERENCE = (
-    "evals/change_requests/CR-0004-product-discovery-schema-v4-bootstrap-qualification.md"
-)
+# The change request the bootstrap prompt qualification cites, per stage. Fixed
+# here rather than accepted as a parameter: a caller free to cite any document
+# could satisfy the digest check against a file that says nothing about this
+# prompt.
+#
+# ADR-062. This was a single stage-agnostic constant, and the first capability
+# chain cited the product prompt's change request. Nothing caught it: the
+# reference resolves, the digest matches, and all eight post-write validators
+# pass -- the chain is internally consistent and points a reader at a document
+# about a different prompt. Fourth instance of one pattern (ADR-053, ADR-058,
+# ADR-061): a constant written when only one stage existed, wrong the moment a
+# second one did.
+#
+# Closed and fail-closed. ``task_extraction`` is absent because it has no
+# qualified prompt; when it does, it is added on purpose.
+#
+# Known limitation, stated rather than implied: this map records *which change
+# request is current*, so it must be updated whenever a stage's prompt is
+# superseded -- as CR-0002 -> CR-0003 -> CR-0004 already were, by hand each
+# time. Binding the change request to the prompt itself would remove that step,
+# and is deliberately not done here: it is a larger contract decision than this
+# defect requires.
+STAGE_CHANGE_REQUEST: dict[str, str] = {
+    "product_extraction": (
+        "evals/change_requests/"
+        "CR-0004-product-discovery-schema-v4-bootstrap-qualification.md"
+    ),
+    "capability_extraction": (
+        "evals/change_requests/"
+        "CR-0005-capability-discovery-schema-v1-bootstrap-qualification.md"
+    ),
+}
+
+_STAGE_CHANGE_REQUEST_UNDECLARED = "stage_change_request_undeclared"
+
+
+def change_request_for_stage(stage: str) -> str:
+    """The change request this stage's qualification cites, or a refusal.
+
+    Never falls back. A default is what let a capability chain cite the product
+    prompt's change request and pass every validator.
+    """
+    reference = STAGE_CHANGE_REQUEST.get(stage)
+    if reference is None:
+        raise ExtractionError(
+            f"stage {stage!r} declares no qualifying change request, so a "
+            "prompt qualification cannot be minted for it",
+            reason_code=_STAGE_CHANGE_REQUEST_UNDECLARED,
+        )
+    return reference
 
 
 def _text(value: Any, what: str) -> str:
@@ -303,6 +349,7 @@ def _prompt_qualification_record(
     stage: str,
     stage_output_schema_sha256: str,
     governing_spec_sha256: str,
+    change_request_reference: str,
     change_request_sha256: str,
     code_commit: str,
     reviewer: str,
@@ -326,7 +373,7 @@ def _prompt_qualification_record(
         "routing_contract_sha256": routing["routing_contract_sha256"],
         "governing_spec_reference": GOVERNING_SPEC_REFERENCE,
         "governing_spec_sha256": governing_spec_sha256,
-        "change_request_reference": CHANGE_REQUEST_REFERENCE,
+        "change_request_reference": change_request_reference,
         "change_request_sha256": change_request_sha256,
         "qualification_basis": BOOTSTRAP_BASIS,
         "qualification_status": BOOTSTRAP_STATUS,
@@ -525,7 +572,8 @@ def build_governance_records(
     # The two cited repository documents. Read, not derived: their digests are
     # the bytes on disk, and ``validate_prompt_qualification`` re-reads both.
     governing_spec_sha256 = sha256_bytes((root / GOVERNING_SPEC_REFERENCE).read_bytes())
-    change_request_sha256 = sha256_bytes((root / CHANGE_REQUEST_REFERENCE).read_bytes())
+    change_request_reference = change_request_for_stage(stage)
+    change_request_sha256 = sha256_bytes((root / change_request_reference).read_bytes())
 
     contract_payload = canonical_json_bytes(contract)
     contract_sha256 = sha256_bytes(contract_payload)
@@ -575,6 +623,7 @@ def build_governance_records(
             stage=stage,
             stage_output_schema_sha256=schema_hash,
             governing_spec_sha256=governing_spec_sha256,
+            change_request_reference=change_request_reference,
             change_request_sha256=change_request_sha256,
             code_commit=code_commit,
             reviewer=who["reviewer"],

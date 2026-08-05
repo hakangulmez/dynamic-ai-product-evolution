@@ -2862,6 +2862,58 @@ no manifest count change, no schema, prompt, governance record, run root or
 published artifact changes. The default on `materialize_candidate_collection`
 stays `product`, so nothing that calls it directly is affected.
 
+## ADR-062 — A stage cites its own change request: the fourth stage-agnostic constant (E-S4 preflight)
+
+**Status:** Accepted.
+
+`governance_materializer.CHANGE_REQUEST_REFERENCE` was a single constant naming
+the product prompt's change request. The first capability governance round used
+it, and the capability chain was written citing
+`CR-0004-product-discovery-schema-v4` — a document about a different prompt, for
+a different stage.
+
+**Nothing caught it, and the reason matters.** The reference resolves, the
+document exists, its digest matches, and `validate_prompt_qualification` checks
+exactly that. All eight post-write validators passed. The chain was internally
+consistent and provably wrong: `CR-0005`'s own text says "Recorded in the
+`prompt_qualification_record` issued against this change request", and no record
+pointed at it.
+
+**Fourth instance of one pattern.** ADR-053 found a `const` pinning the prompt
+registry version, ADR-058 found a guard that existed only as a side effect of a
+stage being unsupported, ADR-061 found a defaulted `observation_kind` at a call
+site. Each was a value written when one stage existed, and each became wrong the
+moment a second one did. This is the same shape in the governance producer.
+
+**The fix is the same shape too.** `STAGE_CHANGE_REQUEST` maps each stage to its
+own change request; `change_request_for_stage` resolves it or refuses with
+`stage_change_request_undeclared`. It never falls back — a default is precisely
+what let the wrong document through. `task_extraction` is absent because it has
+no qualified prompt.
+
+The digest is computed from whatever the resolver returned, so reference and
+digest cannot disagree; a test asserts the two stages produce different values
+for both.
+
+**Known limitation, recorded rather than implied.** This map states *which
+change request is current*, so it must be updated whenever a stage's prompt is
+superseded — as CR-0002 → CR-0003 → CR-0004 already were, by hand each time.
+Binding the change request to the prompt itself would remove that step. That is
+a larger contract decision than this defect requires and is deliberately
+deferred.
+
+**The failed attempt root is kept.**
+`artifacts/governance/gov-CIK0001404655-capability_extraction-0001` holds four
+records citing the wrong change request. It is not deleted and not reused: a
+populated attempt root is refused by construction, a retry uses a new one, and
+the failed chain is evidence of what happened — the same treatment `-0001` and
+`-0002` received on the product side. No ledger was written for it, so the wrong
+chain never gained a durable witness.
+
+**Scope.** One map, one resolver, one call-site change threading the resolved
+reference through the builder, one test section. No new files, no manifest count
+change, no schema, prompt, published run root or committed artifact changes.
+
 ## Open decisions
 
 - Required source packet by firm-year.
