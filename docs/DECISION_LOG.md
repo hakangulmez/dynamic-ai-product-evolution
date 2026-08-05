@@ -2737,6 +2737,86 @@ applies.
 round and no live call. E-S2 makes the capability stage *qualifiable*; E-S3 and
 E-S4 make it runnable.
 
+## ADR-060 — The capability branch: one parameterized pipeline, and a gate with no product counterpart (E-S3)
+
+**Status:** Accepted.
+
+Measured before deciding: of the seven steps between a raw envelope and a
+written collection, **five are already kind-agnostic** — the parse gates,
+evidence resolution, status resolution, and `build_candidate_collection`, which
+has taken `observation_kind` since ADR-033. Only `derive_identity_fields` and
+`assert_candidate_conformance` assume the product, and only in which field names
+they read and write.
+
+So the pipeline is **parameterized, not duplicated**. A parallel capability path
+would have copied those five steps and given the same rules two homes, which is
+the failure this work has spent the whole increment series closing — one sorter,
+one vocabulary owner, one registry-version set. `observation_kind` defaults to
+`product` everywhere, so no existing caller and no published run changes.
+
+**A third label family, resolved the same way.** `resolve_parent_refs` turns
+`parent_ref: "A01"` into the `product_observation_id` it names, reading
+`parent_context.product_parents` — the same ordered, hash-verified sequence
+ADR-058 assigned the labels from, so there is no second mapping to keep in step.
+The key is removed once resolved, because `capability_observation@0.1.0` is
+`additionalProperties: false` and knows no `parent_ref`.
+
+`product_observation_id` is 44 characters of colon-joined slug. Asking a model
+to transcribe it is the failure ADR-055 and ADR-056 each measured; it is not
+asked. Its own reason code, `candidate_conformance_parent_ref_unresolvable`,
+stays separate from the evidence one for the reason ADR-055 gave: "named a
+product position it was not shown" and "cited a passage that does not exist" are
+different faults.
+
+**The identity is derived from its parent, which fixes the order.**
+
+```
+product     -> {company_id}:{observation_cutoff}:{slug(product_name)}
+capability  -> {product_observation_id}:{slug(capability)}
+```
+
+The parent id is a *component* of the child id, not a sibling field, so parent
+resolution must precede derivation. The chain is therefore a dependency order
+rather than a preference: evidence refs → parent ref → status label → identity →
+schema.
+
+**Collision scope falls out of the formula.** Two products may legitimately
+offer the same capability — Marketing Hub and Sales Hub can both "generate
+reports". Because a capability id begins with its parent's id, the existing
+`seen` map gives per-parent scope with no second mechanism and no change to how
+it is keyed. Measured: same parent plus a respelled name collides; different
+parents with the identical name do not.
+
+**C7 replaces C1 and C2 rather than joining them.** A capability record carries
+neither `company_id` nor `observation_cutoff` — measured, neither is a property
+of the released schema. Both facts reach it through the parent, whose id *is*
+`{company_id}:{cutoff}:{slug}`. So C7 — the parent is one of this run's
+Snapshot A members — proves what C1 and C2 proved, and proves something they
+could not: **that a human admitted this parent**.
+
+That gate has no product-side counterpart and is the one genuinely new check
+here. Without it, a capability attributed to a product the human *rejected*
+would be structurally valid — a real-looking id, a real passage, a conforming
+record — and only review would catch it. Recall is bounded the same way by
+construction: a capability of a rejected product cannot be found. That is
+intended, and it means capability coverage inherits every limitation of the
+product decision set.
+
+**Verified against real data, not fixtures.** The chain was run end to end over
+the pilot Snapshot A: `A04` resolved to `…:commerce-hub`, the derived identity
+came out `…:commerce-hub:accept-and-reconcile-customer-payments`, C1–C7 passed,
+and four negative cases refused with their own codes — out-of-range label,
+malformed label, a parent the human rejected, and a within-parent collision —
+while the same capability under two different parents correctly did not collide.
+
+**Scope.** Two modified source paths, one modified test module, no new files, no
+manifest count change. No prompt, schema, governance record, run root or
+published artifact changes.
+
+**What this does not do.** No governance round, no capability collection root,
+no live call. E-S3 makes the capability branch *executable offline*; E-S4 runs
+it.
+
 ## Open decisions
 
 - Required source packet by firm-year.

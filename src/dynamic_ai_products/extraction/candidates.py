@@ -23,7 +23,11 @@ from .availability_vocabulary import (
     resolve_status_label,
     validate_availability_vocabulary,
 )
-from .contents_renderer import PASSAGE_REF_PATTERN, canonical_passage_order
+from .contents_renderer import (
+    PARENT_REF_PATTERN,
+    PASSAGE_REF_PATTERN,
+    canonical_passage_order,
+)
 from .errors import ExtractionError
 from .input_packet import hydrate_pinned_artifact
 from .raw_artifacts import canonical_json_bytes, write_artifact
@@ -40,6 +44,7 @@ __all__ = [
     "materialize_candidate_collection",
     "parse_model_observations",
     "resolve_evidence_refs",
+    "resolve_parent_refs",
     "resolve_status_labels",
     "slugify_product_name",
 ]
@@ -174,6 +179,14 @@ _COLLISION = "candidate_conformance_observation_id_collision"
 # position outside what it was shown. One is a transcription failure, the other
 # a counting failure, and an operator needs to know which.
 _REF_UNRESOLVABLE = "candidate_conformance_evidence_ref_unresolvable"
+# ADR-060. A third label family, and a third reason code, for the same reason
+# the second one was separate: "named a product position it was not shown" is a
+# different fault from "cited a passage that does not exist".
+_PARENT_REF_UNRESOLVABLE = "candidate_conformance_parent_ref_unresolvable"
+# C7 has no product-side counterpart. A product observation has no parent; a
+# capability that names one outside this run's Snapshot A would be attributed to
+# something the human never admitted.
+_C7 = "candidate_conformance_parent_not_in_snapshot"
 
 
 def slugify_product_name(product_name: Any) -> str:
@@ -193,7 +206,11 @@ def slugify_product_name(product_name: Any) -> str:
 
 
 def derive_identity_fields(
-    observation: Any, *, company_id: str, observation_cutoff: str
+    observation: Any,
+    *,
+    company_id: str | None = None,
+    observation_cutoff: str | None = None,
+    observation_kind: str = "product",
 ) -> Any:
     """Overwrite the three identity fields with derived values (ADR-054, R-D).
 
@@ -216,16 +233,104 @@ def derive_identity_fields(
     is schema-required; deriving it afterwards would mean an observation that
     omitted it was recorded as ``schema_invalid`` for a field the pipeline was
     always going to supply.
+
+    **Parameterized, not duplicated (ADR-060).** Five of the seven pipeline steps
+    are already kind-agnostic; a parallel capability path would copy those five
+    and give the same rule two homes. The capability branch differs only in
+    which fields it reads and writes::
+
+        product     -> {company_id}:{observation_cutoff}:{slug(product_name)}
+        capability  -> {product_observation_id}:{slug(capability)}
+
+    The capability form takes its parent from the observation, so
+    :func:`resolve_parent_refs` must have run first -- the parent id is a
+    *component* of the child id, not a sibling field.
     """
     if not isinstance(observation, dict):
         return observation
+    if observation_kind not in OBSERVATION_KINDS:
+        raise ExtractionError(
+            f"unknown observation_kind: {observation_kind!r}",
+            reason_code="observation_kind_invalid",
+        )
     derived = dict(observation)
+    if observation_kind == "capability":
+        normalized = slugify_product_name(derived.get("capability"))
+        parent = derived.get("product_observation_id")
+        derived["normalized_capability"] = normalized
+        derived["capability_observation_id"] = (
+            f"{parent}:{normalized}" if isinstance(parent, str) and parent else ""
+        )
+        return derived
     normalized = slugify_product_name(derived.get("product_name"))
     derived["company_id"] = company_id
     derived["observation_cutoff"] = observation_cutoff
     derived["normalized_name"] = normalized
     derived["product_observation_id"] = f"{company_id}:{observation_cutoff}:{normalized}"
     return derived
+
+
+def _parent_observation_ids(packet: dict[str, Any]) -> tuple[str, ...]:
+    """The validated parents, in the one order the renderer labelled them.
+
+    Read from ``parent_context.product_parents``, which the packet builder
+    produced by re-reading and hash-verifying every Snapshot A member. That is
+    the same sequence ADR-058's ``A0N`` labels were assigned from, so a label
+    cannot mean one product in the instruction and another here.
+    """
+    context = packet.get("parent_context")
+    parents = context.get("product_parents") if isinstance(context, dict) else None
+    if not isinstance(parents, list) or not parents:
+        raise ExtractionError(
+            "the capability stage requires verified parent context",
+            reason_code=_PARENT_REF_UNRESOLVABLE,
+        )
+    ids: list[str] = []
+    for parent in parents:
+        observation_id = parent.get("observation_id") if isinstance(parent, dict) else None
+        if not isinstance(observation_id, str) or not observation_id:
+            raise ExtractionError(
+                "a verified parent carries no observation_id",
+                reason_code=_PARENT_REF_UNRESOLVABLE,
+            )
+        ids.append(observation_id)
+    return tuple(ids)
+
+
+def resolve_parent_refs(observation: Any, *, packet: dict[str, Any]) -> Any:
+    """Turn ``parent_ref: "A01"`` into the product observation it names.
+
+    The third label family, resolved the same way as the first two.
+    ``product_observation_id`` is 44 characters of colon-joined slug; asking a
+    model to transcribe it is the failure ADR-055 and ADR-056 each measured, so
+    it is not asked. The label resolves against the same ordered parent context
+    the renderer labelled, so there is no second mapping to keep in step.
+
+    Scope is narrow, as with evidence: only a dict observation carrying
+    ``parent_ref`` is touched, and the key is removed once resolved so the
+    released schema -- which is ``additionalProperties: false`` and knows no
+    ``parent_ref`` -- accepts the result.
+    """
+    if not isinstance(observation, dict) or "parent_ref" not in observation:
+        return observation
+    label = observation["parent_ref"]
+    match = PARENT_REF_PATTERN.fullmatch(label) if isinstance(label, str) else None
+    if match is None:
+        raise ExtractionError(
+            f"parent_ref {label!r} is not a validated-product label",
+            reason_code=_PARENT_REF_UNRESOLVABLE,
+        )
+    parents = _parent_observation_ids(packet)
+    ordinal = int(match.group(1))
+    if not 1 <= ordinal <= len(parents):
+        raise ExtractionError(
+            f"parent_ref cites {label!r}, but only {len(parents)} validated "
+            "products were shown to the model",
+            reason_code=_PARENT_REF_UNRESOLVABLE,
+        )
+    resolved = {key: value for key, value in observation.items() if key != "parent_ref"}
+    resolved["product_observation_id"] = parents[ordinal - 1]
+    return resolved
 
 
 def resolve_evidence_refs(observation: Any, *, packet: dict[str, Any]) -> Any:
@@ -376,6 +481,7 @@ def assert_candidate_conformance(
     packet: dict[str, Any],
     vocabulary: dict[str, Any],
     schema_root: str | Path = "schemas",
+    observation_kind: str = "product",
 ) -> None:
     """C1 through C6, atomic at the **collection** level.
 
@@ -390,6 +496,12 @@ def assert_candidate_conformance(
     roadmap. ``unknown`` is admitted, enters the collection, and its disposition
     is a human decision made later.
     """
+    if observation_kind not in OBSERVATION_KINDS:
+        raise ExtractionError(
+            f"unknown observation_kind: {observation_kind!r}",
+            reason_code="observation_kind_invalid",
+        )
+    capability = observation_kind == "capability"
     company_id = packet["company_id"]
     cutoff = packet["observation_cutoff_date"]
     admitted = set(vocabulary["admitted_status_values"])
@@ -398,7 +510,10 @@ def assert_candidate_conformance(
         for p in packet.get("passages", [])
         if isinstance(p, dict)
     }
-    validator = _validator(schema_root, "product")
+    validator = _validator(schema_root, observation_kind)
+    # C7's universe. Read once, from the same verified parent context the labels
+    # were assigned from.
+    parents = set(_parent_observation_ids(packet)) if capability else set()
 
     seen: dict[str, str] = {}
     for ordinal, observation in enumerate(observations):
@@ -407,32 +522,63 @@ def assert_candidate_conformance(
         if any(validator.iter_errors(observation)):
             continue
 
-        if observation.get("company_id") != company_id:
-            raise ExtractionError(
-                f"C1: observation {ordinal} declares another company", reason_code=_C1
-            )
-        if observation.get("observation_cutoff") != cutoff:
-            raise ExtractionError(
-                f"C2: observation {ordinal} declares another cutoff", reason_code=_C2
-            )
-        normalized = observation.get("normalized_name")
+        if capability:
+            # C7 replaces C1 and C2 rather than sitting beside them. A
+            # capability record carries no company_id and no observation_cutoff
+            # -- measured: neither is in ``capability_observation@0.1.0``. Both
+            # facts reach it through the parent, whose id *is*
+            # ``{company_id}:{cutoff}:{slug}``, so proving the parent is a member
+            # of this run's Snapshot A proves the company and the cutoff too,
+            # and proves something neither C1 nor C2 could: that a human
+            # admitted this parent.
+            parent = observation.get("product_observation_id")
+            if parent not in parents:
+                raise ExtractionError(
+                    f"C7: observation {ordinal} attributes a capability to "
+                    f"{parent!r}, which is not a validated product of this run",
+                    reason_code=_C7,
+                )
+        else:
+            if observation.get("company_id") != company_id:
+                raise ExtractionError(
+                    f"C1: observation {ordinal} declares another company",
+                    reason_code=_C1,
+                )
+            if observation.get("observation_cutoff") != cutoff:
+                raise ExtractionError(
+                    f"C2: observation {ordinal} declares another cutoff",
+                    reason_code=_C2,
+                )
+
+        slug_field = "normalized_capability" if capability else "normalized_name"
+        source_field = "capability" if capability else "product_name"
+        id_field = "capability_observation_id" if capability else "product_observation_id"
+        normalized = observation.get(slug_field)
         if not isinstance(normalized, str) or not _SLUG_GRAMMAR.fullmatch(normalized):
             raise ExtractionError(
-                f"C3: observation {ordinal} has no usable normalized_name "
-                f"({normalized!r}); its product_name cannot be slugged",
+                f"C3: observation {ordinal} has no usable {slug_field} "
+                f"({normalized!r}); its {source_field} cannot be slugged",
                 reason_code=_C3,
             )
-        expected_id = f"{company_id}:{cutoff}:{normalized}"
-        if observation.get("product_observation_id") != expected_id:
+        expected_id = (
+            f"{observation.get('product_observation_id')}:{normalized}"
+            if capability
+            else f"{company_id}:{cutoff}:{normalized}"
+        )
+        if observation.get(id_field) != expected_id:
             raise ExtractionError(
                 f"C4: observation {ordinal} carries an id that is not its "
                 "derived identity",
                 reason_code=_C4,
             )
         if expected_id in seen:
+            # Scoped per parent by construction, not by a second mechanism: a
+            # capability id begins with its parent's id, so two products may
+            # legitimately offer the same capability and only a genuine
+            # within-parent clash collides.
             raise ExtractionError(
                 f"C4: observations {seen[expected_id]} and {ordinal} slug to one "
-                f"identity ({expected_id!r}); two distinct products cannot share "
+                f"identity ({expected_id!r}); two distinct records cannot share "
                 "an observation id",
                 reason_code=_COLLISION,
             )
@@ -465,8 +611,12 @@ def materialize_candidate_collection(
     vocabulary_pin: dict[str, str],
     repo_root: str | Path,
     schema_root: str | Path = "schemas",
+    observation_kind: str = "product",
 ) -> dict[str, str]:
     """Parse, derive, gate, build, validate, write once. Returns the pin.
+
+    ``observation_kind`` defaults to ``product``, so every existing caller and
+    every published run is unaffected.
 
     The vocabulary is hydrated through the shared containment-and-digest loader
     and re-validated by its own loader, so the set C5 uses is the artifact's and
@@ -490,23 +640,35 @@ def materialize_candidate_collection(
     )
 
     observations = parse_model_observations(raw_prediction)
-    # Both derivations run before any schema check, and in this order: reference
-    # resolution supplies ``source_id``/``passage_id``, identity derivation
-    # supplies ``product_observation_id``, and all four are schema-required.
+    # Every resolution runs before any schema check, and the order is a
+    # dependency chain, not a preference: reference resolution supplies
+    # ``source_id``/``passage_id``, parent resolution supplies
+    # ``product_observation_id``, and the capability identity is *derived from*
+    # that parent id -- so derivation must come last. All of them are
+    # schema-required fields the model was never asked for.
     derived = [
         derive_identity_fields(
-            resolve_status_labels(resolve_evidence_refs(observation, packet=packet)),
+            resolve_status_labels(
+                resolve_evidence_refs(
+                    resolve_parent_refs(observation, packet=packet), packet=packet
+                )
+            ),
             company_id=packet["company_id"],
             observation_cutoff=packet["observation_cutoff_date"],
+            observation_kind=observation_kind,
         )
         for observation in observations
     ]
     assert_candidate_conformance(
-        derived, packet=packet, vocabulary=vocabulary, schema_root=schema_root
+        derived,
+        packet=packet,
+        vocabulary=vocabulary,
+        schema_root=schema_root,
+        observation_kind=observation_kind,
     )
 
     collection = build_candidate_collection(
-        observation_kind="product",
+        observation_kind=observation_kind,
         raw_artifact_reference=raw_artifact_reference,
         raw_artifact_sha256=raw_artifact_sha256,
         observations=derived,

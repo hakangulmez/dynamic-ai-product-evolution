@@ -793,3 +793,275 @@ def test_the_v4_prompt_keeps_the_four_lists_so_the_binding_still_holds():
         "public_beta",
     ]
     assert parsed["unknown_status_values"] == ["unknown"]
+
+
+# --- ADR-060 (E-S3): the capability branch ----------------------------------
+
+
+from dynamic_ai_products.extraction.candidates import resolve_parent_refs  # noqa: E402
+
+PARENT_A = f"{COMPANY}:{CUTOFF}:alpha"
+PARENT_B = f"{COMPANY}:{CUTOFF}:beta"
+
+
+def capability_packet(**over) -> dict:
+    payload = packet(**over)
+    # ``resolve_evidence_refs`` goes through ``canonical_passage_order``, which
+    # requires a dated passage -- the same rule the renderer enforces.
+    payload.setdefault("legal_name", "TEST CO")
+    payload["passages"] = [
+        {"source_id": SRC, "passage_id": PSG, "text": "x",
+         "publication_date": "2024-01-01"}
+    ]
+    payload["parent_context"] = {
+        "snapshot": {"reference": "snapshots/a.json", "sha256": "b" * 64,
+                     "snapshot_version": "v1"},
+        "product_parents": [
+            {"observation_id": PARENT_A, "reference": "observations/product/1.json",
+             "sha256": "a" * 64, "payload": {"product_name": "Alpha"}},
+            {"observation_id": PARENT_B, "reference": "observations/product/2.json",
+             "sha256": "c" * 64, "payload": {"product_name": "Beta"}},
+        ],
+    }
+    return payload
+
+
+def capability(**over) -> dict:
+    payload = {
+        "parent_ref": "A01",
+        "capability": "summarize support tickets",
+        "availability_status": "S5",
+        "confidence": "high",
+        "evidence": [{"ref": "P001", "quote": "x"}],
+    }
+    payload.update(over)
+    return {k: v for k, v in payload.items() if v is not ...}
+
+
+def cap_chain(obs, pkt=None):
+    pkt = pkt if pkt is not None else capability_packet()
+    return derive_identity_fields(
+        resolve_status_labels(
+            resolve_evidence_refs(resolve_parent_refs(obs, packet=pkt), packet=pkt)
+        ),
+        company_id=pkt["company_id"],
+        observation_cutoff=pkt["observation_cutoff_date"],
+        observation_kind="capability",
+    )
+
+
+def cap_refuse(observations, vocab, pkt=None) -> ExtractionError:
+    pkt = pkt if pkt is not None else capability_packet()
+    with pytest.raises(ExtractionError) as excinfo:
+        assert_candidate_conformance(
+            observations, packet=pkt, vocabulary=vocab,
+            schema_root=ROOT / "schemas", observation_kind="capability",
+        )
+    return excinfo.value
+
+
+# --- parent resolution ------------------------------------------------------
+
+
+def test_a_parent_ref_resolves_to_the_product_at_that_position():
+    """The third label family, resolved from the same ordered parent context."""
+    out = resolve_parent_refs(capability(), packet=capability_packet())
+    assert out["product_observation_id"] == PARENT_A
+    assert "parent_ref" not in out
+
+
+def test_the_label_is_removed_so_the_released_schema_accepts_the_result():
+    """``capability_observation@0.1.0`` is additionalProperties: false."""
+    from jsonschema import Draft202012Validator
+
+    schema = json.loads(
+        (ROOT / "schemas" / "capability_observation.schema.json").read_text()
+    )
+    resolved = cap_chain(capability())
+    Draft202012Validator(schema).validate(resolved)
+    assert "parent_ref" not in resolved
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["A03", "A99", "A00", "a01", "A1", "A", "01", "", "AXX", None, 1],
+    ids=["out_of_range", "far_out", "zero", "lowercase", "one_digit", "bare",
+         "no_prefix", "empty", "letters", "null", "int"],
+)
+def test_an_unresolvable_parent_label_has_its_own_reason_code(label):
+    """Separate from the evidence code, and from C7.
+
+    Three distinct faults: a label that names no position, a citation of a
+    passage that does not exist, and a parent that exists but was never
+    admitted. An operator needs to know which.
+    """
+    with pytest.raises(ExtractionError) as excinfo:
+        resolve_parent_refs(capability(parent_ref=label), packet=capability_packet())
+    assert excinfo.value.reason_code == (
+        "candidate_conformance_parent_ref_unresolvable"
+    )
+
+
+def test_parent_resolution_leaves_untouched_what_it_does_not_own():
+    for item in ("a string", 12, None):
+        assert resolve_parent_refs(item, packet=capability_packet()) is item
+    already = {"product_observation_id": PARENT_A}
+    assert resolve_parent_refs(already, packet=capability_packet()) is already
+
+
+def test_parent_resolution_does_not_mutate_its_input():
+    original = capability()
+    snapshot = json.dumps(original, sort_keys=True)
+    resolve_parent_refs(original, packet=capability_packet())
+    assert json.dumps(original, sort_keys=True) == snapshot
+
+
+def test_a_packet_without_verified_parent_context_is_refused():
+    with pytest.raises(ExtractionError) as excinfo:
+        resolve_parent_refs(capability(), packet=packet())
+    assert excinfo.value.reason_code == (
+        "candidate_conformance_parent_ref_unresolvable"
+    )
+
+
+# --- capability identity ----------------------------------------------------
+
+
+def test_the_capability_identity_is_derived_from_its_parent():
+    out = cap_chain(capability())
+    assert out["normalized_capability"] == "summarize-support-tickets"
+    assert out["capability_observation_id"] == f"{PARENT_A}:summarize-support-tickets"
+
+
+def test_the_parent_id_is_a_component_of_the_child_id():
+    """Which is why parent resolution must run before derivation."""
+    out = cap_chain(capability())
+    assert out["capability_observation_id"].startswith(out["product_observation_id"] + ":")
+
+
+def test_the_model_cannot_supply_any_capability_identity():
+    out = cap_chain(capability(
+        capability_observation_id="cap-001",
+        normalized_capability="Whatever The Model Said",
+    ))
+    assert out["capability_observation_id"] != "cap-001"
+    assert out["normalized_capability"] == "summarize-support-tickets"
+
+
+def test_the_product_branch_is_unchanged_by_the_parameter():
+    """Backward compatibility, asserted rather than assumed."""
+    explicit = derive_identity_fields(
+        observation(), company_id=COMPANY, observation_cutoff=CUTOFF,
+        observation_kind="product",
+    )
+    assert explicit == derived(observation())
+
+
+@pytest.mark.parametrize("kind", ["", "products", "Capability", None, 7])
+def test_an_unknown_observation_kind_is_refused(kind):
+    with pytest.raises(ExtractionError) as excinfo:
+        derive_identity_fields(observation(), observation_kind=kind)
+    assert excinfo.value.reason_code == "observation_kind_invalid"
+
+
+# --- C7 and the capability gate ---------------------------------------------
+
+
+def test_a_conforming_capability_passes_every_gate(vocabulary):
+    assert_candidate_conformance(
+        [cap_chain(capability())], packet=capability_packet(),
+        vocabulary=vocabulary, schema_root=ROOT / "schemas",
+        observation_kind="capability",
+    )
+
+
+def test_c7_refuses_a_parent_that_is_not_a_validated_product(vocabulary):
+    """The gate with no product-side counterpart.
+
+    A capability attributed to a product the human rejected would be
+    structurally valid -- real-looking id, real passage, conforming record --
+    and only this gate catches it.
+    """
+    tampered = cap_chain(capability())
+    tampered["product_observation_id"] = f"{COMPANY}:{CUTOFF}:rejected-product"
+    tampered["capability_observation_id"] = (
+        f"{tampered['product_observation_id']}:{tampered['normalized_capability']}"
+    )
+    error = cap_refuse([tampered], vocabulary)
+    assert error.reason_code == "candidate_conformance_parent_not_in_snapshot"
+    assert "rejected-product" in str(error)
+
+
+def test_c7_subsumes_c1_and_c2_for_capability(vocabulary):
+    """A capability record carries neither company_id nor observation_cutoff.
+
+    Measured: neither is a property of ``capability_observation@0.1.0``. Both
+    reach the record through the parent, whose id *is*
+    ``{company_id}:{cutoff}:{slug}`` -- so C7 proves them, and proves something
+    C1 and C2 could not: that a human admitted this parent.
+    """
+    schema = json.loads(
+        (ROOT / "schemas" / "capability_observation.schema.json").read_text()
+    )
+    assert "company_id" not in schema["properties"]
+    assert "observation_cutoff" not in schema["properties"]
+    out = cap_chain(capability())
+    assert out["product_observation_id"].startswith(f"{COMPANY}:{CUTOFF}:")
+
+
+def test_collision_is_scoped_per_parent_without_a_second_mechanism(vocabulary):
+    """Two products may legitimately offer the same capability."""
+    same_parent = [
+        cap_chain(capability()),
+        cap_chain(capability(capability="Summarize Support Tickets!")),
+    ]
+    assert cap_refuse(same_parent, vocabulary).reason_code == (
+        "candidate_conformance_observation_id_collision"
+    )
+
+    different_parents = [cap_chain(capability()), cap_chain(capability(parent_ref="A02"))]
+    assert_candidate_conformance(
+        different_parents, packet=capability_packet(), vocabulary=vocabulary,
+        schema_root=ROOT / "schemas", observation_kind="capability",
+    )
+
+
+def test_c3_refuses_a_capability_that_cannot_be_slugged(vocabulary):
+    error = cap_refuse([cap_chain(capability(capability="???"))], vocabulary)
+    assert error.reason_code == "candidate_conformance_normalized_name_invalid"
+    assert "normalized_capability" in str(error)
+
+
+@pytest.mark.parametrize("status", ["planned", "ga", ""])
+def test_c5_governs_the_capability_status_too(vocabulary, status):
+    tampered = cap_chain(capability())
+    tampered["availability_status"] = status
+    assert cap_refuse([tampered], vocabulary).reason_code == (
+        "candidate_conformance_status_not_governed"
+    )
+
+
+def test_c6_still_refuses_evidence_outside_the_packet(vocabulary):
+    tampered = cap_chain(capability())
+    tampered["evidence"] = [
+        {"source_id": SRC, "passage_id": "psg-9999", "quote": "x"}
+    ]
+    assert cap_refuse([tampered], vocabulary).reason_code == (
+        "candidate_conformance_evidence_pair_unknown"
+    )
+
+
+def test_the_gate_refuses_an_unknown_kind(vocabulary):
+    with pytest.raises(ExtractionError) as excinfo:
+        assert_candidate_conformance(
+            [], packet=capability_packet(), vocabulary=vocabulary,
+            schema_root=ROOT / "schemas", observation_kind="task",
+        )
+    assert excinfo.value.reason_code == "observation_kind_invalid"
+
+
+def test_the_materializer_defaults_to_product_so_nothing_existing_changes():
+    import inspect
+
+    parameters = inspect.signature(materialize_candidate_collection).parameters
+    assert parameters["observation_kind"].default == "product"
