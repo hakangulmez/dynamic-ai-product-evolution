@@ -1,4 +1,4 @@
-"""Derived identity, the parse gates, and the C1-C6 conformance gate (ADR-054, G6-M).
+"""Derived identity, the parse gates, and the C1-C8 conformance gate (ADR-054, G6-M).
 
 Offline throughout: no provider, no network, no run root is created by anything
 here except the temporary ones these tests own.
@@ -371,6 +371,147 @@ def test_c6_checks_the_pair_not_either_half(vocabulary):
         vocabulary,
     )
     assert error.reason_code == "candidate_conformance_evidence_pair_unknown"
+
+
+# --- C8: the quote must be in the passage it cites --------------------------
+#
+# The shape below is the real ext-smoke-0006 Sales Hub failure, reduced: two
+# passages that are *not* adjacent in the source, a quote assembled from the end
+# of one and the start of the other, cited under the first one's id alone.
+
+SPLICE_A = "psg-a-0001"
+SPLICE_B = "psg-b-0001"
+TEXT_A = "Sales Hub is software for sales representatives. Features include: email"
+TEXT_B = "templates and tracking, conversations and meeting scheduling."
+_C8_CODE = "candidate_conformance_evidence_quote_uncontained"
+
+
+def splice_packet(**over) -> dict:
+    # Ordered by (source_id, passage_id), so A is P001 and B is P002 -- the
+    # materialization test below cites P001 and means passage A.
+    return packet(
+        passages=[
+            {"source_id": SRC, "passage_id": SPLICE_A, "text": TEXT_A,
+             "publication_date": "2024-01-01"},
+            {"source_id": SRC, "passage_id": SPLICE_B, "text": TEXT_B,
+             "publication_date": "2024-01-01"},
+        ],
+        **over,
+    )
+
+
+def refuse_spliced(evidence, vocab) -> ExtractionError:
+    with pytest.raises(ExtractionError) as excinfo:
+        assert_candidate_conformance(
+            [derived(observation(evidence=evidence))],
+            packet=splice_packet(),
+            vocabulary=vocab,
+            schema_root=ROOT / "schemas",
+        )
+    return excinfo.value
+
+
+def test_c8_refuses_a_quote_spliced_from_two_passages(vocabulary):
+    """The measured Sales Hub failure, and the reason this gate exists.
+
+    Every earlier gate admits it: the pair resolves, so C6 is satisfied, and
+    nothing before C8 ever read the words.
+    """
+    error = refuse_spliced(
+        [{"source_id": SRC, "passage_id": SPLICE_A, "quote": f"{TEXT_A} {TEXT_B}"}],
+        vocabulary,
+    )
+    assert error.reason_code == _C8_CODE
+
+
+def test_the_spliced_citation_is_not_a_c6_failure(vocabulary):
+    """C6 and C8 are different faults and must not answer for each other.
+
+    The cited ``passage_id`` is genuinely a passage of this run -- the identifier
+    is real and the content is not. Reporting this as C6 would send an operator
+    looking for an invented identifier that does not exist.
+    """
+    error = refuse_spliced(
+        [{"source_id": SRC, "passage_id": SPLICE_A, "quote": f"{TEXT_A} {TEXT_B}"}],
+        vocabulary,
+    )
+    assert error.reason_code != "candidate_conformance_evidence_pair_unknown"
+    assert (SRC, SPLICE_A) in {
+        (p["source_id"], p["passage_id"]) for p in splice_packet()["passages"]
+    }
+
+
+@pytest.mark.parametrize("quote", ["", "   ", "\n\t "])
+def test_c8_refuses_a_blank_quote(vocabulary, quote):
+    """A blank quote must fail rather than pass by substring accident."""
+    error = refuse_spliced(
+        [{"source_id": SRC, "passage_id": SPLICE_A, "quote": quote}], vocabulary
+    )
+    assert error.reason_code == _C8_CODE
+
+
+def test_c8_refuses_a_quote_from_the_passage_next_door(vocabulary):
+    """Verbatim somewhere in the corpus is not verbatim in the cited passage."""
+    error = refuse_spliced(
+        [{"source_id": SRC, "passage_id": SPLICE_A, "quote": TEXT_B}], vocabulary
+    )
+    assert error.reason_code == _C8_CODE
+
+
+def test_c8_admits_a_quote_that_really_occurs_in_the_cited_passage(vocabulary):
+    """The contrast case: a substring of the right passage still passes."""
+    assert_candidate_conformance(
+        [derived(observation(evidence=[
+            {"source_id": SRC, "passage_id": SPLICE_A, "quote": "software for sales"},
+            {"source_id": SRC, "passage_id": SPLICE_B, "quote": TEXT_B},
+        ]))],
+        packet=splice_packet(),
+        vocabulary=vocabulary,
+        schema_root=ROOT / "schemas",
+    )
+
+
+def test_c8_names_the_citation_without_quoting_it(vocabulary):
+    """A refusal reports what failed, never the contents that failed it."""
+    error = refuse_spliced(
+        [{"source_id": SRC, "passage_id": SPLICE_A, "quote": f"{TEXT_A} {TEXT_B}"}],
+        vocabulary,
+    )
+    message = str(error)
+    assert SRC in message and SPLICE_A in message
+    assert TEXT_A not in message and TEXT_B not in message
+
+
+def test_c8_refuses_the_whole_collection_not_the_one_entry(tmp_path, vocabulary):
+    """Same atomicity as C6: one bad quote, nothing written at all."""
+    vroot, vpin = _vocab_root(tmp_path, vocabulary)
+    croot = tmp_path / "cand"
+    croot.mkdir()
+    with pytest.raises(ExtractionError) as excinfo:
+        materialize_candidate_collection(
+            raw_prediction=envelope(json.dumps([
+                observation(
+                    product_name="Marketing Hub",
+                    availability_status="S5",
+                    evidence=[{"ref": "P001", "quote": "software for sales"}],
+                ),
+                observation(
+                    product_name="Sales Hub",
+                    availability_status="S5",
+                    evidence=[{"ref": "P001", "quote": f"{TEXT_A} {TEXT_B}"}],
+                ),
+            ])),
+            packet=splice_packet(),
+            raw_artifact_reference="data/runs/x/predictions/raw_prediction.json",
+            raw_artifact_sha256="b" * 64,
+            collection_root=croot,
+            vocabulary_root=vroot,
+            vocabulary_pin=vpin,
+            repo_root=ROOT,
+            schema_root=ROOT / "schemas",
+        )
+    assert excinfo.value.reason_code == _C8_CODE
+    assert list(croot.rglob("*")) == []
 
 
 # --- the boundary with the released rejected[] contract ---------------------

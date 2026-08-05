@@ -224,6 +224,14 @@ _PARENT_REF_UNRESOLVABLE = "candidate_conformance_parent_ref_unresolvable"
 # capability that names one outside this run's Snapshot A would be attributed to
 # something the human never admitted.
 _C7 = "candidate_conformance_parent_not_in_snapshot"
+# C8. Separate from C6 for the same reason ADR-055 kept its label codes separate:
+# these are different failure classes and an operator needs to know which. C6
+# says the *identifier* is not real -- the model named a passage this run never
+# held. C8 says the identifier is real but the *words* are not in it. A spliced
+# quote passes C6 with room to spare: measured on ext-smoke-0006, one evidence
+# entry of thirty-four quoted two passages 895 characters apart in the source
+# under the first one's id, and every gate admitted it.
+_C8 = "candidate_conformance_evidence_quote_uncontained"
 
 
 def slugify_product_name(product_name: Any) -> str:
@@ -520,7 +528,7 @@ def assert_candidate_conformance(
     schema_root: str | Path = "schemas",
     observation_kind: str = "product",
 ) -> None:
-    """C1 through C6, atomic at the **collection** level.
+    """C1 through C8, atomic at the **collection** level.
 
     Applied only to items that already pass a pure pre-schema check, so a
     non-object or a schema failure reaches ``build_candidate_collection`` and is
@@ -532,6 +540,11 @@ def assert_candidate_conformance(
     ``admitted_status_values``? Not whether it is active, not whether it is
     roadmap. ``unknown`` is admitted, enters the collection, and its disposition
     is a human decision made later.
+
+    C6 and C8 are the two halves of one evidence question and stay separate on
+    purpose: C6 proves the cited pair is a passage of this run, C8 proves the
+    quoted words are in that passage. Until C8 existed only the first half was
+    asked, and a quote assembled from two passages satisfied it.
     """
     if observation_kind not in OBSERVATION_KINDS:
         raise ExtractionError(
@@ -542,8 +555,11 @@ def assert_candidate_conformance(
     company_id = packet["company_id"]
     cutoff = packet["observation_cutoff_date"]
     admitted = set(vocabulary["admitted_status_values"])
+    # One structure for both evidence gates, read once. C6 asks whether a pair is
+    # a key; C8 asks what that key maps to. Two passes over the same passages
+    # would be two chances to disagree about which run's corpus is authoritative.
     universe = {
-        (p.get("source_id"), p.get("passage_id"))
+        (p.get("source_id"), p.get("passage_id")): p.get("text")
         for p in packet.get("passages", [])
         if isinstance(p, dict)
     }
@@ -634,6 +650,24 @@ def assert_candidate_conformance(
                     f"C6: observation {ordinal} cites a passage that is not in "
                     "the packet this run was built from",
                     reason_code=_C6,
+                )
+            # C8 runs only once C6 has proved the pair resolves, so the text
+            # below is this run's own corpus. A blank quote fails rather than
+            # passing by the empty-string-is-a-substring accident.
+            quote = entry.get("quote")
+            text = universe[pair]
+            if (
+                not isinstance(quote, str)
+                or not quote.strip()
+                or not isinstance(text, str)
+                or quote not in text
+            ):
+                # Neither the quote nor the passage text appears here: a refusal
+                # names what failed, not the contents that failed it.
+                raise ExtractionError(
+                    f"C8: observation {ordinal} quotes words that do not occur "
+                    f"verbatim in the passage it cites ({pair[0]!r}, {pair[1]!r})",
+                    reason_code=_C8,
                 )
 
 

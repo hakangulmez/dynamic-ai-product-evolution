@@ -2914,6 +2914,97 @@ chain never gained a durable witness.
 reference through the builder, one test section. No new files, no manifest count
 change, no schema, prompt, published run root or committed artifact changes.
 
+## ADR-063 — C8: the quote must occur in the passage it cites
+
+**Status:** Accepted.
+
+**How this was found.** A separate tool, `codex`, reported a bad evidence quote
+in the `ext-smoke-0006` product collection, candidate
+`5a283c3092fdd07cea8e93dd9fd1d808` (Sales Hub). The operator verified it
+independently, and so did this repository's own measurement before any code was
+written. It is real.
+
+**What the artifact actually says.** The first evidence entry cites passage
+`5f626aca2f9ccb26f2aaa7bab4fdc6a6` and quotes 462 characters. Measured: the
+first 259 of those are the entire text of that passage, and the remaining 203
+are a space followed by the entire text of a *different* passage,
+`154ebc01d989481530eba7b57f9c30e1`. The quote is exactly
+`text(A) + " " + text(B)`, filed under A's identifier alone.
+
+The two passages are not even adjacent: A ends at source offset 318807 and B
+begins at 319702, 895 characters apart. So this is not a boundary-straddling
+span that a reasonable reader would call one quotation. It is two separated
+passages joined into one citation.
+
+**How wide.** The whole `ext-smoke-0006` collection was scanned: 18 candidates,
+34 evidence entries, **exactly one** failure. The other 33 quotes occur verbatim
+in the passage they cite. This is a rare fault, not a systemic one — which is
+why nothing downstream noticed it.
+
+**Why C6 did not catch it, exactly.** C6 asks one question: is
+`(source_id, passage_id)` a pair this run's packet contains? It never touches
+`entry["quote"]`. Both identifiers here are genuine passages of this run, so C6
+was satisfied with room to spare, and no other gate in the materialization path
+reads the words at all. The evidence requirement in `CLAUDE.md` — every claim
+carries a short evidence quote — was being enforced as *a quote is present*,
+never as *the quote is there*.
+
+**The semantics already existed and were not connected.**
+`evaluation/validators.py::_handle_evidence_quote_containment` has carried the
+same two conditions since the harness was built. It runs only on the evaluation
+path; the product and capability materialization path in
+`extraction/candidates.py` was never wired to it. That function is private,
+returns a `_RuleOutcome` tuple shaped for finding records rather than a refusal,
+and belongs to a different layer, so C8 is written independently in the C-series
+style rather than imported. The cost is one duplicated rule; the alternative was
+a cross-layer dependency between the evaluator and the extractor, which the
+separate-layers rule forbids.
+
+**Why a separate reason code.** `candidate_conformance_evidence_quote_uncontained`
+is not folded into C6 for the same reason ADR-055 kept its label codes separate:
+these are different failure classes and an operator needs to know which one
+happened. C6 means *the identifier is not real* — the model invented or
+mistranscribed a passage id. C8 means *the identifier is real and the words are
+not in it*. Reporting a spliced quote as C6 would send someone looking for a
+nonexistent identifier.
+
+C8 runs immediately after C6, per evidence entry, and only once C6 has proved
+the pair resolves — so the text it compares against is this run's own corpus and
+cannot be some other run's. Both gates read one mapping, built once from
+`packet["passages"]`: C6 asks whether a pair is a key, C8 asks what that key maps
+to. A second pass over the same passages would have been a second chance to
+disagree about which corpus is authoritative.
+
+A blank quote fails rather than passing by the empty-string-is-a-substring
+accident. The refusal message carries the ordinal and the cited pair and never
+the quote or the passage text: a refusal names what failed, not the contents
+that failed it.
+
+**Atomicity is unchanged.** One bad quote refuses the entire collection
+materialization. Nothing partial is written and nothing is silently dropped —
+the same discipline C1 through C7 already had.
+
+**The persisted Sales Hub record is deliberately untouched.**
+`data/runs/decisions-ext-smoke-0006-0001` and `-0002` are not edited, not
+deleted, not overwritten. Raw sources and persisted observations are immutable,
+and a correction creates a new version with its own manifest; it is not a silent
+repair applied to bytes a human already validated. That correction is a separate
+decision and is not being made here. `ext-smoke-0006`, its candidate collection,
+and Snapshot A are likewise unchanged. What C8 changes is what can be admitted
+**from now on**.
+
+**Scope.** One reason code, one check inside `assert_candidate_conformance`, one
+mapping widened from a set to a dict, one test section. No schema change — C8 is
+a code-side rule, and `product_observation.schema.json` still types `quote` as a
+plain string. No new files, no manifest count change, no governance record, run
+root or published artifact touched.
+
+**Known limitation.** C8 proves the quote is a substring of the cited passage.
+It does not prove the quote is *the right* substring, that it supports the claim
+made, or that the model chose the most relevant passage. Those remain review and
+evaluation obligations. Claiming otherwise would be the ambient reading this
+project rejects.
+
 ## Open decisions
 
 - Required source packet by firm-year.
