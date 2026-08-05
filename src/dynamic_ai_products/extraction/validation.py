@@ -16,17 +16,36 @@ from typing import Any
 
 from .candidates import OBSERVATION_KINDS
 from .errors import ExtractionError
+from .manifests import _require_aware_instant
 from .raw_artifacts import canonical_json_bytes, write_artifact
 
 __all__ = [
     "DECISION_SET_CONTRACT",
+    "DECISION_SET_CONTRACT_V2",
     "DECISIONS",
+    "KNOWN_DECISION_SET_CONTRACTS",
     "build_validation_decision_set",
+    "build_validation_decision_set_v2",
     "decision_set_bytes",
     "persist_accepted_observations",
 ]
 
 DECISION_SET_CONTRACT = "extraction_validation_decision_set@0.1.0"
+
+# ADR-057. The successor exists because @0.1.0 records *what* a human decided
+# and *why*, but not *who* decided or *when*. For an evidence-grounded dataset
+# that is the wrong thing to leave out of the file: a later reader holding the
+# decision set could not answer "who admitted this observation" from it.
+DECISION_SET_CONTRACT_V2 = "extraction_validation_decision_set@0.2.0"
+
+# Every decision-set contract this code has published, oldest first. Consumers
+# recognise the set rather than one literal, for the reason ADR-053 established:
+# a const pinned to a single version silently freezes the artifact it names.
+KNOWN_DECISION_SET_CONTRACTS: tuple[str, ...] = (
+    DECISION_SET_CONTRACT,
+    DECISION_SET_CONTRACT_V2,
+)
+
 DECISIONS: tuple[str, ...] = ("accept", "reject")
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -166,6 +185,41 @@ def build_validation_decision_set(
         "accepted_count": sum(1 for d in decisions if d["decision"] == "accept"),
         "rejected_count": sum(1 for d in decisions if d["decision"] == "reject"),
     }
+
+
+def build_validation_decision_set_v2(
+    *,
+    decided_by: str,
+    decided_at: str,
+    **fields: Any,
+) -> dict[str, Any]:
+    """The ``@0.2.0`` decision set: everything ``@0.1.0`` carries, plus the human.
+
+    Delegates to the released builder for the whole judgement so the two cannot
+    diverge on what a decision *is* -- every pin rule, the Snapshot A
+    product/capability split, the accepted-artifact requirement and the counts
+    are computed once, in one place. This function adds exactly the two fields
+    that make the artifact answer its own provenance question.
+
+    ``decided_at`` is parsed and must carry an explicit UTC offset. A naive
+    instant is refused rather than assumed to be UTC: guessing a zone on the
+    record of a human admission decision would be inventing provenance.
+    """
+    if not isinstance(decided_by, str) or not decided_by.strip():
+        raise ExtractionError(
+            "decided_by must be a non-blank string; a decision set records who "
+            "made the judgement",
+            reason_code="validation_provenance_missing",
+        )
+    _require_aware_instant(
+        decided_at, field="decided_at", code="validation_provenance_missing"
+    )
+    decision_set = build_validation_decision_set(**fields)
+    decision_set["contract"] = DECISION_SET_CONTRACT_V2
+    decision_set["schema_version"] = "0.2.0"
+    decision_set["decided_by"] = decided_by
+    decision_set["decided_at"] = decided_at
+    return decision_set
 
 
 def decision_set_bytes(decision_set: dict[str, Any]) -> bytes:

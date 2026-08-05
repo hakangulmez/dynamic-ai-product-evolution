@@ -272,3 +272,139 @@ def test_serialization_is_deterministic():
     assert decision_set_bytes(_decision_set(collection, [], {})) == decision_set_bytes(
         _decision_set(collection, [], {})
     )
+
+
+# --- ADR-057: the successor records who decided, and when -------------------
+
+
+from dynamic_ai_products.extraction.validation import (  # noqa: E402
+    DECISION_SET_CONTRACT_V2,
+    KNOWN_DECISION_SET_CONTRACTS,
+    build_validation_decision_set_v2,
+)
+
+DECIDED_BY = "Hakan Zeki Gulmez"
+DECIDED_AT = "2026-08-05T13:00:00+02:00"
+
+
+def _released_kwargs():
+    """The same inputs the released builder is exercised with elsewhere."""
+    collection = _collection(2)
+    ids = [entry["candidate_id"] for entry in collection["entries"]]
+    artifacts = {
+        cid: {"reference": f"observations/product/{cid}.json", "sha256": RAW_SHA}
+        for cid in ids
+    }
+    return {
+        "observation_kind": "product",
+        "decision_set_version": "v1",
+        "raw_artifact_reference": "predictions/raw_prediction.json",
+        "raw_artifact_sha256": RAW_SHA,
+        "candidate_collection_reference": "candidates/collection.json",
+        "candidate_collection_sha256": COLLECTION_SHA,
+        "input_packet_reference": "inputs/extraction_input_packet.json",
+        "input_packet_sha256": PACKET_SHA,
+        "coverage_artifact_reference": "coverage/source_family_coverage.json",
+        "coverage_artifact_sha256": COVERAGE_SHA,
+        "collection": collection,
+        "accepted_candidate_ids": ids,
+        "accepted_artifacts": artifacts,
+    }
+
+
+def _v2(**over):
+    kwargs = {"decided_by": DECIDED_BY, "decided_at": DECIDED_AT, **_released_kwargs()}
+    kwargs.update(over)
+    return build_validation_decision_set_v2(**kwargs)
+
+
+def test_the_released_contract_is_untouched_and_the_successor_sits_beside_it():
+    assert DECISION_SET_CONTRACT == "extraction_validation_decision_set@0.1.0"
+    assert DECISION_SET_CONTRACT_V2 == "extraction_validation_decision_set@0.2.0"
+    assert KNOWN_DECISION_SET_CONTRACTS == (
+        DECISION_SET_CONTRACT,
+        DECISION_SET_CONTRACT_V2,
+    )
+
+
+def test_the_successor_carries_the_human_and_declares_its_own_version():
+    ds = _v2()
+    assert ds["contract"] == DECISION_SET_CONTRACT_V2
+    assert ds["schema_version"] == "0.2.0"
+    assert ds["decided_by"] == DECIDED_BY
+    assert ds["decided_at"] == DECIDED_AT
+
+
+def test_the_successor_reuses_the_released_judgement_verbatim():
+    """One definition of what a decision *is*.
+
+    Every pin rule, the Snapshot A split, the accepted-artifact requirement and
+    the counts are computed by the released builder; the successor adds two
+    fields and nothing else. A second implementation could drift.
+    """
+    shared = _released_kwargs()
+    released = build_validation_decision_set(**shared)
+    successor = build_validation_decision_set_v2(
+        decided_by=DECIDED_BY, decided_at=DECIDED_AT, **shared
+    )
+    added = {"decided_by", "decided_at"}
+    assert set(successor) - set(released) == added
+    for key in released:
+        if key in ("contract", "schema_version"):
+            continue
+        assert successor[key] == released[key], key
+
+
+@pytest.mark.parametrize("value", ["", "   ", None, 7])
+def test_a_decision_set_without_a_named_human_is_refused(value):
+    with pytest.raises(ExtractionError) as excinfo:
+        _v2(decided_by=value)
+    assert excinfo.value.reason_code == "validation_provenance_missing"
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["2026-08-05T13:00:00", "not-a-timestamp", "", None, 7],
+    ids=["naive", "unparseable", "empty", "null", "int"],
+)
+def test_a_decision_instant_without_a_zone_is_refused(value):
+    """Guessing a zone on the record of a human admission would invent provenance."""
+    with pytest.raises(ExtractionError) as excinfo:
+        _v2(decided_at=value)
+    assert excinfo.value.reason_code == "validation_provenance_missing"
+
+
+def test_the_successor_validates_against_its_own_schema_and_not_the_released_one():
+    v2_schema = json.loads(
+        (SCHEMAS / "extraction_validation_decision_set_v2.schema.json").read_text()
+    )
+    v1_schema = json.loads(
+        (SCHEMAS / "extraction_validation_decision_set.schema.json").read_text()
+    )
+    ds = _v2()
+    Draft202012Validator(v2_schema).validate(ds)
+    assert not Draft202012Validator(v1_schema).is_valid(ds)
+
+
+def test_the_released_document_is_still_refused_by_the_successor_schema():
+    """Two-way closed: neither loader accepts the other's declared contract."""
+    v2_schema = json.loads(
+        (SCHEMAS / "extraction_validation_decision_set_v2.schema.json").read_text()
+    )
+    assert not Draft202012Validator(v2_schema).is_valid(
+        build_validation_decision_set(**_released_kwargs())
+    )
+
+
+def test_the_snapshot_step_accepts_both_contracts_and_nothing_else():
+    """ADR-053's lesson applied: a const would have frozen the artifact.
+
+    ``parent_snapshots`` gates the decision set it reconciles a snapshot
+    against. Pinned to one literal, it would have refused every successor.
+    """
+    from dynamic_ai_products.extraction import parent_snapshots as ps
+
+    source = Path(ps.__file__).read_text(encoding="utf-8")
+    assert "KNOWN_DECISION_SET_CONTRACTS" in source
+    assert '_DECISION_SET_CONTRACT = "extraction_validation_decision_set@0.1.0"' not in source
+    assert ps.KNOWN_DECISION_SET_CONTRACTS is KNOWN_DECISION_SET_CONTRACTS

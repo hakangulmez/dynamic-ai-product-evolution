@@ -507,7 +507,9 @@ def test_manifest_count():
     # and the change request its qualification record pins.
     # 601 = 599 + the two ADR-056 paths: the label-emitting successor prompt
     # and the change request its qualification record pins.
-    assert declared == len(paths) == 601
+    # 602 = 601 + the ADR-057 path: the extraction_validation_decision_set
+    # successor schema, which carries who decided and when.
+    assert declared == len(paths) == 602
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

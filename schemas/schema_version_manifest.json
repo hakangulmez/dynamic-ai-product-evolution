@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.17.0",
+  "manifest_version": "0.18.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -23,6 +23,7 @@
     "extraction_provider_error_record": "0.1.0",
     "extraction_run": "0.1.0",
     "extraction_validation_decision_set": "0.1.0",
+    "extraction_validation_decision_set_v2": "0.2.0",
     "firm_lineage": "0.1.0",
     "firm_year_eligibility": "0.1.0",
     "frontier_baseline": "0.1.0",

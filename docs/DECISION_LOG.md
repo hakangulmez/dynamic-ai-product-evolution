@@ -2503,6 +2503,74 @@ did not recur was rejected. The `passage_id` corruption reproduced character for
 character across two independent runs; in this failure class, repetition has
 already been measured not to help.
 
+## ADR-057 — A decision set records who decided: `extraction_validation_decision_set@0.2.0` (G6-D)
+
+**Status:** Accepted.
+
+The first real human validation produced a decision set that says which
+candidates were accepted and why, and cannot say who accepted them or when.
+Measured: `@0.1.0` is `additionalProperties: false` and its property set has no
+`decided_by` and no `decided_at`, so the field is not merely absent — it is
+unrepresentable.
+
+**Why this is not the `run_created_at` case.** That value has no carrier either
+and lives in an operator ledger outside the repository, which was the right
+answer for an operational timestamp about how a run was executed. This is a
+different kind of fact: *who admitted which observation into the dataset, on
+what grounds*. That sits at the centre of the project's evidence-grounded claim.
+Keeping it in a repo-external ledger would separate the provenance from the
+data, and a later reader holding the decision set would not find the answer in
+the file they are holding. So it belongs in the artifact.
+
+**Additive successor, released contract untouched.**
+`extraction_validation_decision_set@0.1.0` and its schema file stay
+byte-identical; `@0.2.0` adds `decided_by` and `decided_at` as **required**
+fields and changes nothing else. Nineteen required properties instead of
+seventeen. The two are separate contracts and the dispatch is closed both ways:
+a `@0.2.0` document fails the `@0.1.0` schema on the `contract` const, and a
+`@0.1.0` document fails `@0.2.0` on the two missing required fields. Both
+directions are asserted.
+
+**One definition of what a decision is.** `build_validation_decision_set_v2`
+delegates the entire judgement to the released builder — every pin rule, the
+Snapshot A product/capability split, the accepted-artifact requirement, the
+counts — and adds exactly two fields. A second implementation would be a second
+place for the rules to live. A test asserts the successor's output differs from
+the released one only in `contract`, `schema_version` and the two new keys.
+
+**`decided_at` must carry an explicit UTC offset**, parsed through the same
+`_require_aware_instant` every governance record uses. A naive instant is
+refused rather than assumed to be UTC: guessing a zone on the record of a human
+admission decision would be inventing provenance, which is the specific thing
+this ADR exists to stop.
+
+**A const would have frozen the artifact, again.** Measured before writing
+anything: `parent_snapshots` gated the decision set it reconciles against with
+`decision_set.get("contract") != "extraction_validation_decision_set@0.1.0"` —
+a single literal. Every `@0.2.0` decision set would have been refused at the
+snapshot step, which is the *next* link in this chain. This is exactly what
+ADR-053 found in the prompt-registry const, and it takes the same fix: a closed
+`KNOWN_DECISION_SET_CONTRACTS` tuple owned by the module that publishes the
+contracts, recognised rather than re-declared by the consumer.
+
+**Scope.** New schema file
+`schemas/extraction_validation_decision_set_v2.schema.json`;
+`schema_version_manifest.json` `0.17.0` → `0.18.0`, 47 → 48 entries; both
+manifest SHA guards rebaselined. `REPO_MANIFEST.md` 601 → 602. No prompt,
+governance record, run root or published collection changes.
+
+**The `@0.1.0` decision set already written is kept, not replaced.**
+`data/runs/decisions-ext-smoke-0006-0001/` stays exactly as produced — it is
+evidence of what the released contract could express. The `@0.2.0` set is
+published beside it in `-0002` with the same eighteen decisions and the same
+reasons, verified equal decision by decision. Overwriting a write-once artifact
+to make a record look like it always carried a field it did not would be the
+kind of silent repair CLAUDE.md rule 9 forbids.
+
+**Rejected alternative.** Recording the human in the operator ledger, as with
+`run_created_at`, was rejected for the reason above: it would put the dataset's
+own admission provenance outside the dataset.
+
 ## Open decisions
 
 - Required source packet by firm-year.

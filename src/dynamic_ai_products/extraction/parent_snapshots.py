@@ -24,6 +24,12 @@ from typing import Any
 
 from .errors import ExtractionError
 from .input_packet import hydrate_decision_set, hydrate_snapshot
+
+# ADR-057. A closed set, not one literal. A const pinned to @0.1.0 would have
+# refused every successor decision set at the snapshot step -- the same way the
+# prompt-registry const froze the registry until ADR-053 replaced it with a
+# published-version set. The rule is: recognise what this code has published.
+from .validation import KNOWN_DECISION_SET_CONTRACTS
 from .raw_artifacts import canonical_json_bytes, require_pin
 
 __all__ = [
@@ -44,7 +50,7 @@ PARENT_SNAPSHOT_CONTRACT: dict[str, str] = {
 
 _SHA256_CHARS = set("0123456789abcdef")
 _ROLES = ("product_parent", "capability_parent")
-_DECISION_SET_CONTRACT = "extraction_validation_decision_set@0.1.0"
+
 
 
 def _safe_member_reference(value: Any) -> str:
@@ -206,9 +212,10 @@ def _require_decision_set_contract(decision_set: dict[str, Any]) -> None:
     This is inbound validation, not ``contract_metadata_forbidden``: a governed
     decision set legitimately carries a contract field.
     """
-    if decision_set.get("contract") != _DECISION_SET_CONTRACT:
+    if decision_set.get("contract") not in KNOWN_DECISION_SET_CONTRACTS:
         raise ExtractionError(
-            f"decision set must declare {_DECISION_SET_CONTRACT}",
+            "decision set must declare one of "
+            f"{list(KNOWN_DECISION_SET_CONTRACTS)}",
             reason_code="validation_provenance_missing",
         )
 
