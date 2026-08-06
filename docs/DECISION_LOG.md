@@ -3187,6 +3187,113 @@ additive enum widenings, one closed-map entry, the manifest count, and tests. No
 schema contract version changes. No existing prompt bytes change. No normalizer,
 snapshot, packet, governance root, run root or published artifact is touched.
 
+## ADR-066 — Passages are sections, not HTML blocks: `sec_html_item_span_v2` (SPEC-006, ADR-031)
+
+**Status:** Accepted.
+
+**The defect.** `sec_html_item_span_v1` splits on HTML block closures. In the
+pinned HubSpot 10-K, printed page numbers sit between the two halves of a
+sentence, so each became its own passage and divided a sentence across two of
+them. Four confirmed cases: pages 8, 9, 12 and 14. The consequence is not
+cosmetic — a model that reassembled one of those sentences produced the
+`ext-smoke-0006` Sales Hub citation that C8 (ADR-063) refuses, and two more of
+the same shape appeared in `ext-smoke-cap-0002`. The corpus was manufacturing
+the failure the gate then caught.
+
+**A narrow fix was rejected in favour of a structural one.** A rule of
+"digits-only block whose predecessor does not end in a full stop → merge" was
+prototyped, reached 124 → 116 passages and caught 4 of 4. The operator proposed
+grouping on section boundaries instead, which removes the class rather than the
+four instances: an interruption inside a section stays inside one passage
+whatever it is.
+
+**The original design was wrong, and measuring it first is why that is known.**
+The plan was to split on `</h1>`…`</h6>`. Measured on the raw filing: **zero**
+`<hN>` tags in 4,764,421 bytes — not in Item 1, not anywhere. Every section
+heading is an ordinary `<p>` whose entire content is inside bold `<span>` runs.
+Had this been prototyped on synthetic HTML, the synthetic document would have
+had the tags the plan assumed and the prototype would have "passed".
+
+The blocker check is worth recording too: `data/snapshots/**` holds only a
+`.gitkeep`, which is where the operator looked. The raw filing is at
+`data/raw/sec/CIK0001404655/0000950170-25-018873/hubs-20241231.htm`, gitignored,
+and its SHA-256 equals the `content_hash` the snapshot manifest already names.
+The verification harness was itself checked before anything was concluded from
+it: re-running v1 over that file reproduces all 124 committed passages field for
+field.
+
+**The rule, and why equality rather than presence.** A block is a heading when
+its whole normalized text equals its bold runs' normalized text. *Presence* of
+bold text would match any paragraph containing a bold phrase; equality matches
+only a block that is nothing but its bold text. Measured over Item 1: 15
+headings — Overview, The HubSpot Approach, Our Competitive Strengths, Our Growth
+Strategy, Our Customer Platform, Our Services, Our Customers, Our Technology,
+Marketing and Sales, Governmental Regulations, Human Capital Management,
+Competition, Intellectual Property, Financial Information About Segments,
+Available Information — and zero false positives. The operator and this
+repository derived that list independently and got the same fifteen. Note the
+count: **15**, not the 13 the proposal named.
+
+The rule is restricted to blocks closing with `</p>`. Measured: allowing every
+block type finds the same fifteen, so the restriction costs nothing here and
+declines to generalize from one document.
+
+**No heading hierarchy is available, and none is invented.** All 16 bold blocks
+carry one identical style signature — 10pt, Times New Roman, bold. There is no
+`<hN>` level, no font-size difference, no font-family difference. A nesting rule
+would have to be guessed, so the grouping is flat.
+
+**The item title needed no special case, which is the point.** `ITEM I. BUSINESS`
+is not a heading under this rule: the anchored span begins *inside* its opening
+`<p>` tag, so the block's text carries a leading `>` that its bold runs do not,
+and the equality fails. It therefore becomes the record before the first
+heading, by the same "a record ends where the next heading begins" rule.
+Special-casing it was considered and rejected: with all 16 blocks sharing one
+style, nothing in the markup identifies which one is the item title, so a merge
+rule would have to hard-code a position or a string — a document-specific
+constant, which is the defect class ADR-053, ADR-058, ADR-061 and ADR-062 each
+found once.
+
+**Result.** 124 passages → 16. Median 2,293 characters, mean 2,546, max 6,060
+(Human Capital Management), min 18 (the item title). All nine page-number blocks
+are now interior to a section; the four confirmed splits are gone. Grouping is
+concatenation only — every v1 passage's text appears verbatim inside exactly one
+v2 section, and the only characters added are the 108 single spaces joining
+them, asserted by test.
+
+An unplanned measured benefit: the rendered provider document *shrinks*, from
+66,251 to 50,476 characters, because 108 per-passage headers disappear.
+Estimated input tokens fall from 23,070 to about 17,580 — 35% of the ceiling
+rather than 46%.
+
+**Successor, not edit.** `normalize_span_v2` and `build_passages_v2` sit beside
+the released functions and reuse `normalize_span` for block boundaries and text,
+so the two normalizers cannot disagree about where a block ends. A mode flag was
+rejected: a parameter with a default is how a released behaviour gets changed by
+accident, and v1 produced the passages behind Snapshot A and every chain citing
+them. `srcsnap-hubspot-fy2024-sec-v1` is untouched; the new corpus is
+`srcsnap-hubspot-fy2024-sec-v2`, and a test asserts v1 still reproduces its
+committed snapshot byte for byte.
+
+**Known limitation, recorded rather than implied.**
+`schemas/ingestion_preflight_manifest.schema.json` pins
+`"normalizer_version": {"const": "sec_html_item_span_v1"}` — the same
+const-written-when-one-existed shape as ADR-053 and ADR-062. Nothing in this
+increment writes a preflight manifest, so nothing is blocked today, but a v2
+ingestion preflight cannot validate until that const becomes an enum. Left
+untouched here because no artifact this increment produces needs it, and
+widening a schema nobody is exercising is a change without a caller.
+
+**Not claimed.** This removes the corpus's contribution to the splice class. It
+does not remove the class: a model can still assemble a quote from two
+non-adjacent runs *within* one large passage, and C8 remains the thing that
+catches it. C8 is unchanged and is not weakened by anything here.
+
+**Scope.** One module gains two functions and two constants; no existing
+function changes. One new snapshot root and one new packet, both write-once. No
+schema change, no released contract change, no existing snapshot, run root,
+governance root or published artifact touched.
+
 ## Open decisions
 
 - Required source packet by firm-year.
