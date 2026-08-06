@@ -91,8 +91,8 @@ CLIENT_CONTRACT_CONTRACT = "extraction_provider_client_contract@0.1.0"
 # through the runner: two module-level strings would be two sources of truth for
 # one contract. One owner here, imported by both, and an AST invariant keeps the
 # literal from being spelled a second time anywhere under ``extraction``.
-CLIENT_CONTRACT_V2_CONTRACT = "extraction_provider_client_contract@0.2.0"
-CLIENT_CONTRACT_V2_SCHEMA_VERSION = "0.2.0"
+CLIENT_CONTRACT_V2_CONTRACT = "extraction_provider_client_contract@0.3.0"
+CLIENT_CONTRACT_V2_SCHEMA_VERSION = "0.3.0"
 PROVIDER_ERROR_CONTRACT = "extraction_provider_error_record@0.1.0"
 QUALIFICATION_CONTRACT = "adapter_qualification_record@0.1.0"
 ENABLEMENT_CONTRACT = "adapter_enablement_record@0.1.0"

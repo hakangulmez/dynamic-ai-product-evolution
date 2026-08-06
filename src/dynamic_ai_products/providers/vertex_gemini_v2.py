@@ -41,9 +41,10 @@ from ..extraction.provider_adapter import (
     provider_request_digest,
 )
 from .authorization import require_authorization_digest, require_request_cap
-from .client_contract import MODEL_NAME, MODEL_PARAMETERS, VERTEX_LOCATION
+from .client_contract import MODEL_NAME, VERTEX_LOCATION
 from .client_contract_v2 import (
     GENERATION_CONFIG_PROJECTION,
+    MODEL_PARAMETERS_V2,
     THINKING_CONFIG,
     build_client_contract_v2,
     build_operation_endpoints,
@@ -82,7 +83,7 @@ def build_generation_projection() -> dict[str, Any]:
     describe a request that was never sent. The field order follows the canonical
     projection declared by the client contract.
     """
-    source: dict[str, Any] = dict(MODEL_PARAMETERS)
+    source: dict[str, Any] = dict(MODEL_PARAMETERS_V2)
     source["thinking_config"] = dict(THINKING_CONFIG)
     projection: dict[str, Any] = {}
     for name in GENERATION_CONFIG_PROJECTION:
@@ -413,7 +414,7 @@ class VertexGeminiProviderV2:
                     raw_bytes=b"",
                     model_provider=self._contract["model_provider"],
                     model_name=self._contract["model_name"],
-                    model_parameters=dict(MODEL_PARAMETERS),
+                    model_parameters=dict(MODEL_PARAMETERS_V2),
                     prompt_model_metadata={
                         "model_name": self._contract["model_name"],
                         "prompt_sha256": request.prompt_sha256,

@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **608**
+Total tracked/scaffold files listed: **609**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -264,6 +264,7 @@ Total tracked/scaffold files listed: **608**
 - `schemas/extraction_non_run_record.schema.json`
 - `schemas/extraction_provider_client_contract.schema.json`
 - `schemas/extraction_provider_client_contract_v2.schema.json`
+- `schemas/extraction_provider_client_contract_v3.schema.json`
 - `schemas/extraction_provider_error_record.schema.json`
 - `schemas/extraction_run.schema.json`
 - `schemas/extraction_validation_decision_set.schema.json`

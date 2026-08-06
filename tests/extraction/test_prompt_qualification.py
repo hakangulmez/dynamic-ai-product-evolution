@@ -107,7 +107,7 @@ def record(**overrides) -> dict:
         "stage": STAGE,
         "stage_output_contract_id": STAGE_OUTPUT_CONTRACT_ID[STAGE],
         "stage_output_contract_sha256": STAGE_SHA,
-        "execution_contract_id": "extraction_provider_client_contract@0.2.0",
+        "execution_contract_id": "extraction_provider_client_contract@0.3.0",
         "execution_contract_sha256": CLIENT_CONTRACT_SHA,
         "routing_contract_id": ROUTING_CONTRACT_ID,
         "routing_contract_sha256": ROUTING_SHA,
@@ -149,7 +149,7 @@ def call(**overrides):
                        "routing_contract_sha256": ROUTING_SHA},
         "authorization": {"rollout_state": "live_dev"},
         "qualification": {
-            "execution_contract_id": "extraction_provider_client_contract@0.2.0",
+            "execution_contract_id": "extraction_provider_client_contract@0.3.0",
             "execution_contract_sha256": CLIENT_CONTRACT_SHA,
         },
         "prompt": _prompt(),
@@ -595,7 +595,7 @@ def test_a_record_agreeing_with_the_qualification_but_not_the_executing_contract
         PROMPT_QUALIFICATION_MISMATCH,
         record=record(execution_contract_sha256=other),
         qualification={
-            "execution_contract_id": "extraction_provider_client_contract@0.2.0",
+            "execution_contract_id": "extraction_provider_client_contract@0.3.0",
             "execution_contract_sha256": other,
         },
     )
@@ -720,7 +720,7 @@ def _write_chain(root: Path, prompt_qualification: dict | None, *, pin_override=
         "adapter_identity": "dynamic_ai_products.providers.vertex_gemini_v2",
         "adapter_version": "0.2.0",
         "adapter_family": "model_execution",
-        "execution_contract_id": "extraction_provider_client_contract@0.2.0",
+        "execution_contract_id": "extraction_provider_client_contract@0.3.0",
         "execution_contract_sha256": CLIENT_CONTRACT_SHA,
         "stage_output_contract_id": STAGE_OUTPUT_CONTRACT_ID[STAGE],
         "stage_output_contract_sha256": STAGE_SHA,

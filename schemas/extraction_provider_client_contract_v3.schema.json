@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "extraction_provider_client_contract_v2.schema.json",
+  "title": "Extraction provider client contract v2",
+  "description": "Successor of extraction_provider_client_contract@0.2.0 (ADR-067). Structurally identical to @0.2.0, which is byte-identical and untouched: the only change is the declared max_output_tokens, which moves from 8192 to 16384 in every instance this contract describes, so the identity moves with the content. Inherited from @0.2.0 (ADR-043, E-M). The released @0.1.0 schema is byte-identical and untouched: its model_parameters object is closed, so thinking_config could not be added there and lives at the top level here instead. This contract declares a two-operation execution shape - countTokens followed by generateContent - with its own timeout, its own retry cap, an exact-equality endpoint grammar, and the canonical six-field generation-config projection that countTokens and generateContent must share. generate_retry_max_attempts and external_request_max are STRUCTURAL maxima; a run's effective cap is derived from live_call_authorization@0.2.0 and may only narrow them. It carries no credential, key, token, header, or account identifier.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "schema_version",
+    "client_module",
+    "client_version",
+    "provider_protocol_version",
+    "sdk_name",
+    "sdk_version",
+    "model_provider",
+    "model_name",
+    "model_parameters",
+    "vertex_project",
+    "vertex_location",
+    "auth_method",
+    "api_version",
+    "timeout_sdk_parameter",
+    "timeout_duration",
+    "timeout_unit",
+    "count_timeout_duration",
+    "count_timeout_unit",
+    "sdk_retry_disabled",
+    "sdk_retry_attempts",
+    "retry_owner",
+    "retry_max_attempts",
+    "count_retry_max_attempts",
+    "generate_retry_max_attempts",
+    "external_request_max",
+    "retry_trigger_status_codes",
+    "retry_trigger_transport_timeout",
+    "retry_delays_seconds",
+    "retry_jitter",
+    "retry_policy_version",
+    "rate_limit_policy_version",
+    "fallback_policy",
+    "thinking_config",
+    "thinking_level_used",
+    "include_thoughts_used",
+    "wire_thinking_budget_key",
+    "generation_config_projection",
+    "operation_endpoints",
+    "endpoint_match_mode",
+    "endpoint_query_policy",
+    "protocol_switch_policy"
+  ],
+  "$defs": {
+    "operation_endpoint": {
+      "comment": "Exact operation URL. The positive predicate and the negative predicates are kept apart on purpose: a JSON Schema pattern is a SEARCH, and an anchored $ also matches before a trailing newline, so a single anchored rule would admit a URL with a newline appended.",
+      "type": "string",
+      "minLength": 1,
+      "allOf": [
+        { "pattern": "^https://" },
+        { "not": { "pattern": "[^\\u0021-\\u007e]" } },
+        { "not": { "pattern": "\\?" } },
+        { "not": { "pattern": "#" } },
+        { "not": { "pattern": "@" } },
+        { "not": { "pattern": "\\.\\." } }
+      ]
+    }
+  },
+  "properties": {
+    "contract": { "const": "extraction_provider_client_contract@0.3.0" },
+    "schema_version": { "const": "0.3.0" },
+    "client_module": { "type": "string", "minLength": 1 },
+    "client_version": { "type": "string", "minLength": 1 },
+    "provider_protocol_version": { "type": "string", "minLength": 1 },
+    "sdk_name": { "type": "string", "minLength": 1 },
+    "sdk_version": {
+      "comment": "Exact pin. A range would let a resolved runtime differ from the audited one.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "model_provider": { "type": "string", "minLength": 1 },
+    "model_name": { "type": "string", "minLength": 1 },
+    "model_parameters": {
+      "comment": "Unchanged from @0.1.0 and still closed. thinking_config is NOT here: widening this object would have been a mutation of the released shape.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "temperature",
+        "top_p",
+        "candidate_count",
+        "max_output_tokens",
+        "response_mime_type"
+      ],
+      "properties": {
+        "temperature": { "type": "number", "minimum": 0 },
+        "top_p": { "type": "number", "minimum": 0, "maximum": 1 },
+        "candidate_count": { "type": "integer", "minimum": 1 },
+        "max_output_tokens": { "type": "integer", "minimum": 1 },
+        "response_mime_type": { "type": "string", "minLength": 1 }
+      }
+    },
+    "vertex_project": {
+      "comment": "Caller-injected. Never a repository literal.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+    },
+    "vertex_location": { "type": "string", "minLength": 1 },
+    "auth_method": { "const": "application_default_credentials" },
+    "api_version": { "type": "string", "minLength": 1 },
+    "timeout_sdk_parameter": { "type": "string", "minLength": 1 },
+    "timeout_duration": { "type": "integer", "minimum": 1 },
+    "timeout_unit": { "const": "milliseconds" },
+    "count_timeout_duration": {
+      "comment": "A declared policy value, not a measurement: 300s was derived for generateContent and was never measured for countTokens. The builder additionally binds it to timeout_duration so the two cannot drift.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "count_timeout_unit": { "const": "milliseconds" },
+    "sdk_retry_disabled": { "const": true },
+    "sdk_retry_attempts": { "const": 1 },
+    "retry_owner": { "const": "tenacity" },
+    "retry_max_attempts": { "type": "integer", "minimum": 1 },
+    "count_retry_max_attempts": {
+      "comment": "countTokens is exactly one send. There is no retry: an empty or malformed body is not a declared retry trigger.",
+      "const": 1
+    },
+    "generate_retry_max_attempts": {
+      "comment": "STRUCTURAL maximum of the connector. A run's effective cap is min(this, budget_max_external_requests - 1) and may only be narrower.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "external_request_max": {
+      "comment": "STRUCTURAL maximum = 1 count send + generate_retry_max_attempts. Never a per-run budget.",
+      "const": 4
+    },
+    "retry_trigger_status_codes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "integer" }
+    },
+    "retry_trigger_transport_timeout": { "type": "boolean" },
+    "retry_delays_seconds": {
+      "type": "array",
+      "items": { "type": "number", "minimum": 0 }
+    },
+    "retry_jitter": { "const": false },
+    "retry_policy_version": { "type": "string", "minLength": 1 },
+    "rate_limit_policy_version": { "type": "string", "minLength": 1 },
+    "fallback_policy": { "const": "none" },
+    "thinking_config": {
+      "comment": "Exactly what both operations send. thinking_level and include_thoughts are absent by construction, not merely null: the object is closed and declares one property.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["thinking_budget"],
+      "properties": { "thinking_budget": { "const": 0 } }
+    },
+    "thinking_level_used": {
+      "comment": "A record, never evidence. Absence is proven by a structural test over the serialized request body, not by this flag.",
+      "const": false
+    },
+    "include_thoughts_used": { "const": false },
+    "wire_thinking_budget_key": {
+      "comment": "Measured against google-genai 2.13.0: the converter passes the ThinkingConfig through and convert_to_dict does not apply aliases, so the terminal wire body carries snake_case thinking_budget, not thinkingBudget.",
+      "const": "thinking_budget"
+    },
+    "generation_config_projection": {
+      "comment": "One canonical fixed ordering. An items.enum plus uniqueItems construction would have admitted every permutation, and a permuted list serializes to different canonical bytes - sort_keys orders dict keys, never list elements - so two semantically identical contracts would have acquired divergent provenance digests.",
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "prefixItems": [
+        { "const": "temperature" },
+        { "const": "top_p" },
+        { "const": "candidate_count" },
+        { "const": "max_output_tokens" },
+        { "const": "response_mime_type" },
+        { "const": "thinking_config" }
+      ],
+      "items": false
+    },
+    "operation_endpoints": {
+      "comment": "Exactly two named endpoints. A prefix allowlist is no longer accepted: a broad prefix entry admits other publishers, locations and operations at a segment boundary.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count_tokens", "generate_content"],
+      "properties": {
+        "count_tokens": {
+          "allOf": [
+            { "$ref": "#/$defs/operation_endpoint" },
+            { "pattern": ":countTokens" },
+            { "not": { "pattern": ":countTokens." } }
+          ]
+        },
+        "generate_content": {
+          "allOf": [
+            { "$ref": "#/$defs/operation_endpoint" },
+            { "pattern": ":generateContent" },
+            { "not": { "pattern": ":generateContent." } }
+          ]
+        }
+      }
+    },
+    "endpoint_match_mode": { "const": "exact_equality" },
+    "endpoint_query_policy": { "const": "reject" },
+    "protocol_switch_policy": {
+      "comment": "Measured: httpcore breaks its receive loop on a 101 InformationalResponse, so a 101 reaches the send boundary, and the released capture guard only refuses 3xx. The v2 capture refuses a protocol switch before touching response.content.",
+      "const": "reject"
+    }
+  }
+}

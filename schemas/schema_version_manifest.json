@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.18.0",
+  "manifest_version": "0.19.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -20,6 +20,7 @@
     "extraction_non_run_record": "0.1.0",
     "extraction_provider_client_contract": "0.1.0",
     "extraction_provider_client_contract_v2": "0.2.0",
+    "extraction_provider_client_contract_v3": "0.3.0",
     "extraction_provider_error_record": "0.1.0",
     "extraction_run": "0.1.0",
     "extraction_validation_decision_set": "0.1.0",

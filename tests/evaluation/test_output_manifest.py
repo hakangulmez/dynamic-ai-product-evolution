@@ -801,7 +801,9 @@ def test_repo_manifest_count_and_paths():
     # successor prompt and the change request its qualification record pins.
     # 608 = 606 + the two ADR-065 paths: the quote-bounding capability
     # successor prompt and the change request its qualification record pins.
-    assert "Total tracked/scaffold files listed: **608**" in text
+    # 609 = 608 + the one ADR-067 path: the extraction_provider_client_contract
+    # successor schema, which declares the raised output ceiling.
+    assert "Total tracked/scaffold files listed: **609**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

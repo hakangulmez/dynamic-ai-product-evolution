@@ -87,7 +87,7 @@ from dynamic_ai_products.providers.client_contract_v2 import (
 from jsonschema import Draft202012Validator
 
 CONTENTS = "rendered document"
-MAX_OUTPUT_TOKENS = 8192
+MAX_OUTPUT_TOKENS = 16384
 # The helper takes the digest as an argument; the production entry point derives
 # it. Nothing here may treat the contents digest as the identity.
 HELPER_DIGEST = "f" * 64
@@ -766,7 +766,7 @@ def _prompt_qualification_record(stage_sha: str, routing_sha: str, **overrides):
         "stage": "product_extraction",
         "stage_output_contract_id": "product_observation@0.1.0",
         "stage_output_contract_sha256": stage_sha,
-        "execution_contract_id": "extraction_provider_client_contract@0.2.0",
+        "execution_contract_id": "extraction_provider_client_contract@0.3.0",
         "execution_contract_sha256": _v2_contract_digest(),
         "routing_contract_id": ROUTING_CONTRACT_ID,
         "routing_contract_sha256": routing_sha,
@@ -800,7 +800,7 @@ def _write_governance_v2(
         "adapter_identity": "dynamic_ai_products.providers.vertex_gemini_v2",
         "adapter_version": "0.2.0",
         "adapter_family": "model_execution",
-        "execution_contract_id": "extraction_provider_client_contract@0.2.0",
+        "execution_contract_id": "extraction_provider_client_contract@0.3.0",
         "execution_contract_sha256": _v2_contract_digest(),
         "stage_output_contract_id": "product_observation@0.1.0",
         "stage_output_contract_sha256": stage_sha,
@@ -1088,8 +1088,8 @@ def test_an_estimated_cost_refusal_stops_before_generatecontent(tmp_path):
     _error, record, files = _expect_stop(
         tmp_path,
         provider=provider,
-        # cap 3 x (ceil(1000 x 3/10) + ceil(8192 x 5/2)) = 62 340
-        authorization_overrides={"budget_max_estimated_cost_micros": 62_339},
+        # cap 3 x (ceil(1000 x 3/10) + ceil(16384 x 5/2)) = 123 780
+        authorization_overrides={"budget_max_estimated_cost_micros": 123_779},
     )
     assert provider.generate_sends == 0
     assert record["route_family"] == "pre_generation_invalid"
@@ -1100,7 +1100,7 @@ def test_an_estimated_cost_refusal_stops_before_generatecontent(tmp_path):
 def test_one_microdollar_more_of_budget_admits_the_same_run(tmp_path):
     """The refusal is the arithmetic, not an unrelated failure."""
     outcome = _run_v2(
-        tmp_path, authorization_overrides={"budget_max_estimated_cost_micros": 62_340}
+        tmp_path, authorization_overrides={"budget_max_estimated_cost_micros": 123_780}
     )
     assert outcome.verdict == "two_operation_run_complete"
 
@@ -1254,7 +1254,8 @@ def test_the_admission_boundary_receives_both_required_values(tmp_path):
     session = FakeSession(cap=3)
     _measure(tmp_path, session=session)
     expected = reserve_cost_microdollars(
-        measured_input_tokens=1000, max_output_tokens=8192, generate_attempt_cap=3
+        measured_input_tokens=1000, max_output_tokens=MAX_OUTPUT_TOKENS,
+        generate_attempt_cap=3,
     )
     assert len(session.calls) == 1
     call = session.calls[0]
@@ -1269,7 +1270,8 @@ def test_the_reserve_reaches_the_admission_boundary(tmp_path):
     provider = FakeProvider(count_body=COUNT_BODY, generate_bodies=(PREDICTION_BODY,))
     _measure(tmp_path, session=session, provider=provider)
     expected = reserve_cost_microdollars(
-        measured_input_tokens=1000, max_output_tokens=8192, generate_attempt_cap=3
+        measured_input_tokens=1000, max_output_tokens=MAX_OUTPUT_TOKENS,
+        generate_attempt_cap=3,
     )
     assert session.reserves == [expected]
 

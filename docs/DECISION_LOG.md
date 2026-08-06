@@ -3294,6 +3294,99 @@ function changes. One new snapshot root and one new packet, both write-once. No
 schema change, no released contract change, no existing snapshot, run root,
 governance root or published artifact touched.
 
+## ADR-067 — The output ceiling is a contract, not a dial: `extraction_provider_client_contract@0.3.0`
+
+**Status:** Accepted.
+
+**Why the ceiling moves.** Four capability runs have now been refused, and the
+last one was refused for a reason none of the fixes addressed. `ext-smoke-cap-0004`
+(round `-0005`) cleared every defect it was built to clear: 71 citations with
+zero malformed labels, zero C8 violations, and the one-to-three-sentence rule
+observed at 70 one-sentence quotes and one two-sentence quote. It was cut off at
+`finishReason: MAX_TOKENS` after 68 observations. Input had collapsed to 11,216
+tokens — 22% of its ceiling — while output sat exactly on 8192.
+
+Measured cause: quotes over section-scoped passages are longer, because the
+sentences in those sections are longer. Cost per observation moved from ~97
+output tokens (`ext-smoke-cap-0001`, which finished with `STOP`) to ~120. Nothing
+was wrong; the budget was simply the wrong size for the corpus.
+
+**The instruction that produced this ADR was based on a false premise, and
+saying so is the point.** The round was specified with `max_output_tokens` as an
+operator value, alongside the budget ceilings. It is not. It is
+`MODEL_PARAMETERS["max_output_tokens"]`, a module constant in
+`providers/client_contract.py`, and there is no injection point: neither
+`VertexGeminiProviderV2.__init__` nor `run_extraction_stage_v2` accepts a client
+contract. Editing it is a source change, which means:
+
+- the worktree stops equalling HEAD, so R7b would record `code_commit` for a
+  commit whose code did not run — and the runbook's triple equality compares
+  `git rev-parse HEAD` only, so **nothing would catch it**;
+- the bytes of a released contract change without its label changing.
+
+The round was therefore stopped before R7 rather than run with a false
+provenance record. Making this a run-time parameter is a separate design
+decision — it would move a governed execution field out of the contract and into
+a caller's hands, which is the opposite of what `provider_client_contract_sha256`
+exists to pin — and it is deliberately not made here.
+
+**The identity moves with the content.** `@0.2.0` → `@0.3.0`. The digest alone
+would have caught the difference — `validate_qualification_execution_contract`
+compares the recorded `execution_contract_sha256` with the live one — but this
+project has bumped the label every time a pinned thing's content changed, for
+prompts, for change requests, for decision sets. Two different byte sequences do
+not share one label.
+
+That has a measured consequence worth stating plainly: **existing governance
+roots can no longer authorize a new run.** All eleven roots recorded the old
+identity and digest, so a run against any of them now refuses with
+`governance_record_not_effective`. That is not breakage — it is
+"execution-affecting contract changes never inherit enablement" doing exactly
+what it says. Their own records are unaltered and remain readable; a new round
+mints the new identity.
+
+**The v1 contract is not touched, and that took a design change.**
+`MODEL_PARAMETERS` was shared: raising it in place would have changed the bytes
+of `extraction_provider_client_contract@0.1.0` too, leaving two documents under
+one released label — the same defect the version bump above exists to prevent,
+one contract lower. `client_contract_v2.py`'s own docstring already claims
+`@0.1.0` is "byte-identical and untouched", and that claim stays true.
+
+So the successor owns its parameters: `MODEL_PARAMETERS_V2` is the v1 mapping
+with one field replaced, the v1 route stays frozen at 8192, and
+`vertex_gemini_v2` sends what the v2 contract declares. A test asserts the two
+differ in exactly that one field and nowhere else. Un-sharing also removed two
+of the six test rebaselines predicted before implementation: the two that pin
+8192 are v1-path tests, and they now pass unmodified, correctly asserting that
+the retired route is frozen.
+
+**The product stage is affected, and it is harmless.** The v1 live route is
+retired; both stages run through v2, so `product_extraction` gets the raised
+ceiling too. A ceiling only permits — no existing behaviour changes, and no
+product run has ever approached 8192.
+
+**The schema is a successor file, not an edit.**
+`extraction_provider_client_contract_v3.schema.json` sits beside the v2 document,
+which keeps its `@0.2.0` and `0.2.0` consts byte-identical, following the
+`extraction_validation_decision_set_v2` precedent. The registry gains one entry;
+`manifest_version` moves 0.18.0 → 0.19.0, 48 → 49.
+
+**The cost ceiling does not move, and that is measured rather than assumed.**
+The round proposed 2,000,000 → 4,000,000 micros. Measured: at 16384 the reserve
+for this run is 44,325 micros — one forty-fifth of the *existing* ceiling. The
+reserve is linear in the output cap, so doubling it adds 20,480 micros, not a
+factor. 2,000,000 stands.
+
+**Not claimed.** This does not establish that the run will now complete. It
+raises the ceiling that stopped the last one; whether 16384 is enough, and
+whether the 68-of-71 concentration on one section is the corpus's real shape or
+something else, are questions the next live call answers.
+
+**Scope.** One new constant, one contract identity, one schema-version const,
+one successor schema file, one registry entry, one manifest-count guard, and
+test rebaselines. `client_contract.py` is untouched. No prompt, no corpus, no
+snapshot, no governance root, no run root and no published artifact changes.
+
 ## Open decisions
 
 - Required source packet by firm-year.

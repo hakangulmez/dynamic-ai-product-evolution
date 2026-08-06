@@ -1199,7 +1199,9 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # successor prompt and the change request its qualification record pins.
     # 608 = 606 + the two ADR-065 paths: the quote-bounding capability
     # successor prompt and the change request its qualification record pins.
-    assert declared == len(paths) == 608
+    # 609 = 608 + the one ADR-067 path: the extraction_provider_client_contract
+    # successor schema, which declares the raised output ceiling.
+    assert declared == len(paths) == 609
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

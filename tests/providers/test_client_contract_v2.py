@@ -30,6 +30,7 @@ from dynamic_ai_products.providers.client_contract import MODEL_PARAMETERS
 from dynamic_ai_products.providers.client_contract_v2 import (
     EXTERNAL_REQUEST_MAX,
     GENERATION_CONFIG_PROJECTION,
+    MODEL_PARAMETERS_V2,
     PROVIDER_PROTOCOL_VERSION_PIN_V2,
     build_client_contract_v2,
     build_operation_endpoints,
@@ -41,7 +42,7 @@ from dynamic_ai_products.providers.vertex_gemini_v2 import VertexGeminiProviderV
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = json.loads(
-    (ROOT / "schemas" / "extraction_provider_client_contract_v2.schema.json").read_bytes()
+    (ROOT / "schemas" / "extraction_provider_client_contract_v3.schema.json").read_bytes()
 )
 CANONICAL_ORDER = [
     "temperature",
@@ -157,7 +158,17 @@ def test_structural_maxima_are_declared_and_the_effective_cap_only_narrows_them(
 
 def test_model_parameters_stay_closed_and_thinking_lives_beside_them():
     built = contract()
-    assert built["model_parameters"] == dict(MODEL_PARAMETERS)
+    # ADR-067. The successor owns its own parameters: raising the ceiling on
+    # the shared v1 object would have changed the bytes of the released
+    # @0.1.0 contract too. v1 stays frozen at 8192, this route moves to 16384,
+    # and the two are asserted to differ in exactly that one field.
+    assert built["model_parameters"] == dict(MODEL_PARAMETERS_V2)
+    assert built["model_parameters"] != dict(MODEL_PARAMETERS)
+    assert {
+        k: v for k, v in built["model_parameters"].items() if k != "max_output_tokens"
+    } == {k: v for k, v in MODEL_PARAMETERS.items() if k != "max_output_tokens"}
+    assert MODEL_PARAMETERS["max_output_tokens"] == 8192
+    assert built["model_parameters"]["max_output_tokens"] == 16384
     assert "thinking_config" not in built["model_parameters"]
     assert built["thinking_config"] == {"thinking_budget": 0}
     assert built["thinking_level_used"] is False
@@ -426,3 +437,75 @@ def test_the_canonical_serializer_is_the_repository_one():
     """One serialization rule, not two that happen to agree today."""
     payload = {"b": 2, "a": 1, "nested": {"z": 0, "y": [1, 2]}}
     assert client_contract_digest(payload) == sha256_bytes(canonical_json_bytes(payload))
+
+
+# --- ADR-067: the raised ceiling, and the label that moved with it -----------
+
+
+def test_the_released_v1_contract_is_byte_frozen_at_the_old_ceiling():
+    """The reason the successor owns its own parameters.
+
+    Raising the ceiling on the shared ``MODEL_PARAMETERS`` object would have
+    changed the bytes of ``extraction_provider_client_contract@0.1.0`` while it
+    kept its label -- two documents under one released identity, which is the
+    thing the ``@0.2.0`` -> ``@0.3.0`` bump above exists to prevent. So v1 stays
+    exactly as every record citing it was written.
+    """
+    from dynamic_ai_products.providers.client_contract import build_client_contract
+
+    released = build_client_contract(vertex_project="p-example")
+    assert released["contract"] == "extraction_provider_client_contract@0.1.0"
+    assert released["model_parameters"]["max_output_tokens"] == 8192
+
+
+def test_the_identity_moved_with_the_content():
+    built = contract()
+    assert built["contract"] == "extraction_provider_client_contract@0.3.0"
+    assert built["schema_version"] == "0.3.0"
+    assert built["model_parameters"]["max_output_tokens"] == 16384
+
+
+def test_the_predecessor_schema_file_is_untouched_and_still_names_its_own_version():
+    """A successor schema is a new file; it never edits the one it succeeds."""
+    predecessor = json.loads(
+        (ROOT / "schemas" / "extraction_provider_client_contract_v2.schema.json").read_bytes()
+    )
+    assert predecessor["properties"]["contract"]["const"] == (
+        "extraction_provider_client_contract@0.2.0"
+    )
+    assert predecessor["properties"]["schema_version"]["const"] == "0.2.0"
+
+
+def test_the_old_contract_no_longer_satisfies_the_extraction_side_pin():
+    """The bump is load-bearing, not cosmetic.
+
+    A run handed a ``@0.2.0`` contract is refused rather than silently accepted
+    under the new identity, so an artifact built before this change cannot be
+    replayed into a run that believes it is the current one.
+    """
+    from dynamic_ai_products.extraction.errors import ExtractionError
+    from dynamic_ai_products.extraction.manifests import (
+        validate_v2_contract_execution_fields,
+    )
+
+    stale = contract()
+    stale["contract"] = "extraction_provider_client_contract@0.2.0"
+    with pytest.raises(ExtractionError) as excinfo:
+        validate_v2_contract_execution_fields(stale)
+    assert excinfo.value.reason_code == "client_contract_invalid"
+
+
+def test_the_raised_ceiling_reaches_the_generation_config_the_provider_sends():
+    """The declared ceiling and the sent one are the same number.
+
+    A contract that declared 16384 while the request still asked for 8192 would
+    make the whole change a document edit with no effect on the run.
+    """
+    from dynamic_ai_products.providers.vertex_gemini_v2 import (
+        build_generation_projection,
+    )
+
+    assert build_generation_projection()["max_output_tokens"] == 16384
+    assert contract()["model_parameters"]["max_output_tokens"] == (
+        build_generation_projection()["max_output_tokens"]
+    )

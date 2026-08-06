@@ -61,6 +61,7 @@ from .retry_policy import (
 
 __all__ = [
     "CLIENT_CONTRACT_V2_ID",
+    "MODEL_PARAMETERS_V2",
     "CLIENT_MODULE_V2",
     "CLIENT_VERSION_V2",
     "COUNT_RETRY_MAX_ATTEMPTS",
@@ -74,9 +75,28 @@ __all__ = [
     "resolve_effective_generate_cap",
 ]
 
-CLIENT_CONTRACT_V2_ID = "extraction_provider_client_contract@0.2.0"
+# ADR-067. ``@0.2.0`` -> ``@0.3.0``: ``max_output_tokens`` moves from 8192 to
+# 16384, which changes the bytes of every instance this builder produces. The
+# identity moves with the content -- the same rule this project applied to every
+# prompt successor and to ADR-062's change request. Two different byte sequences
+# must not share one label, even though ``provider_client_contract_sha256``
+# would have caught the difference on its own.
+CLIENT_CONTRACT_V2_ID = "extraction_provider_client_contract@0.3.0"
 CLIENT_MODULE_V2 = "dynamic_ai_products.providers.vertex_gemini_v2"
 CLIENT_VERSION_V2 = "0.2.0"
+
+# ADR-067. The v2 route's own generation parameters.
+#
+# These were the v1 module's ``MODEL_PARAMETERS``, imported and shared. Raising
+# the ceiling on the shared object would have changed the bytes of
+# ``extraction_provider_client_contract@0.1.0`` too, leaving two different
+# documents under one released label -- exactly what the version bump above
+# exists to prevent, one contract lower. This module's own docstring already
+# records that ``@0.1.0`` "is byte-identical and untouched"; that stays true.
+#
+# The v1 route is retired, so its ceiling is frozen at the value every record
+# citing it was written under. Only the live route moves.
+MODEL_PARAMETERS_V2: dict[str, Any] = {**MODEL_PARAMETERS, "max_output_tokens": 16384}
 
 # Closed static pin of the protocol constant, mirroring the v1 builder. A drift
 # test re-derives it from ``extraction.provider_adapter``.
@@ -174,7 +194,7 @@ def build_client_contract_v2(
     )
     return {
         "contract": CLIENT_CONTRACT_V2_ID,
-        "schema_version": "0.2.0",
+        "schema_version": "0.3.0",
         "client_module": CLIENT_MODULE_V2,
         "client_version": CLIENT_VERSION_V2,
         "provider_protocol_version": PROVIDER_PROTOCOL_VERSION_PIN_V2,
@@ -182,7 +202,7 @@ def build_client_contract_v2(
         "sdk_version": SDK_VERSION,
         "model_provider": MODEL_PROVIDER,
         "model_name": model_name,
-        "model_parameters": dict(MODEL_PARAMETERS),
+        "model_parameters": dict(MODEL_PARAMETERS_V2),
         "vertex_project": vertex_project,
         "vertex_location": vertex_location,
         "auth_method": AUTH_METHOD,
