@@ -797,7 +797,9 @@ def test_repo_manifest_count_and_paths():
     # successor schema, which carries who decided and when.
     # 604 = 602 + the two ADR-059 paths: the schema-bound capability prompt
     # and the change request its qualification record pins.
-    assert "Total tracked/scaffold files listed: **604**" in text
+    # 606 = 604 + the two ADR-064 paths: the unpadded-label capability
+    # successor prompt and the change request its qualification record pins.
+    assert "Total tracked/scaffold files listed: **606**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

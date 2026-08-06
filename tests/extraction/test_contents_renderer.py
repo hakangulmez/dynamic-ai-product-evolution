@@ -526,7 +526,32 @@ def test_the_capability_stage_still_renders_passages_and_identity():
         packet=_capability_packet(),
     )
     assert "HUBSPOT INC" in rendered and "2024-12-31" in rendered
-    assert "[ref: P001]" in rendered and "[ref: A01]" in rendered
+    # ADR-064: the capability stage labels without padding; the parent label is
+    # untouched, because no measured failure involved it.
+    assert "[ref: P1]" in rendered and "[ref: A01]" in rendered
+    assert "[ref: P001]" not in rendered
+
+
+def test_the_two_stages_render_the_same_passage_under_different_labels():
+    """The style is the only difference, and it follows the prompt, not the run.
+
+    The product stage still shows ``P001`` because
+    ``product_discovery_schema_v4`` -- qualified, digest-pinned, and untouched by
+    ADR-064 -- tells the model the label has at least three digits.
+    """
+    packet = _capability_packet()
+    capability = render_provider_contents(
+        stage="capability_extraction",
+        prompt_text="{{passages_with_ids}}\n{{validated_products}}",
+        packet=packet,
+    )
+    product = render_provider_contents(
+        stage="product_extraction",
+        prompt_text="{{passages_with_ids}}",
+        packet=packet,
+    )
+    assert "[ref: P1]" in capability and "[ref: P001]" not in capability
+    assert "[ref: P001]" in product and "[ref: P1]" not in product
 
 
 def test_the_required_placeholder_map_is_closed_and_narrow():

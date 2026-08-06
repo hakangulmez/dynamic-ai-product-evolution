@@ -1114,9 +1114,12 @@ def test_each_stage_cites_its_own_change_request():
     product = _build().record("prompt_qualification")
     assert "CR-0004-product-discovery-schema-v4" in product["change_request_reference"]
 
+    # ADR-064 moved this entry from CR-0005 to CR-0006 when the capability
+    # prompt was superseded -- the maintenance step ADR-062 recorded as its own
+    # known limitation. The product entry did not move.
     capability = _build(stage="capability_extraction").record("prompt_qualification")
     assert (
-        "CR-0005-capability-discovery-schema-v1"
+        "CR-0006-capability-discovery-schema-v2"
         in capability["change_request_reference"]
     )
     assert capability["change_request_reference"] != product["change_request_reference"]
@@ -1137,5 +1140,5 @@ def test_a_capability_build_is_bound_to_the_capability_prompt_and_contract():
     """The whole stage identity moves together, not just the change request."""
     record = _build(stage="capability_extraction").record("prompt_qualification")
     assert record["stage"] == "capability_extraction"
-    assert record["prompt_id"] == "capability_discovery_schema_v1"
+    assert record["prompt_id"] == "capability_discovery_schema_v2"
     assert record["stage_output_contract_id"] == "capability_observation@0.1.0"

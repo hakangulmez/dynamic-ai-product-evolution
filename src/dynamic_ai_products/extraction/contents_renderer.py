@@ -46,6 +46,7 @@ __all__ = [
     "PASSAGE_REF_PATTERN",
     "PLACEHOLDER_PATTERN",
     "RENDERER_VERSION",
+    "STAGE_PASSAGE_REF_STYLE",
     "STAGE_PLACEHOLDER_BINDINGS",
     "STAGE_REQUIRED_PLACEHOLDERS",
     "canonical_passage_order",
@@ -91,11 +92,18 @@ def _require_str(value: Any, what: str) -> str:
     return value
 
 
-def _bind_company_name(packet: dict[str, Any]) -> str:
+def _bind_company_name(packet: dict[str, Any], stage: str) -> str:
     """The legal name, which only an ``@0.2.0`` packet carries.
 
     A ``@0.1.0`` packet has no name field at all, so rendering one is refused
     rather than filled with the CIK: a company identifier is not a legal name.
+
+    ADR-064. Every binder takes the rendering stage, and most ignore it. The
+    uniform signature is the point: the stage reaches a binder from the render
+    call, so it is always the stage actually being rendered. Binding the stage
+    into the map instead -- one pre-parameterized callable per entry -- would put
+    a per-stage constant somewhere a new stage could be added by copying, which
+    is the defect ADR-053, ADR-058, ADR-061 and ADR-062 each found once.
     """
     value = packet.get("legal_name")
     if value is None:
@@ -107,7 +115,7 @@ def _bind_company_name(packet: dict[str, Any]) -> str:
     return _require_str(value, "legal_name")
 
 
-def _bind_cutoff(packet: dict[str, Any]) -> str:
+def _bind_cutoff(packet: dict[str, Any], stage: str) -> str:
     return _require_str(packet.get("observation_cutoff_date"), "observation_cutoff_date")
 
 
@@ -122,15 +130,54 @@ def _bind_cutoff(packet: dict[str, Any]) -> str:
 # either: it cites a short label and the pipeline resolves it, which is the rule
 # ``candidate_id`` and the ADR-054 identity fields already follow.
 #
-# Three digits are a floor, not a cap: a packet with more than 999 passages
-# yields ``P1000``, which the grammar still accepts. Labels are one-based
-# because they are read by a human and by a model, not used as an index.
-PASSAGE_REF_PATTERN = re.compile(r"^P(\d{3,})$")
+# Labels are one-based because they are read by a human and by a model, not used
+# as an index.
+#
+# ADR-064. The grammar accepts any run of digits, not three or more. Measured on
+# the widening: every label the ``\d{3,}`` grammar accepted is still accepted,
+# and every one of them still resolves to the same ordinal -- ``int("025")`` is
+# 25 either way -- so no historical citation changes meaning. What the widening
+# adds is ``P25`` and ``P1``, which is what a model writes when it reads a
+# zero-padded number and re-emits it naturally.
+PASSAGE_REF_PATTERN = re.compile(r"^P(\d+)$")
+
+# ADR-064. How each stage's prompt *renders* the label. The grammar above is
+# shared and permissive; this is the narrow question of what the model is shown.
+#
+# Not global, and the reason is a live artifact rather than a preference: the
+# product stage runs `product_discovery_schema_v4`, whose own text says the label
+# is "the letter `P` followed by at least three digits". That prompt is qualified,
+# its digest is pinned in every product prompt-qualification record, and changing
+# the renderer under it would put the rendered labels out of step with the
+# instruction the model is reading. So the style moves per stage, with the prompt
+# it belongs to.
+#
+# Closed and fail-closed, the ADR-062 shape. ``task_extraction`` is absent
+# because it has no qualified prompt; when it gets one, its style is chosen on
+# purpose. A default here is exactly what would let a new stage silently inherit
+# a padding convention its prompt never described.
+STAGE_PASSAGE_REF_STYLE: dict[str, str] = {
+    "product_extraction": "P{:03d}",
+    "capability_extraction": "P{:d}",
+}
+
+_STAGE_REF_STYLE_UNDECLARED = "passage_ref_label_style_undeclared"
 
 
-def passage_ref_label(ordinal: int) -> str:
-    """The label for a one-based position in the canonical order."""
-    return f"P{ordinal:03d}"
+def passage_ref_label(ordinal: int, *, stage: str) -> str:
+    """The label for a one-based position in the canonical order, per stage.
+
+    Keyword-only and mandatory: a positional default would be the stage-agnostic
+    constant this replaced.
+    """
+    style = STAGE_PASSAGE_REF_STYLE.get(stage)
+    if style is None:
+        raise ExtractionError(
+            f"stage {stage!r} declares no passage-label style, so a passage "
+            "cannot be labelled for it",
+            reason_code=_STAGE_REF_STYLE_UNDECLARED,
+        )
+    return style.format(ordinal)
 
 
 def canonical_passage_order(packet: dict[str, Any]) -> tuple[dict[str, Any], ...]:
@@ -182,7 +229,7 @@ def canonical_passage_order(packet: dict[str, Any]) -> tuple[dict[str, Any], ...
     return tuple(passage for _, _, passage in sorted(rows, key=lambda row: row[:2]))
 
 
-def _bind_passages_with_ids(packet: dict[str, Any]) -> str:
+def _bind_passages_with_ids(packet: dict[str, Any], stage: str) -> str:
     """Every admissible passage, in canonical order with explicit delimiters.
 
     Offsets are deliberately omitted: they are provenance the manifest already
@@ -199,7 +246,7 @@ def _bind_passages_with_ids(packet: dict[str, Any]) -> str:
     recomputing the label.
     """
     blocks = [
-        f"[ref: {passage_ref_label(ordinal)}] "
+        f"[ref: {passage_ref_label(ordinal, stage=stage)}] "
         f"[passage_id: {passage['passage_id']}] "
         f"[source_id: {passage['source_id']}] "
         f"[publication_date: {passage['publication_date']}]\n{passage['text']}"
@@ -222,7 +269,7 @@ def parent_ref_label(ordinal: int) -> str:
     return f"A{ordinal:02d}"
 
 
-def _bind_validated_products(packet: dict[str, Any]) -> str:
+def _bind_validated_products(packet: dict[str, Any], stage: str) -> str:
     """The human-validated products, labelled, in the packet's own order.
 
     **No second sorter.** ``parent_context.product_parents`` is already ordered
@@ -280,7 +327,7 @@ def _bind_validated_products(packet: dict[str, Any]) -> str:
 
 # Closed, stage-scoped binding map. A stage absent from this map cannot render,
 # and a placeholder absent from its stage's entry is refused.
-STAGE_PLACEHOLDER_BINDINGS: dict[str, dict[str, Callable[[dict[str, Any]], str]]] = {
+STAGE_PLACEHOLDER_BINDINGS: dict[str, dict[str, Callable[[dict[str, Any], str], str]]] = {
     "product_extraction": {
         "company_name": _bind_company_name,
         "cutoff": _bind_cutoff,
@@ -374,7 +421,7 @@ def render_provider_contents(
 
     # Values are resolved once each, so a placeholder repeated in the template
     # cannot render two different substitutions.
-    resolved = {name: bindings[name](packet) for name in sorted(set(requested))}
+    resolved = {name: bindings[name](packet, stage) for name in sorted(set(requested))}
     rendered = PLACEHOLDER_PATTERN.sub(lambda m: resolved[m.group(1)], prompt_text)
 
     # Fail closed on anything the substitution left behind, including a marker

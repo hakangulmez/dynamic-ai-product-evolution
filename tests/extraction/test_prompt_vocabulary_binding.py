@@ -70,7 +70,8 @@ def vocabulary() -> dict:
 
 def test_the_registry_version_tracks_the_sequence():
     # ADR-055 moved it again when the label-citing successor took position one.
-    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v5"
+    # ADR-064 moved it once more, for the capability successor.
+    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v6"
 
 
 def test_the_successor_is_first_and_every_predecessor_is_retained():
@@ -120,7 +121,13 @@ def test_the_vocabulary_bound_set_names_every_prompt_carrying_the_block():
     and the prompt must carry the same four labelled lists.
     """
     assert VOCABULARY_BOUND_PROMPT_IDS == frozenset(
-        {SUCCESSOR_ID, PREDECESSOR_ID, OLDER_ID, "capability_discovery_schema_v1"}
+        {
+            SUCCESSOR_ID,
+            PREDECESSOR_ID,
+            OLDER_ID,
+            "capability_discovery_schema_v1",
+            "capability_discovery_schema_v2",
+        }
     )
     assert isinstance(VOCABULARY_BOUND_PROMPT_IDS, frozenset)
     assert RECALL_ID not in VOCABULARY_BOUND_PROMPT_IDS
@@ -499,7 +506,11 @@ def test_every_optional_field_the_prompt_names_exists_in_the_schema(prompt_text)
 # --- ADR-059 (E-S2): the schema-bound capability prompt ---------------------
 
 
-CAPABILITY_ID = "capability_discovery_schema_v1"
+# ADR-064. The content assertions below follow position one, which is now the
+# successor. v1 keeps its own test: its bytes must not move, because
+# ext-smoke-cap-0001 and ext-smoke-cap-0002 resolved it.
+CAPABILITY_ID = "capability_discovery_schema_v2"
+PRIOR_CAPABILITY_ID = "capability_discovery_schema_v1"
 RETIRED_CAPABILITY_ID = "capability_extraction"
 CAPABILITY_OBSERVATION_SCHEMA = json.loads(
     (ROOT / "schemas" / "capability_observation.schema.json").read_text(encoding="utf-8")
@@ -514,6 +525,7 @@ def capability_prompt_text() -> str:
 def test_the_capability_successor_is_first_and_the_retired_one_is_retained():
     assert EXTRACTION_PROMPTS["capability_extraction"] == (
         CAPABILITY_ID,
+        PRIOR_CAPABILITY_ID,
         RETIRED_CAPABILITY_ID,
     )
     plan = single_pass_prompt_plan("capability_extraction")
@@ -521,16 +533,65 @@ def test_the_capability_successor_is_first_and_the_retired_one_is_retained():
     assert plan["prompt_sequence_complete"] is False
 
 
-def test_the_retired_capability_prompt_bytes_are_untouched():
+@pytest.mark.parametrize(
+    "prompt_id",
+    [RETIRED_CAPABILITY_ID, PRIOR_CAPABILITY_ID, "product_discovery_schema_v4"],
+)
+def test_a_superseded_prompts_bytes_are_untouched(prompt_id):
+    """Superseding adds a file; it never edits one.
+
+    ADR-064 adds the two that matter for this increment: v1, which
+    ``ext-smoke-cap-0001`` and ``ext-smoke-cap-0002`` resolved, and the product
+    successor, whose padded-label instruction this change deliberately leaves
+    alone.
+    """
     import subprocess
 
     committed = subprocess.check_output(
-        ["git", "show", f"HEAD:prompts/extraction/{RETIRED_CAPABILITY_ID}.md"], cwd=ROOT
+        ["git", "show", f"HEAD:prompts/extraction/{prompt_id}.md"], cwd=ROOT
     )
-    on_disk = (
-        ROOT / "prompts" / "extraction" / f"{RETIRED_CAPABILITY_ID}.md"
-    ).read_bytes()
+    on_disk = (ROOT / "prompts" / "extraction" / f"{prompt_id}.md").read_bytes()
     assert on_disk == committed
+
+
+# --- ADR-064: the prompt and the renderer describe one label ----------------
+
+
+def test_each_stage_prompt_describes_the_label_its_stage_renders():
+    """The defect this closes was the two disagreeing.
+
+    v1 told the model "at least three digits" and the renderer emitted ``P025``;
+    the model wrote ``P25`` anyway, identically on two live runs. Asserting the
+    agreement here means a future style change cannot move one without the
+    other silently.
+    """
+    from dynamic_ai_products.extraction.contents_renderer import passage_ref_label
+
+    capability = load_prompt(ROOT, CAPABILITY_ID)["text"]
+    product = load_prompt(ROOT, SUCCESSOR_ID)["text"]
+
+    assert passage_ref_label(25, stage="capability_extraction") == "P25"
+    assert "P25" in capability
+    assert "at least three digits" not in capability
+    assert "no leading zeros" in capability
+
+    assert passage_ref_label(1, stage="product_extraction") == "P001"
+    assert "at least three" in product and "P001" in product
+
+
+def test_the_successor_changes_only_how_a_label_is_described():
+    """Everything else is byte-identical to v1, so the diff is reviewable."""
+    successor = load_prompt(ROOT, CAPABILITY_ID)["text"].splitlines()
+    prior = load_prompt(ROOT, PRIOR_CAPABILITY_ID)["text"].splitlines()
+    changed = [
+        line for line in prior if line not in successor
+    ]
+    assert changed == [
+        "# Capability Discovery -- High Recall -- Schema v1",
+        "[ref: P001] [passage_id: ...] [source_id: ...] [publication_date: ...]",
+        "- `ref`: the label of one passage shown above, copied exactly -- the letter `P`",
+        "  followed by at least three digits, for example `\"P001\"`.",
+    ]
 
 
 def test_the_capability_prompt_binds_to_the_same_vocabulary(

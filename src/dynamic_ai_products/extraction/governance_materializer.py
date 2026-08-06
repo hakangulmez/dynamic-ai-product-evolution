@@ -179,9 +179,13 @@ STAGE_CHANGE_REQUEST: dict[str, str] = {
         "evals/change_requests/"
         "CR-0004-product-discovery-schema-v4-bootstrap-qualification.md"
     ),
+    # ADR-064. Moved from CR-0005 when `capability_discovery_schema_v2`
+    # superseded v1. This is the maintenance step ADR-062 recorded as its own
+    # known limitation, happening for the first time: the map states which
+    # change request is *current*, so it moves with the prompt.
     "capability_extraction": (
         "evals/change_requests/"
-        "CR-0005-capability-discovery-schema-v1-bootstrap-qualification.md"
+        "CR-0006-capability-discovery-schema-v2-bootstrap-qualification.md"
     ),
 }
 

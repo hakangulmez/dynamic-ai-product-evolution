@@ -511,7 +511,9 @@ def test_manifest_count():
     # successor schema, which carries who decided and when.
     # 604 = 602 + the two ADR-059 paths: the schema-bound capability prompt
     # and the change request its qualification record pins.
-    assert declared == len(paths) == 604
+    # 606 = 604 + the two ADR-064 paths: the unpadded-label capability
+    # successor prompt and the change request its qualification record pins.
+    assert declared == len(paths) == 606
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

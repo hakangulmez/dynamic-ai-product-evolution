@@ -734,7 +734,7 @@ def test_the_renderer_and_the_resolver_read_the_same_order():
     )
     ordered = canonical_passage_order(UNSORTED)
     for ordinal, passage in enumerate(ordered, start=1):
-        label = passage_ref_label(ordinal)
+        label = passage_ref_label(ordinal, stage="product_extraction")
         assert f"[ref: {label}] [passage_id: {passage['passage_id']}]" in rendered
 
 
@@ -752,7 +752,29 @@ def test_the_renderer_keeps_the_identifiers_for_human_readers():
 
 @pytest.mark.parametrize("ordinal, expected", [(1, "P001"), (42, "P042"), (1000, "P1000")])
 def test_labels_are_one_based_and_widen_past_three_digits(ordinal, expected):
-    assert passage_ref_label(ordinal) == expected
+    """The product stage's padding is unchanged; ADR-064 moved only capability."""
+    assert passage_ref_label(ordinal, stage="product_extraction") == expected
+
+
+@pytest.mark.parametrize("ordinal, expected", [(1, "P1"), (42, "P42"), (1000, "P1000")])
+def test_the_capability_stage_labels_without_padding(ordinal, expected):
+    assert passage_ref_label(ordinal, stage="capability_extraction") == expected
+
+
+@pytest.mark.parametrize("stage", ["task_extraction", "", "mystery", None, 7])
+def test_a_stage_with_no_declared_label_style_is_refused(stage):
+    """No default. A default is what would give a new stage a padding
+    convention its own prompt never described."""
+    with pytest.raises(ExtractionError) as excinfo:
+        passage_ref_label(1, stage=stage)
+    assert excinfo.value.reason_code == "passage_ref_label_style_undeclared"
+
+
+def test_the_label_style_map_is_closed_over_the_two_qualified_stages():
+    from dynamic_ai_products.extraction.contents_renderer import STAGE_PASSAGE_REF_STYLE
+
+    assert set(STAGE_PASSAGE_REF_STYLE) == {"product_extraction", "capability_extraction"}
+    assert "task_extraction" not in STAGE_PASSAGE_REF_STYLE
 
 
 def test_a_ref_resolves_to_the_pair_at_that_canonical_position():
@@ -787,8 +809,8 @@ def test_the_resolved_observation_validates_against_the_unchanged_schema():
 
 @pytest.mark.parametrize(
     "label",
-    ["P004", "P999", "P000", "p001", "P1", "P01", "001", "", "PABC", None, 1],
-    ids=["out_of_range", "far_out", "zero", "lowercase", "one_digit", "two_digits",
+    ["P004", "P999", "P000", "P0", "p001", "001", "", "PABC", None, 1],
+    ids=["out_of_range", "far_out", "zero_padded", "zero", "lowercase",
          "no_prefix", "empty", "letters", "null", "int"],
 )
 def test_an_unresolvable_label_has_its_own_reason_code(label):
@@ -796,12 +818,48 @@ def test_an_unresolvable_label_has_its_own_reason_code(label):
 
     "Invented an identifier" and "named a position it was not shown" are
     different faults, and an operator needs to know which one happened.
+
+    ADR-064 widened the grammar to any run of digits, so ``P1`` and ``P01`` left
+    this list -- they now resolve. What stays refused is unchanged: a position
+    outside the packet, a zero ordinal however it is spelled, a wrong case, a
+    missing prefix, and anything that is not a digit string at all.
     """
     with pytest.raises(ExtractionError) as excinfo:
         resolve_evidence_refs(
             observation(evidence=[{"ref": label, "quote": "q"}]), packet=UNSORTED
         )
     assert excinfo.value.reason_code == "candidate_conformance_evidence_ref_unresolvable"
+
+
+# --- ADR-064: padding is presentation, not identity -------------------------
+
+
+@pytest.mark.parametrize("label", ["P001", "P01", "P1", "P0001"])
+def test_any_padding_of_one_ordinal_resolves_to_one_passage(label):
+    """The fix for the measured P25 failure, stated as an equivalence.
+
+    Two live capability runs cited ``P25`` for a passage rendered as ``P025``
+    and were refused. The grammar now reads the digits as a number, so every
+    spelling of an ordinal names the same passage and none of them is a guess:
+    ``int`` does the work, not a repair heuristic.
+    """
+    ordered = canonical_passage_order(UNSORTED)
+    resolved = resolve_evidence_refs(
+        observation(evidence=[{"ref": label, "quote": "q"}]), packet=UNSORTED
+    )
+    assert resolved["evidence"][0]["passage_id"] == ordered[0]["passage_id"]
+    assert resolved["evidence"][0]["source_id"] == ordered[0]["source_id"]
+
+
+def test_the_unpadded_label_is_not_a_repair_of_the_padded_one():
+    """Both spellings go down one path; neither is rewritten into the other."""
+    padded = resolve_evidence_refs(
+        observation(evidence=[{"ref": "P002", "quote": "q"}]), packet=UNSORTED
+    )
+    plain = resolve_evidence_refs(
+        observation(evidence=[{"ref": "P2", "quote": "q"}]), packet=UNSORTED
+    )
+    assert padded["evidence"] == plain["evidence"]
 
 
 def test_resolution_leaves_untouched_what_it_does_not_own():

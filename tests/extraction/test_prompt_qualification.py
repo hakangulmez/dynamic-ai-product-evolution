@@ -340,7 +340,10 @@ def test_every_published_registry_version_is_accepted(version):
 
 @pytest.mark.parametrize(
     "version",
-    ["extraction_prompt_registry_v6", "extraction_prompt_registry", "", "v5", None, 2],
+    # ADR-064 published v6, so the never-published probe moves to v7. This
+    # parameter is meant to name a version this code has never issued; leaving a
+    # published one here would assert the opposite of what the test says.
+    ["extraction_prompt_registry_v7", "extraction_prompt_registry", "", "v5", None, 2],
 )
 def test_a_registry_version_this_code_never_published_is_refused(version):
     refuses(PROMPT_QUALIFICATION_INVALID, record=record(prompt_registry_version=version))

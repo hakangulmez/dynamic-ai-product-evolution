@@ -3005,6 +3005,108 @@ made, or that the model chose the most relevant passage. Those remain review and
 evaluation obligations. Claiming otherwise would be the ambient reading this
 project rejects.
 
+## ADR-064 — The correct answer becomes the natural one: unpadded passage labels for the capability stage
+
+**Status:** Accepted.
+
+**The measurement, and why it ends the retry option.** Two capability live calls
+were refused at the same place. `ext-smoke-cap-0001` returned 81 observations
+with 81 evidence citations, 80 of them correctly written `P0NN`, and one written
+`P25` where the rendered label was `P025`. `ext-smoke-cap-0002`, run against a
+fresh governance chain at a later commit, returned output that was
+**byte-identical** — the same SHA-256 over the model's text, the same single
+failure, the same observation, the same label.
+
+So `temperature=0` is doing what it says. This is not a sampling accident that a
+third attempt clears; it is a reproducible property of this prompt, this packet
+and this model. Two governance rounds and two paid calls bought the same
+refusal.
+
+**Root cause as stated by the operator, and confirmed by the artifact.** The
+model reads `025`, processes it as a number, and re-emits the number the way
+numbers are naturally written. The prompt asked it not to. `025` and `25` denote
+the same position; the padding carries no information at all — it exists only so
+labels have equal width.
+
+**The chosen fix is to remove the disagreement, not to win it.** Make the
+correct answer the one the model produces anyway. The two alternatives were both
+worse:
+
+- *Harden the prompt.* Already measured as failing: `capability_discovery_schema_v1`
+  states the rule explicitly, and the model broke it identically twice. More
+  emphatic wording is a bet against a measurement.
+- *Repair `P25` to `P025` in the resolver.* That is a silent repair, forbidden by
+  rule 9, and it would put interpretation into the layer whose whole job is to
+  read what was written.
+
+**Three parts.**
+
+*The grammar widens.* `PASSAGE_REF_PATTERN` moves from `^P(\d{3,})$` to
+`^P(\d+)$`. Measured on the widening: every label the old grammar accepted is
+still accepted, and every one resolves to the same ordinal, because
+`int("025") == int("25")`. No historical citation changes meaning, and the
+regression set is empty. What stays refused is unchanged — a position outside the
+packet, a zero ordinal however spelled, wrong case, missing prefix, non-digits.
+The resolver is untouched: it already read digits as a number.
+
+*The rendering style becomes per stage.* `STAGE_PASSAGE_REF_STYLE` maps
+`product_extraction` to `P{:03d}` and `capability_extraction` to `P{:d}`;
+`passage_ref_label(ordinal, *, stage)` resolves it or refuses with
+`passage_ref_label_style_undeclared`. Closed, fail-closed, no default — the
+ADR-062 shape, for the same reason.
+
+Not global, and the reason is an artifact rather than a preference:
+`product_discovery_schema_v4` says in its own text that the label is "the letter
+`P` followed by at least three digits". That prompt is qualified and its digest
+is pinned in six product qualification records. Changing the renderer under it
+would leave the labels the model sees out of step with the instruction it is
+reading — the exact disagreement this ADR exists to remove, reintroduced at the
+other end. So the style moves with the prompt it belongs to, and the product
+stage keeps both.
+
+*The prompt is superseded, not edited.* `capability_discovery_schema_v2` is v1
+with one section changed — how a passage label is described — plus the matching
+header example. A test asserts that the only lines differing are those four.
+`capability_discovery_schema_v1.md` is untouched, byte for byte, because
+`ext-smoke-cap-0001` and `ext-smoke-cap-0002` resolved it and their chains must
+stay verifiable; CR-0005 is untouched for the same reason. Registry
+`v5 → v6`, the successor takes position one, and v1 is retained below it.
+
+**The two stages now label the same passage differently, and that is accepted.**
+A reader comparing a product rendering with a capability rendering of one packet
+sees `P001` and `P1` for the same passage. The label is scoped to one rendered
+document and resolved against that document's own canonical order, so nothing is
+ambiguous; the alternative was reopening a qualified prompt that has no defect.
+
+**A binder-signature change, chosen deliberately.** The stage has to reach
+`_bind_passages_with_ids`, which previously took only the packet. Every binder now
+takes `(packet, stage)` and most ignore it. The alternative — storing a
+pre-parameterized callable per map entry — would have put a per-stage constant
+somewhere a new stage could be added by copying, which is precisely the defect
+ADR-053, ADR-058, ADR-061 and ADR-062 each found once. A uniform signature means
+the stage always comes from the render call that is actually happening.
+
+**`STAGE_CHANGE_REQUEST` moves for the first time.**
+`capability_extraction` now cites CR-0006. ADR-062 recorded this as its own known
+limitation — the map states which change request is *current*, so it must move
+whenever a stage's prompt is superseded — and this is that step happening. The
+`product_extraction` entry is untouched.
+
+**What this does not fix, stated plainly.** The same measured output carries a
+second, independent defect: two of the eighty resolvable citations quote text
+that is not in the passage they cite — one whole passage with the trailing word
+of another prepended, the same corpus seam that produced the `ext-smoke-0006`
+Sales Hub failure. C8 (ADR-063) refuses exactly that and will refuse it again.
+Nothing here weakens C8, and nothing here claims to address that defect. The
+next capability run is expected to reach C8 rather than the ref resolver, which
+is progress, not success.
+
+**Scope.** One pattern, one closed map, one resolver, one binder-signature
+change, one new prompt, one new change request, the registry version, two
+additive enum widenings, `STAGE_CHANGE_REQUEST["capability_extraction"]`, the
+manifest count, and tests. No schema contract version changes. No existing prompt
+bytes change. No governance root, run root or published artifact is touched.
+
 ## Open decisions
 
 - Required source packet by firm-year.

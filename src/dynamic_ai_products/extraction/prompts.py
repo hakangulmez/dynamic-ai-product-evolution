@@ -40,6 +40,7 @@ KNOWN_PROMPT_REGISTRY_VERSIONS: tuple[str, ...] = (
     "extraction_prompt_registry_v3",
     "extraction_prompt_registry_v4",
     "extraction_prompt_registry_v5",
+    "extraction_prompt_registry_v6",
 )
 
 # ADR-053 (G6-P). ``v1`` -> ``v2``: the product_extraction sequence gained a
@@ -57,7 +58,12 @@ KNOWN_PROMPT_REGISTRY_VERSIONS: tuple[str, ...] = (
 # ADR-059. ``v4`` -> ``v5``: the capability stage gains a schema-bound prompt at
 # position one. The registry version moves for every stage at once, which is the
 # point -- a record naming v4 was minted against a different sequence.
-PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v5"
+#
+# ADR-064. ``v5`` -> ``v6``: a capability successor takes position one, citing
+# passages by an unpadded position number. Measured twice on live calls: shown
+# ``P025``, the model wrote ``P25``. The prompt changes with the renderer, so
+# the label a capability prompt describes is the label its stage renders.
+PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v6"
 
 # Stage -> ordered prompt ids. Labels live here, never inside a frozen prompt.
 EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
@@ -82,9 +88,14 @@ EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
         "product_consolidation_precision",
     ),
     "capability_extraction": (
-        # ADR-059. The schema-bound successor: it states the output contract,
-        # attributes each capability to a validated product by short label, and
-        # carries the closed availability vocabulary as literal text.
+        # ADR-064. Position one. Identical to v1 except for how a passage label
+        # is described: an unpadded position number, matching what
+        # STAGE_PASSAGE_REF_STYLE now renders for this stage.
+        "capability_discovery_schema_v2",
+        # Retained, not retired: ext-smoke-cap-0001 and ext-smoke-cap-0002 both
+        # resolved this prompt and their chains must stay verifiable. It asked
+        # for at least three digits, and the model dropped the padding once in
+        # eighty-one citations -- identically on both runs.
         "capability_discovery_schema_v1",
         # Retained, not retired. Its bytes stay reachable, but it was measured
         # to carry zero placeholders and to name three of six required schema
@@ -104,6 +115,7 @@ VOCABULARY_BOUND_PROMPT_IDS = frozenset(
         "product_discovery_schema_v3",
         "product_discovery_schema_v4",
         "capability_discovery_schema_v1",
+        "capability_discovery_schema_v2",
     }
 )
 
