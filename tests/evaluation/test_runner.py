@@ -1197,7 +1197,9 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # and the change request its qualification record pins.
     # 606 = 604 + the two ADR-064 paths: the unpadded-label capability
     # successor prompt and the change request its qualification record pins.
-    assert declared == len(paths) == 606
+    # 608 = 606 + the two ADR-065 paths: the quote-bounding capability
+    # successor prompt and the change request its qualification record pins.
+    assert declared == len(paths) == 608
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

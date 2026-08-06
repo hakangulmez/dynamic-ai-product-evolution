@@ -29,7 +29,7 @@ def test_registry_version_is_declared():
     # ADR-053 (G6-P): v1 -> v2 when the schema-bound successor took position one
     # in the product_extraction sequence. ADR-064: v5 -> v6 when the capability
     # successor took position one in its own.
-    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v6"
+    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v7"
 
 
 def test_every_stage_declares_at_least_one_prompt():
@@ -153,8 +153,9 @@ def test_the_product_stage_is_never_reported_as_a_complete_universe():
     # ADR-059 rebaselines the capability stage. It registered one prompt and a
     # single pass therefore completed it; the schema-bound successor makes it a
     # two-element sequence, so a single pass is a recall set here too. ADR-064
-    # adds a third: v1 is retained because two live chains resolved it.
-    assert len(EXTRACTION_PROMPTS["capability_extraction"]) == 3
+    # adds a third: v1 is retained because two live chains resolved it. ADR-065
+    # adds a fourth: v2 is retained because ext-smoke-cap-0003 resolved it.
+    assert len(EXTRACTION_PROMPTS["capability_extraction"]) == 4
 
 
 def test_the_plan_selects_the_first_registered_prompt_for_every_stage():

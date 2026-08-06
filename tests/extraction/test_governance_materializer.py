@@ -1119,7 +1119,7 @@ def test_each_stage_cites_its_own_change_request():
     # known limitation. The product entry did not move.
     capability = _build(stage="capability_extraction").record("prompt_qualification")
     assert (
-        "CR-0006-capability-discovery-schema-v2"
+        "CR-0007-capability-discovery-schema-v3"
         in capability["change_request_reference"]
     )
     assert capability["change_request_reference"] != product["change_request_reference"]
@@ -1140,5 +1140,5 @@ def test_a_capability_build_is_bound_to_the_capability_prompt_and_contract():
     """The whole stage identity moves together, not just the change request."""
     record = _build(stage="capability_extraction").record("prompt_qualification")
     assert record["stage"] == "capability_extraction"
-    assert record["prompt_id"] == "capability_discovery_schema_v2"
+    assert record["prompt_id"] == "capability_discovery_schema_v3"
     assert record["stage_output_contract_id"] == "capability_observation@0.1.0"

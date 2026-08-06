@@ -71,7 +71,7 @@ def vocabulary() -> dict:
 def test_the_registry_version_tracks_the_sequence():
     # ADR-055 moved it again when the label-citing successor took position one.
     # ADR-064 moved it once more, for the capability successor.
-    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v6"
+    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v7"
 
 
 def test_the_successor_is_first_and_every_predecessor_is_retained():
@@ -127,6 +127,7 @@ def test_the_vocabulary_bound_set_names_every_prompt_carrying_the_block():
             OLDER_ID,
             "capability_discovery_schema_v1",
             "capability_discovery_schema_v2",
+            "capability_discovery_schema_v3",
         }
     )
     assert isinstance(VOCABULARY_BOUND_PROMPT_IDS, frozenset)
@@ -509,8 +510,9 @@ def test_every_optional_field_the_prompt_names_exists_in_the_schema(prompt_text)
 # ADR-064. The content assertions below follow position one, which is now the
 # successor. v1 keeps its own test: its bytes must not move, because
 # ext-smoke-cap-0001 and ext-smoke-cap-0002 resolved it.
-CAPABILITY_ID = "capability_discovery_schema_v2"
-PRIOR_CAPABILITY_ID = "capability_discovery_schema_v1"
+CAPABILITY_ID = "capability_discovery_schema_v3"
+PRIOR_CAPABILITY_ID = "capability_discovery_schema_v2"
+OLDEST_CAPABILITY_ID = "capability_discovery_schema_v1"
 RETIRED_CAPABILITY_ID = "capability_extraction"
 CAPABILITY_OBSERVATION_SCHEMA = json.loads(
     (ROOT / "schemas" / "capability_observation.schema.json").read_text(encoding="utf-8")
@@ -526,6 +528,7 @@ def test_the_capability_successor_is_first_and_the_retired_one_is_retained():
     assert EXTRACTION_PROMPTS["capability_extraction"] == (
         CAPABILITY_ID,
         PRIOR_CAPABILITY_ID,
+        OLDEST_CAPABILITY_ID,
         RETIRED_CAPABILITY_ID,
     )
     plan = single_pass_prompt_plan("capability_extraction")
@@ -535,7 +538,8 @@ def test_the_capability_successor_is_first_and_the_retired_one_is_retained():
 
 @pytest.mark.parametrize(
     "prompt_id",
-    [RETIRED_CAPABILITY_ID, PRIOR_CAPABILITY_ID, "product_discovery_schema_v4"],
+    [RETIRED_CAPABILITY_ID, OLDEST_CAPABILITY_ID, PRIOR_CAPABILITY_ID,
+     "product_discovery_schema_v4"],
 )
 def test_a_superseded_prompts_bytes_are_untouched(prompt_id):
     """Superseding adds a file; it never edits one.
@@ -579,19 +583,80 @@ def test_each_stage_prompt_describes_the_label_its_stage_renders():
     assert "at least three" in product and "P001" in product
 
 
-def test_the_successor_changes_only_how_a_label_is_described():
-    """Everything else is byte-identical to v1, so the diff is reviewable."""
-    successor = load_prompt(ROOT, CAPABILITY_ID)["text"].splitlines()
-    prior = load_prompt(ROOT, PRIOR_CAPABILITY_ID)["text"].splitlines()
-    changed = [
-        line for line in prior if line not in successor
-    ]
-    assert changed == [
-        "# Capability Discovery -- High Recall -- Schema v1",
-        "[ref: P001] [passage_id: ...] [source_id: ...] [publication_date: ...]",
-        "- `ref`: the label of one passage shown above, copied exactly -- the letter `P`",
-        "  followed by at least three digits, for example `\"P001\"`.",
-    ]
+@pytest.mark.parametrize(
+    "prior_id, successor_id, dropped",
+    [
+        (
+            OLDEST_CAPABILITY_ID,
+            PRIOR_CAPABILITY_ID,
+            [
+                "# Capability Discovery -- High Recall -- Schema v1",
+                "[ref: P001] [passage_id: ...] [source_id: ...] [publication_date: ...]",
+                "- `ref`: the label of one passage shown above, copied exactly -- the letter `P`",
+                '  followed by at least three digits, for example `"P001"`.',
+            ],
+        ),
+        (
+            PRIOR_CAPABILITY_ID,
+            CAPABILITY_ID,
+            [
+                "# Capability Discovery -- High Recall -- Schema v2",
+                "- `quote`: text quoted verbatim from that same passage.",
+            ],
+        ),
+    ],
+    ids=["v1_to_v2_label_style", "v2_to_v3_quote_bound"],
+)
+def test_each_supersession_changes_exactly_one_thing(prior_id, successor_id, dropped):
+    """Every capability successor is its predecessor plus one narrow edit.
+
+    Asserted line by line so a supersession that quietly rewrote the status
+    table, the parent rules or the schema contract would fail here rather than
+    be found by reading two 160-line prompts side by side.
+    """
+    successor = load_prompt(ROOT, successor_id)["text"].splitlines()
+    prior = load_prompt(ROOT, prior_id)["text"].splitlines()
+    assert [line for line in prior if line not in successor] == dropped
+
+
+def test_the_quote_bound_is_stated_in_the_successor():
+    """ADR-065. The bound lives in the prompt and nowhere else, by decision.
+
+    Nothing enforces one to three sentences -- not the schema, not C6, not C8 --
+    so this test is the only place that says the instruction is present at all.
+    """
+    text = load_prompt(ROOT, CAPABILITY_ID)["text"]
+    evidence = text.split("### `evidence`", 1)[1].split("### `parent_ref`", 1)[0]
+    assert "1 to 3\n  sentences" in evidence
+    assert "not the\n  entire passage" in evidence
+    assert "without joining text across a gap" in evidence
+    assert "- Every `quote` is 1 to 3 sentences, contiguous, and copied exactly." in text
+
+
+def test_the_quote_bound_is_absent_from_every_predecessor():
+    """The successor is what introduced it; the retained chains did not carry it."""
+    for prompt_id in (PRIOR_CAPABILITY_ID, OLDEST_CAPABILITY_ID, SUCCESSOR_ID):
+        assert "1 to 3" not in load_prompt(ROOT, prompt_id)["text"], prompt_id
+
+
+def test_the_quote_bound_is_not_enforced_anywhere_in_code():
+    """The honest half of ADR-065, asserted rather than assumed.
+
+    Quote length is a quality preference, not an integrity property: C6 proves
+    the cited pair is a passage of this run and C8 proves the words occur
+    verbatim in it, and both hold identically at any length. If a length gate is
+    ever added, this test is where the decision gets revisited.
+    """
+    for name in ("product_observation", "capability_observation"):
+        schema = json.loads((ROOT / "schemas" / f"{name}.schema.json").read_text())
+        quote = schema["properties"]["evidence"]["items"]["properties"]["quote"]
+        assert quote == {"type": "string"}, name
+
+    from dynamic_ai_products.extraction import candidates
+
+    source = (ROOT / "src" / "dynamic_ai_products" / "extraction" / "candidates.py").read_text()
+    assert "maxLength" not in source
+    assert not [c for c in dir(candidates) if "quote_length" in c or "quote_max" in c]
 
 
 def test_the_capability_prompt_binds_to_the_same_vocabulary(

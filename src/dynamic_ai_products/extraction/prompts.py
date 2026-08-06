@@ -41,6 +41,7 @@ KNOWN_PROMPT_REGISTRY_VERSIONS: tuple[str, ...] = (
     "extraction_prompt_registry_v4",
     "extraction_prompt_registry_v5",
     "extraction_prompt_registry_v6",
+    "extraction_prompt_registry_v7",
 )
 
 # ADR-053 (G6-P). ``v1`` -> ``v2``: the product_extraction sequence gained a
@@ -63,7 +64,11 @@ KNOWN_PROMPT_REGISTRY_VERSIONS: tuple[str, ...] = (
 # passages by an unpadded position number. Measured twice on live calls: shown
 # ``P025``, the model wrote ``P25``. The prompt changes with the renderer, so
 # the label a capability prompt describes is the label its stage renders.
-PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v6"
+#
+# ADR-065. ``v6`` -> ``v7``: a capability successor takes position one, bounding
+# the evidence quote to one to three sentences. The passage container is about
+# to grow; the quote should not grow with it.
+PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v7"
 
 # Stage -> ordered prompt ids. Labels live here, never inside a frozen prompt.
 EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
@@ -88,9 +93,11 @@ EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
         "product_consolidation_precision",
     ),
     "capability_extraction": (
-        # ADR-064. Position one. Identical to v1 except for how a passage label
-        # is described: an unpadded position number, matching what
-        # STAGE_PASSAGE_REF_STYLE now renders for this stage.
+        # ADR-065. Position one. Identical to v2 except that the evidence quote
+        # is bounded to one to three sentences and must be contiguous.
+        "capability_discovery_schema_v3",
+        # Retained, not retired: ext-smoke-cap-0003 resolved this prompt. It
+        # asked for a verbatim quote and said nothing about its length.
         "capability_discovery_schema_v2",
         # Retained, not retired: ext-smoke-cap-0001 and ext-smoke-cap-0002 both
         # resolved this prompt and their chains must stay verifiable. It asked
@@ -116,6 +123,7 @@ VOCABULARY_BOUND_PROMPT_IDS = frozenset(
         "product_discovery_schema_v4",
         "capability_discovery_schema_v1",
         "capability_discovery_schema_v2",
+        "capability_discovery_schema_v3",
     }
 )
 

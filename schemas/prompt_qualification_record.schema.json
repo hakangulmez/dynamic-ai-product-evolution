@@ -119,6 +119,7 @@
         "product_discovery_schema_v2",
         "product_discovery_recall",
         "product_consolidation_precision",
+        "capability_discovery_schema_v3",
         "capability_discovery_schema_v2",
         "capability_discovery_schema_v1",
         "capability_extraction",
@@ -146,7 +147,8 @@
         "extraction_prompt_registry_v3",
         "extraction_prompt_registry_v4",
         "extraction_prompt_registry_v5",
-        "extraction_prompt_registry_v6"
+        "extraction_prompt_registry_v6",
+        "extraction_prompt_registry_v7"
       ]
     },
     "qualification_basis": {

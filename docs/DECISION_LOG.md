@@ -3107,6 +3107,86 @@ additive enum widenings, `STAGE_CHANGE_REQUEST["capability_extraction"]`, the
 manifest count, and tests. No schema contract version changes. No existing prompt
 bytes change. No governance root, run root or published artifact is touched.
 
+## ADR-065 — A quote is evidence for a claim, not a copy of its container
+
+**Status:** Accepted.
+
+**Where this came from.** The operator proposes regrouping passages on heading
+boundaries rather than HTML block boundaries, which would make the average
+passage roughly ten times larger. Quote length has never been specified
+anywhere, so under that change a quote could grow with its container for no
+reason. This ADR states the bound first, independently of whether the regrouping
+happens.
+
+**Measured before deciding, not assumed.**
+
+- *In the prompts.* `capability_discovery_schema_v2` mentions `quote` three
+  times — "text quoted verbatim from that same passage", "must come from the
+  passage that `ref` names", and the field list — and never with a length, a
+  sentence count, or any bound. `product_discovery_schema_v4` is the same. The
+  word "short" appears in both, but only for `capability` and `ambiguity`.
+- *In the schemas.* `evidence.items.quote` is `{"type": "string"}` in both
+  `product_observation.schema.json` and `capability_observation.schema.json` —
+  exactly the shape `availability_status` had before ADR-052.
+- *In real output.* `ext-smoke-0006` (product): 34 quotes, median 204
+  characters, longest 590. `ext-smoke-cap-0003` (capability): 84 quotes, median
+  96, longest 220, none over 300.
+
+So the capability stage is not currently producing long quotes. This is a bound
+stated before the thing that would make it bite, not a repair of an observed
+defect, and the ADR says so rather than implying a problem that the measurement
+does not show.
+
+**The bound is a prompt instruction and nothing else. That is a decision.**
+Adding `maxLength` to the schema was considered and rejected on three grounds,
+in increasing order of weight:
+
+1. *It is a released-contract change.* Both observation schemas are
+   `additionalProperties: false` released contracts. Narrowing an existing
+   property is breaking — a successor contract and a manifest bump, not the
+   additive enum widening these prompt increments have been using.
+2. *It would retroactively invalidate accepted data.* Eleven human-validated
+   product observations are persisted under `decisions-ext-smoke-0006-0002` with
+   quotes up to 590 characters. Any cap below that would make records a human
+   already accepted fail re-validation — the opposite of what immutability means
+   here.
+3. *Quote length is not an integrity property.* This is the decisive one, and it
+   is the operator's own framing, which the measurement confirms. C6 proves the
+   cited pair is a passage of this run; C8 proves the quoted words occur verbatim
+   in it. Both hold identically for a 20-character quote and a 2,000-character
+   one. A length gate would buy no verifiability and would reject truthful
+   evidence for being verbose, with a refusal indistinguishable from real
+   corruption. Rule 7 points the other way.
+
+**What that costs, stated rather than implied.** The bound can be ignored and
+nothing will notice. A thirty-sentence quote that occurs verbatim in its cited
+passage passes every gate this repository has. A test asserts this state of
+affairs directly — that `quote` is still an unconstrained string in both schemas
+and that no length check exists in `candidates.py` — so that if a gate is ever
+added, this decision is revisited rather than silently contradicted.
+
+**A second rule, and why it is not a substitute for C8.** The successor also
+tells the model to copy a contiguous run rather than joining text across a gap.
+That is aimed at the splice class ADR-063 found twice — the `ext-smoke-0006`
+Sales Hub citation and the two `ext-smoke-cap-0002` citations, all of which
+reconstructed one source sentence that the corpus had split across two passages.
+The instruction is not the fix. C8 is the fix, it stays exactly as strict, and
+nothing here weakens it. The instruction only means a model that would otherwise
+do it has been told not to.
+
+**Superseded, not edited.** `capability_discovery_schema_v3` is v2 with the
+`evidence` section extended and one line added to the silent final check;
+a test asserts line by line that each capability supersession changed exactly
+one thing. v2, v1 and `capability_extraction.md` keep their bytes — `ext-smoke-cap-0003`
+resolved v2, and `ext-smoke-cap-0001`/`-0002` resolved v1. Registry `v6 → v7`.
+`STAGE_CHANGE_REQUEST["capability_extraction"]` moves to CR-0007; the
+`product_extraction` entry is untouched, and the product prompt is untouched.
+
+**Scope.** One new prompt, one new change request, the registry version, two
+additive enum widenings, one closed-map entry, the manifest count, and tests. No
+schema contract version changes. No existing prompt bytes change. No normalizer,
+snapshot, packet, governance root, run root or published artifact is touched.
+
 ## Open decisions
 
 - Required source packet by firm-year.
