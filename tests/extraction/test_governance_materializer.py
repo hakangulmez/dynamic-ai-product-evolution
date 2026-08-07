@@ -1087,14 +1087,18 @@ from dynamic_ai_products.extraction.governance_materializer import (  # noqa: E4
 
 
 def test_the_change_request_map_is_closed_and_names_a_tracked_document():
-    assert set(STAGE_CHANGE_REQUEST) == {"product_extraction", "capability_extraction"}
-    assert "task_extraction" not in STAGE_CHANGE_REQUEST
+    """ADR-069 adds ``task_extraction``, citing CR-0008."""
+    assert set(STAGE_CHANGE_REQUEST) == {
+        "product_extraction",
+        "capability_extraction",
+        "task_extraction",
+    }
     for stage, reference in STAGE_CHANGE_REQUEST.items():
         assert (REPO_ROOT / reference).is_file(), stage
         assert reference.startswith("evals/change_requests/CR-")
 
 
-@pytest.mark.parametrize("stage", ["task_extraction", "", "product", "mystery"])
+@pytest.mark.parametrize("stage", ["", "product", "mystery"])
 def test_an_undeclared_stage_cannot_mint_a_prompt_qualification(stage):
     """Never a default. A default is what produced the defect this closes."""
     with pytest.raises(ExtractionError) as excinfo:

@@ -3591,6 +3591,111 @@ render over the real, persisted HubSpot capability chain. `STAGE_OBSERVATION_
 KIND`, `STAGE_CHANGE_REQUEST`, and any live-callable prompt for this stage are
 deliberately untouched.
 
+## ADR-069 — Making the task stage runnable (E-T1 governance wiring)
+
+**Status:** Accepted.
+
+**The kind existing does not make the stage runnable, and that gap is closed
+now.** ADR-068 added `task` to `OBSERVATION_KINDS` and made the renderer and
+the candidate pipeline materialize the stage, but deliberately withheld two
+entries: `STAGE_OBSERVATION_KIND["task_extraction"]` and `STAGE_CHANGE_
+REQUEST["task_extraction"]`. Adding either before a qualified prompt existed
+would have made a live task run reachable through `task_discovery_recall`,
+which -- measured against `task_observation_v2.schema.json`'s eleven required
+fields -- names only three of them and instructs the model to emit "product
+and capability IDs" directly. That is the exact defect CR-0005 closed for the
+capability stage, reopened here because this prompt predates the `C0N`/`P0N`
+reference design entirely. `task_discovery_schema_v1` (CR-0008) closes it, so
+both entries are added in this round, together, and only once the successor
+prompt exists to be qualified against.
+
+`task_discovery_schema_v1` states the output contract explicitly: capabilities
+by the unpadded `C0N` label ADR-068 renders, passages by the unpadded `P0N`
+every stage shares, the capability stage's own S1-S8 status vocabulary rather
+than a second one, and an evidence quote bounded to one to three sentences
+from this prompt's first version -- ADR-065's rule, not repeated after a
+predecessor shipped without it. The prompt registry moves `v7` -> `v8`.
+
+A sentence in that prompt was wrong, found by the same review that closed
+ADR-068's two findings, before this round was committed. The "do not emit an
+identifier" section said the first three of four derived fields come "from
+this call's product and your `capability_refs`", which mixes them:
+`task_observation_id` never derives from `capability_refs`, and `capability_
+observation_ids` never derives from the product. The imperative was correct;
+only the reason given for it was not. Each field now names its own source.
+That edit changed the prompt's bytes, from `fd0bb375c05d8ad72fed09a1342
+b414f79adc0040f9682f82a62e120b9c74b7a` (9,371) to `1f484896a4e51935d45e5c8
+c4c575e48da1ed191305c066cb55f69255ea445c0` (9,524), and the rule that a frozen
+prompt is superseded rather than edited did not apply: verified, this file
+appears in **no** governance root and has been resolved against no
+qualification record -- zero matches under `artifacts/`. Editing in place was
+therefore safe, and it stops being safe the moment the first task
+qualification cites it. CR-0008's scope note was updated to the new digest and
+byte count, and a test asserts that agreement against the file's actual bytes
+rather than a literal, so the value is not kept in two places.
+
+**The stage-output contract identity moves to what the stage has already
+validated against since ADR-068.** `STAGE_OUTPUT_CONTRACT_ID["task_
+extraction"]` and `STAGE_OUTPUT_SCHEMA["task_extraction"]` move from
+`task_observation@0.1.0` / `task_observation.schema.json` to `task_
+observation@0.2.0` / `task_observation_v2.schema.json`. This was a live
+inconsistency between two layers, not a new decision: `candidates._SCHEMA_
+FOR_KIND` has read the `@0.2.0` file since ADR-068, while the governance layer
+that mints prompt qualifications and run manifests still named the schema it
+superseded. Left alone, a task run would have qualified against one contract
+identity while validating against a different schema than the one that
+identity names.
+
+**The task stage reuses the ADR-052 vocabulary artifact rather than minting a
+second one, and that makes it a third consumer of an artifact whose own name
+now undersells it.** `availability_status` is `{"type": "string"}` in
+`task_observation_v2.schema.json`, exactly as unconstrained as it is in the
+product and capability schemas, so `product_candidate_availability_
+vocabulary@0.1.0` -- the same eight tokens, the same `status_label_table()` --
+governs all three. `VOCABULARY_BOUND_PROMPT_IDS` gains `task_discovery_
+schema_v1` on that basis, no code change required: C5 reads `admitted_status_
+values` from the artifact without asking which kind is being judged. Minting a
+task-specific vocabulary was rejected on the same measurement ADR-059 already
+made for capability -- the eight tokens are identical, and a second copy would
+be the exact defect class ADR-053 exists to prevent, one artifact lower.
+Measured on the real chain: every one of 69 accepted capabilities and all 11
+accepted products carry `general_availability`, so task recall inherits that
+same narrow band until a richer source diversifies it.
+
+The artifact's own identity, `product_candidate_availability_vocabulary`, was
+already a slight misnomer with two consumers; a third makes the name actively
+misleading to a reader who has not traced `VOCABULARY_BOUND_PROMPT_IDS`. A
+stage-agnostic rename is a real fix and is deliberately **not** made here: it
+is a released-contract identity change, wider in scope than this round, and
+the loader validates the artifact against its own recorded constant rather
+than against the stage that is running, so nothing is functionally broken by
+leaving it. Recorded as a known limitation to correct in its own increment,
+not silently carried forward again.
+
+**`prompt_qualification_record@0.1.0`'s two enums grow additively, the same
+move ADR-053, ADR-059, ADR-064 and ADR-065 each made.** `extraction_prompt_
+registry_v8` and `task_discovery_schema_v1` are added to the `prompt_
+registry_version` and `prompt_id` enums in `prompt_qualification_record.
+schema.json`. The schema's own identity and required-property set are
+untouched; only the closed vocabularies each enum declares widen.
+
+**Not claimed.** No live call has been made against `task_discovery_schema_v1`
+-- it carries `no_completed_evaluation_run` and `no_baseline_comparison` as
+known limitations, the same as every bootstrap-basis prompt before it. What
+this ADR establishes is that a task run through the ordinary runner is now
+reachable through governance and stopped, correctly, at
+`focal_product_required` (asserted end to end in
+`test_v2_a_fully_valid_non_product_stage_still_refuses_before_the_provider`)
+-- not that the prompt elicits conforming output from a model.
+
+**Scope.** One new prompt (`task_discovery_schema_v1`, CR-0008), two
+governance map entries, one stage-output contract identity move, and one
+additive schema-enum widening (`prompt_qualification_record`'s two, for the
+registry version and the prompt id), and test coverage including the
+governance-reachability path end to end. No product or capability prompt,
+schema, change request, or qualification record changes. No live call is made
+or authorized by this round.
+
 ## Open decisions
 
 - Required source packet by firm-year.
@@ -3606,3 +3711,4 @@ deliberately untouched.
 - Whether the v2 client-contract seam should carry a credential scan. v1 had one through `validate_provider_client_contract`; v2 has none, and a contract pinned with credential material from the start would not be refused (see ADR-045).
 - The evaluation-artifact root and the `evaluated_comparison` property set that would make an evaluated prompt qualification reachable (see ADR-044).
 - A hash-bound carrier for the analytical period assignment. It stops at the admission artifact today, so no extraction output may be joined to a fiscal-year panel until a successor adds one (see ADR-046).
+- A stage-agnostic rename of `product_candidate_availability_vocabulary@0.1.0`. Three stages now govern `availability_status` through it (see ADR-069); the name still names only the first.

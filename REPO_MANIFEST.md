@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **610**
+Total tracked/scaffold files listed: **612**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -127,6 +127,7 @@ Total tracked/scaffold files listed: **610**
 - `evals/change_requests/CR-0005-capability-discovery-schema-v1-bootstrap-qualification.md`
 - `evals/change_requests/CR-0006-capability-discovery-schema-v2-bootstrap-qualification.md`
 - `evals/change_requests/CR-0007-capability-discovery-schema-v3-bootstrap-qualification.md`
+- `evals/change_requests/CR-0008-task-discovery-schema-v1-bootstrap-qualification.md`
 - `evals/change_requests/README.md`
 - `evals/expected/.gitkeep`
 - `evals/fixtures/README.md`
@@ -232,6 +233,7 @@ Total tracked/scaffold files listed: **610**
 - `prompts/extraction/product_discovery_schema_v4.md`
 - `prompts/extraction/task_consolidation_precision.md`
 - `prompts/extraction/task_discovery_recall.md`
+- `prompts/extraction/task_discovery_schema_v1.md`
 - `prompts/extraction/task_role_classification.md`
 - `prompts/implementation/phase_0_company_universe.md`
 - `prompts/implementation/phase_1_eval_harness.md`

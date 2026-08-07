@@ -124,7 +124,8 @@
         "capability_discovery_schema_v1",
         "capability_extraction",
         "task_discovery_recall",
-        "task_consolidation_precision"
+        "task_consolidation_precision",
+        "task_discovery_schema_v1"
       ]
     },
     "prompt_lifecycle_state": {
@@ -148,7 +149,8 @@
         "extraction_prompt_registry_v4",
         "extraction_prompt_registry_v5",
         "extraction_prompt_registry_v6",
-        "extraction_prompt_registry_v7"
+        "extraction_prompt_registry_v7",
+        "extraction_prompt_registry_v8"
       ]
     },
     "qualification_basis": {

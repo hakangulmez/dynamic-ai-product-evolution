@@ -519,7 +519,9 @@ def test_manifest_count():
     # successor schema, which declares the raised output ceiling.
     # 610 = 609 + the one ADR-068 path: the task_observation successor
     # schema, which adds the normalized_task slug C3 reads.
-    assert declared == len(paths) == 610
+    # 612 = 610 + the two ADR-069 paths: the schema-bound task successor
+    # prompt and the change request its qualification record pins.
+    assert declared == len(paths) == 612
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

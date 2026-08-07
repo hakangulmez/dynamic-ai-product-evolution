@@ -682,10 +682,14 @@ def test_the_enforced_stage_output_sha_is_the_released_pin():
 
 
 def test_the_stage_output_identity_map_is_closed():
+    """ADR-069 moves ``task_extraction`` to the @0.2.0 successor: the
+    candidate-collection layer has validated task candidates against
+    ``task_observation_v2.schema.json`` since ADR-068, and this identity must
+    name the schema the stage actually validates against."""
     assert STAGE_OUTPUT_CONTRACT_ID == {
         "product_extraction": "product_observation@0.1.0",
         "capability_extraction": "capability_observation@0.1.0",
-        "task_extraction": "task_observation@0.1.0",
+        "task_extraction": "task_observation@0.2.0",
     }
 
 
@@ -694,7 +698,7 @@ def test_the_stage_output_identity_map_is_closed():
     [
         ("product_extraction", "product_observation@0.1.0"),
         ("capability_extraction", "capability_observation@0.1.0"),
-        ("task_extraction", "task_observation@0.1.0"),
+        ("task_extraction", "task_observation@0.2.0"),
     ],
 )
 def test_every_stage_requires_its_own_output_contract_identity(stage, expected_id):

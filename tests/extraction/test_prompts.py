@@ -28,8 +28,9 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_registry_version_is_declared():
     # ADR-053 (G6-P): v1 -> v2 when the schema-bound successor took position one
     # in the product_extraction sequence. ADR-064: v5 -> v6 when the capability
-    # successor took position one in its own.
-    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v7"
+    # successor took position one in its own. ADR-065: v6 -> v7 for the quote
+    # bound. ADR-069: v7 -> v8 when the task successor took position one.
+    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v8"
 
 
 def test_every_stage_declares_at_least_one_prompt():

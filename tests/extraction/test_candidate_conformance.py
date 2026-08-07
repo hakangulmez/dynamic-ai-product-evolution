@@ -1288,29 +1288,31 @@ from dynamic_ai_products.extraction.candidates import (  # noqa: E402
 )
 
 
-def test_the_stage_map_still_excludes_task_because_it_has_no_qualified_prompt():
-    """ADR-068 adds the *kind*; the *stage* is still not runnable, on purpose.
+def test_the_stage_map_now_includes_task_because_it_has_a_qualified_prompt():
+    """ADR-068 added the *kind*; ADR-069 makes the *stage* runnable.
 
-    ``task`` is now a real observation kind and the renderer can materialize the
-    task stage offline. What is deliberately missing is the entry that lets a
-    run resolve a kind from the stage: ``task_discovery_recall`` states no
-    output contract, so it has no change request and no prompt qualification.
-    Adding this entry before that exists would make a live task run reachable
-    through a prompt that cannot produce a conforming record -- the exact defect
-    CR-0005 was written for on the capability side. Wiring it is ADR-069.
+    ``task`` became a real observation kind and the renderer could materialize
+    the task stage offline, but the entry that lets a run resolve a kind from
+    the stage stayed missing on purpose: ``task_discovery_recall`` states no
+    output contract, so it had no change request and no prompt qualification.
+    Adding this entry before that existed would have made a live task run
+    reachable through a prompt that cannot produce a conforming record -- the
+    exact defect CR-0005 was written for on the capability side.
+    ``task_discovery_schema_v1`` (CR-0008) closes that gap, so the entry is
+    added now.
     """
     assert STAGE_OBSERVATION_KIND == {
         "product_extraction": "product",
         "capability_extraction": "capability",
+        "task_extraction": "task",
     }
-    assert "task_extraction" not in STAGE_OBSERVATION_KIND
-    assert "task" in OBSERVATION_KINDS
-    assert set(STAGE_OBSERVATION_KIND.values()) < set(OBSERVATION_KINDS)
+    assert set(STAGE_OBSERVATION_KIND.values()) == set(OBSERVATION_KINDS)
 
 
 @pytest.mark.parametrize(
     "stage, kind", [("product_extraction", "product"),
-                    ("capability_extraction", "capability")]
+                    ("capability_extraction", "capability"),
+                    ("task_extraction", "task")]
 )
 def test_each_declared_stage_resolves_to_its_kind(stage, kind):
     assert observation_kind_for_stage(stage) == kind
@@ -2024,3 +2026,37 @@ def test_c11_is_not_folded_into_c9(vocabulary):
     )
     assert duplicated.reason_code == "candidate_conformance_capability_cited_twice"
     assert invented.reason_code == "candidate_conformance_capability_not_in_snapshot"
+
+
+def test_the_prompt_names_each_derived_field_with_its_own_source():
+    """Finding 3. The imperative was right; the reason sentence was not.
+
+    It said the first three of four derived fields come "from this call's
+    product and your capability_refs", which mixes them: ``task_observation_id``
+    never derives from ``capability_refs``, and ``capability_observation_ids``
+    never derives from the product.
+    """
+    text = (ROOT / "prompts/extraction/task_discovery_schema_v1.md").read_text()
+    assert "`product_observation_id` from this call's product" in text
+    assert "`capability_observation_ids`\nfrom your `capability_refs`" in text
+    assert "`normalized_task` from your `task`" in text
+    assert "`task_observation_id` from this call's product together with your `task`" in text
+    assert "the first three from this" not in text
+
+
+def test_the_change_request_pins_the_prompt_it_actually_describes():
+    """A digest a document states about a file it names has to be that file's.
+
+    Asserted against the bytes rather than a literal, so this states the
+    invariant without minting a second place the value must be kept in step.
+    """
+    from hashlib import sha256
+
+    prompt = ROOT / "prompts/extraction/task_discovery_schema_v1.md"
+    change_request = (
+        ROOT / "evals/change_requests"
+        / "CR-0008-task-discovery-schema-v1-bootstrap-qualification.md"
+    ).read_text()
+    payload = prompt.read_bytes()
+    assert sha256(payload).hexdigest() in change_request
+    assert f"({len(payload)} bytes)" in change_request

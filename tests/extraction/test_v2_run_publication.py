@@ -278,10 +278,15 @@ def _write_identity(root: Path) -> dict[str, str]:
 # ADR-059. The capability entry deliberately names the **retired** prompt: the
 # case above uses it to prove that a chain minted for a superseded prompt cannot
 # execute the one the registry now resolves.
+#
+# ADR-069. The task entry names the **current** successor, unlike capability's:
+# the case below wants a task chain to clear P1-P4 and reach the renderer, the
+# same way the product entry does, so that what stops it is
+# ``focal_product_required`` and not an unrelated prompt mismatch.
 _STAGE_PROMPT = {
     "product_extraction": "product_discovery_schema_v4",
     "capability_extraction": "capability_extraction",
-    "task_extraction": "task_discovery_recall",
+    "task_extraction": "task_discovery_schema_v1",
 }
 
 

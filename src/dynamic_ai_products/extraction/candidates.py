@@ -75,6 +75,13 @@ OBSERVATION_KINDS: tuple[str, ...] = ("product", "capability", "task")
 STAGE_OBSERVATION_KIND: dict[str, str] = {
     "product_extraction": "product",
     "capability_extraction": "capability",
+    # ADR-069. Added once, not with the kind at ADR-068: the kind existing does
+    # not make the stage runnable. Adding this entry before ``task_extraction``
+    # had a qualified prompt would have made a live task run reachable through
+    # ``task_discovery_recall``, which states no output contract and could not
+    # have produced a conforming record -- the CR-0005 defect, on the task
+    # stage. ``task_discovery_schema_v1`` closes that gap.
+    "task_extraction": "task",
 }
 
 _STAGE_KIND_UNDECLARED = "stage_observation_kind_undeclared"

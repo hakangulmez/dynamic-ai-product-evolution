@@ -117,10 +117,15 @@ GOVERNANCE_SCHEMA_VERSION = "0.1.0"
 # Closed stage -> output-contract identity map. Without it, two records could
 # agree on an arbitrary identity while carrying the correct released digest, and
 # the identity would assert nothing about which stage was qualified.
+# ADR-069. ``task_extraction`` moves to the @0.2.0 successor
+# (``task_observation_v2.schema.json``): the candidate-collection layer
+# validates task candidates against that schema (ADR-068, for
+# ``normalized_task``), and this identity must name the schema this stage
+# actually validates against, not the one it superseded.
 STAGE_OUTPUT_CONTRACT_ID: dict[str, str] = {
     "product_extraction": "product_observation@0.1.0",
     "capability_extraction": "capability_observation@0.1.0",
-    "task_extraction": "task_observation@0.1.0",
+    "task_extraction": "task_observation@0.2.0",
 }
 
 ENABLEMENT_STATUS_FOR_ROLLOUT: dict[str, str] = {
@@ -364,12 +369,14 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 STAGE_OUTPUT_SCHEMA = {
     "product_extraction": "product_observation.schema.json",
     "capability_extraction": "capability_observation.schema.json",
-    "task_extraction": "task_observation.schema.json",
+    # ADR-069. The @0.2.0 successor -- the one ``candidates._SCHEMA_FOR_KIND``
+    # has validated task candidates against since ADR-068.
+    "task_extraction": "task_observation_v2.schema.json",
 }
 STAGE_OUTPUT_SCHEMA_SHA256 = {
     "product_extraction": "2d2adcb0b24313c58ed27c51708e4e680e0d4c5abe099ae02788217c45cf1eae",
     "capability_extraction": "4ade397f3383ff756a1aa2ba5f98bdb99f76c002d5cf049d7e8dcd7abf493733",
-    "task_extraction": "b135ab828a3b710f1c63f6a8bf473caa6e29c3a63a5330cb203b470f772e3b03",
+    "task_extraction": "cbe1f64526fa0f5b77b9aaa8889468afcd1111a74eb2529f9b5d94538c50b801",
 }
 
 

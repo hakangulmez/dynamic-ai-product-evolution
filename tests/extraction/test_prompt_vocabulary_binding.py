@@ -70,8 +70,10 @@ def vocabulary() -> dict:
 
 def test_the_registry_version_tracks_the_sequence():
     # ADR-055 moved it again when the label-citing successor took position one.
-    # ADR-064 moved it once more, for the capability successor.
-    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v7"
+    # ADR-064 moved it once more, for the capability successor. ADR-065 moved
+    # it to v7 for the quote bound. ADR-069 moves it to v8 for the task
+    # successor.
+    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v8"
 
 
 def test_the_successor_is_first_and_every_predecessor_is_retained():
@@ -128,6 +130,9 @@ def test_the_vocabulary_bound_set_names_every_prompt_carrying_the_block():
             "capability_discovery_schema_v1",
             "capability_discovery_schema_v2",
             "capability_discovery_schema_v3",
+            # ADR-069. ``availability_status`` is unconstrained in
+            # ``task_observation_v2.schema.json`` too.
+            "task_discovery_schema_v1",
         }
     )
     assert isinstance(VOCABULARY_BOUND_PROMPT_IDS, frozenset)
@@ -748,3 +753,179 @@ def test_the_retired_capability_prompt_could_not_have_conformed():
         "availability_status",
     }
     assert "{{" not in text
+
+
+# --- ADR-069 (E-T1 governance wiring, CR-0008): the schema-bound task prompt -
+
+
+TASK_ID = "task_discovery_schema_v1"
+RETIRED_TASK_ID = "task_discovery_recall"
+CONSOLIDATION_TASK_ID = "task_consolidation_precision"
+TASK_OBSERVATION_SCHEMA = json.loads(
+    (ROOT / "schemas" / "task_observation_v2.schema.json").read_text(encoding="utf-8")
+)
+
+
+@pytest.fixture(scope="module")
+def task_prompt_text() -> str:
+    return load_prompt(ROOT, TASK_ID)["text"]
+
+
+def test_the_task_successor_is_first_and_the_unresolved_prompts_are_retained():
+    assert EXTRACTION_PROMPTS["task_extraction"] == (
+        TASK_ID,
+        RETIRED_TASK_ID,
+        CONSOLIDATION_TASK_ID,
+    )
+    plan = single_pass_prompt_plan("task_extraction")
+    assert plan == {
+        "prompt_id": TASK_ID,
+        "prompt_pass_index": 1,
+        "prompt_sequence_length": 3,
+        "prompt_sequence_complete": False,
+    }
+
+
+@pytest.mark.parametrize("prompt_id", [RETIRED_TASK_ID, CONSOLIDATION_TASK_ID])
+def test_the_retained_task_prompts_bytes_are_untouched(prompt_id):
+    """Superseding adds a file; it never edits one -- no chain has ever resolved
+    either retained prompt, but a frozen prompt is never deleted."""
+    import subprocess
+
+    committed = subprocess.check_output(
+        ["git", "show", f"HEAD:prompts/extraction/{prompt_id}.md"], cwd=ROOT
+    )
+    on_disk = (ROOT / "prompts" / "extraction" / f"{prompt_id}.md").read_bytes()
+    assert on_disk == committed
+
+
+def test_the_retired_task_prompt_could_not_have_conformed():
+    """The CR-0008 measurement, asserted rather than described: only three of
+    eleven required fields are named at all, and none of them is the
+    identifier or attribution machinery a conforming record needs."""
+    text = (ROOT / "prompts" / "extraction" / f"{RETIRED_TASK_ID}.md").read_text(
+        encoding="utf-8"
+    )
+    missing = [
+        field for field in TASK_OBSERVATION_SCHEMA["required"] if field not in text
+    ]
+    assert set(missing) == {
+        "task_observation_id",
+        "company_id",
+        "observation_cutoff",
+        "product_observation_id",
+        "capability_observation_ids",
+        "normalized_task",
+        "customer_need",
+        "availability_status",
+    }
+
+
+def test_the_task_prompt_binds_to_the_same_vocabulary(task_prompt_text, vocabulary):
+    """The S1-S8 vocabulary, reused rather than a second one minted for tasks."""
+    parsed = validate_prompt_vocabulary_binding(
+        prompt_text=task_prompt_text, vocabulary=vocabulary
+    )
+    for label in AVAILABILITY_PARTITION_FIELDS:
+        assert parsed[label] == vocabulary[label]
+
+
+def test_the_task_prompt_uses_every_bound_placeholder_and_the_required_ones(
+    task_prompt_text,
+):
+    import re
+
+    from dynamic_ai_products.extraction.contents_renderer import (
+        STAGE_PLACEHOLDER_BINDINGS,
+        STAGE_REQUIRED_PLACEHOLDERS,
+    )
+
+    used = set(re.findall(r"\{\{([a-z_]+)\}\}", task_prompt_text))
+    assert used == set(STAGE_PLACEHOLDER_BINDINGS["task_extraction"])
+    assert set(STAGE_REQUIRED_PLACEHOLDERS["task_extraction"]) <= used
+
+
+def test_the_task_prompt_asks_for_labels_and_no_identifier(task_prompt_text):
+    text = task_prompt_text
+    assert '"C1"' in text and '"C9"' in text and '"C13"' in text
+    assert '{"ref": ..., "quote": ...}' in text
+    assert "Never emit `source_id` or `passage_id`" in text
+    assert "Do **not** emit an identifier of any kind" in text
+
+
+def test_the_task_prompt_renders_the_generated_status_table(task_prompt_text):
+    from dynamic_ai_products.extraction.availability_vocabulary import (
+        status_label_table,
+    )
+
+    for label, token in status_label_table():
+        assert f"{label}  =  {token}" in task_prompt_text
+
+
+def test_the_task_prompt_names_every_field_the_model_must_supply(task_prompt_text):
+    for field in ("task", "customer_need", "capability_refs",
+                  "availability_status", "confidence", "evidence"):
+        assert f"`{field}`" in task_prompt_text
+    # Optional, on the evidence-supported-or-omitted rule already established
+    # for the capability stage's input_types/output_types.
+    for field in ("target_customer", "monetization_model", "task_components",
+                  "ai_action_observed", "ambiguity"):
+        assert f"`{field}`" in task_prompt_text, field
+        assert field in TASK_OBSERVATION_SCHEMA["properties"], field
+        assert field not in TASK_OBSERVATION_SCHEMA["required"], field
+
+
+def test_the_derived_task_fields_are_named_only_as_derived(task_prompt_text):
+    """The four the pipeline owns -- plus company_id/observation_cutoff, which
+    this prompt never mentions at all, unlike the product stage's prompt."""
+    forbidden_block = task_prompt_text.split(
+        "Do **not** emit an identifier of any kind", 1
+    )[1]
+    for derived in ("task_observation_id", "product_observation_id",
+                    "capability_observation_ids", "normalized_task"):
+        assert derived in forbidden_block, derived
+    assert "company_id" not in task_prompt_text
+    assert "observation_cutoff" not in task_prompt_text
+
+
+def test_the_task_prompt_never_asks_for_a_role_or_a_parent_label(task_prompt_text):
+    """Two things a task prompt must not ask for, for two different reasons:
+    ``task_role`` is a later consolidation-pass decision (the predecessor
+    prompt's own instruction, carried forward), and a parent product label is
+    unnecessary -- task discovery renders one product per call, so the
+    pipeline already knows it and injects it directly (ADR-069)."""
+    assert "task_role" in task_prompt_text  # named, to forbid it
+    assert "`parent_ref`" not in task_prompt_text
+    assert '"A0' not in task_prompt_text
+
+
+def test_the_task_prompt_c0n_is_unpadded_from_its_first_version(task_prompt_text):
+    """ADR-069: applying ADR-064's measurement before a live call can repeat it.
+
+    Distinct from ADR-064's own capability-stage fix, which corrected an
+    instruction that had already caused two live failures. Nothing here has
+    ever run against a model; the point is that the instruction and the
+    renderer already agree on day one.
+    """
+    from dynamic_ai_products.extraction.contents_renderer import (
+        capability_ref_label,
+    )
+
+    assert capability_ref_label(13) == "C13"
+    assert "no fixed width and no leading zeros" in task_prompt_text
+    assert "at least two digits" not in task_prompt_text
+    assert "at least three digits" not in task_prompt_text
+
+
+def test_the_task_prompt_states_the_quote_bound(task_prompt_text):
+    """ADR-065's rule, applied to this prompt's first version rather than
+    added to a predecessor that shipped without it."""
+    assert "1 to 3\n  sentences" in task_prompt_text
+    assert "without joining text across a gap" in task_prompt_text
+    assert "- Every `quote` is 1 to 3 sentences, contiguous, and copied exactly." in (
+        task_prompt_text
+    )
+
+
+def test_the_task_prompt_governing_spec_is_spec_010(task_prompt_text):
+    assert "`SPEC-010`" in task_prompt_text

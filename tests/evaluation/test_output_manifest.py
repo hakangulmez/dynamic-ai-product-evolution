@@ -805,7 +805,9 @@ def test_repo_manifest_count_and_paths():
     # successor schema, which declares the raised output ceiling.
     # 610 = 609 + the one ADR-068 path: the task_observation successor
     # schema, which adds the normalized_task slug C3 reads.
-    assert "Total tracked/scaffold files listed: **610**" in text
+    # 612 = 610 + the two ADR-069 paths: the schema-bound task successor
+    # prompt and the change request its qualification record pins.
+    assert "Total tracked/scaffold files listed: **612**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

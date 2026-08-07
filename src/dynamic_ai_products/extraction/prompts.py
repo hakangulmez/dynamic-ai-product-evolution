@@ -42,6 +42,7 @@ KNOWN_PROMPT_REGISTRY_VERSIONS: tuple[str, ...] = (
     "extraction_prompt_registry_v5",
     "extraction_prompt_registry_v6",
     "extraction_prompt_registry_v7",
+    "extraction_prompt_registry_v8",
 )
 
 # ADR-053 (G6-P). ``v1`` -> ``v2``: the product_extraction sequence gained a
@@ -68,7 +69,16 @@ KNOWN_PROMPT_REGISTRY_VERSIONS: tuple[str, ...] = (
 # ADR-065. ``v6`` -> ``v7``: a capability successor takes position one, bounding
 # the evidence quote to one to three sentences. The passage container is about
 # to grow; the quote should not grow with it.
-PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v7"
+#
+# ADR-068, then ADR-069. ``v7`` -> ``v8``: the task stage gains a schema-bound
+# successor at position one, ``task_discovery_schema_v1``. It cites capabilities
+# by an unpadded ``C0N`` label from the start rather than after a measured
+# failure -- ADR-064's lesson applied pre-emptively, because every product's
+# capability count passes through the single-digit range the P25 defect lived
+# in -- cites passages by the already-unpadded ``P0N`` a task render carries,
+# and bounds its evidence quote to one to three sentences, matching ADR-065's
+# rule for the capability stage.
+PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v8"
 
 # Stage -> ordered prompt ids. Labels live here, never inside a frozen prompt.
 EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
@@ -109,7 +119,21 @@ EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
         # fields, so a single pass no longer executes it.
         "capability_extraction",
     ),
-    "task_extraction": ("task_discovery_recall", "task_consolidation_precision"),
+    "task_extraction": (
+        # ADR-069 (CR-0008). Position one. States the output contract
+        # explicitly, cites capabilities by unpadded ``C0N`` and passages by
+        # unpadded ``P0N``, carries the closed availability vocabulary as
+        # literal text, and bounds the evidence quote to one to three
+        # sentences.
+        "task_discovery_schema_v1",
+        # Retained, not retired: this prompt states no output contract at all
+        # and could not have produced a conforming ``task_observation`` record
+        # (the CR-0005 defect, one stage on). No chain has ever resolved it, so
+        # nothing depends on its bytes staying reachable except the general
+        # rule that a frozen prompt is never deleted.
+        "task_discovery_recall",
+        "task_consolidation_precision",
+    ),
 }
 
 # Code-owned and closed. A prompt in this set carries the availability
@@ -124,6 +148,12 @@ VOCABULARY_BOUND_PROMPT_IDS = frozenset(
         "capability_discovery_schema_v1",
         "capability_discovery_schema_v2",
         "capability_discovery_schema_v3",
+        # ADR-069. ``availability_status`` is an unconstrained string in
+        # ``task_observation_v2.schema.json`` too, so C5 has the same job at
+        # the task stage, and the prompt carries the same four labelled lists
+        # -- the same S1-S8 vocabulary the capability stage uses, not a new
+        # one minted for tasks.
+        "task_discovery_schema_v1",
     }
 )
 

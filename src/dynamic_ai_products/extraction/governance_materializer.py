@@ -165,8 +165,9 @@ _WINDOW_FIELDS: tuple[str, ...] = (
 # ADR-061): a constant written when only one stage existed, wrong the moment a
 # second one did.
 #
-# Closed and fail-closed. ``task_extraction`` is absent because it has no
-# qualified prompt; when it does, it is added on purpose.
+# Closed and fail-closed. ``task_extraction`` was absent through ADR-068
+# because it had no qualified prompt; ADR-069 adds it, on purpose, the moment
+# ``task_discovery_schema_v1`` exists to be qualified against.
 #
 # Known limitation, stated rather than implied: this map records *which change
 # request is current*, so it must be updated whenever a stage's prompt is
@@ -186,6 +187,14 @@ STAGE_CHANGE_REQUEST: dict[str, str] = {
     "capability_extraction": (
         "evals/change_requests/"
         "CR-0007-capability-discovery-schema-v3-bootstrap-qualification.md"
+    ),
+    # ADR-069 (E-T1 governance wiring). The task stage's first schema-bound
+    # prompt, the same CR-0005 shape one stage on: a prompt whose declared
+    # output contract was not the released schema, replaced by one that states
+    # it explicitly.
+    "task_extraction": (
+        "evals/change_requests/"
+        "CR-0008-task-discovery-schema-v1-bootstrap-qualification.md"
     ),
 }
 
