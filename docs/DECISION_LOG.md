@@ -3387,6 +3387,210 @@ one successor schema file, one registry entry, one manifest-count guard, and
 test rebaselines. `client_contract.py` is untouched. No prompt, no corpus, no
 snapshot, no governance root, no run root and no published artifact changes.
 
+## ADR-068 — The third observation kind: `task`, one product at a time (E-T1)
+
+**Status:** Accepted.
+
+**Why now.** Product and capability recall have both proven the same shape:
+render a placeholder-free prompt over governed parent context, gate the
+model's output at the collection level (C1-C8), and hand the accepted
+candidates to a human decision set. Task discovery is next in the dependency
+chain -- a task is performed through a capability, which belongs to a product
+-- and the thing it was waiting for now exists: Snapshot B is persisted and
+reconciled by the packet builder, exactly as Snapshot A was the trigger for
+ADR-058.
+
+**`task` joins `product` and `capability` in `OBSERVATION_KINDS`, in
+dependency order.** `candidates.derive_identity_fields` and
+`assert_candidate_conformance` gain a third branch. The task identity is keyed
+on its product, not on the capabilities it cites:
+`task_observation_id = f"{product_observation_id}:{slug(task)}"`.
+Deliberately not capability-keyed --
+`capability_observation_ids` is an array, so an id derived from it would
+depend on how many capabilities were cited and in what order, and two records
+naming the same task through a different capability count would collide or
+not depending on list ordering rather than on what the task actually is. The
+collision scope falls out of the same formula that already governs capability
+identity: two products may host the same task without colliding, because the
+id begins with its own parent's.
+
+**C9 and C10, the capability-side counterpart to C7.** C7 already proves a
+capability's `product_observation_id` names a human-admitted Snapshot A
+member; the task stage runs C7 against its own product for the same reason.
+C9 is one level on: it proves every id in `capability_observation_ids` names a
+human-admitted Snapshot B member (`candidate_conformance_capability_not_in_
+snapshot`), and — because an empty list is schema-valid and a task is
+performed *through* a capability — a task citing zero of them is refused here
+too, not silently accepted as a task with no evidence for how it is
+accomplished. C10 (`candidate_conformance_capability_parent_mismatch`) refuses
+a cited capability that belongs to a *different* product than the task's own.
+It is structurally unreachable today -- task discovery renders one product's
+capabilities per call, so the model is never shown a second product's `C0N`
+and cannot name one -- and is written anyway. "Impossible by construction" is
+the assumption ADR-053, ADR-058, ADR-061, ADR-062 and ADR-064 each watched go
+false when the construction changed later; C10 costs one set comparison and is
+cheap insurance against the same thing happening here.
+
+**The task schema moves to a `@0.2.0` successor for one field, and the
+collection contract that wraps it gains a gap it was missing.**
+`task_observation.schema.json` (`@0.1.0`, released) has no slug field at all,
+so C3 -- the check that a name can be slugged into a stable identity, the same
+check every other kind runs -- had nothing to read. `task_observation_v2.
+schema.json` adds exactly one property, `normalized_task`, required; every
+other property, and the schema's own `additionalProperties: false` shape, is
+unchanged. The candidate-collection layer (`candidates._SCHEMA_FOR_KIND`)
+validates task candidates against the successor. Measured separately, by the
+first end-to-end attempt to materialize one:
+`extraction_candidate_collection@0.1.0`'s own `observation_kind` enum was
+still closed to `["product", "capability"]`, in both places it appears -- the
+collection's own field and each entry's copy -- and refused every task
+collection with `'task' is not one of ['product', 'capability']`, after every
+resolver and every C-check below had already passed. Both enums widen
+additively; nothing else in the schema changes.
+
+**The renderer's third stage, and the one structural difference from the
+other two.** `task_extraction` joins `MATERIALIZATION_SUPPORTED_STAGES`. Task
+discovery runs **per product**, not once over the whole validated set the way
+product and capability discovery do: `task_discovery_recall`'s own template is
+`{{company}}`/`{{cutoff}}`/`{{product}}`/`{{capabilities}}` -- singular
+`product`, not the capability stage's `{{validated_products}}` plural. That is
+a deliberate decision, not an accident of the existing prompt: rendering every
+product's capabilities into one call would repeat the exact failure ADR-063
+and ADR-065 measured on the capability stage, where 68 of 71 citations from an
+eleven-product run landed in a single section. Nine products means nine
+separate render/materialize calls for a HubSpot-shaped chain, not one.
+
+That makes the focal product a required, caller-supplied input rather than
+something the packet or the renderer can infer -- a packet carries every
+validated product, and picking one would be a guess about which call this is.
+`render_provider_contents` gains a keyword-only `focal_product_observation_id`
+parameter; omitting it on a task render fails closed with
+`focal_product_required`, a new reason code, rather than silently rendering
+the first product or every product at once.
+
+**Two label families, one of them reused rather than invented.** `P0N` is the
+passage label every stage already shares, resolved through the same
+`canonical_passage_order` all three stages call — no second sorter. `C0N` is
+new: a capability's `capability_observation_id` runs 46-111 characters on the
+pilot data (worse than the 44-character `product_observation_id` ADR-060
+replaced with `A0N`), so the model is shown a short position label instead.
+The evidence block is folded into `{{capabilities}}` rather than bound
+separately, because measured, `task_discovery_recall` carries no
+`{{passages}}` marker at all — evidence is part of what a capability *is* at
+this stage, exactly as the capability stage's own evidence lives inside each
+product-scoped section.
+
+**`C0N` is unpadded, on the ADR-064 measurement applied before it could
+repeat rather than after.** ADR-064 found the capability stage's `P0N`
+padding defect on two independent live turns -- shown `P025`, the model wrote
+`P25`, identically both times. A padded `C0N` would carry the identical risk:
+every product's capability count in the persisted HubSpot chain passes
+through the single-digit range that failure lived in -- Content Hub alone has
+thirteen -- so every one of the nine task-discovery calls this chain supports
+would have carried it, not an occasional one. `capability_ref_label` emits
+`f"C{ordinal}"` and `CAPABILITY_REF_PATTERN` is `^C(\d+)$`, the same widening
+ADR-064 made for `P0N`: an already-resolved `"C01"` still parses (`int("01")
+== int("1")`), but the label this module emits is always unpadded.
+
+**`resolve_capability_refs`, the fourth label family resolved the same way as
+the first three.** The model writes `capability_refs: ["C1", "C3"]`;
+`resolve_capability_refs` turns that into `capability_observation_ids`,
+resolved against `focal_capability_order` -- the same function
+`_bind_capabilities` uses to assign the labels in the first place, exported
+from `contents_renderer` rather than re-derived, on the same "no second
+sorter" discipline `canonical_passage_order` already keeps for `P0N`. A label
+naming a position the model was not shown is refused with its own reason code,
+`candidate_conformance_capability_ref_unresolvable`, distinct from C9 -- which
+judges the *resolved* id against Snapshot B -- exactly as `_REF_UNRESOLVABLE`
+is kept distinct from C6.
+
+**The focal product is injected, never requested.** The prompt asks for no
+product label at all, unlike the capability stage's `parent_ref`: task
+discovery renders one product per call, so the pipeline already knows
+`product_observation_id` before the call is made and does not need to trust a
+label for it. `materialize_candidate_collection` gains the same keyword-only
+`focal_product_observation_id` parameter the renderer already required, fails
+closed with the same `focal_product_required` reason code before parsing the
+model's output at all if the kind is `task` and the parameter is absent, and
+an internal `_inject_focal_product` step sets `product_observation_id`
+unconditionally on every task observation -- not a resolution of something the
+model wrote, a value supplied outright, the same way `derive_identity_fields`
+already supplies `task_observation_id` and `normalized_task`.
+
+**Two defects an adversarial review found and fixed before any of this was
+committed, reproduced by running the code rather than reading it.** Both
+turned a corrupted input into something that looked like an ordinary bad model
+answer. A capability parent with no identity resolved to `None`:
+`_parent_observation_ids` has always required an `A0N` parent's
+`observation_id` to be a non-blank string; its structural analogue for `C0N`
+did not. Reproduced: a `capability_parents` member missing `observation_id`
+produced `capability_observation_ids: [null]`, which then failed the released
+schema and was recorded as `schema_invalid` -- a corrupted packet reported as
+a bad candidate. The second consumer was worse: `_capability_observation_ids`
+coerced the missing id with `str`, making the literal string `"None"` a valid
+key in the universe C9 and C10 judge against, so C9 would have admitted a task
+citing nothing at all.
+
+Fixed at both, and the choice of *where* is the point. `focal_capability_order`
+is the single source both consumers read -- the renderer assigning `C0N` and
+`resolve_capability_refs` resolving it -- so the check belongs there, for the
+same reason `canonical_passage_order` owns the passage order; it keeps that
+module's own `contents_context_invalid`, beside its three sibling raises, the
+same shape `resolve_evidence_refs` already uses when it surfaces
+`canonical_passage_order`'s code into a candidates path. `_capability_
+observation_ids` gets its own check as well, not a duplicate: it reads **all**
+capability parents, not only the focal product's, and it validates
+`product_observation_id` too, because C10 compares against that field and a
+missing one was being compared as though `"None"` were real. The new reason
+code, `candidate_conformance_capability_context_malformed`, is kept apart from
+C9 on purpose: "the model cited a capability nobody validated" is a statement
+about the *answer*; "this run's capability context is corrupt" is a statement
+about the *question*. An operator chasing the first would never find the
+second -- ADR-055's rule, applied one level up, to the input rather than the
+output. The two pre-existing `_C9` raises inside `_capability_observation_ids`
+were moved onto it as well: they described context corruption while carrying
+a model-fault code.
+
+**C11 -- one capability, cited once.** `["C1", "C01"]` is two labels and one
+capability; resolved, it produced the same id twice. `task_observation_v2`
+declares no `uniqueItems` and C9 asks only about membership, so a reader
+counting `len(capability_observation_ids)` would have been told a task rests
+on two capabilities when it rests on one. `candidate_conformance_capability_
+cited_twice` refuses it. Two decisions inside that: the check runs on the
+**resolved ids**, because the defect is invisible in the labels -- `C1` and
+`C01` are different strings for one position -- and it refuses rather than
+deduplicating, on the same two standing rules as everything above: no silent
+repair, unknown over guess. It is numbered in sequence with C1-C10 because it
+is the same kind of thing they are: a conformance rule over a materialized
+candidate.
+
+**Not claimed.** This ADR makes the task stage materializable: it can render
+one product's capabilities, resolve what a model cites back to real
+identities, and gate the result at the collection level. It does not qualify
+`task_discovery_recall` or any prompt to run against a live model -- that
+prompt states no output contract a model could conform to, and is left
+unqualified on purpose. Wiring the stage so a live run could actually reach it
+is a separate decision, deferred to ADR-069. No provider was contacted at any
+point in this work; the two silent-failure findings above were demonstrated
+offline, against synthetic packets built to be malformed on purpose -- the
+only way they could surface at all, since the real Snapshot B carries no
+malformed member.
+
+**Scope.** `OBSERVATION_KINDS`, three new conformance checks (C9, C10, C11)
+and one new reason code for a corrupted capability context
+(`candidate_conformance_capability_context_malformed`), one new schema
+successor file (`task_observation_v2`), one additive schema-enum widening
+(`extraction_candidate_collection`, in both places `observation_kind`
+appears), one renderer stage, one new renderer parameter and one
+identically-named candidate-pipeline parameter (`focal_product_observation_id`,
+threaded through `materialize_candidate_collection`), one new resolver
+(`resolve_capability_refs`) and its own reason code
+(`candidate_conformance_capability_ref_unresolvable`), unpadded `C0N` labels
+from this stage's first version, and test coverage including an offline
+render over the real, persisted HubSpot capability chain. `STAGE_OBSERVATION_
+KIND`, `STAGE_CHANGE_REQUEST`, and any live-callable prompt for this stage are
+deliberately untouched.
+
 ## Open decisions
 
 - Required source packet by firm-year.

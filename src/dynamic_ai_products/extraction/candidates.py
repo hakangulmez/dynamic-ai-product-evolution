@@ -24,9 +24,11 @@ from .availability_vocabulary import (
     validate_availability_vocabulary,
 )
 from .contents_renderer import (
+    CAPABILITY_REF_PATTERN,
     PARENT_REF_PATTERN,
     PASSAGE_REF_PATTERN,
     canonical_passage_order,
+    focal_capability_order,
 )
 from .errors import ExtractionError
 from .input_packet import hydrate_pinned_artifact
@@ -45,6 +47,7 @@ __all__ = [
     "materialize_candidate_collection",
     "observation_kind_for_stage",
     "parse_model_observations",
+    "resolve_capability_refs",
     "resolve_evidence_refs",
     "resolve_parent_refs",
     "resolve_status_labels",
@@ -52,7 +55,10 @@ __all__ = [
 ]
 
 CANDIDATE_COLLECTION_CONTRACT = "extraction_candidate_collection@0.1.0"
-OBSERVATION_KINDS: tuple[str, ...] = ("product", "capability")
+# ADR-068 (E-T1). A third kind, on the same proven shape: single-pass recall,
+# then a human decision set. The order is the dependency order -- a capability
+# needs a product, a task needs both.
+OBSERVATION_KINDS: tuple[str, ...] = ("product", "capability", "task")
 
 # ADR-061. Which observation kind a stage produces. Closed, and deliberately
 # missing ``task_extraction``: a task is not an ``observation_kind`` and must not
@@ -92,6 +98,10 @@ def observation_kind_for_stage(stage: str) -> str:
 _SCHEMA_FOR_KIND = {
     "product": "product_observation.schema.json",
     "capability": "capability_observation.schema.json",
+    # ADR-068. The @0.2.0 successor, which requires ``normalized_task``. The
+    # released @0.1.0 schema has no slug field at all, so C3 -- the check that a
+    # name can be slugged into an identity -- had nothing to read.
+    "task": "task_observation_v2.schema.json",
 }
 
 
@@ -220,6 +230,17 @@ _REF_UNRESOLVABLE = "candidate_conformance_evidence_ref_unresolvable"
 # the second one was separate: "named a product position it was not shown" is a
 # different fault from "cited a passage that does not exist".
 _PARENT_REF_UNRESOLVABLE = "candidate_conformance_parent_ref_unresolvable"
+# ADR-069 (E-T1 governance wiring). A fourth label family, same reason again:
+# "cited a capability position the model was not shown" is its own fault,
+# distinct from C9 (which judges the *resolved* id against Snapshot B) exactly
+# as ``_REF_UNRESOLVABLE`` is distinct from C6.
+_CAPABILITY_REF_UNRESOLVABLE = "candidate_conformance_capability_ref_unresolvable"
+# The task stage's focal product is a pipeline input, never a model output
+# (ADR-068): task discovery renders one product at a time, so the pipeline
+# already knows which one this call is about. Same reason code string as
+# ``contents_renderer._require_focal`` -- one fault, one name, whichever stage
+# of the pipeline notices the caller omitted it.
+_FOCAL_PRODUCT_REQUIRED = "focal_product_required"
 # C7 has no product-side counterpart. A product observation has no parent; a
 # capability that names one outside this run's Snapshot A would be attributed to
 # something the human never admitted.
@@ -232,6 +253,37 @@ _C7 = "candidate_conformance_parent_not_in_snapshot"
 # entry of thirty-four quoted two passages 895 characters apart in the source
 # under the first one's id, and every gate admitted it.
 _C8 = "candidate_conformance_evidence_quote_uncontained"
+# ADR-068 (E-T1). C9 is to a task what C7 is to a capability, one level on: it
+# proves a human admitted every capability the task claims to be performed
+# through. Separate from C7, which the task stage also runs against its product,
+# because "named a product nobody validated" and "named a capability nobody
+# validated" are different faults with different fixes.
+_C9 = "candidate_conformance_capability_not_in_snapshot"
+# C10. All cited capabilities must belong to the task's own product.
+#
+# Structurally unreachable today: task discovery renders one product at a time,
+# so the model is never shown a second product's capabilities and cannot name
+# one. That is exactly why it is here. "Impossible by construction" is the
+# assumption ADR-053, ADR-058, ADR-061, ADR-062 and ADR-064 each watched become
+# false when the construction changed, and this check costs one set comparison.
+_C10 = "candidate_conformance_capability_parent_mismatch"
+# C11. One capability, cited once.
+#
+# ``["C1", "C01"]`` is two labels and one capability; resolved, it produced the
+# same id twice. ``task_observation_v2`` declares no ``uniqueItems`` and C9 asks
+# only about membership, so a downstream reader counting
+# ``len(capability_observation_ids)`` would have been told a task rests on two
+# capabilities when it rests on one. Refused rather than deduplicated: silently
+# collapsing the list would be a repair nobody logged, and the two rules this
+# project keeps -- no silent repair, unknown over guess -- both point the same
+# way. The check runs on the *resolved* ids, because the defect is invisible in
+# the labels: ``C1`` and ``C01`` are different strings for one position.
+_C11 = "candidate_conformance_capability_cited_twice"
+# Not a conformance failure at all: the packet's own capability context is
+# corrupt. Kept apart from C9 -- "the model cited a capability nobody
+# validated" is a statement about the answer, this is a statement about the
+# question, and an operator chasing the first would never find the second.
+_CAPABILITY_CONTEXT_MALFORMED = "candidate_conformance_capability_context_malformed"
 
 
 def slugify_product_name(product_name: Any) -> str:
@@ -299,6 +351,23 @@ def derive_identity_fields(
             reason_code="observation_kind_invalid",
         )
     derived = dict(observation)
+    if observation_kind == "task":
+        # ADR-068. Keyed on the product, not on the capabilities.
+        # ``capability_observation_ids`` is an array, so a capability-derived id
+        # would depend on how many were cited and in what order -- two tasks of
+        # one product could collide or not depending on a list's ordering.
+        # ``product_observation_id`` is singular and schema-required, and the
+        # collision scope falls out of the formula exactly as it does for a
+        # capability: the id begins with its parent's.
+        normalized = slugify_product_name(derived.get("task"))
+        parent = derived.get("product_observation_id")
+        derived["company_id"] = company_id
+        derived["observation_cutoff"] = observation_cutoff
+        derived["normalized_task"] = normalized
+        derived["task_observation_id"] = (
+            f"{parent}:{normalized}" if isinstance(parent, str) and parent else ""
+        )
+        return derived
     if observation_kind == "capability":
         normalized = slugify_product_name(derived.get("capability"))
         parent = derived.get("product_observation_id")
@@ -313,6 +382,48 @@ def derive_identity_fields(
     derived["normalized_name"] = normalized
     derived["product_observation_id"] = f"{company_id}:{observation_cutoff}:{normalized}"
     return derived
+
+
+def _capability_observation_ids(packet: dict[str, Any]) -> dict[str, str]:
+    """Accepted capability id -> the product it belongs to.
+
+    Read from ``parent_context.capability_parents``, which the packet builder
+    produced by re-reading and hash-verifying every Snapshot B member. Same
+    source the ``C0N`` labels were assigned from, so a label cannot mean one
+    capability in the instruction and another here.
+    """
+    context = packet.get("parent_context")
+    parents = context.get("capability_parents") if isinstance(context, dict) else None
+    if not isinstance(parents, list) or not parents:
+        raise ExtractionError(
+            "the task stage requires verified capability context",
+            reason_code=_CAPABILITY_CONTEXT_MALFORMED,
+        )
+    out: dict[str, str] = {}
+    for parent in parents:
+        payload = parent.get("payload") if isinstance(parent, dict) else None
+        if not isinstance(payload, dict):
+            raise ExtractionError(
+                "each parent capability must carry its verified payload",
+                reason_code=_CAPABILITY_CONTEXT_MALFORMED,
+            )
+        # Defence in depth. ``focal_capability_order`` already refuses a member
+        # with no identity, and this reads the same context -- but it reads
+        # *all* capability parents, not only the focal product's, and it is the
+        # universe C9 and C10 judge against. Coercing a missing id with ``str``
+        # produced the literal ``"None"`` as a key, which would make C9 admit a
+        # task citing nothing at all.
+        observation_id = parent.get("observation_id")
+        owner = payload.get("product_observation_id")
+        for value, what in ((observation_id, "observation_id"),
+                            (owner, "product_observation_id")):
+            if not isinstance(value, str) or not value.strip():
+                raise ExtractionError(
+                    f"a verified capability carries no {what}",
+                    reason_code=_CAPABILITY_CONTEXT_MALFORMED,
+                )
+        out[observation_id] = owner
+    return out
 
 
 def _parent_observation_ids(packet: dict[str, Any]) -> tuple[str, ...]:
@@ -448,6 +559,103 @@ def resolve_evidence_refs(observation: Any, *, packet: dict[str, Any]) -> Any:
     return updated
 
 
+def _require_focal_product(focal_product_observation_id: str | None) -> str:
+    """The focal product id, or a refusal. Never inferred from the packet.
+
+    Mirrors ``contents_renderer._require_focal`` -- same question, same reason
+    code -- because the two are one design decision, not two: task discovery
+    renders one product per call, so nothing downstream of the render can
+    legitimately guess which product a given call was about either.
+    """
+    if not isinstance(focal_product_observation_id, str) or not focal_product_observation_id.strip():
+        raise ExtractionError(
+            "the task stage renders one product at a time and requires "
+            "focal_product_observation_id",
+            reason_code=_FOCAL_PRODUCT_REQUIRED,
+        )
+    return focal_product_observation_id
+
+
+def resolve_capability_refs(
+    observation: Any, *, packet: dict[str, Any], focal_product_observation_id: str | None
+) -> Any:
+    """Turn ``capability_refs: ["C1", "C3"]`` into the capability ids they name.
+
+    The fourth label family, resolved the same way as the passage and parent
+    ones. A capability's ``capability_observation_id`` runs 46 to 111
+    characters on the pilot data (ADR-068), so the model is not asked to
+    transcribe it; it copies the short ``C0N`` label the renderer assigned
+    instead.
+
+    **The same ordering the renderer labelled, not a second one.**
+    :func:`~.contents_renderer.focal_capability_order` is the one function that
+    decides what ``C0N`` names, for both the render and this resolution --
+    exactly the discipline ``canonical_passage_order`` already keeps for
+    ``P0N``. A resolver that re-derived the order here could agree with the
+    renderer today and silently disagree the day the packet builder's own
+    ordering changes.
+
+    Scope is narrow, as with the other three resolvers: only a dict observation
+    carrying ``capability_refs`` is touched, and the key is replaced by
+    ``capability_observation_ids`` so the released schema -- which knows
+    ``capability_observation_ids``, not ``capability_refs`` -- accepts the
+    result.
+    """
+    if not isinstance(observation, dict) or "capability_refs" not in observation:
+        return observation
+    refs = observation["capability_refs"]
+    if not isinstance(refs, list):
+        raise ExtractionError(
+            "capability_refs must be a list of C0N labels",
+            reason_code=_CAPABILITY_REF_UNRESOLVABLE,
+        )
+
+    focal = _require_focal_product(focal_product_observation_id)
+    ordered = focal_capability_order(packet, focal)
+    capability_ids = [parent.get("observation_id") for parent in ordered]
+
+    resolved_ids: list[Any] = []
+    for label in refs:
+        match = CAPABILITY_REF_PATTERN.fullmatch(label) if isinstance(label, str) else None
+        if match is None:
+            raise ExtractionError(
+                f"capability_refs cites {label!r}, which is not a capability label",
+                reason_code=_CAPABILITY_REF_UNRESOLVABLE,
+            )
+        ordinal = int(match.group(1))
+        if not 1 <= ordinal <= len(capability_ids):
+            raise ExtractionError(
+                f"capability_refs cites {label!r}, but only {len(capability_ids)} "
+                "capabilities were shown to the model",
+                reason_code=_CAPABILITY_REF_UNRESOLVABLE,
+            )
+        resolved_ids.append(capability_ids[ordinal - 1])
+
+    updated = {key: value for key, value in observation.items() if key != "capability_refs"}
+    updated["capability_observation_ids"] = resolved_ids
+    return updated
+
+
+def _inject_focal_product(
+    observation: Any, *, observation_kind: str, focal_product_observation_id: str | None
+) -> Any:
+    """Set ``product_observation_id`` to the pipeline's own focal id.
+
+    Task-kind only, and unconditional once it applies -- this is not resolving
+    a label the model wrote, it is supplying a value the model was never asked
+    for at all (ADR-069). Task discovery renders one product at a time, so the
+    pipeline already knows the answer before the call is made; asking the model
+    to name its own parent would reopen exactly the transcription risk
+    ``parent_ref`` exists to avoid at the capability stage, for no reason, since
+    here the pipeline does not even need to trust a label -- it knows.
+    """
+    if observation_kind != "task" or not isinstance(observation, dict):
+        return observation
+    updated = dict(observation)
+    updated["product_observation_id"] = _require_focal_product(focal_product_observation_id)
+    return updated
+
+
 def resolve_status_labels(observation: Any) -> Any:
     """Turn the ``availability_status`` label into the status it names.
 
@@ -528,7 +736,7 @@ def assert_candidate_conformance(
     schema_root: str | Path = "schemas",
     observation_kind: str = "product",
 ) -> None:
-    """C1 through C8, atomic at the **collection** level.
+    """C1 through C11, atomic at the **collection** level.
 
     Applied only to items that already pass a pure pre-schema check, so a
     non-object or a schema failure reaches ``build_candidate_collection`` and is
@@ -552,6 +760,7 @@ def assert_candidate_conformance(
             reason_code="observation_kind_invalid",
         )
     capability = observation_kind == "capability"
+    task = observation_kind == "task"
     company_id = packet["company_id"]
     cutoff = packet["observation_cutoff_date"]
     admitted = set(vocabulary["admitted_status_values"])
@@ -566,7 +775,10 @@ def assert_candidate_conformance(
     validator = _validator(schema_root, observation_kind)
     # C7's universe. Read once, from the same verified parent context the labels
     # were assigned from.
-    parents = set(_parent_observation_ids(packet)) if capability else set()
+    parents = set(_parent_observation_ids(packet)) if capability or task else set()
+    # C9/C10's universe. Read once, from the same verified parent context the
+    # ``C0N`` labels were assigned from.
+    capability_owner = _capability_observation_ids(packet) if task else {}
 
     seen: dict[str, str] = {}
     for ordinal, observation in enumerate(observations):
@@ -575,7 +787,54 @@ def assert_candidate_conformance(
         if any(validator.iter_errors(observation)):
             continue
 
-        if capability:
+        if task:
+            # C7 applies to the task's product exactly as it does to a
+            # capability's: a human must have admitted the parent.
+            parent = observation.get("product_observation_id")
+            if parent not in parents:
+                raise ExtractionError(
+                    f"C7: observation {ordinal} attributes a task to {parent!r}, "
+                    "which is not a validated product of this run",
+                    reason_code=_C7,
+                )
+            cited = observation.get("capability_observation_ids")
+            if not isinstance(cited, list) or not cited:
+                raise ExtractionError(
+                    f"C9: observation {ordinal} cites no capability; a task is "
+                    "performed through at least one",
+                    reason_code=_C9,
+                )
+            if len(set(cited)) != len(cited):
+                duplicated = sorted({c for c in cited if cited.count(c) > 1})
+                raise ExtractionError(
+                    f"C11: observation {ordinal} cites the same capability more "
+                    f"than once: {duplicated}",
+                    reason_code=_C11,
+                )
+            for capability_id in cited:
+                if capability_id not in capability_owner:
+                    raise ExtractionError(
+                        f"C9: observation {ordinal} cites {capability_id!r}, which "
+                        "is not a validated capability of this run",
+                        reason_code=_C9,
+                    )
+                if capability_owner[capability_id] != parent:
+                    raise ExtractionError(
+                        f"C10: observation {ordinal} cites a capability of another "
+                        f"product; the task is attributed to {parent!r}",
+                        reason_code=_C10,
+                    )
+            if observation.get("company_id") != company_id:
+                raise ExtractionError(
+                    f"C1: observation {ordinal} declares another company",
+                    reason_code=_C1,
+                )
+            if observation.get("observation_cutoff") != cutoff:
+                raise ExtractionError(
+                    f"C2: observation {ordinal} declares another cutoff",
+                    reason_code=_C2,
+                )
+        elif capability:
             # C7 replaces C1 and C2 rather than sitting beside them. A
             # capability record carries no company_id and no observation_cutoff
             # -- measured: neither is in ``capability_observation@0.1.0``. Both
@@ -603,9 +862,15 @@ def assert_candidate_conformance(
                     reason_code=_C2,
                 )
 
-        slug_field = "normalized_capability" if capability else "normalized_name"
-        source_field = "capability" if capability else "product_name"
-        id_field = "capability_observation_id" if capability else "product_observation_id"
+        slug_field, source_field, id_field = {
+            "product": ("normalized_name", "product_name", "product_observation_id"),
+            "capability": (
+                "normalized_capability",
+                "capability",
+                "capability_observation_id",
+            ),
+            "task": ("normalized_task", "task", "task_observation_id"),
+        }[observation_kind]
         normalized = observation.get(slug_field)
         if not isinstance(normalized, str) or not _SLUG_GRAMMAR.fullmatch(normalized):
             raise ExtractionError(
@@ -615,7 +880,7 @@ def assert_candidate_conformance(
             )
         expected_id = (
             f"{observation.get('product_observation_id')}:{normalized}"
-            if capability
+            if capability or task
             else f"{company_id}:{cutoff}:{normalized}"
         )
         if observation.get(id_field) != expected_id:
@@ -683,11 +948,13 @@ def materialize_candidate_collection(
     repo_root: str | Path,
     schema_root: str | Path = "schemas",
     observation_kind: str = "product",
+    focal_product_observation_id: str | None = None,
 ) -> dict[str, str]:
     """Parse, derive, gate, build, validate, write once. Returns the pin.
 
     ``observation_kind`` defaults to ``product``, so every existing caller and
-    every published run is unaffected.
+    every published run is unaffected. ``focal_product_observation_id`` is
+    unused by both existing kinds and defaults to ``None`` for the same reason.
 
     The vocabulary is hydrated through the shared containment-and-digest loader
     and re-validated by its own loader, so the set C5 uses is the artifact's and
@@ -699,6 +966,13 @@ def materialize_candidate_collection(
     which is deferred. Until then a caller could point this at a different
     vocabulary, and only review would catch it.
     """
+    # ADR-069. Checked before parsing, exactly as the renderer refuses a
+    # focal-less task render before consulting any binding: a task run that
+    # cannot name its own product should not spend the cost of parsing the
+    # model's output first.
+    if observation_kind == "task":
+        _require_focal_product(focal_product_observation_id)
+
     vocabulary = validate_availability_vocabulary(
         hydrate_pinned_artifact(
             vocabulary_root,
@@ -714,14 +988,24 @@ def materialize_candidate_collection(
     # Every resolution runs before any schema check, and the order is a
     # dependency chain, not a preference: reference resolution supplies
     # ``source_id``/``passage_id``, parent resolution supplies
-    # ``product_observation_id``, and the capability identity is *derived from*
-    # that parent id -- so derivation must come last. All of them are
-    # schema-required fields the model was never asked for.
+    # ``product_observation_id``, capability-ref resolution and focal injection
+    # supply ``capability_observation_ids``/``product_observation_id`` for the
+    # task kind, and the task identity is *derived from* that parent id -- so
+    # derivation must come last. All of them are schema-required fields the
+    # model was never asked for.
     derived = [
         derive_identity_fields(
             resolve_status_labels(
-                resolve_evidence_refs(
-                    resolve_parent_refs(observation, packet=packet), packet=packet
+                _inject_focal_product(
+                    resolve_capability_refs(
+                        resolve_evidence_refs(
+                            resolve_parent_refs(observation, packet=packet), packet=packet
+                        ),
+                        packet=packet,
+                        focal_product_observation_id=focal_product_observation_id,
+                    ),
+                    observation_kind=observation_kind,
+                    focal_product_observation_id=focal_product_observation_id,
                 )
             ),
             company_id=packet["company_id"],

@@ -68,7 +68,9 @@ def _build(observations, kind="product"):
 
 
 def test_declared_kinds():
-    assert OBSERVATION_KINDS == ("product", "capability")
+    # ADR-068 adds the third, in dependency order: a capability needs a
+    # product, a task needs both.
+    assert OBSERVATION_KINDS == ("product", "capability", "task")
     assert CANDIDATE_COLLECTION_CONTRACT == "extraction_candidate_collection@0.1.0"
 
 
@@ -145,9 +147,11 @@ def test_a_product_observation_is_not_accepted_as_a_capability():
     assert collection["rejected"][0]["reason"] == "schema_invalid"
 
 
-def test_an_unknown_observation_kind_is_refused():
+@pytest.mark.parametrize("kind", ["", "tasks", "Task", "mystery", None, 7])
+def test_an_unknown_observation_kind_is_refused(kind):
+    """ADR-068 made "task" a real kind, so the probe names ones that are not."""
     with pytest.raises(ExtractionError) as excinfo:
-        _build([_product()], kind="task")
+        _build([_product()], kind=kind)
     assert excinfo.value.reason_code == "observation_kind_invalid"
 
 

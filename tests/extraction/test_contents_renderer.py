@@ -10,6 +10,7 @@ and that anything unresolvable fails closed instead of being sent.
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
 import pytest
 
@@ -87,7 +88,7 @@ def test_the_renderer_declares_a_version():
 
 
 def test_the_stage_binding_map_is_closed_and_stage_scoped():
-    """ADR-058 (E-S1): the capability stage now binds; the task stage does not."""
+    """ADR-058 (E-S1) added the capability stage; ADR-068 (E-T1) the task one."""
     assert set(STAGE_PLACEHOLDER_BINDINGS) == {
         "product_extraction",
         "capability_extraction",
@@ -104,10 +105,19 @@ def test_the_stage_binding_map_is_closed_and_stage_scoped():
         "passages_with_ids",
         "validated_products",
     }
+    # The task stage's placeholder names are its own frozen prompt's, not the
+    # other two stages' vocabulary: measured, ``task_discovery_recall`` says
+    # ``{{company}}`` and carries no ``{{passages}}`` at all.
+    assert set(STAGE_PLACEHOLDER_BINDINGS["task_extraction"]) == {
+        "company",
+        "cutoff",
+        "product",
+        "capabilities",
+    }
     # Offered to the capability stage only: the product stage has no parents, and
     # a placeholder a stage cannot legitimately fill has no business in its map.
     assert "validated_products" not in STAGE_PLACEHOLDER_BINDINGS["product_extraction"]
-    assert STAGE_PLACEHOLDER_BINDINGS["task_extraction"] == {}
+    assert "passages_with_ids" not in STAGE_PLACEHOLDER_BINDINGS["task_extraction"]
 
 
 # --- resolution ---------------------------------------------------------------
@@ -198,15 +208,20 @@ def test_an_unbound_placeholder_is_refused():
     assert excinfo.value.reason_code == "contents_placeholder_unbound"
 
 
-def test_the_task_stage_still_fails_closed():
-    """E-D stays blocked: it needs Snapshot B, which does not exist yet."""
+def test_the_task_stage_refuses_without_a_focal_product():
+    """ADR-068. Materializable is not the same as renderable from any packet.
+
+    A packet carries every validated product; task discovery is about one. The
+    renderer will not pick, so a task render with no focal product is refused
+    rather than silently choosing the first.
+    """
     with pytest.raises(ExtractionError) as excinfo:
         render_provider_contents(
             stage="task_extraction",
             prompt_text="{{product}} {{capabilities}} {{company}} {{cutoff}}",
             packet=_packet(),
         )
-    assert excinfo.value.reason_code == "contents_placeholder_unbound"
+    assert excinfo.value.reason_code == "focal_product_required"
 
 
 def test_an_unbound_placeholder_is_still_refused_on_the_capability_stage():
@@ -220,7 +235,7 @@ def test_an_unbound_placeholder_is_still_refused_on_the_capability_stage():
     assert excinfo.value.reason_code == "contents_placeholder_unbound"
 
 
-def test_two_stages_are_materialization_supported():
+def test_all_three_stages_are_materialization_supported():
     from dynamic_ai_products.extraction.contents_renderer import (
         MATERIALIZATION_SUPPORTED_STAGES,
     )
@@ -228,6 +243,7 @@ def test_two_stages_are_materialization_supported():
     assert MATERIALIZATION_SUPPORTED_STAGES == (
         "product_extraction",
         "capability_extraction",
+        "task_extraction",
     )
 
 
@@ -555,13 +571,19 @@ def test_the_two_stages_render_the_same_passage_under_different_labels():
 
 
 def test_the_required_placeholder_map_is_closed_and_narrow():
-    """Only the capability stage requires anything, and only one marker."""
+    """Two stages require something; the product stage still requires nothing.
+
+    ADR-068 adds the task stage's pair for ADR-058's reason: ``task_observation``
+    requires both a product and the capabilities the task is performed through,
+    so a prompt naming neither could not produce a conforming record.
+    """
     from dynamic_ai_products.extraction.contents_renderer import (
         STAGE_REQUIRED_PLACEHOLDERS,
     )
 
     assert STAGE_REQUIRED_PLACEHOLDERS == {
-        "capability_extraction": ("validated_products",)
+        "capability_extraction": ("validated_products",),
+        "task_extraction": ("product", "capabilities"),
     }
     assert "product_extraction" not in STAGE_REQUIRED_PLACEHOLDERS
 
@@ -583,3 +605,216 @@ def test_the_product_stage_is_not_subject_to_the_requirement():
         stage="product_extraction", prompt_text="{{cutoff}}", packet=_packet()
     )
     assert rendered == "2024-12-31"
+
+
+# --- ADR-068 (E-T1): the task binding, over the real HubSpot chain ----------
+
+REAL_CAP_ROOT = (
+    Path(__file__).resolve().parents[2] / "data/runs/decisions-ext-smoke-cap-0005-0001"
+)
+REAL_PRODUCT_ROOT = (
+    Path(__file__).resolve().parents[2] / "data/runs/decisions-ext-smoke-0006-0002"
+)
+REAL_SNAPSHOT = (
+    Path(__file__).resolve().parents[2] / "data/runs/srcsnap-hubspot-fy2024-sec-v2"
+)
+TASK_PROMPT = (
+    Path(__file__).resolve().parents[2] / "prompts/extraction/task_discovery_recall.md"
+)
+
+requires_real_chain = pytest.mark.skipif(
+    not (REAL_CAP_ROOT / "snapshots/parent_observation_snapshot_b.json").exists(),
+    reason="the persisted HubSpot capability chain is not present in this checkout",
+)
+
+
+PRODUCT_DECISIONS = "decisions/product_extraction_validation_decision_set.json"
+
+
+def _real_task_packet(tmp_path=None):
+    """A task packet over the persisted chain, from its own root.
+
+    All four pins resolve inside ``decisions-ext-smoke-cap-0005-0001``: Snapshot
+    A and the product decision set are byte-identical copies of the product
+    root's originals, carried forward because ``build_extraction_input_packet``
+    resolves every pin against one ``artifact_root``. The product set takes a
+    distinct filename because the canonical one is already the capability set's.
+    """
+    import hashlib
+    import json
+
+    from dynamic_ai_products.extraction.input_packet import (
+        build_extraction_input_packet,
+    )
+
+    root = REAL_CAP_ROOT
+    product_decisions = PRODUCT_DECISIONS
+
+    def sha(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    def lines(name):
+        return [
+            json.loads(line)
+            for line in (REAL_SNAPSHOT / name).read_text().splitlines()
+            if line.strip()
+        ]
+
+    documents = lines("source_documents.jsonl")
+    repo = Path(__file__).resolve().parents[2]
+    coverage = "data/runs/ing-783d01075ef04858a22ba5743395bb9c/manifests/source_family_coverage.json"
+    manifest = "data/runs/srcsnap-hubspot-fy2024-sec-v2/snapshots/source_passage_snapshot_manifest.json"
+    return build_extraction_input_packet(
+        stage="task_extraction",
+        company_id="CIK0001404655",
+        observation_cutoff_date="2025-02-12",
+        passages=lines("source_passages.jsonl"),
+        document_publication_dates={
+            d["source_id"]: d["publication_date"] for d in documents
+        },
+        coverage_artifact={"reference": coverage, "sha256": sha(repo / coverage)},
+        source_snapshot_manifest={"reference": manifest, "sha256": sha(repo / manifest)},
+        artifact_root=root,
+        snapshot_a_pin={
+            "reference": "snapshots/parent_observation_snapshot_a.json",
+            "sha256": sha(root / "snapshots/parent_observation_snapshot_a.json"),
+            "snapshot_version": "product-snapshot-a-hubspot-0006-v1",
+        },
+        snapshot_b_pin={
+            "reference": "snapshots/parent_observation_snapshot_b.json",
+            "sha256": sha(root / "snapshots/parent_observation_snapshot_b.json"),
+            "snapshot_version": "capability-snapshot-b-hubspot-cap-0005-v1",
+        },
+        product_decision_set_pin={
+            "reference": product_decisions,
+            "sha256": sha(root / product_decisions),
+            "decision_set_version": "product-validation-hubspot-0006-v1",
+        },
+        capability_decision_set_pin={
+            "reference": "decisions/extraction_validation_decision_set.json",
+            "sha256": sha(root / "decisions/extraction_validation_decision_set.json"),
+            "decision_set_version": "capability-validation-hubspot-cap-0005-v1",
+        },
+        company_identity_root=repo / "data/registry",
+        company_identity_pin={
+            "reference": "pilot_universe_packet_CIK0001404655.json",
+            "sha256": sha(repo / "data/registry/pilot_universe_packet_CIK0001404655.json"),
+        },
+    )
+
+
+PAYMENTS = "CIK0001404655:2025-02-12:payments"
+SALES_HUB = "CIK0001404655:2025-02-12:sales-hub"
+
+
+@requires_real_chain
+def test_the_task_render_shows_one_product_and_only_its_capabilities(tmp_path):
+    """The design decision, asserted on real data.
+
+    Task discovery runs per product so the model cannot pile every task onto one
+    section -- the failure measured on the capability stage, where 68 of 71
+    citations landed in a single passage. It sees one product's capabilities and
+    no other product's ``C0N``.
+    """
+    packet = _real_task_packet(tmp_path)
+    rendered = render_provider_contents(
+        stage="task_extraction",
+        prompt_text=TASK_PROMPT.read_text(),
+        packet=packet,
+        focal_product_observation_id=PAYMENTS,
+    )
+    assert "PRODUCT: Payments" in rendered
+    assert "[ref: C1]" in rendered and "[ref: C2]" in rendered
+    assert "[ref: C3]" not in rendered  # Payments has exactly two capabilities
+    for foreign in ("score leads", "manage sales pipeline", "create smart content"):
+        assert foreign not in rendered, foreign
+
+
+@requires_real_chain
+def test_the_task_render_carries_no_opaque_identifier_for_the_model_to_copy(tmp_path):
+    """ADR-055, ADR-060 and ADR-064's shared lesson, applied before it can bite.
+
+    Measured here: ``capability_observation_id`` runs 46-111 characters on this
+    data. The model is shown ``C1`` and ``P11`` instead, and the passage header
+    still carries the real identifiers for a human auditor.
+    """
+    packet = _real_task_packet(tmp_path)
+    rendered = render_provider_contents(
+        stage="task_extraction",
+        prompt_text=TASK_PROMPT.read_text(),
+        packet=packet,
+        focal_product_observation_id=PAYMENTS,
+    )
+    body = rendered.split("SOURCE PASSAGES:")[0]
+    # No capability id and no product id in the part the model reasons from.
+    assert PAYMENTS not in body
+    for parent in packet["parent_context"]["capability_parents"]:
+        assert parent["observation_id"] not in body
+    # The header keeps them, for the human reading the archived document.
+    assert "[passage_id: " in rendered and "[source_id: " in rendered
+
+
+@requires_real_chain
+def test_nine_of_the_eleven_products_render_and_two_refuse(tmp_path):
+    """How many task runs this chain actually supports, measured not assumed.
+
+    Snapshot B carries eleven products but only nine of them have a validated
+    capability: Breeze Agents and Breeze Copilot were rejected at G6-D, on the
+    ground that a single SEC overview sentence does not establish a concrete
+    action. A task is performed *through* a capability, so a product with none
+    yields no task and the renderer refuses rather than sending an instruction
+    with an empty capability block.
+
+    Nine renders, all distinct -- no two products produce the same document.
+    """
+    packet = _real_task_packet(tmp_path)
+    rendered_by_product = {}
+    refused = []
+    for parent in packet["parent_context"]["product_parents"]:
+        try:
+            rendered_by_product[parent["payload"]["product_name"]] = (
+                render_provider_contents(
+                    stage="task_extraction",
+                    prompt_text=TASK_PROMPT.read_text(),
+                    packet=packet,
+                    focal_product_observation_id=parent["observation_id"],
+                )
+            )
+        except ExtractionError as exc:
+            assert exc.reason_code == "contents_context_invalid"
+            refused.append(parent["payload"]["product_name"])
+
+    assert len(packet["parent_context"]["product_parents"]) == 11
+    assert sorted(refused) == ["Breeze Agents", "Breeze Copilot"]
+    assert len(rendered_by_product) == 9
+    assert len(set(rendered_by_product.values())) == 9
+    for name, rendered in rendered_by_product.items():
+        assert f"PRODUCT: {name}" in rendered
+        assert "[ref: C1]" in rendered
+
+
+@requires_real_chain
+def test_a_focal_product_outside_the_snapshot_is_refused(tmp_path):
+    with pytest.raises(ExtractionError) as excinfo:
+        render_provider_contents(
+            stage="task_extraction",
+            prompt_text=TASK_PROMPT.read_text(),
+            packet=_real_task_packet(tmp_path),
+            focal_product_observation_id="CIK0001404655:2025-02-12:invented",
+        )
+    assert excinfo.value.reason_code == "contents_context_invalid"
+
+
+@requires_real_chain
+def test_the_task_render_is_byte_deterministic(tmp_path):
+    packet = _real_task_packet(tmp_path)
+    renders = [
+        render_provider_contents(
+            stage="task_extraction",
+            prompt_text=TASK_PROMPT.read_text(),
+            packet=packet,
+            focal_product_observation_id=SALES_HUB,
+        )
+        for _ in range(2)
+    ]
+    assert renders[0].encode("utf-8") == renders[1].encode("utf-8")

@@ -19,17 +19,19 @@ of the raw template bytes; the rendered document carries a separate
 **Binding is a closed, stage-scoped map.** A placeholder the map does not name is
 refused rather than left in place or guessed.
 
-**Two stages materialize (ADR-058, E-S1).** ``product_extraction`` has since
-E-R. ``capability_extraction`` joins it now, because the thing it was waiting
-for exists: a human-validated Snapshot A, reconciled by the packet builder and
-handed here as ``parent_context.product_parents``. Before that there was no
-governed parent context to render, and rendering the placeholder-free capability
-prompt verbatim would have sent an instruction naming no products at all.
+**Three stages materialize (ADR-058, E-S1; ADR-068, E-T1).**
+``product_extraction`` has since E-R. ``capability_extraction`` joined at
+E-S1, because the thing it was waiting for existed: a human-validated
+Snapshot A, reconciled by the packet builder and handed here as
+``parent_context.product_parents``. ``task_extraction`` joins at E-T1 for the
+same reason one stage on — Snapshot B is now persisted and reconciled, so the
+packet builder hands this renderer both ``product_parents`` and
+``capability_parents``.
 
-``task_extraction`` still fails closed with ``contents_placeholder_unbound``: it
-needs Snapshot B, which does not exist yet. Its map stays empty, and the
-materialization gate refuses it before any binding is consulted — so an empty map
-never means "render verbatim".
+The task stage renders one product at a time — ``focal_product_observation_id``
+is a required keyword argument for it, never inferred from the packet — so a
+render with no focal product still fails closed, now with
+``focal_product_required`` rather than ``contents_placeholder_unbound``.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ from .errors import ExtractionError
 
 __all__ = [
     "MARKER_FRAGMENTS",
+    "CAPABILITY_REF_PATTERN",
     "MATERIALIZATION_SUPPORTED_STAGES",
     "PARENT_REF_PATTERN",
     "PASSAGE_REF_PATTERN",
@@ -50,6 +53,8 @@ __all__ = [
     "STAGE_PLACEHOLDER_BINDINGS",
     "STAGE_REQUIRED_PLACEHOLDERS",
     "canonical_passage_order",
+    "capability_ref_label",
+    "focal_capability_order",
     "parent_ref_label",
     "passage_ref_label",
     "render_provider_contents",
@@ -76,6 +81,11 @@ MARKER_FRAGMENTS: tuple[str, ...] = ("{{", "}}")
 MATERIALIZATION_SUPPORTED_STAGES: tuple[str, ...] = (
     "product_extraction",
     "capability_extraction",
+    # ADR-068 (E-T1). The task stage joins for the same reason the capability
+    # stage did in ADR-058: the thing it was waiting for exists. Snapshot B is
+    # persisted and reconciled, so the packet builder hands this renderer both
+    # ``product_parents`` and ``capability_parents``.
+    "task_extraction",
 )
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -92,7 +102,7 @@ def _require_str(value: Any, what: str) -> str:
     return value
 
 
-def _bind_company_name(packet: dict[str, Any], stage: str) -> str:
+def _bind_company_name(packet: dict[str, Any], stage: str, focal: str | None) -> str:
     """The legal name, which only an ``@0.2.0`` packet carries.
 
     A ``@0.1.0`` packet has no name field at all, so rendering one is refused
@@ -115,7 +125,7 @@ def _bind_company_name(packet: dict[str, Any], stage: str) -> str:
     return _require_str(value, "legal_name")
 
 
-def _bind_cutoff(packet: dict[str, Any], stage: str) -> str:
+def _bind_cutoff(packet: dict[str, Any], stage: str, focal: str | None) -> str:
     return _require_str(packet.get("observation_cutoff_date"), "observation_cutoff_date")
 
 
@@ -159,6 +169,10 @@ PASSAGE_REF_PATTERN = re.compile(r"^P(\d+)$")
 STAGE_PASSAGE_REF_STYLE: dict[str, str] = {
     "product_extraction": "P{:03d}",
     "capability_extraction": "P{:d}",
+    # ADR-068. Unpadded, for the reason ADR-064 measured: shown a zero-padded
+    # number, the model re-emits it in its own natural form. The task stage is
+    # new, so it starts where that measurement ended rather than repeating it.
+    "task_extraction": "P{:d}",
 }
 
 _STAGE_REF_STYLE_UNDECLARED = "passage_ref_label_style_undeclared"
@@ -229,7 +243,7 @@ def canonical_passage_order(packet: dict[str, Any]) -> tuple[dict[str, Any], ...
     return tuple(passage for _, _, passage in sorted(rows, key=lambda row: row[:2]))
 
 
-def _bind_passages_with_ids(packet: dict[str, Any], stage: str) -> str:
+def _bind_passages_with_ids(packet: dict[str, Any], stage: str, focal: str | None) -> str:
     """Every admissible passage, in canonical order with explicit delimiters.
 
     Offsets are deliberately omitted: they are provenance the manifest already
@@ -269,7 +283,7 @@ def parent_ref_label(ordinal: int) -> str:
     return f"A{ordinal:02d}"
 
 
-def _bind_validated_products(packet: dict[str, Any], stage: str) -> str:
+def _bind_validated_products(packet: dict[str, Any], stage: str, focal: str | None) -> str:
     """The human-validated products, labelled, in the packet's own order.
 
     **No second sorter.** ``parent_context.product_parents`` is already ordered
@@ -325,9 +339,201 @@ def _bind_validated_products(packet: dict[str, Any], stage: str) -> str:
     return _PASSAGE_SEPARATOR.join(blocks)
 
 
+# ADR-068 (E-T1), then ADR-069. The capability label, one per capability of the
+# focal product.
+#
+# ``C`` for capability, beside ``A`` for Snapshot A and ``P`` for passage. Same
+# rule as ADR-055 and ADR-060: the model is shown what it needs to reason with
+# and is never asked to transcribe a long identifier. Measured here:
+# ``capability_observation_id`` runs 46 to 111 characters on the pilot data,
+# which is worse than the 44-character ``product_observation_id`` that ADR-060
+# replaced with ``A0N``.
+#
+# Unpadded from the start (ADR-069), applying ADR-064's measurement pre-emptively
+# rather than repeating it: shown a zero-padded ``P025``, the model wrote
+# ``P25`` -- on two independent live turns, identically. Every product's
+# capability count passes through ``C1``-``C9``, so a padded ``C0N`` would carry
+# that same risk on every one of the nine task-discovery calls, not on an
+# occasional one. The pattern accepts two-or-more digits too, so a
+# capability_observation_id resolved against an already-persisted ``"C01"``
+# still parses correctly -- ``int("01") == int("1")`` -- but the label this
+# module emits going forward is always unpadded.
+CAPABILITY_REF_PATTERN = re.compile(r"^C(\d+)$")
+
+
+def capability_ref_label(ordinal: int) -> str:
+    """The label for a one-based position in the focal product's capabilities."""
+    return f"C{ordinal}"
+
+
+def _require_focal(focal: str | None) -> str:
+    """The focal product id, or a refusal. Never inferred from the packet.
+
+    A packet carries every validated product; picking one here would be a guess
+    about which run this is. The caller names it, and a task render without one
+    fails rather than silently choosing.
+    """
+    if not isinstance(focal, str) or not focal.strip():
+        raise ExtractionError(
+            "the task stage renders one product at a time and requires "
+            "focal_product_observation_id",
+            reason_code="focal_product_required",
+        )
+    return focal
+
+
+def focal_capability_order(packet: dict[str, Any], focal: str) -> tuple[dict[str, Any], ...]:
+    """The accepted capabilities of one product, in the packet's own order.
+
+    **No second sorter**, exactly as ``_bind_validated_products`` and
+    ``canonical_passage_order``: ``parent_context.capability_parents`` is
+    already ordered by ``derive_parent_context``, and every entry there was
+    re-read and hash-verified against a Snapshot B member before it arrived.
+
+    **Public and shared, unlike ``_bind_validated_products``.** This function
+    decides what ordinal position each ``C0N`` label names, and that decision
+    has two consumers: ``_bind_capabilities`` assigns the labels the model
+    sees, and :func:`~.candidates.resolve_capability_refs` resolves the labels
+    the model wrote back. Two independent orderings that happened to agree
+    would be the ``canonical_passage_order`` lesson repeated -- a label meaning
+    one capability at render time and a different one at resolution time,
+    silently.
+    """
+    context = packet.get("parent_context")
+    if not isinstance(context, dict):
+        raise ExtractionError(
+            "the task stage requires parent context",
+            reason_code="contents_context_invalid",
+        )
+    parents = context.get("capability_parents")
+    if not isinstance(parents, list) or not parents:
+        raise ExtractionError(
+            "rendering requires at least one validated capability",
+            reason_code="contents_context_invalid",
+        )
+    focal_capabilities = []
+    for parent in parents:
+        if not isinstance(parent, dict) or not isinstance(parent.get("payload"), dict):
+            raise ExtractionError(
+                "each parent capability must carry its verified payload",
+                reason_code="contents_context_invalid",
+            )
+        # The ordinal a ``C0N`` label names is only as trustworthy as the
+        # identity at that position. ``_parent_observation_ids`` has always
+        # required this of an ``A0N`` parent; measured, this function did not,
+        # and a member missing ``observation_id`` resolved to ``None`` --
+        # reaching the released schema as a null and being recorded as an
+        # ordinary ``schema_invalid`` candidate. A corrupted packet must not be
+        # reportable as a bad model answer.
+        observation_id = parent.get("observation_id")
+        if not isinstance(observation_id, str) or not observation_id.strip():
+            raise ExtractionError(
+                "a verified capability carries no observation_id",
+                reason_code="contents_context_invalid",
+            )
+        if parent["payload"].get("product_observation_id") == focal:
+            focal_capabilities.append(parent)
+    if not focal_capabilities:
+        raise ExtractionError(
+            "the focal product has no validated capability to render",
+            reason_code="contents_context_invalid",
+        )
+    return tuple(focal_capabilities)
+
+
+def _focal_product_payload(packet: dict[str, Any], focal: str) -> dict[str, Any]:
+    context = packet.get("parent_context")
+    if not isinstance(context, dict):
+        raise ExtractionError(
+            "the task stage requires parent context",
+            reason_code="contents_context_invalid",
+        )
+    for parent in context.get("product_parents") or ():
+        if isinstance(parent, dict) and parent.get("observation_id") == focal:
+            payload = parent.get("payload")
+            if not isinstance(payload, dict):
+                raise ExtractionError(
+                    "the focal product must carry its verified payload",
+                    reason_code="contents_context_invalid",
+                )
+            return payload
+    raise ExtractionError(
+        "the focal product is not a validated product of this run",
+        reason_code="contents_context_invalid",
+    )
+
+
+def _bind_product(packet: dict[str, Any], stage: str, focal: str | None) -> str:
+    """The one product this run is about, by name.
+
+    Singular by design (ADR-068): task discovery runs per product, so the model
+    sees one product and that product's capabilities. It never sees a second
+    product's ``C0N``, which is what keeps the capability stage's measured
+    failure -- everything piling onto one section -- from recurring here.
+    """
+    return _require_str(
+        _focal_product_payload(packet, _require_focal(focal)).get("product_name"),
+        "product_name",
+    )
+
+
+def _bind_capabilities(packet: dict[str, Any], stage: str, focal: str | None) -> str:
+    """The focal product's capabilities, each with the evidence it was accepted on.
+
+    Two label families, both already proven, and no opaque identifier in either:
+
+    - ``C0N`` names a capability. Its ``capability_observation_id`` is 46-111
+      characters and is resolved downstream, never transcribed.
+    - ``P0N`` names the passage a quote came from, resolved through the same
+      ``canonical_passage_order`` the other two stages use.
+
+    The passage block is appended here rather than bound separately because
+    ``task_discovery_recall`` has no ``{{passages}}`` marker: measured, its
+    template carries exactly ``company``, ``cutoff``, ``product`` and
+    ``capabilities``. Evidence is part of what a capability *is* at this stage.
+    """
+    focal = _require_focal(focal)
+    ordered = canonical_passage_order(packet)
+    label_of = {
+        (passage["source_id"], passage["passage_id"]): passage_ref_label(
+            ordinal, stage=stage
+        )
+        for ordinal, passage in enumerate(ordered, start=1)
+    }
+
+    blocks: list[str] = []
+    cited: dict[str, dict[str, Any]] = {}
+    for ordinal, parent in enumerate(focal_capability_order(packet, focal), start=1):
+        payload = parent["payload"]
+        lines = [
+            f"[ref: {capability_ref_label(ordinal)}]",
+            _require_str(payload.get("capability"), "capability"),
+        ]
+        for entry in payload.get("evidence") or ():
+            pair = (entry.get("source_id"), entry.get("passage_id"))
+            label = label_of.get(pair)
+            if label is None:
+                raise ExtractionError(
+                    "a capability cites a passage this packet does not carry",
+                    reason_code="contents_context_invalid",
+                )
+            cited[label] = ordered[int(label[1:]) - 1]
+            lines.append(f"  evidence [ref: {label}]: {entry.get('quote')}")
+        blocks.append("\n".join(lines))
+
+    passages = [
+        f"[ref: {label}] "
+        f"[passage_id: {passage['passage_id']}] "
+        f"[source_id: {passage['source_id']}] "
+        f"[publication_date: {passage['publication_date']}]\n{passage['text']}"
+        for label, passage in sorted(cited.items(), key=lambda kv: int(kv[0][1:]))
+    ]
+    return "\n".join(blocks) + "\n\nSOURCE PASSAGES:\n" + _PASSAGE_SEPARATOR.join(passages)
+
+
 # Closed, stage-scoped binding map. A stage absent from this map cannot render,
 # and a placeholder absent from its stage's entry is refused.
-STAGE_PLACEHOLDER_BINDINGS: dict[str, dict[str, Callable[[dict[str, Any], str], str]]] = {
+STAGE_PLACEHOLDER_BINDINGS: dict[str, dict[str, Callable[[dict[str, Any], str, "str | None"], str]]] = {
     "product_extraction": {
         "company_name": _bind_company_name,
         "cutoff": _bind_cutoff,
@@ -344,11 +550,16 @@ STAGE_PLACEHOLDER_BINDINGS: dict[str, dict[str, Callable[[dict[str, Any], str], 
         "passages_with_ids": _bind_passages_with_ids,
         "validated_products": _bind_validated_products,
     },
-    # Still empty and still not materializable: the
-    # MATERIALIZATION_SUPPORTED_STAGES gate refuses this stage before any binding
-    # is consulted, so the empty map never means "render verbatim". The task
-    # stage needs Snapshot B, which does not exist yet.
-    "task_extraction": {},
+    # ADR-068 (E-T1). Four bindings, and the placeholder names are the frozen
+    # prompt's own: ``task_discovery_recall`` says ``{{company}}``, not
+    # ``{{company_name}}``, and carries no ``{{passages}}`` at all. The map
+    # follows the prompt rather than the other two stages' vocabulary.
+    "task_extraction": {
+        "company": _bind_company_name,
+        "cutoff": _bind_cutoff,
+        "product": _bind_product,
+        "capabilities": _bind_capabilities,
+    },
 }
 
 # ADR-058. Placeholders a stage's prompt **must** use, not merely may.
@@ -369,11 +580,20 @@ STAGE_PLACEHOLDER_BINDINGS: dict[str, dict[str, Callable[[dict[str, Any], str], 
 # its prompt, but none of them is load-bearing in this way.
 STAGE_REQUIRED_PLACEHOLDERS: dict[str, tuple[str, ...]] = {
     "capability_extraction": ("validated_products",),
+    # ADR-068. Same reason, one stage on: a task is attributed to a product and
+    # to the capabilities it is performed through, and ``task_observation``
+    # requires both. A prompt that named neither could not produce a conforming
+    # record, and a paid call that cannot conform should not be made.
+    "task_extraction": ("product", "capabilities"),
 }
 
 
 def render_provider_contents(
-    *, stage: str, prompt_text: str, packet: dict[str, Any]
+    *,
+    stage: str,
+    prompt_text: str,
+    packet: dict[str, Any],
+    focal_product_observation_id: str | None = None,
 ) -> str:
     """Materialize the exact document the provider will receive.
 
@@ -421,7 +641,10 @@ def render_provider_contents(
 
     # Values are resolved once each, so a placeholder repeated in the template
     # cannot render two different substitutions.
-    resolved = {name: bindings[name](packet, stage) for name in sorted(set(requested))}
+    resolved = {
+        name: bindings[name](packet, stage, focal_product_observation_id)
+        for name in sorted(set(requested))
+    }
     rendered = PLACEHOLDER_PATTERN.sub(lambda m: resolved[m.group(1)], prompt_text)
 
     # Fail closed on anything the substitution left behind, including a marker

@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.19.0",
+  "manifest_version": "0.20.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -44,6 +44,7 @@
     "source_passage": "0.1.0",
     "task_measurement": "0.1.0",
     "task_observation": "0.1.0",
+    "task_observation_v2": "0.2.0",
     "task_transition": "0.1.0",
     "universe_run_manifest": "0.1.0",
     "web_collection_receipt": "0.1.0",

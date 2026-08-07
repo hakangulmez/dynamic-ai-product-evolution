@@ -22,6 +22,7 @@ from dynamic_ai_products.extraction.candidates import (
     derive_identity_fields,
     materialize_candidate_collection,
     parse_model_observations,
+    resolve_capability_refs,
     slugify_product_name,
 )
 from dynamic_ai_products.extraction.errors import ExtractionError
@@ -761,7 +762,7 @@ def test_the_capability_stage_labels_without_padding(ordinal, expected):
     assert passage_ref_label(ordinal, stage="capability_extraction") == expected
 
 
-@pytest.mark.parametrize("stage", ["task_extraction", "", "mystery", None, 7])
+@pytest.mark.parametrize("stage", ["", "mystery", None, 7])
 def test_a_stage_with_no_declared_label_style_is_refused(stage):
     """No default. A default is what would give a new stage a padding
     convention its own prompt never described."""
@@ -770,11 +771,20 @@ def test_a_stage_with_no_declared_label_style_is_refused(stage):
     assert excinfo.value.reason_code == "passage_ref_label_style_undeclared"
 
 
-def test_the_label_style_map_is_closed_over_the_two_qualified_stages():
+def test_the_label_style_map_is_closed_over_the_materializable_stages():
+    """ADR-068 adds the task stage; the map is still closed, not defaulted."""
     from dynamic_ai_products.extraction.contents_renderer import STAGE_PASSAGE_REF_STYLE
 
-    assert set(STAGE_PASSAGE_REF_STYLE) == {"product_extraction", "capability_extraction"}
-    assert "task_extraction" not in STAGE_PASSAGE_REF_STYLE
+    assert set(STAGE_PASSAGE_REF_STYLE) == {
+        "product_extraction",
+        "capability_extraction",
+        "task_extraction",
+    }
+    # ADR-064's measurement carried forward rather than repeated: only the
+    # product stage pads, because only its prompt describes a padded label.
+    assert STAGE_PASSAGE_REF_STYLE["product_extraction"] == "P{:03d}"
+    assert STAGE_PASSAGE_REF_STYLE["capability_extraction"] == "P{:d}"
+    assert STAGE_PASSAGE_REF_STYLE["task_extraction"] == "P{:d}"
 
 
 def test_a_ref_resolves_to_the_pair_at_that_canonical_position():
@@ -1250,11 +1260,13 @@ def test_c6_still_refuses_evidence_outside_the_packet(vocabulary):
     )
 
 
-def test_the_gate_refuses_an_unknown_kind(vocabulary):
+@pytest.mark.parametrize("kind", ["", "mystery", "tasks", None, 7])
+def test_the_gate_refuses_an_unknown_kind(vocabulary, kind):
+    """ADR-068 made "task" a real kind, so the probe names ones that are not."""
     with pytest.raises(ExtractionError) as excinfo:
         assert_candidate_conformance(
             [], packet=capability_packet(), vocabulary=vocabulary,
-            schema_root=ROOT / "schemas", observation_kind="task",
+            schema_root=ROOT / "schemas", observation_kind=kind,
         )
     assert excinfo.value.reason_code == "observation_kind_invalid"
 
@@ -1276,14 +1288,24 @@ from dynamic_ai_products.extraction.candidates import (  # noqa: E402
 )
 
 
-def test_the_stage_map_is_closed_and_excludes_task():
-    """A task is not an observation kind and must not become one by inference."""
+def test_the_stage_map_still_excludes_task_because_it_has_no_qualified_prompt():
+    """ADR-068 adds the *kind*; the *stage* is still not runnable, on purpose.
+
+    ``task`` is now a real observation kind and the renderer can materialize the
+    task stage offline. What is deliberately missing is the entry that lets a
+    run resolve a kind from the stage: ``task_discovery_recall`` states no
+    output contract, so it has no change request and no prompt qualification.
+    Adding this entry before that exists would make a live task run reachable
+    through a prompt that cannot produce a conforming record -- the exact defect
+    CR-0005 was written for on the capability side. Wiring it is ADR-069.
+    """
     assert STAGE_OBSERVATION_KIND == {
         "product_extraction": "product",
         "capability_extraction": "capability",
     }
-    assert set(STAGE_OBSERVATION_KIND.values()) == set(OBSERVATION_KINDS)
     assert "task_extraction" not in STAGE_OBSERVATION_KIND
+    assert "task" in OBSERVATION_KINDS
+    assert set(STAGE_OBSERVATION_KIND.values()) < set(OBSERVATION_KINDS)
 
 
 @pytest.mark.parametrize(
@@ -1294,7 +1316,7 @@ def test_each_declared_stage_resolves_to_its_kind(stage, kind):
     assert observation_kind_for_stage(stage) == kind
 
 
-@pytest.mark.parametrize("stage", ["task_extraction", "", "product", "mystery_stage"])
+@pytest.mark.parametrize("stage", ["", "product", "mystery_stage"])
 def test_an_undeclared_stage_fails_closed_with_its_own_code(stage):
     """Not a default, and not a borrowed reason code.
 
@@ -1352,3 +1374,653 @@ def test_a_capability_collection_would_have_been_silently_empty(tmp_path, vocabu
     )
     assert right["accepted_candidate_count"] == 2
     assert right["rejected"] == []
+
+
+# --- ADR-068 (E-T1): the task kind, C9 and C10 ------------------------------
+
+TASK_PRODUCT = f"{COMPANY}:{CUTOFF}:payments"
+OTHER_PRODUCT = f"{COMPANY}:{CUTOFF}:sales-hub"
+TASK_CAPABILITY = f"{TASK_PRODUCT}:accept-electronic-funds-transfers"
+OTHER_CAPABILITY = f"{OTHER_PRODUCT}:score-leads"
+
+
+def task_packet(**over) -> dict:
+    payload = packet(**over)
+    payload["parent_context"] = {
+        "snapshot": {"reference": "snapshots/b.json", "sha256": "c" * 64,
+                     "snapshot_version": "b-v1"},
+        "product_parents": [
+            {"observation_id": TASK_PRODUCT, "reference": "observations/product/a.json",
+             "sha256": "a" * 64, "payload": {"product_observation_id": TASK_PRODUCT,
+                                             "product_name": "Payments"}},
+            {"observation_id": OTHER_PRODUCT, "reference": "observations/product/b.json",
+             "sha256": "b" * 64, "payload": {"product_observation_id": OTHER_PRODUCT,
+                                             "product_name": "Sales Hub"}},
+        ],
+        "capability_parents": [
+            {"observation_id": TASK_CAPABILITY,
+             "reference": "observations/capability/a.json", "sha256": "d" * 64,
+             "payload": {"capability_observation_id": TASK_CAPABILITY,
+                         "product_observation_id": TASK_PRODUCT,
+                         "capability": "accept electronic funds transfers",
+                         "evidence": [{"source_id": SRC, "passage_id": PSG,
+                                       "quote": "x"}]}},
+            {"observation_id": OTHER_CAPABILITY,
+             "reference": "observations/capability/b.json", "sha256": "e" * 64,
+             "payload": {"capability_observation_id": OTHER_CAPABILITY,
+                         "product_observation_id": OTHER_PRODUCT,
+                         "capability": "score leads",
+                         "evidence": [{"source_id": SRC, "passage_id": PSG,
+                                       "quote": "x"}]}},
+        ],
+    }
+    return payload
+
+
+def task(**over) -> dict:
+    payload = {
+        "task_observation_id": "ignored-by-derivation",
+        "company_id": COMPANY,
+        "observation_cutoff": CUTOFF,
+        "product_observation_id": TASK_PRODUCT,
+        "capability_observation_ids": [TASK_CAPABILITY],
+        "task": "Accept a customer card payment to get paid faster",
+        "customer_need": "collect money from a buyer without extra tooling",
+        "availability_status": "general_availability",
+        "confidence": "high",
+        "evidence": [{"source_id": SRC, "passage_id": PSG, "quote": "x"}],
+    }
+    payload.update(over)
+    return {k: v for k, v in payload.items() if v is not ...}
+
+
+def derived_task(obs: dict) -> dict:
+    return derive_identity_fields(
+        obs, company_id=COMPANY, observation_cutoff=CUTOFF, observation_kind="task"
+    )
+
+
+def admit_task(observations, vocab, **over):
+    assert_candidate_conformance(
+        [derived_task(o) if isinstance(o, dict) else o for o in observations],
+        packet=task_packet(**over), vocabulary=vocab,
+        schema_root=ROOT / "schemas", observation_kind="task",
+    )
+
+
+def refuse_task(observations, vocab, **over) -> ExtractionError:
+    with pytest.raises(ExtractionError) as excinfo:
+        admit_task(observations, vocab, **over)
+    return excinfo.value
+
+
+def test_a_task_identity_is_keyed_on_its_product_not_its_capabilities():
+    """ADR-068. ``capability_observation_ids`` is an array; an id derived from it
+    would depend on how many were cited and in what order."""
+    out = derived_task(task())
+    assert out["normalized_task"] == "accept-a-customer-card-payment-to-get-paid-faster"
+    assert out["task_observation_id"] == (
+        f"{TASK_PRODUCT}:accept-a-customer-card-payment-to-get-paid-faster"
+    )
+    # Reordering or adding a cited capability cannot move the identity.
+    both = derived_task(task(capability_observation_ids=[OTHER_CAPABILITY, TASK_CAPABILITY]))
+    assert both["task_observation_id"] == out["task_observation_id"]
+
+
+def test_the_collision_scope_falls_out_of_the_task_formula():
+    """Two products may host the same task; only a within-product clash collides."""
+    assert derived_task(task(product_observation_id=OTHER_PRODUCT))[
+        "task_observation_id"
+    ] != derived_task(task())["task_observation_id"]
+
+
+def test_a_conforming_task_is_admitted(vocabulary):
+    admit_task([task()], vocabulary)
+
+
+def test_c9_refuses_a_capability_no_human_validated(vocabulary):
+    error = refuse_task(
+        [task(capability_observation_ids=[f"{TASK_PRODUCT}:invented-capability"])],
+        vocabulary,
+    )
+    assert error.reason_code == "candidate_conformance_capability_not_in_snapshot"
+
+
+def test_c9_refuses_a_task_that_cites_no_capability(vocabulary):
+    """A task is performed *through* a capability; zero of them is not a task.
+
+    An empty list is schema-valid -- ``capability_observation_ids`` declares no
+    ``minItems`` -- so it reaches C9 rather than being recorded as
+    ``schema_invalid``. That is the layering ADR-054 fixed: the released
+    ``rejected[]`` enum is not widened to carry conformance failures.
+    """
+    error = refuse_task([task(capability_observation_ids=[])], vocabulary)
+    assert error.reason_code == "candidate_conformance_capability_not_in_snapshot"
+
+
+@pytest.mark.parametrize("cited", [None, "not-a-list", 7])
+def test_a_non_list_capability_field_never_reaches_c9(vocabulary, cited):
+    """It is a schema failure, and the pre-schema check owns saying so."""
+    admit_task([task(capability_observation_ids=cited)], vocabulary)
+
+
+def test_c10_refuses_a_capability_belonging_to_another_product(vocabulary):
+    """Structurally unreachable today, and asserted anyway.
+
+    Task discovery renders one product at a time, so the model never sees a
+    second product's ``C0N``. This is the cheap insurance for the day that
+    changes -- the assumption ADR-053, ADR-058, ADR-061, ADR-062 and ADR-064
+    each watched go false.
+    """
+    error = refuse_task(
+        [task(capability_observation_ids=[TASK_CAPABILITY, OTHER_CAPABILITY])],
+        vocabulary,
+    )
+    assert error.reason_code == "candidate_conformance_capability_parent_mismatch"
+
+
+def test_c9_and_c10_are_distinct_reason_codes():
+    """"Nobody validated it" and "it belongs to another product" are different
+    faults, and an operator needs to know which one happened."""
+    from dynamic_ai_products.extraction import candidates
+
+    assert candidates._C9 != candidates._C10
+    assert candidates._C9 != candidates._C7
+
+
+def test_c7_still_applies_to_the_tasks_own_product(vocabulary):
+    error = refuse_task([task(product_observation_id=f"{COMPANY}:{CUTOFF}:invented")], vocabulary)
+    assert error.reason_code == "candidate_conformance_parent_not_in_snapshot"
+
+
+@pytest.mark.parametrize(
+    "field, value, code",
+    [("company_id", "OTHER-CO", "candidate_conformance_company_mismatch"),
+     ("observation_cutoff", "2024-01-01", "candidate_conformance_cutoff_mismatch"),
+     ("normalized_task", "Not A Slug", "candidate_conformance_normalized_name_invalid"),
+     ("task_observation_id", "wrong", "candidate_conformance_observation_id_mismatch")],
+)
+def test_a_tampered_derived_task_field_is_caught(vocabulary, field, value, code):
+    """C1-C4 apply to a task, unlike to a capability.
+
+    ``task_observation`` requires ``company_id`` and ``observation_cutoff``; the
+    capability schema has neither, which is why C7 replaces C1/C2 there. They
+    are asserted the way the product ones are -- by tampering *after* derivation,
+    because derivation supplies these fields and whatever the model emitted in
+    them is discarded. So C1 and C2 catch a corrupted pipeline, not a bad model.
+    """
+    tampered = derived_task(task())
+    tampered[field] = value
+    with pytest.raises(ExtractionError) as excinfo:
+        assert_candidate_conformance(
+            [tampered], packet=task_packet(), vocabulary=vocabulary,
+            schema_root=ROOT / "schemas", observation_kind="task",
+        )
+    assert excinfo.value.reason_code == code
+
+
+def test_what_the_model_emits_in_the_derived_task_fields_is_discarded(vocabulary):
+    """The other half of the same rule, stated as its own case."""
+    admit_task([task(company_id="HUBSPOT INC", observation_cutoff="not-a-date",
+                     task_observation_id="cand-001")], vocabulary)
+
+
+def test_c5_governs_a_task_status_too(vocabulary):
+    error = refuse_task([task(availability_status="planned")], vocabulary)
+    assert error.reason_code == "candidate_conformance_status_not_governed"
+
+
+def test_c8_governs_a_task_quote_too(vocabulary):
+    error = refuse_task(
+        [task(evidence=[{"source_id": SRC, "passage_id": PSG, "quote": "not in it"}])],
+        vocabulary,
+    )
+    assert error.reason_code == "candidate_conformance_evidence_quote_uncontained"
+
+
+def test_the_task_gate_reads_the_v2_schema_that_carries_normalized_task():
+    from dynamic_ai_products.extraction import candidates
+
+    assert candidates._SCHEMA_FOR_KIND["task"] == "task_observation_v2.schema.json"
+    released = json.loads((ROOT / "schemas/task_observation.schema.json").read_text())
+    successor = json.loads((ROOT / "schemas/task_observation_v2.schema.json").read_text())
+    assert "normalized_task" not in released["properties"]
+    assert "normalized_task" in successor["required"]
+    # The successor adds one property and changes nothing else.
+    assert set(successor["properties"]) - set(released["properties"]) == {"normalized_task"}
+    assert set(released["properties"]) - set(successor["properties"]) == set()
+
+
+def test_the_collection_contract_admits_a_task_collection():
+    """ADR-069. ADR-068 added ``"task"`` to ``OBSERVATION_KINDS`` but left the
+    collection's own released schema closed to ``["product", "capability"]`` in
+    both places it appears -- found by the first end-to-end task
+    materialization, not by inspection."""
+    schema = json.loads(
+        (ROOT / "schemas/extraction_candidate_collection.schema.json").read_text()
+    )
+    assert schema["properties"]["observation_kind"]["enum"] == [
+        "product", "capability", "task",
+    ]
+    assert schema["properties"]["entries"]["items"]["properties"][
+        "observation_kind"
+    ]["enum"] == ["product", "capability", "task"]
+
+
+# --- ADR-069 (E-T1 governance wiring): resolve_capability_refs, the fourth
+# label family, and the focal product injection ------------------------------
+
+
+def cap_observation(**over) -> dict:
+    """A raw, pre-resolution task candidate, in the shape the model emits."""
+    payload = {
+        "task": "accept a customer card payment to get paid faster",
+        "customer_need": "collect money from a buyer without extra tooling",
+        "capability_refs": ["C1"],
+        "availability_status": "general_availability",
+        "confidence": "high",
+        "evidence": [{"source_id": SRC, "passage_id": PSG, "quote": "x"}],
+    }
+    payload.update(over)
+    return {k: v for k, v in payload.items() if v is not ...}
+
+
+def two_cap_task_packet() -> dict:
+    """A task packet whose focal product carries two capabilities.
+
+    ``task_packet()`` gives every product exactly one, which cannot
+    distinguish "resolved the second position" from "resolved the only
+    position". This fixture exists only to test multi-entry resolution.
+    """
+    payload = task_packet()
+    payload["parent_context"]["capability_parents"].append(
+        {
+            "observation_id": f"{TASK_PRODUCT}:issue-a-refund",
+            "reference": "observations/capability/c.json",
+            "sha256": "f" * 64,
+            "payload": {
+                "capability_observation_id": f"{TASK_PRODUCT}:issue-a-refund",
+                "product_observation_id": TASK_PRODUCT,
+                "capability": "issue a refund",
+                "evidence": [{"source_id": SRC, "passage_id": PSG, "quote": "x"}],
+            },
+        }
+    )
+    return payload
+
+
+def test_resolve_capability_refs_resolves_to_the_focal_products_capability():
+    resolved = resolve_capability_refs(
+        cap_observation(capability_refs=["C1"]),
+        packet=task_packet(),
+        focal_product_observation_id=TASK_PRODUCT,
+    )
+    assert resolved["capability_observation_ids"] == [TASK_CAPABILITY]
+    assert "capability_refs" not in resolved
+
+
+def test_resolve_capability_refs_is_scoped_to_the_focal_product_not_packet_position():
+    """The same packet, a different focal product, resolves ``C1`` differently.
+
+    ``TASK_CAPABILITY`` sits first in ``capability_parents`` and
+    ``OTHER_CAPABILITY`` second, but each is the *only* capability of its own
+    product -- so ``C1`` names ``OTHER_CAPABILITY`` when the focal product is
+    ``OTHER_PRODUCT``. A resolver that read packet position instead of
+    ``focal_capability_order`` would get this wrong.
+    """
+    resolved = resolve_capability_refs(
+        cap_observation(capability_refs=["C1"]),
+        packet=task_packet(),
+        focal_product_observation_id=OTHER_PRODUCT,
+    )
+    assert resolved["capability_observation_ids"] == [OTHER_CAPABILITY]
+
+
+def test_resolve_capability_refs_resolves_every_entry_in_order():
+    packet_ = two_cap_task_packet()
+    resolved = resolve_capability_refs(
+        cap_observation(capability_refs=["C2", "C1"]),
+        packet=packet_,
+        focal_product_observation_id=TASK_PRODUCT,
+    )
+    assert resolved["capability_observation_ids"] == [
+        f"{TASK_PRODUCT}:issue-a-refund",
+        TASK_CAPABILITY,
+    ]
+
+
+@pytest.mark.parametrize("label", ["C2", "C99", "C0", "c1", "1", "", "CX", None, 1])
+def test_an_unresolvable_capability_ref_has_its_own_reason_code(label):
+    """Out of range or malformed, distinct from every other resolver's code.
+
+    ``TASK_PRODUCT`` has exactly one capability in ``task_packet()``, so ``C2``
+    is out of range there without needing a second fixture.
+    """
+    with pytest.raises(ExtractionError) as excinfo:
+        resolve_capability_refs(
+            cap_observation(capability_refs=[label]),
+            packet=task_packet(),
+            focal_product_observation_id=TASK_PRODUCT,
+        )
+    assert excinfo.value.reason_code == "candidate_conformance_capability_ref_unresolvable"
+
+
+@pytest.mark.parametrize("refs", [None, "C1", 7])
+def test_a_non_list_capability_refs_is_refused_before_any_label_is_read(refs):
+    with pytest.raises(ExtractionError) as excinfo:
+        resolve_capability_refs(
+            cap_observation(capability_refs=refs),
+            packet=task_packet(),
+            focal_product_observation_id=TASK_PRODUCT,
+        )
+    assert excinfo.value.reason_code == "candidate_conformance_capability_ref_unresolvable"
+
+
+@pytest.mark.parametrize("label", ["C01", "C1", "C0001"])
+def test_any_padding_of_one_capability_ordinal_resolves_to_one_capability(label):
+    """The same equivalence ADR-064 established for ``P0N``, pre-applied to
+    ``C0N`` rather than discovered on a live call (ADR-069)."""
+    resolved = resolve_capability_refs(
+        cap_observation(capability_refs=[label]),
+        packet=task_packet(),
+        focal_product_observation_id=TASK_PRODUCT,
+    )
+    assert resolved["capability_observation_ids"] == [TASK_CAPABILITY]
+
+
+def test_resolve_capability_refs_requires_a_focal_product():
+    with pytest.raises(ExtractionError) as excinfo:
+        resolve_capability_refs(
+            cap_observation(), packet=task_packet(), focal_product_observation_id=None
+        )
+    assert excinfo.value.reason_code == "focal_product_required"
+
+
+def test_resolve_capability_refs_leaves_untouched_what_it_does_not_own():
+    for item in ("a string", 12, None):
+        assert resolve_capability_refs(
+            item, packet=task_packet(), focal_product_observation_id=TASK_PRODUCT
+        ) is item
+    already = cap_observation(capability_observation_ids=[TASK_CAPABILITY])
+    del already["capability_refs"]
+    assert resolve_capability_refs(
+        already, packet=task_packet(), focal_product_observation_id=TASK_PRODUCT
+    ) is already
+
+
+def test_resolve_capability_refs_does_not_mutate_its_input():
+    original = cap_observation(capability_refs=["C1"])
+    snapshot = json.dumps(original, sort_keys=True)
+    resolve_capability_refs(
+        original, packet=task_packet(), focal_product_observation_id=TASK_PRODUCT
+    )
+    assert json.dumps(original, sort_keys=True) == snapshot
+
+
+# --- the focal product injection: a value supplied, never a label resolved --
+
+
+def test_the_focal_product_is_injected_regardless_of_what_the_model_wrote():
+    from dynamic_ai_products.extraction.candidates import _inject_focal_product
+
+    out = _inject_focal_product(
+        {"product_observation_id": "whatever-the-model-guessed"},
+        observation_kind="task",
+        focal_product_observation_id=TASK_PRODUCT,
+    )
+    assert out["product_observation_id"] == TASK_PRODUCT
+
+
+def test_the_focal_product_is_supplied_even_when_the_model_named_none():
+    from dynamic_ai_products.extraction.candidates import _inject_focal_product
+
+    out = _inject_focal_product(
+        {"task": "x"}, observation_kind="task", focal_product_observation_id=TASK_PRODUCT
+    )
+    assert out["product_observation_id"] == TASK_PRODUCT
+
+
+@pytest.mark.parametrize("kind", ["product", "capability"])
+def test_the_injection_is_task_only(kind):
+    from dynamic_ai_products.extraction.candidates import _inject_focal_product
+
+    untouched = {"product_observation_id": "already-there"}
+    out = _inject_focal_product(
+        untouched, observation_kind=kind, focal_product_observation_id=TASK_PRODUCT
+    )
+    assert out is untouched
+
+
+def test_the_injection_requires_a_focal_product_for_the_task_kind():
+    from dynamic_ai_products.extraction.candidates import _inject_focal_product
+
+    with pytest.raises(ExtractionError) as excinfo:
+        _inject_focal_product(
+            {"task": "x"}, observation_kind="task", focal_product_observation_id=None
+        )
+    assert excinfo.value.reason_code == "focal_product_required"
+
+
+# --- materialize_candidate_collection, end to end, for the task kind --------
+
+
+def _task_prediction(**over) -> dict:
+    return envelope(json.dumps([cap_observation(**over)]))
+
+
+def test_materialization_refuses_a_task_run_with_no_focal_product(tmp_path, vocabulary):
+    """Checked before parsing, the same order the renderer already enforces."""
+    vroot, vpin = _vocab_root(tmp_path, vocabulary)
+    croot = tmp_path / "cand"
+    croot.mkdir()
+    with pytest.raises(ExtractionError) as excinfo:
+        materialize_candidate_collection(
+            raw_prediction=_task_prediction(),
+            packet=task_packet(),
+            raw_artifact_reference="data/runs/x/predictions/raw_prediction.json",
+            raw_artifact_sha256="b" * 64,
+            collection_root=croot,
+            vocabulary_root=vroot,
+            vocabulary_pin=vpin,
+            repo_root=ROOT,
+            schema_root=ROOT / "schemas",
+            observation_kind="task",
+        )
+    assert excinfo.value.reason_code == "focal_product_required"
+    assert list(croot.rglob("*")) == []
+
+
+def test_a_conforming_task_run_materializes_end_to_end(tmp_path, vocabulary):
+    """The full chain: capability_refs and the focal product resolve, then the
+    derived task identity validates against the released successor schema."""
+    vroot, vpin = _vocab_root(tmp_path, vocabulary)
+    croot = tmp_path / "cand"
+    croot.mkdir()
+    pin = materialize_candidate_collection(
+        raw_prediction=_task_prediction(availability_status="S5"),
+        packet=task_packet(),
+        raw_artifact_reference="data/runs/x/predictions/raw_prediction.json",
+        raw_artifact_sha256="b" * 64,
+        collection_root=croot,
+        vocabulary_root=vroot,
+        vocabulary_pin=vpin,
+        repo_root=ROOT,
+        schema_root=ROOT / "schemas",
+        observation_kind="task",
+        focal_product_observation_id=TASK_PRODUCT,
+    )
+    body = json.loads((croot / CANDIDATE_COLLECTION_REFERENCE).read_bytes())
+    assert pin["sha256"] == hashlib.sha256(
+        (croot / CANDIDATE_COLLECTION_REFERENCE).read_bytes()
+    ).hexdigest()
+    assert body["accepted_candidate_count"] == 1
+    entry = body["entries"][0]["observation"]
+    assert entry["product_observation_id"] == TASK_PRODUCT
+    assert entry["capability_observation_ids"] == [TASK_CAPABILITY]
+    assert entry["availability_status"] == "general_availability"
+    assert "capability_refs" not in entry
+    assert entry["task_observation_id"] == (
+        f"{TASK_PRODUCT}:accept-a-customer-card-payment-to-get-paid-faster"
+    )
+
+
+# --- adversarial review fixes ----------------------------------------------
+#
+# Three findings, all reproduced against the code before they were fixed. The
+# first two were silent: a corrupted packet and a doubled citation both produced
+# an observation that looked like an ordinary bad model answer.
+
+
+def _capability_parent(observation_id, product=TASK_PRODUCT, **over):
+    parent = {
+        "observation_id": observation_id,
+        "reference": "observations/capability/x.json",
+        "sha256": "f" * 64,
+        "payload": {
+            "capability_observation_id": observation_id,
+            "product_observation_id": product,
+            "capability": "some capability",
+            "evidence": [{"source_id": SRC, "passage_id": PSG, "quote": "x"}],
+        },
+    }
+    parent.update(over)
+    return parent
+
+
+def _packet_with_capability_parents(parents):
+    payload = task_packet()
+    payload["parent_context"]["capability_parents"] = parents
+    return payload
+
+
+def _drop(mapping, key):
+    return {k: v for k, v in mapping.items() if k != key}
+
+
+def _with_observation_id(value):
+    parent = _capability_parent(TASK_CAPABILITY)
+    parent["observation_id"] = value
+    return parent
+
+
+BROKEN_PARENTS = {
+    "missing_observation_id": _drop(_capability_parent(TASK_CAPABILITY), "observation_id"),
+    "null_observation_id": _with_observation_id(None),
+    "blank_observation_id": _with_observation_id("   "),
+    "non_string_observation_id": _with_observation_id(7),
+}
+
+
+@pytest.mark.parametrize("case", sorted(BROKEN_PARENTS))
+def test_a_capability_parent_without_an_identity_stops_the_resolver(case):
+    """Finding 1, first half -- and the one that fires first.
+
+    Measured before the fix: this resolved to ``[None]``, which then failed the
+    released schema and was recorded as an ordinary ``schema_invalid``
+    candidate. A corrupted packet was being reported as a bad model answer.
+
+    The refusal comes from ``focal_capability_order`` -- the single source both
+    the renderer and this resolver read -- so ``C0N`` cannot name a position
+    whose identity is missing at either end.
+    """
+    with pytest.raises(ExtractionError) as excinfo:
+        resolve_capability_refs(
+            {"capability_refs": ["C01"]},
+            packet=_packet_with_capability_parents([BROKEN_PARENTS[case]]),
+            focal_product_observation_id=TASK_PRODUCT,
+        )
+    assert excinfo.value.reason_code == "contents_context_invalid"
+
+
+@pytest.mark.parametrize("case", sorted(BROKEN_PARENTS))
+def test_a_capability_parent_without_an_identity_stops_c9s_universe(case):
+    """Finding 1, second half -- defence in depth, not a duplicate.
+
+    ``_capability_observation_ids`` reads *all* capability parents, not only the
+    focal product's, and it is the universe C9 and C10 judge against. Before the
+    fix ``str(None)`` made the literal ``"None"`` a valid key, so C9 would have
+    admitted a task citing nothing at all.
+    """
+    from dynamic_ai_products.extraction.candidates import _capability_observation_ids
+
+    with pytest.raises(ExtractionError) as excinfo:
+        _capability_observation_ids(
+            _packet_with_capability_parents([BROKEN_PARENTS[case]])
+        )
+    assert excinfo.value.reason_code == (
+        "candidate_conformance_capability_context_malformed"
+    )
+
+
+def test_a_capability_parent_without_an_owner_stops_c10s_universe():
+    """C10 compares against ``product_observation_id``; a missing one coerced to
+    the string ``"None"`` and would have been compared as if it were real."""
+    from dynamic_ai_products.extraction.candidates import _capability_observation_ids
+
+    parent = _capability_parent(TASK_CAPABILITY)
+    parent["payload"] = _drop(parent["payload"], "product_observation_id")
+    with pytest.raises(ExtractionError) as excinfo:
+        _capability_observation_ids(_packet_with_capability_parents([parent]))
+    assert excinfo.value.reason_code == (
+        "candidate_conformance_capability_context_malformed"
+    )
+
+
+def test_a_malformed_context_is_not_reported_as_c9():
+    """Finding 1's reason-code decision, asserted.
+
+    "The model cited a capability nobody validated" is a statement about the
+    answer; "this run's capability context is corrupt" is a statement about the
+    question. An operator chasing the first would never find the second, so the
+    codes are kept apart -- ADR-055's rule applied one level up.
+    """
+    from dynamic_ai_products.extraction import candidates
+
+    assert candidates._CAPABILITY_CONTEXT_MALFORMED != candidates._C9
+    assert candidates._CAPABILITY_CONTEXT_MALFORMED != candidates._C10
+    assert candidates._CAPABILITY_CONTEXT_MALFORMED != candidates._C11
+
+
+@pytest.mark.parametrize(
+    "refs", [["C01", "C01"], ["C1", "C01"], ["C01", "C1"], ["C1", "C1", "C01"]]
+)
+def test_c11_refuses_the_same_capability_cited_twice(vocabulary, refs):
+    """Finding 2. The check is on the resolved ids, not the labels.
+
+    ``C1`` and ``C01`` are different strings for one position, so a check on the
+    raw labels would let the second spelling through. Refused rather than
+    deduplicated: collapsing the list silently would be a repair nobody logged,
+    and a downstream reader counting ``len(capability_observation_ids)`` would
+    otherwise be told a task rests on two capabilities when it rests on one.
+    """
+    resolved = resolve_capability_refs(
+        {"capability_refs": refs},
+        packet=task_packet(),
+        focal_product_observation_id=TASK_PRODUCT,
+    )
+    error = refuse_task([task(**_drop(resolved, "capability_refs"))], vocabulary)
+    assert error.reason_code == "candidate_conformance_capability_cited_twice"
+
+
+def test_a_single_capability_reference_is_still_admitted(vocabulary):
+    """The contrast case: one label, one capability, still fine."""
+    resolved = resolve_capability_refs(
+        {"capability_refs": ["C01"]},
+        packet=task_packet(),
+        focal_product_observation_id=TASK_PRODUCT,
+    )
+    assert resolved["capability_observation_ids"] == [TASK_CAPABILITY]
+    admit_task([task(capability_observation_ids=[TASK_CAPABILITY])], vocabulary)
+
+
+def test_c11_is_not_folded_into_c9(vocabulary):
+    """Two citations of one real capability is a different fault from citing an
+    unvalidated one, and each keeps its own code."""
+    duplicated = refuse_task(
+        [task(capability_observation_ids=[TASK_CAPABILITY, TASK_CAPABILITY])], vocabulary
+    )
+    invented = refuse_task(
+        [task(capability_observation_ids=[f"{TASK_PRODUCT}:invented"])], vocabulary
+    )
+    assert duplicated.reason_code == "candidate_conformance_capability_cited_twice"
+    assert invented.reason_code == "candidate_conformance_capability_not_in_snapshot"

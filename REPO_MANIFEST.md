@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **609**
+Total tracked/scaffold files listed: **610**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -289,6 +289,7 @@ Total tracked/scaffold files listed: **609**
 - `schemas/source_passage.schema.json`
 - `schemas/task_measurement.schema.json`
 - `schemas/task_observation.schema.json`
+- `schemas/task_observation_v2.schema.json`
 - `schemas/task_transition.schema.json`
 - `schemas/universe_run_manifest.schema.json`
 - `schemas/universe_run_manifest.v2.schema.json`

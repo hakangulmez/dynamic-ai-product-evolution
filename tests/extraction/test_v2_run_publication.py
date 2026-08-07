@@ -1360,9 +1360,12 @@ def test_v2_a_fully_valid_non_product_stage_still_refuses_before_the_provider(
     every assertion below the reason code is unchanged: the permit was reached,
     zero artifacts exist, neither send happened, and the permit was revoked.
 
-    - ``task_extraction`` is still stopped by the renderer: it needs Snapshot B,
-      which does not exist, so its stage is not materializable
-      (``contents_placeholder_unbound``).
+    - ``task_extraction`` is still stopped by the renderer, one gate later.
+      ADR-068 made the stage materializable, so it is no longer refused for
+      having no bindings; it is refused because task discovery renders one
+      product at a time and the ordinary runner names none
+      (``focal_product_required``). The guarantee this test exists for is
+      unchanged: a task run through this route reaches no provider.
     - ``capability_extraction`` is now materializable (ADR-058) and has a
       schema-bound prompt (ADR-059), so neither renderer gate fires. It is
       stopped earlier instead, by P1-P4: ``_STAGE_PROMPT`` below deliberately
@@ -1375,7 +1378,7 @@ def test_v2_a_fully_valid_non_product_stage_still_refuses_before_the_provider(
     expected_code = (
         "prompt_qualification_mismatch"
         if stage == "capability_extraction"
-        else "contents_placeholder_unbound"
+        else "focal_product_required"
     )
     chain = _valid_parent_chain(tmp_path / "parents")
     governance_root = tmp_path / "governance-stage"

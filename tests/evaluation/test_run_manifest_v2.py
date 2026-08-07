@@ -754,7 +754,7 @@ def test_no_static_schema_added_and_schema_manifest_unchanged():
     # product-candidate availability vocabulary).
     assert not (ROOT / "schemas" / "evaluation_run_manifest.v2.schema.json").exists()
     got = sha256_bytes((ROOT / "schemas" / "schema_version_manifest.json").read_bytes())
-    assert got == "74af422bb692e7d4da0a217ea0058feaec8d42223269496e80a8d638eada05bc"
+    assert got == "c8ad9e3532ee72283672367056514e9324e82ef89b2ff7521c95c038da640f97"
 
 
 def test_protected_identities_unchanged():
