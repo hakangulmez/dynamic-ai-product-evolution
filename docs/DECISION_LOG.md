@@ -3747,6 +3747,101 @@ capability rounds needed one twice.
 tests. No schema, prompt, change request, governance record, run root or
 published artifact changes.
 
+## ADR-071 — The decision set carries three kinds and both snapshots
+
+**Status:** Accepted.
+
+**Where it was found.** Setting up the first task G6-D — the human accept/reject
+pass over the two candidates the `ext-smoke-task-0001` run produced. The run
+itself succeeded; the artifact that records the judgement could not be built.
+
+**The defect.** `build_validation_decision_set` decides which parent snapshot a
+decision set must pin with a two-way branch:
+
+```text
+if observation_kind == "capability":  Snapshot A is required
+elif snapshot_a is not None:          "a product decision set must not pin Snapshot A"
+```
+
+It was written when only `product` and `capability` could reach a decision set,
+and it is exactly correct for those two. A task decision set is judged against
+**Snapshot B** — the accepted capability parents, which is what C9/C10/C11 check
+membership against. It fell into the `elif`, was named a product in the error
+message, and there was no `snapshot_b_reference` field for it to pin anyway.
+Both released schemas enumerate `["product", "capability"]`, so a task decision
+set was not merely unvalidated under `@0.1.0`/`@0.2.0` — it was unrepresentable.
+
+**This is the sixth instance of one class.** ADR-053 (a registry const pinned to
+one version), ADR-058 (a guard that only ever saw one stage), ADR-061 (an
+`observation_kind` default), ADR-062 (a change-request reference) and ADR-064 (a
+per-stage label style) are the same defect: *a constant or branch written when
+only one stage or kind existed, silently wrong the moment a second appeared* —
+the group ADR-068 already named as "the assumption ADR-053, ADR-058, ADR-061,
+ADR-062 and ADR-064 each watched go false".
+
+ADR-068, ADR-069 and ADR-070 are deliberately **not** in that list, though all
+three are recent and all three touched the task kind:
+
+- **ADR-068** added new conformance checks (C9/C10/C11) for a kind that had none.
+  Adding a check is not repairing a branch that silently absorbed something.
+- **ADR-069** wired governance for the task stage — stage maps, the prompt, its
+  change request. New wiring, not a wrong arm.
+- **ADR-070** was a different failure shape: a parameter that existed at both
+  ends of a pipeline and nowhere between them. It fails *loudly*, at the render
+  gate, before anything is spent — the opposite of a value quietly taking a
+  neighbour's path.
+
+Counting them would make the class mean "anything the task kind touched", which
+is not a class one can watch for.
+
+The fix pattern is the class's, and it is what this ADR applies rather than
+patching the branch:
+
+- `SNAPSHOT_AXIS_BY_KIND` — a closed map, `product → none`, `capability → a`,
+  `task → b`, checked by test to be exhaustive over `OBSERVATION_KINDS`.
+- `_snapshot_axis_for` — a fail-closed resolver with its own reason code,
+  `decision_set_snapshot_rule_missing`. A fourth kind added without a decision
+  about its parent snapshot is refused, not absorbed by a neighbouring arm.
+- No `else`. The rule is data with one owner; every builder reads it.
+
+**The successor, and where the branch lives.** `@0.3.0` adds the `task` kind and
+`snapshot_b_reference` / `snapshot_b_sha256`, with the three-way conditional in
+the schema as well as in code — capability pins A and not B, product pins
+neither, task pins B and not A. A task cites Snapshot A only transitively,
+through Snapshot B, so pinning both would record a redundant edge that could
+disagree with itself.
+
+`build_validation_decision_set_v3` delegates to `_v2`, which delegates to the
+released builder, so the chain has one definition of what a decision *is*: the
+counts, the artifact pins, the accepted-artifact requirement, who decided and
+when are all computed once. **The snapshot rule could not have been fixed in the
+successor alone** — it lives in the base builder, and a wrapper that re-stated it
+would give the rule two owners, which is the failure mode `canonical_passage_order`
+and `focal_capability_order` exist to prevent. So the base builder's branch is
+what changed, and the successor adds exactly the two fields it introduces, in the
+same shape ADR-057 used to add `decided_by`/`decided_at`.
+
+**Released contracts are untouched.** `@0.1.0` and `@0.2.0` are byte-identical,
+still enumerate two kinds, and still emit the same key set — asserted directly.
+The base builder gained one optional `target_contract` parameter that decides
+*only* which kinds are admissible; it defaults to the released contract, so a
+call that does not pass it behaves exactly as before. Building a task decision
+set under either released contract is refused with `observation_kind_invalid`
+rather than emitted in a shape no schema accepts. All three contracts are
+mutually closed: no loader accepts another's declared contract.
+
+**Reason codes.** One per snapshot axis: the A-axis keeps the released
+`capability_decision_snapshot_a_mismatch` with both of its messages unchanged, so
+no existing caller's error contract moves; the B-axis gets
+`task_decision_snapshot_b_mismatch`. The product message is now rendered from the
+kind rather than hard-coded, which is what made it a lie for `task`.
+
+**Scope.** One new schema, one manifest entry (`0.20.0` → `0.21.0`, 50 → 51), one
+new contract constant, two closed maps, one resolver, one successor builder, 20
+tests. No prompt, change request, governance record, run root or published
+artifact changes. No live call. The two task candidates remain undecided until a
+separate authorized round writes the decision set.
+
 ## Open decisions
 
 - Required source packet by firm-year.
@@ -3763,3 +3858,4 @@ published artifact changes.
 - The evaluation-artifact root and the `evaluated_comparison` property set that would make an evaluated prompt qualification reachable (see ADR-044).
 - A hash-bound carrier for the analytical period assignment. It stops at the admission artifact today, so no extraction output may be joined to a fiscal-year panel until a successor adds one (see ADR-046).
 - A stage-agnostic rename of `product_candidate_availability_vocabulary@0.1.0`. Three stages now govern `availability_status` through it (see ADR-069); the name still names only the first.
+- Whether `Payments` is a genuine standalone product or a named feature of `Commerce Hub`. The source text presents it as included within Commerce Hub ("It includes an end-to-end payment solution, Payments…") and Commerce Hub's own "Features include" list sits beside it in the same sentence, but Payments alone carries a dedicated risk-factor paragraph (third-party payment facilitator, money-laundering/fraud liability) that none of Commerce Hub's other named features (payment links, invoicing, quoting) carry — a candidate signal for its own commercial/administrative boundary. Not resolved; the existing product boundary (both as separate Snapshot A members) is left unchanged for this round. Surfaced while deciding the first live `task_extraction` candidates, both of which cite Payments as their product.

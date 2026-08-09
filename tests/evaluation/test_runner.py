@@ -1205,7 +1205,9 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # schema, which adds the normalized_task slug C3 reads.
     # 612 = 610 + the two ADR-069 paths: the schema-bound task successor
     # prompt and the change request its qualification record pins.
-    assert declared == len(paths) == 612
+    # 613 = 612 + the one ADR-071 path: the extraction_validation_decision_set
+    # successor schema, which carries the task kind and the Snapshot B pin.
+    assert declared == len(paths) == 613
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

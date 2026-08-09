@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "extraction_validation_decision_set_v3.schema.json",
+  "title": "Extraction validation decision set (v3)",
+  "description": "A human accept/reject judgement over one candidate collection (ADR-033). No deterministic producer and no provider may synthesise one. It pins the raw artifact, the candidate collection, the stage input packet, the coverage artifact, and - per observation kind - the parent snapshot the candidates were judged against. ADR-071 adds the task kind and the Snapshot B pin: @0.1.0 and @0.2.0 were written when only product and capability could reach a decision set, so both encode a two-way split in which capability pins Snapshot A and everything else pins nothing. A task decision set is judged against Snapshot B - the accepted capability parents - and was therefore unrepresentable, not merely unvalidated. @0.1.0 and @0.2.0 are released and unchanged; the three contracts are separate and no loader accepts another's declared contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "schema_version",
+    "observation_kind",
+    "decision_set_version",
+    "raw_artifact_reference",
+    "raw_artifact_sha256",
+    "candidate_collection_reference",
+    "candidate_collection_sha256",
+    "input_packet_reference",
+    "input_packet_sha256",
+    "coverage_artifact_reference",
+    "coverage_artifact_sha256",
+    "snapshot_a_reference",
+    "snapshot_a_sha256",
+    "snapshot_b_reference",
+    "snapshot_b_sha256",
+    "decided_by",
+    "decided_at",
+    "decisions",
+    "accepted_count",
+    "rejected_count"
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "properties": {
+    "contract": { "const": "extraction_validation_decision_set@0.3.0" },
+    "schema_version": { "const": "0.3.0" },
+    "observation_kind": { "enum": ["product", "capability", "task"] },
+    "decision_set_version": { "type": "string", "minLength": 1 },
+    "raw_artifact_reference": { "type": "string", "minLength": 1 },
+    "raw_artifact_sha256": { "$ref": "#/$defs/sha256" },
+    "candidate_collection_reference": { "type": "string", "minLength": 1 },
+    "candidate_collection_sha256": { "$ref": "#/$defs/sha256" },
+    "input_packet_reference": { "type": "string", "minLength": 1 },
+    "input_packet_sha256": { "$ref": "#/$defs/sha256" },
+    "coverage_artifact_reference": { "type": "string", "minLength": 1 },
+    "coverage_artifact_sha256": { "$ref": "#/$defs/sha256" },
+    "snapshot_a_reference": { "type": ["string", "null"], "minLength": 1 },
+    "snapshot_a_sha256": {
+      "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+    },
+    "snapshot_b_reference": { "type": ["string", "null"], "minLength": 1 },
+    "snapshot_b_sha256": {
+      "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+    },
+    "decided_by": { "type": "string", "minLength": 1 },
+    "decided_at": {
+      "type": "string",
+      "minLength": 1,
+      "comment": "ISO-8601 with an explicit UTC offset; the runtime parses and refuses a naive instant."
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "candidate_id",
+          "decision",
+          "reason",
+          "accepted_artifact_reference",
+          "accepted_artifact_sha256"
+        ],
+        "properties": {
+          "candidate_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+          "decision": { "enum": ["accept", "reject"] },
+          "reason": { "type": "string" },
+          "accepted_artifact_reference": { "type": ["string", "null"] },
+          "accepted_artifact_sha256": {
+            "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+          }
+        },
+        "allOf": [
+          {
+            "comment": "An accepted candidate must name its persisted observation artifact; a snapshot member set is otherwise underivable.",
+            "if": { "properties": { "decision": { "const": "accept" } } },
+            "then": {
+              "properties": {
+                "accepted_artifact_reference": { "type": "string", "minLength": 1 },
+                "accepted_artifact_sha256": { "$ref": "#/$defs/sha256" }
+              }
+            }
+          },
+          {
+            "comment": "A rejected candidate must not name an accepted artifact.",
+            "if": { "properties": { "decision": { "const": "reject" } } },
+            "then": {
+              "properties": {
+                "accepted_artifact_reference": { "type": "null" },
+                "accepted_artifact_sha256": { "type": "null" }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "accepted_count": { "type": "integer", "minimum": 0 },
+    "rejected_count": { "type": "integer", "minimum": 0 }
+  },
+  "allOf": [
+    {
+      "comment": "A capability decision set must pin the Snapshot A it was judged against (equality E2), and predates Snapshot B.",
+      "if": { "properties": { "observation_kind": { "const": "capability" } } },
+      "then": {
+        "properties": {
+          "snapshot_a_reference": { "type": "string", "minLength": 1 },
+          "snapshot_a_sha256": { "$ref": "#/$defs/sha256" },
+          "snapshot_b_reference": { "type": "null" },
+          "snapshot_b_sha256": { "type": "null" }
+        }
+      }
+    },
+    {
+      "comment": "A product decision set predates both snapshots and must not pin either.",
+      "if": { "properties": { "observation_kind": { "const": "product" } } },
+      "then": {
+        "properties": {
+          "snapshot_a_reference": { "type": "null" },
+          "snapshot_a_sha256": { "type": "null" },
+          "snapshot_b_reference": { "type": "null" },
+          "snapshot_b_sha256": { "type": "null" }
+        }
+      }
+    },
+    {
+      "comment": "A task decision set must pin the Snapshot B it was judged against - the accepted capability parents - and cites Snapshot A only transitively, through Snapshot B, so it must not pin one.",
+      "if": { "properties": { "observation_kind": { "const": "task" } } },
+      "then": {
+        "properties": {
+          "snapshot_b_reference": { "type": "string", "minLength": 1 },
+          "snapshot_b_sha256": { "$ref": "#/$defs/sha256" },
+          "snapshot_a_reference": { "type": "null" },
+          "snapshot_a_sha256": { "type": "null" }
+        }
+      }
+    }
+  ]
+}

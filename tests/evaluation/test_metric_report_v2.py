@@ -521,7 +521,9 @@ def test_manifest_count():
     # schema, which adds the normalized_task slug C3 reads.
     # 612 = 610 + the two ADR-069 paths: the schema-bound task successor
     # prompt and the change request its qualification record pins.
-    assert declared == len(paths) == 612
+    # 613 = 612 + the one ADR-071 path: the extraction_validation_decision_set
+    # successor schema, which carries the task kind and the Snapshot B pin.
+    assert declared == len(paths) == 613
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 
