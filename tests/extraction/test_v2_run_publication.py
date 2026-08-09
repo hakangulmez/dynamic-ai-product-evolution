@@ -1368,9 +1368,16 @@ def test_v2_a_fully_valid_non_product_stage_still_refuses_before_the_provider(
     - ``task_extraction`` is still stopped by the renderer, one gate later.
       ADR-068 made the stage materializable, so it is no longer refused for
       having no bindings; it is refused because task discovery renders one
-      product at a time and the ordinary runner names none
-      (``focal_product_required``). The guarantee this test exists for is
-      unchanged: a task run through this route reaches no provider.
+      product at a time and **this call names none**.
+
+      That last word is what ADR-070 changed. Until then the runner had no
+      ``focal_product_observation_id`` parameter at all, so *no* caller could
+      supply one and the refusal was structural. Now it is a statement about
+      this call: omit the focal product and the render still fails closed with
+      ``focal_product_required``. The companion case below supplies one and
+      shows the run getting past this gate. The guarantee this test exists for
+      is unchanged either way: a task run that names no product reaches no
+      provider.
     - ``capability_extraction`` is now materializable (ADR-058) and has a
       schema-bound prompt (ADR-059), so neither renderer gate fires. It is
       stopped earlier instead, by P1-P4: ``_STAGE_PROMPT`` below deliberately
@@ -1444,3 +1451,153 @@ def test_v2_a_non_product_stage_without_parent_pins_stops_in_the_packet_prefligh
     assert not (tmp_path / "run").exists()
     assert provider.permits == 0
     assert provider.revoked == 0
+
+
+# --- ADR-070: the runner can carry a focal product -------------------------
+
+# ``_valid_parent_chain`` writes products ``prod-0`` and ``prod-1``, and
+# ``derive_parent_context`` makes those the member observation ids -- so this is
+# a real validated product of that chain, not an invented string.
+CHAIN_FOCAL_PRODUCT = "prod-0"
+
+
+def test_v2_a_task_run_naming_its_focal_product_gets_past_the_render_gate(
+    tmp_path: Path,
+):
+    """The other half of the case above, and the gap ADR-070 closed.
+
+    Same chain, same stage, same everything -- one keyword added. Before ADR-070
+    the runner had no parameter to add, so a task run could not be made at all
+    through this route; the refusal was structural rather than about the call.
+
+    What this asserts is narrow and deliberate: the run gets **past** the render
+    gate. It still stops afterwards, because ``_STAGE_PROMPT`` above pins the
+    schema-bound task prompt while this fixture's chain qualifies it against a
+    synthetic digest -- and that is a different gate with a different code. The
+    point is only that ``focal_product_required`` is no longer what happens.
+    """
+    chain = _valid_parent_chain(tmp_path / "parents")
+    governance_root = tmp_path / "governance-stage"
+    stage = "task_extraction"
+    pin = write_governance_chain(
+        governance_root,
+        stage=stage,
+        qualification={
+            "stage_output_contract_id": STAGE_OUTPUT_CONTRACT_ID[stage],
+            "stage_output_contract_sha256": STAGE_OUTPUT_SCHEMA_SHA256[stage],
+        },
+        enablement={
+            "stage": stage,
+            "stage_output_contract_id": STAGE_OUTPUT_CONTRACT_ID[stage],
+            "stage_output_contract_sha256": STAGE_OUTPUT_SCHEMA_SHA256[stage],
+        },
+        authorization={"stage": stage},
+    )
+    provider = _Provider()
+    with pytest.raises(ExtractionError) as excinfo:
+        _run(
+            tmp_path,
+            stage=stage,
+            provider=provider,
+            governance_artifact_root=governance_root,
+            live_call_authorization_pin=pin,
+            artifact_root=chain["artifact_root"],
+            snapshot_a_pin=chain["snapshot_a_pin"],
+            snapshot_b_pin=chain["snapshot_b_pin"],
+            product_decision_set_pin=chain["product_decision_set_pin"],
+            capability_decision_set_pin=chain["capability_decision_set_pin"],
+            focal_product_observation_id=CHAIN_FOCAL_PRODUCT,
+        )
+    assert excinfo.value.reason_code != "focal_product_required"
+    # Still no provider send, and the permit is still returned.
+    assert (provider.count_sends, provider.generate_sends) == (0, 0)
+    assert provider.revoked == 1
+
+
+def test_v2_the_runner_hands_the_focal_product_to_the_renderer(tmp_path: Path):
+    """Threaded, not merely accepted.
+
+    A parameter a signature takes and then drops would pass the case above for
+    the wrong reason. This watches the renderer itself and asserts the value
+    arrives.
+    """
+    import dynamic_ai_products.extraction.run_extraction as run_module
+
+    seen: list[str | None] = []
+    original = run_module.render_provider_contents
+
+    def watching(*args, **kwargs):
+        seen.append(kwargs.get("focal_product_observation_id"))
+        return original(*args, **kwargs)
+
+    chain = _valid_parent_chain(tmp_path / "parents")
+    governance_root = tmp_path / "governance-stage"
+    stage = "task_extraction"
+    pin = write_governance_chain(
+        governance_root,
+        stage=stage,
+        qualification={
+            "stage_output_contract_id": STAGE_OUTPUT_CONTRACT_ID[stage],
+            "stage_output_contract_sha256": STAGE_OUTPUT_SCHEMA_SHA256[stage],
+        },
+        enablement={
+            "stage": stage,
+            "stage_output_contract_id": STAGE_OUTPUT_CONTRACT_ID[stage],
+            "stage_output_contract_sha256": STAGE_OUTPUT_SCHEMA_SHA256[stage],
+        },
+        authorization={"stage": stage},
+    )
+    run_module.render_provider_contents = watching
+    try:
+        with pytest.raises(ExtractionError):
+            _run(
+                tmp_path,
+                stage=stage,
+                provider=_Provider(),
+                governance_artifact_root=governance_root,
+                live_call_authorization_pin=pin,
+                artifact_root=chain["artifact_root"],
+                snapshot_a_pin=chain["snapshot_a_pin"],
+                snapshot_b_pin=chain["snapshot_b_pin"],
+                product_decision_set_pin=chain["product_decision_set_pin"],
+                capability_decision_set_pin=chain["capability_decision_set_pin"],
+                focal_product_observation_id=CHAIN_FOCAL_PRODUCT,
+            )
+    finally:
+        run_module.render_provider_contents = original
+
+    assert seen == [CHAIN_FOCAL_PRODUCT]
+
+
+@pytest.mark.parametrize("stage", ["product_extraction", "capability_extraction"])
+def test_v2_the_other_two_stages_are_unaffected_by_the_new_parameter(
+    tmp_path: Path, stage
+):
+    """ADR-070 is additive: a stage with no focal product behaves identically.
+
+    Asserted by running each of them both ways -- omitting the parameter and
+    passing one -- and requiring the same outcome. A stage that started reading
+    it would diverge here.
+    """
+    outcomes = []
+    for index, focal in enumerate((None, "CIK0000000001:2024-12-31:ignored")):
+        root = tmp_path / f"case-{index}"
+        root.mkdir()
+        kwargs = {"stage": stage, "provider": _Provider()}
+        if stage == "capability_extraction":
+            chain = _valid_parent_chain(root / "parents")
+            kwargs.update(
+                artifact_root=chain["artifact_root"],
+                snapshot_a_pin=chain["snapshot_a_pin"],
+                product_decision_set_pin=chain["product_decision_set_pin"],
+            )
+        if focal is not None:
+            kwargs["focal_product_observation_id"] = focal
+        if stage == "product_extraction":
+            outcome = _run(root, **kwargs)
+            outcomes.append(("ok", outcome.verdict))
+        else:
+            with pytest.raises(ExtractionError) as excinfo:
+                _run(root, **kwargs)
+            outcomes.append(("refused", excinfo.value.reason_code))
+    assert outcomes[0] == outcomes[1], outcomes

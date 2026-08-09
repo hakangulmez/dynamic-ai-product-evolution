@@ -1340,6 +1340,18 @@ def run_extraction_stage_v2(
     candidate_collection_root: str | Path | None = None,
     vocabulary_root: str | Path | None = None,
     vocabulary_pin: dict[str, str] | None = None,
+    # ADR-070. Task discovery runs one product at a time, so the renderer and
+    # the candidate pipeline each need to know which product this call is
+    # about. Both already took this parameter; the runner between them did not,
+    # so no caller could supply it and a task run was refused with
+    # ``focal_product_required`` before reaching the provider.
+    #
+    # Optional and unused by the product and capability stages, which have no
+    # focal product: passing it changes nothing for them, and omitting it on the
+    # task stage still fails closed inside the renderer. This runner does not
+    # re-check it -- one owner for that rule, as ``canonical_passage_order``
+    # keeps one owner for the passage order.
+    focal_product_observation_id: str | None = None,
 ) -> ExtractionOutcome:
     """The E-M production entry point: one measured, two-operation run.
 
@@ -1538,6 +1550,7 @@ def run_extraction_stage_v2(
             coverage_artifact=coverage_artifact,
             source_snapshot_manifest=source_snapshot_manifest,
             evidence_binding=evidence_binding,
+            focal_product_observation_id=focal_product_observation_id,
         )
     finally:
         _revoke_run_permission(client)
@@ -1582,6 +1595,7 @@ def run_extraction_stage_v2(
             # capability route would have collected against the product schema and
             # published an empty-but-valid-looking collection.
             observation_kind=observation_kind_for_stage(stage),
+            focal_product_observation_id=focal_product_observation_id,
         )
     return outcome
 
@@ -1610,6 +1624,7 @@ def _run_two_operation_stage(
     coverage_artifact: dict[str, str],
     source_snapshot_manifest: dict[str, str],
     evidence_binding: dict[str, str],
+    focal_product_observation_id: str | None = None,
 ) -> ExtractionOutcome:
     """The post-handshake region. Its caller guarantees permit revocation."""
     contract = _client_contract_of_v2(client)
@@ -1674,7 +1689,10 @@ def _run_two_operation_stage(
             reason_code="company_identity_pin_required",
         )
     rendered_contents = render_provider_contents(
-        stage=stage, prompt_text=prompt["text"], packet=packet
+        stage=stage,
+        prompt_text=prompt["text"],
+        packet=packet,
+        focal_product_observation_id=focal_product_observation_id,
     )
     contents_payload = rendered_contents.encode("utf-8")
     contents_sha_expected = sha256_bytes(contents_payload)

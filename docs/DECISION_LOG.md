@@ -3696,6 +3696,57 @@ governance-reachability path end to end. No product or capability prompt,
 schema, change request, or qualification record changes. No live call is made
 or authorized by this round.
 
+## ADR-070 — The runner carries the focal product
+
+**Status:** Accepted.
+
+**What was missing.** ADR-068 gave the renderer a `focal_product_observation_id`
+and ADR-069 qualified the task prompt, but neither touched
+`run_extraction.py`. So the parameter existed at both ends of the pipeline —
+`render_provider_contents` and `materialize_candidate_collection` — and nowhere
+in the runner between them. No caller could supply one, and a task run was
+refused at the render gate with `focal_product_required`.
+
+**Not a defect, and worth saying why.** Each round's authorized scope excluded
+the runner: E-T1 was "renderer binding, the new conformance checks, tests", and
+the governance wiring round was the stage maps, the prompt and its change
+request. The gap was measured and reported at the time, and the test that
+covers it — `test_v2_a_fully_valid_non_product_stage_still_refuses_before_the_provider`
+— was rebaselined to `focal_product_required` precisely because that was the new
+truth. The gate was doing its job on a stage that was not finished yet.
+
+It surfaced where a gap like this should: setting up the first live task call.
+Nothing was spent finding it — the refusal happens at F1, before the count send.
+
+**The change is one parameter, threaded twice.** `run_extraction_stage_v2` takes
+`focal_product_observation_id`, passes it to `_run_two_operation_stage`, which
+passes it to `render_provider_contents`; and the public entry point passes it to
+`materialize_candidate_collection` on the publication path. Both were verified
+by mutation: dropping either hand-off turns two tests red.
+
+`_run_authorized_stage` is deliberately left alone. Its render call is on the v1
+provider route, which ADR-045 retired — the code above it raises
+`v1_live_route_retired` before reaching it, and the module says so in a comment
+at that call. Threading a parameter through unreachable code would suggest it
+matters there.
+
+**Optional, and the refusal keeps one owner.** The product and capability stages
+have no focal product; passing one changes nothing for them, asserted by running
+each stage both ways and requiring identical outcomes. Omitting it on the task
+stage still fails closed — but the runner does not re-check that. The rule lives
+in `_require_focal` inside the renderer, and a second copy in the runner would
+be the two-owners problem `canonical_passage_order` exists to avoid.
+
+**What this does not do.** It makes a task run *reachable*; it does not make one
+correct. No live call is authorized by this round, and the governance chain
+minted for the first attempt goes stale the moment this lands — `code_commit`
+pins the commit before it, so a new attempt root is needed, exactly as the
+capability rounds needed one twice.
+
+**Scope.** One optional parameter, two hand-offs, one docstring correction, four
+tests. No schema, prompt, change request, governance record, run root or
+published artifact changes.
+
 ## Open decisions
 
 - Required source packet by firm-year.
