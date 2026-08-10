@@ -779,12 +779,15 @@ def test_the_label_style_map_is_closed_over_the_materializable_stages():
         "product_extraction",
         "capability_extraction",
         "task_extraction",
+        # ADR-073 (CR-0009): consolidation is a stage, not a second pass.
+        "product_consolidation",
     }
     # ADR-064's measurement carried forward rather than repeated: only the
     # product stage pads, because only its prompt describes a padded label.
     assert STAGE_PASSAGE_REF_STYLE["product_extraction"] == "P{:03d}"
     assert STAGE_PASSAGE_REF_STYLE["capability_extraction"] == "P{:d}"
     assert STAGE_PASSAGE_REF_STYLE["task_extraction"] == "P{:d}"
+    assert STAGE_PASSAGE_REF_STYLE["product_consolidation"] == "P{:d}"
 
 
 def test_a_ref_resolves_to_the_pair_at_that_canonical_position():

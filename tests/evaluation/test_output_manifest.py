@@ -809,7 +809,11 @@ def test_repo_manifest_count_and_paths():
     # prompt and the change request its qualification record pins.
     # 613 = 612 + the one ADR-071 path: the extraction_validation_decision_set
     # successor schema, which carries the task kind and the Snapshot B pin.
-    assert "Total tracked/scaffold files listed: **613**" in text
+    # 620 = 613 + the seven ADR-073 (CR-0009) paths: the schema-bound
+    # consolidation prompt, its two output schemas, the packet successor
+    # that carries candidate_context, the consolidation module, and the
+    # change request its qualification record pins.
+    assert "Total tracked/scaffold files listed: **620**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

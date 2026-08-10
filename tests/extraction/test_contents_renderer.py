@@ -93,6 +93,14 @@ def test_the_stage_binding_map_is_closed_and_stage_scoped():
         "product_extraction",
         "capability_extraction",
         "task_extraction",
+        # ADR-073 (CR-0009): consolidation reads the discovery stage's output.
+        "product_consolidation",
+    }
+    assert set(STAGE_PLACEHOLDER_BINDINGS["product_consolidation"]) == {
+        "company_name",
+        "cutoff",
+        "passages_with_ids",
+        "product_candidates",
     }
     assert set(STAGE_PLACEHOLDER_BINDINGS["product_extraction"]) == {
         "company_name",
@@ -235,7 +243,7 @@ def test_an_unbound_placeholder_is_still_refused_on_the_capability_stage():
     assert excinfo.value.reason_code == "contents_placeholder_unbound"
 
 
-def test_all_three_stages_are_materialization_supported():
+def test_all_four_stages_are_materialization_supported():
     from dynamic_ai_products.extraction.contents_renderer import (
         MATERIALIZATION_SUPPORTED_STAGES,
     )
@@ -244,6 +252,8 @@ def test_all_three_stages_are_materialization_supported():
         "product_extraction",
         "capability_extraction",
         "task_extraction",
+        # ADR-073 (CR-0009): consolidation is a stage, not a second pass.
+        "product_consolidation",
     )
 
 
@@ -584,6 +594,10 @@ def test_the_required_placeholder_map_is_closed_and_narrow():
     assert STAGE_REQUIRED_PLACEHOLDERS == {
         "capability_extraction": ("validated_products",),
         "task_extraction": ("product", "capabilities"),
+        # ADR-073. Same reason again: a consolidation decision names a
+        # candidate, so a prompt that never shows the candidates cannot produce
+        # a conforming decision.
+        "product_consolidation": ("product_candidates",),
     }
     assert "product_extraction" not in STAGE_REQUIRED_PLACEHOLDERS
 

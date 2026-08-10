@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **613**
+Total tracked/scaffold files listed: **620**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -128,6 +128,7 @@ Total tracked/scaffold files listed: **613**
 - `evals/change_requests/CR-0006-capability-discovery-schema-v2-bootstrap-qualification.md`
 - `evals/change_requests/CR-0007-capability-discovery-schema-v3-bootstrap-qualification.md`
 - `evals/change_requests/CR-0008-task-discovery-schema-v1-bootstrap-qualification.md`
+- `evals/change_requests/CR-0009-product-consolidation-schema-v1-bootstrap-qualification.md`
 - `evals/change_requests/README.md`
 - `evals/expected/.gitkeep`
 - `evals/fixtures/README.md`
@@ -227,6 +228,7 @@ Total tracked/scaffold files listed: **613**
 - `prompts/extraction/capability_discovery_schema_v3.md`
 - `prompts/extraction/capability_extraction.md`
 - `prompts/extraction/product_consolidation_precision.md`
+- `prompts/extraction/product_consolidation_schema_v1.md`
 - `prompts/extraction/product_discovery_recall.md`
 - `prompts/extraction/product_discovery_schema_v2.md`
 - `prompts/extraction/product_discovery_schema_v3.md`
@@ -263,6 +265,7 @@ Total tracked/scaffold files listed: **613**
 - `schemas/extraction_execution_outcome.schema.json`
 - `schemas/extraction_input_packet.schema.json`
 - `schemas/extraction_input_packet.v2.schema.json`
+- `schemas/extraction_input_packet.v3.schema.json`
 - `schemas/extraction_non_run_record.schema.json`
 - `schemas/extraction_provider_client_contract.schema.json`
 - `schemas/extraction_provider_client_contract_v2.schema.json`
@@ -281,6 +284,8 @@ Total tracked/scaffold files listed: **613**
 - `schemas/official_web_candidate.schema.json`
 - `schemas/official_web_collection_manifest.schema.json`
 - `schemas/product_candidate_availability_vocabulary.schema.json`
+- `schemas/product_consolidated_universe.schema.json`
+- `schemas/product_consolidation_output.schema.json`
 - `schemas/product_observation.schema.json`
 - `schemas/prompt_qualification_record.schema.json`
 - `schemas/schema_version_manifest.json`
@@ -424,6 +429,7 @@ Total tracked/scaffold files listed: **613**
 - `src/dynamic_ai_products/extraction/prompt_qualification.py`
 - `src/dynamic_ai_products/extraction/prompts.py`
 - `src/dynamic_ai_products/extraction/contents_renderer.py`
+- `src/dynamic_ai_products/extraction/consolidation.py`
 - `src/dynamic_ai_products/extraction/provider_adapter.py`
 - `src/dynamic_ai_products/extraction/raw_artifacts.py`
 - `src/dynamic_ai_products/extraction/routing_contract.py`
@@ -544,6 +550,7 @@ Total tracked/scaffold files listed: **613**
 - `tests/extraction/test_boundaries.py`
 - `tests/extraction/test_candidate_conformance.py`
 - `tests/extraction/test_company_identity_binding.py`
+- `tests/extraction/test_consolidation.py`
 - `tests/extraction/test_contents_renderer.py`
 - `tests/extraction/test_budget_session.py`
 - `tests/extraction/test_candidates.py`

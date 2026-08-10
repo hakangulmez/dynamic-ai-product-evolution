@@ -754,7 +754,7 @@ def test_no_static_schema_added_and_schema_manifest_unchanged():
     # ADR-057 added the first decision-set successor).
     assert not (ROOT / "schemas" / "evaluation_run_manifest.v2.schema.json").exists()
     got = sha256_bytes((ROOT / "schemas" / "schema_version_manifest.json").read_bytes())
-    assert got == "1b270c9955ecbb27628c48cfc7456df5359ea779155471e48600e3c5adc0ae52"
+    assert got == "5aa4c2ed3ccd57cda910e1e98f71de5c8d8c904b50dc2491a096103c6fd5b025"
 
 
 def test_protected_identities_unchanged():

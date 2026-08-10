@@ -148,7 +148,9 @@ def test_package_is_enumerable_and_complete():
     # because the artifact governs admission and candidates.py performs it: a
     # producer living inside its own consumer could be quietly relaxed to admit
     # whatever that consumer already produced.
-    assert len(MODULES) == 21
+    # ADR-073 adds ``consolidation``: label resolution and universe assembly
+    # for the product_consolidation stage.
+    assert len(MODULES) == 22
     assert (PACKAGE / "__init__.py") in MODULES
 
 

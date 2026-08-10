@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.21.0",
+  "manifest_version": "0.22.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -17,6 +17,7 @@
     "extraction_execution_outcome": "0.1.0",
     "extraction_input_packet": "0.1.0",
     "extraction_input_packet_v2": "0.2.0",
+    "extraction_input_packet_v3": "0.3.0",
     "extraction_non_run_record": "0.1.0",
     "extraction_provider_client_contract": "0.1.0",
     "extraction_provider_client_contract_v2": "0.2.0",
@@ -35,6 +36,8 @@
     "official_web_candidate": "0.1.0",
     "official_web_collection_manifest": "0.1.0",
     "product_candidate_availability_vocabulary": "0.1.0",
+    "product_consolidated_universe": "0.1.0",
+    "product_consolidation_output": "0.1.0",
     "product_observation": "0.1.0",
     "prompt_qualification_record": "0.1.0",
     "sec_source_candidate": "0.1.0",

@@ -3968,6 +3968,131 @@ second company, and until then this normalizer is a HubSpot-measured rule.
 11 tests, one new snapshot corpus. No schema, prompt, change request, governance
 record or decision set changes. No provider call.
 
+## ADR-073 — Consolidation is a stage, not a second pass (SPEC-008, CR-0009)
+
+**Status:** Accepted.
+
+**The gap.** `SPEC-008` defines a consolidation pass and
+`product_consolidation_precision` has been registered since the first prompt
+registry. It has never run, and measurement shows it could not:
+
+- **No code path reaches it.** All three consumers of `single_pass_prompt_plan`
+  take `sequence[0]` and none accepts a prompt selection. That function's
+  docstring records executing position one as an explicit ADR-036 decision, not
+  incidental indexing.
+- **No input mechanism.** Zero `{{...}}` placeholders, and no binder or packet
+  field could have supplied candidates even if one existed.
+- **No output contract.** It asks for "retained product observations, alias
+  links, family links, exclusions with reasons, and unresolved cases" and names
+  no field, no type, no shape.
+
+The third is the defect `prompts.py` already names for `task_discovery_recall` —
+*"this prompt states no output contract at all"*, the CR-0005 defect — one stage
+earlier. CR-0008 contrasts its own prompt against it in so many words. A
+registry entry made a prompt look available that nothing could execute.
+
+**Why a stage and not a pass.** Adding a `pass_index` to
+`single_pass_prompt_plan` was rejected for ADR-066's reason, which is stronger
+here than it was there: a parameter with a default is how a released behaviour
+gets changed by accident, and this one would sit on the function whose entire
+purpose is to record *which* prompt a run executed. A new stage needs no such
+parameter — `single_pass_prompt_plan` returns position one, which for
+`product_consolidation` is the only position. `prompt_sequence_complete` is
+therefore `True` for the new stage and stays `False` for `product_extraction`,
+and both readings are honest.
+
+Every registry in this codebase is already stage-keyed, so a stage is one line
+added to each closed map: `EXTRACTION_PROMPTS`, `STAGES`,
+`STAGE_PLACEHOLDER_BINDINGS`, `STAGE_REQUIRED_PLACEHOLDERS`,
+`STAGE_PASSAGE_REF_STYLE`, `MATERIALIZATION_SUPPORTED_STAGES`. That is the
+additive shape ADR-058 used for capability and ADR-068/069 for task.
+
+**Note what it is *not* added to.** `STAGE_OBSERVATION_KIND` gains nothing,
+because consolidation produces decisions **about** observations, not
+observations. `observation_kind_for_stage("product_consolidation")` refuses with
+`stage_observation_kind_undeclared` — ADR-061's fail-closed resolver doing
+exactly its job — and the candidate-collection publication path is therefore
+unreachable for this stage. The universe is written by its own deterministic
+assembler instead.
+
+**The model decides; it does not rewrite.** This is the design rule the rest
+follows from. A retained product's body is carried through byte-unchanged from
+the candidate it came from, and the model emits only
+`{"ref": "D3", "action": "retain", …}`. Two reasons, both measured in this
+project rather than assumed here: a model cannot reliably copy a long opaque
+string (ADR-055, and an observation is mostly those), and a re-emitted body is
+one the model could have altered silently in a field a later reader takes for
+discovery's finding. It is ADR-054's rule for derived identity, one artifact on.
+
+The consequence is two schemas rather than one, mirroring
+`raw_prediction` → `candidate_collection`:
+`product_consolidation_output.schema.json` is what the model returns;
+`product_consolidated_universe.schema.json` is what is persisted. Folding them
+into one would have meant asking the model for an observation body.
+
+**`D`, and not `C`.** The candidate label family is `D`, unpadded. `C` belongs
+to `focal_capability_order` and means "a capability of the focal product";
+giving one letter a second meaning is precisely the failure
+`canonical_passage_order` exists to prevent — a label naming one thing at render
+time and another at resolution time. `A`, `P` and `S` are taken for the same
+reason. Unpadded per ADR-064: the correct answer should be what the model writes
+naturally. The `A` family stays padded only because a released prompt cannot be
+edited; a new family does not inherit that debt.
+
+`candidate_ref_order` is public and shared, for the reason
+`focal_capability_order` is: `_bind_product_candidates` assigns the labels the
+model sees and `resolve_candidate_refs` resolves the labels it wrote back. Two
+orderings that happened to agree would be the same lesson repeated silently.
+
+**A third packet contract, and why it was unavoidable.**
+`extraction_input_packet@0.3.0` adds `candidate_context`. The packet schemas are
+`additionalProperties: false`, so this could not be a field added in place — but
+the deeper reason is that the packet digest is the run's record of what the
+model was shown. Passing candidates around the packet would have left
+`input_packet_sha256` covering less than the model actually saw. `@0.1.0` and
+`@0.2.0` are unchanged, and a caller supplying no candidate pin gets exactly the
+packet it got before: the contract is resolved from a closed ladder, never
+defaulted.
+
+**What the schema cannot see, and therefore what the conformance layer checks.**
+Exhaustiveness is a property of the candidate *set*, which a JSON Schema never
+sees. Six reason codes, each with its own test:
+`consolidation_candidate_not_decided`, `consolidation_candidate_decided_twice`,
+`consolidation_ref_unresolvable`, `consolidation_self_link`,
+`consolidation_link_targets_excluded` and
+`consolidation_evidence_quote_uncontained` — the last being ADR-063's C8 applied
+to a third artifact. A link into an excluded candidate is refused because it
+would leave the universe carrying a relation to something the universe says is
+not there.
+
+`unresolved` is a first-class action rather than an error path. Rule 7 says
+unknown over guess, and a rule the output cannot express is a rule the model
+cannot follow.
+
+**Additive, and asserted so.** `product_consolidation_precision` stays at
+position five of the `product_extraction` sequence — a frozen prompt is never
+moved and never deleted, and moving it would rewrite the record of what that
+sequence was. The five-entry product tuple, `single_pass_prompt_plan`, the three
+released corpora and the `ext-smoke-0009` chain with the decision set and
+Snapshot A built on it are all asserted unchanged by test.
+
+The prompt registry moves `v8` → `v9`. Nothing changed position; the registry
+gained a key, and the version is a property of the registry rather than of any
+prompt — a record naming `v8` was minted against a three-stage registry.
+
+**What this does not do.** It makes the stage executable; it does not claim its
+output is correct, and no live call is authorized by this round. There is no
+human decision set over a consolidated universe: the artifact is a model output
+with evidence, not an admitted finding, and nothing downstream may treat it as
+one until that stage exists. It does not reconcile `entity_type` and
+`product_family` — discovery's fields — with `entity_role` and `families[]`,
+which are consolidation's; both are recorded, side by side, so which stage said
+what stays legible.
+
+**Scope.** One prompt, three schemas, one module, one CR, six registry lines,
+one optional runner parameter, six reason codes, 42 tests. No change to any
+discovery flow.
+
 ## Open decisions
 
 - Required source packet by firm-year.

@@ -43,6 +43,7 @@ KNOWN_PROMPT_REGISTRY_VERSIONS: tuple[str, ...] = (
     "extraction_prompt_registry_v6",
     "extraction_prompt_registry_v7",
     "extraction_prompt_registry_v8",
+    "extraction_prompt_registry_v9",
 )
 
 # ADR-053 (G6-P). ``v1`` -> ``v2``: the product_extraction sequence gained a
@@ -78,7 +79,13 @@ KNOWN_PROMPT_REGISTRY_VERSIONS: tuple[str, ...] = (
 # in -- cites passages by the already-unpadded ``P0N`` a task render carries,
 # and bounds its evidence quote to one to three sentences, matching ADR-065's
 # rule for the capability stage.
-PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v8"
+#
+# ADR-073 (CR-0009). ``v8`` -> ``v9``: a fourth stage, ``product_consolidation``,
+# joins the registry with one prompt. No existing sequence moved and no prompt
+# changed position; the registry gained a key. The version still moves for every
+# stage at once, which is the point -- a record naming v8 was minted against a
+# registry that had three stages.
+PROMPT_REGISTRY_VERSION = "extraction_prompt_registry_v9"
 
 # Stage -> ordered prompt ids. Labels live here, never inside a frozen prompt.
 EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
@@ -134,6 +141,17 @@ EXTRACTION_PROMPTS: dict[str, tuple[str, ...]] = {
         "task_discovery_recall",
         "task_consolidation_precision",
     ),
+    # ADR-073 (CR-0009). Consolidation is a stage, not a second pass of
+    # ``product_extraction``. ``single_pass_prompt_plan`` is untouched: it
+    # returns position one, which here is the only position, so
+    # ``prompt_sequence_complete`` is True for this stage and stays False for
+    # ``product_extraction`` -- which is the honest reading of both.
+    #
+    # ``product_consolidation_precision`` deliberately stays where it is, in
+    # the ``product_extraction`` tuple. A frozen prompt is never moved and never
+    # deleted, and moving it would rewrite the record of what that stage's
+    # sequence was.
+    "product_consolidation": ("product_consolidation_schema_v1",),
 }
 
 # Code-owned and closed. A prompt in this set carries the availability

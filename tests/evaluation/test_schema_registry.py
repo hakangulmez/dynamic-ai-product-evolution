@@ -174,7 +174,11 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-071: manifest_version 0.20.0 -> 0.21.0, 50 -> 51
+    # Rebaselined by ADR-073 (CR-0009): manifest_version 0.21.0 -> 0.22.0,
+    # 51 -> 54 entries, registering the consolidation output and universe
+    # schemas and the extraction_input_packet successor that carries
+    # candidate_context. Before it,
+    # ADR-071: manifest_version 0.20.0 -> 0.21.0, 50 -> 51
     # entries, registering the extraction_validation_decision_set successor that
     # carries the task kind and the Snapshot B pin. Before it,
     # ADR-068: manifest_version 0.19.0 -> 0.20.0, 49 -> 50
@@ -190,7 +194,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "1b270c9955ecbb27628c48cfc7456df5359ea779155471e48600e3c5adc0ae52"
+    "5aa4c2ed3ccd57cda910e1e98f71de5c8d8c904b50dc2491a096103c6fd5b025"
 )
 
 

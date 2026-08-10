@@ -125,7 +125,8 @@
         "capability_extraction",
         "task_discovery_recall",
         "task_consolidation_precision",
-        "task_discovery_schema_v1"
+        "task_discovery_schema_v1",
+        "product_consolidation_schema_v1"
       ]
     },
     "prompt_lifecycle_state": {
@@ -150,7 +151,8 @@
         "extraction_prompt_registry_v5",
         "extraction_prompt_registry_v6",
         "extraction_prompt_registry_v7",
-        "extraction_prompt_registry_v8"
+        "extraction_prompt_registry_v8",
+        "extraction_prompt_registry_v9"
       ]
     },
     "qualification_basis": {
@@ -207,7 +209,8 @@
       "enum": [
         "product_extraction",
         "capability_extraction",
-        "task_extraction"
+        "task_extraction",
+        "product_consolidation"
       ]
     },
     "stage_output_contract_id": {

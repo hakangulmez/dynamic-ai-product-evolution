@@ -43,6 +43,7 @@ from .errors import ExtractionError
 
 __all__ = [
     "MARKER_FRAGMENTS",
+    "CANDIDATE_REF_PATTERN",
     "CAPABILITY_REF_PATTERN",
     "MATERIALIZATION_SUPPORTED_STAGES",
     "PARENT_REF_PATTERN",
@@ -52,6 +53,8 @@ __all__ = [
     "STAGE_PASSAGE_REF_STYLE",
     "STAGE_PLACEHOLDER_BINDINGS",
     "STAGE_REQUIRED_PLACEHOLDERS",
+    "candidate_ref_label",
+    "candidate_ref_order",
     "canonical_passage_order",
     "capability_ref_label",
     "focal_capability_order",
@@ -86,6 +89,12 @@ MATERIALIZATION_SUPPORTED_STAGES: tuple[str, ...] = (
     # persisted and reconciled, so the packet builder hands this renderer both
     # ``product_parents`` and ``capability_parents``.
     "task_extraction",
+    # ADR-073 (CR-0009). The consolidation stage renders, for the same reason
+    # the other three do: its input exists and is hash-bound. Note what it is
+    # **not** added to -- ``STAGE_OBSERVATION_KIND`` and the candidate-collection
+    # publication path -- because it produces decisions about observations, not
+    # observations. ``observation_kind_for_stage`` refuses it, which is correct.
+    "product_consolidation",
 )
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -173,6 +182,10 @@ STAGE_PASSAGE_REF_STYLE: dict[str, str] = {
     # number, the model re-emits it in its own natural form. The task stage is
     # new, so it starts where that measurement ended rather than repeating it.
     "task_extraction": "P{:d}",
+    # ADR-073. Unpadded, same reason. This stage's prompt is new, so it is
+    # written against the unpadded form rather than inheriting the product
+    # stage's three-digit style from the corpus it happens to share.
+    "product_consolidation": "P{:d}",
 }
 
 _STAGE_REF_STYLE_UNDECLARED = "passage_ref_label_style_undeclared"
@@ -366,6 +379,65 @@ def capability_ref_label(ordinal: int) -> str:
     return f"C{ordinal}"
 
 
+# ADR-073 (CR-0009). The consolidation stage's own label family.
+#
+# **Not ``C``.** ``C`` belongs to ``focal_capability_order`` and means "a
+# capability of the focal product". Giving one letter a second meaning is
+# exactly the failure ``canonical_passage_order`` exists to prevent: a label
+# that names one thing when the document is rendered and a different thing when
+# the model's answer is resolved. ``A``, ``P`` and ``S`` are taken for the same
+# reason, so the candidate family is ``D`` -- discovery candidate.
+#
+# Unpadded, per ADR-064: the correct answer should be what the model writes
+# naturally. The ``A`` family stayed padded because a released prompt cannot be
+# edited; a new family does not inherit that debt.
+CANDIDATE_REF_PATTERN = re.compile(r"^D(\d+)$")
+
+
+def candidate_ref_label(ordinal: int) -> str:
+    """The label for a one-based position in the candidate collection."""
+    return f"D{ordinal}"
+
+
+def candidate_ref_order(packet: dict[str, Any]) -> list[dict[str, Any]]:
+    """The one ordering that decides what each ``D0N`` label names.
+
+    **Public and shared**, for the reason ``focal_capability_order`` is: this
+    decision has two consumers -- ``_bind_product_candidates`` assigns the
+    labels the model sees, and ``resolve_candidate_refs`` resolves the labels
+    the model wrote back. Two independent orderings that happened to agree would
+    be the ``canonical_passage_order`` lesson repeated, silently.
+
+    **No second sorter.** ``candidate_context.candidates`` is already in the
+    collection's own ``ordinal`` order, fixed when the collection was built and
+    hash-verified on the way into the packet.
+    """
+    context = packet.get("candidate_context")
+    if not isinstance(context, dict):
+        raise ExtractionError(
+            "the consolidation stage requires candidate context",
+            reason_code="contents_context_invalid",
+        )
+    candidates = context.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        raise ExtractionError(
+            "candidate context carries no candidates",
+            reason_code="contents_context_invalid",
+        )
+    for entry in candidates:
+        if not isinstance(entry, dict) or not isinstance(entry.get("payload"), dict):
+            raise ExtractionError(
+                "every candidate entry needs an object payload",
+                reason_code="contents_context_invalid",
+            )
+        if not isinstance(entry.get("candidate_id"), str) or not entry["candidate_id"]:
+            raise ExtractionError(
+                "every candidate entry needs a candidate_id",
+                reason_code="contents_context_invalid",
+            )
+    return list(candidates)
+
+
 def _require_focal(focal: str | None) -> str:
     """The focal product id, or a refusal. Never inferred from the packet.
 
@@ -477,6 +549,45 @@ def _bind_product(packet: dict[str, Any], stage: str, focal: str | None) -> str:
     )
 
 
+def _bind_product_candidates(
+    packet: dict[str, Any], stage: str, focal: str | None
+) -> str:
+    """The discovery candidates, labelled, in the collection's own order.
+
+    **A deliberate subset**, following the measurement behind
+    ``_bind_validated_products``. Three fields per candidate: ``product_name``,
+    ``entity_type`` and ``availability_status``. What is left out matters more:
+
+    - ``evidence`` -- the model already receives that text under
+      ``{{passages_with_ids}}``. Showing it twice under a block that carries no
+      ``P0N`` ref invites a quote from the unlabelled copy, reopening the
+      citation defect ADR-055 closed.
+    - ``product_observation_id`` and ``normalized_name`` -- long opaque strings
+      whose transcription is the exact thing the ``D0N`` label exists to avoid.
+    - ``target_customers`` and ``confidence`` -- not inputs to a consolidation
+      judgement.
+
+    ``availability_status`` **is** shown here, unlike at the capability stage
+    where it was withheld to keep a parent's status from biasing a child's. Here
+    it is not context, it is the subject: "unsupported roadmap" is one of the
+    five exclusion grounds and it is read directly off the status.
+    """
+    blocks: list[str] = []
+    for ordinal, entry in enumerate(candidate_ref_order(packet), start=1):
+        payload = entry["payload"]
+        header = f"[ref: {candidate_ref_label(ordinal)}]"
+        entity_type = payload.get("entity_type")
+        if isinstance(entity_type, str) and entity_type:
+            header += f" [entity_type: {entity_type}]"
+        status = payload.get("availability_status")
+        if isinstance(status, str) and status:
+            header += f" [availability_status: {status}]"
+        blocks.append(
+            f"{header}\n{_require_str(payload.get('product_name'), 'product_name')}"
+        )
+    return "\n\n".join(blocks)
+
+
 def _bind_capabilities(packet: dict[str, Any], stage: str, focal: str | None) -> str:
     """The focal product's capabilities, each with the evidence it was accepted on.
 
@@ -560,6 +671,16 @@ STAGE_PLACEHOLDER_BINDINGS: dict[str, dict[str, Callable[[dict[str, Any], str, "
         "product": _bind_product,
         "capabilities": _bind_capabilities,
     },
+    # ADR-073 (CR-0009). The consolidation stage reads the discovery stage's
+    # output. It binds the product stage's three placeholders unchanged -- the
+    # passages are the same passages, ordered by the same
+    # ``canonical_passage_order`` -- plus the candidates it is judging.
+    "product_consolidation": {
+        "company_name": _bind_company_name,
+        "cutoff": _bind_cutoff,
+        "passages_with_ids": _bind_passages_with_ids,
+        "product_candidates": _bind_product_candidates,
+    },
 }
 
 # ADR-058. Placeholders a stage's prompt **must** use, not merely may.
@@ -585,6 +706,11 @@ STAGE_REQUIRED_PLACEHOLDERS: dict[str, tuple[str, ...]] = {
     # requires both. A prompt that named neither could not produce a conforming
     # record, and a paid call that cannot conform should not be made.
     "task_extraction": ("product", "capabilities"),
+    # ADR-073. Same reason, one stage on: a consolidation decision names a
+    # candidate, so a prompt that never shows the candidates cannot produce a
+    # conforming decision and a paid call that cannot conform should not be
+    # made.
+    "product_consolidation": ("product_candidates",),
 }
 
 

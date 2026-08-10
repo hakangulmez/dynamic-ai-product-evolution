@@ -39,8 +39,10 @@ __all__ = [
     "hydrate_pinned_bytes",
     "PACKET_CONTRACT",
     "PACKET_CONTRACT_V2",
+    "PACKET_CONTRACT_V3",
     "STAGES",
     "build_extraction_input_packet",
+    "derive_candidate_context",
     "derive_parent_context",
     "hydrate_decision_set",
     "hydrate_snapshot",
@@ -56,12 +58,23 @@ PACKET_CONTRACT = "extraction_input_packet@0.1.0"
 # and the name derived from it. A caller that supplies neither pin still gets
 # ``@0.1.0`` byte-for-byte, so every pre-E-R caller is unaffected.
 PACKET_CONTRACT_V2 = "extraction_input_packet@0.2.0"
+# ADR-073 (CR-0009). ``@0.3.0`` adds ``candidate_context``: the consolidation
+# stage's input is the discovery stage's *output*, and the candidates the model
+# was shown have to sit inside the packet whose digest the run records. Leaving
+# them outside would make ``input_packet_sha256`` cover less than the model
+# actually saw. @0.1.0 and @0.2.0 are released and unchanged; a caller that
+# supplies no candidate pin still gets exactly the packet it got before.
+PACKET_CONTRACT_V3 = "extraction_input_packet@0.3.0"
 CORPUS_SCOPE_SEC_ONLY = "sec_only_partial"
 
 STAGES: tuple[str, ...] = (
     "product_extraction",
     "capability_extraction",
     "task_extraction",
+    # ADR-073 (CR-0009). Its input is the discovery stage's output rather than a
+    # parent snapshot, so it takes ``candidate_collection_pin`` and no snapshot
+    # pin at all.
+    "product_consolidation",
 )
 
 _COMPANY_ID_RE = re.compile(r"^CIK[0-9]{10}$")
@@ -574,6 +587,54 @@ def derive_parent_context(
     return out
 
 
+def derive_candidate_context(
+    *,
+    artifact_root: str | Path,
+    collection_pin: dict[str, str],
+) -> dict[str, Any]:
+    """Hydrate a candidate collection into packet-shaped candidate entries.
+
+    The sibling of :func:`derive_parent_context`, and it earns the same three
+    guarantees: the collection is re-read from ``artifact_root`` through the
+    containment-checked loader, its bytes are digested against the pin before
+    anything is read out of them, and the payloads are carried through
+    unchanged rather than reshaped.
+
+    **Order is the collection's own ``ordinal``, not a new sort.** The
+    collection already fixed an order when it was built, and every candidate id
+    was derived from its content there. Re-sorting here would put a second
+    owner on an ordering that ``candidate_ref_order`` then labels -- the
+    ``canonical_passage_order`` lesson, one artifact on.
+    """
+    target = _safe_target(
+        artifact_root, collection_pin["reference"], "candidate_collection_pin_unresolved"
+    )
+    payload_bytes = target.read_bytes()
+    if sha256_bytes(payload_bytes) != collection_pin.get("sha256"):
+        raise ExtractionError(
+            f"candidate collection digest drifted: {collection_pin['reference']}",
+            reason_code="candidate_collection_pin_unresolved",
+        )
+    collection = json.loads(payload_bytes.decode("utf-8"))
+    entries = collection.get("entries")
+    if not isinstance(entries, list) or not entries:
+        raise ExtractionError(
+            "the consolidation stage requires a candidate collection with at "
+            "least one entry",
+            reason_code="candidate_context_missing",
+        )
+    candidates: list[dict[str, Any]] = []
+    for entry in sorted(entries, key=lambda item: item["ordinal"]):
+        candidates.append(
+            {
+                "candidate_id": entry["candidate_id"],
+                "ordinal": entry["ordinal"],
+                "payload": entry["observation"],
+            }
+        )
+    return {"collection": dict(collection_pin), "candidates": candidates}
+
+
 # --- Packet construction -----------------------------------------------------
 
 
@@ -640,6 +701,9 @@ def build_extraction_input_packet(
     capability_decision_set_pin: dict[str, str] | None = None,
     company_identity_root: str | Path | None = None,
     company_identity_pin: dict[str, str] | None = None,
+    # ADR-073. The consolidation stage's input is the discovery stage's output.
+    # Optional and unused by the three discovery stages, which forbid it.
+    candidate_collection_pin: dict[str, str] | None = None,
     **forbidden: Any,
 ) -> dict[str, Any]:
     """Build a stage-scoped packet from identity pins only.
@@ -712,10 +776,46 @@ def build_extraction_input_packet(
     )
 
     parent_context: dict[str, Any] | None = None
+    candidate_context: dict[str, Any] | None = None
     product_provenance: dict[str, Any] | None = None
     capability_provenance: dict[str, Any] | None = None
 
-    if stage == "product_extraction":
+    # ADR-073. Which stage may carry a candidate collection, as a closed rule
+    # rather than an ``else``. The three discovery stages read passages and
+    # parents; only consolidation reads candidates, and a stage added without a
+    # decision here is refused rather than inheriting a neighbour's arm.
+    if stage == "product_consolidation":
+        if candidate_collection_pin is None:
+            raise ExtractionError(
+                "the consolidation stage requires a candidate collection pin",
+                reason_code="candidate_context_missing",
+            )
+    elif candidate_collection_pin is not None:
+        raise ExtractionError(
+            f"the {stage} stage does not read candidate collections",
+            reason_code="candidate_context_forbidden",
+        )
+
+    if stage == "product_consolidation":
+        if any(
+            value is not None
+            for value in (
+                snapshot_a_pin,
+                snapshot_b_pin,
+                product_decision_set_pin,
+                capability_decision_set_pin,
+            )
+        ):
+            raise ExtractionError(
+                "the consolidation stage forbids parent context and validation "
+                "provenance; its input is the discovery collection",
+                reason_code="parent_context_forbidden",
+            )
+        candidate_context = derive_candidate_context(
+            artifact_root=artifact_root, collection_pin=candidate_collection_pin
+        )
+
+    elif stage == "product_extraction":
         if any(
             value is not None
             for value in (
@@ -847,9 +947,23 @@ def build_extraction_input_packet(
                 )
             emitted_passages.append({**passage, "publication_date": authoritative})
 
+    # ADR-073. The contract is the widest shape this packet actually carries.
+    # ``candidate_context`` is a @0.3.0 field, so a packet that has one declares
+    # @0.3.0 and a packet that does not is byte-identical to what it was before
+    # this parameter existed. Resolved from a closed ladder, never defaulted.
+    if candidate_context is not None:
+        contract, version = PACKET_CONTRACT_V3, "0.3.0"
+        candidate_fields: dict[str, Any] = {"candidate_context": candidate_context}
+    elif identity_fields:
+        contract, version = PACKET_CONTRACT_V2, "0.2.0"
+        candidate_fields = {}
+    else:
+        contract, version = PACKET_CONTRACT, "0.1.0"
+        candidate_fields = {}
+
     return {
-        "contract": PACKET_CONTRACT_V2 if identity_fields else PACKET_CONTRACT,
-        "schema_version": "0.2.0" if identity_fields else "0.1.0",
+        "contract": contract,
+        "schema_version": version,
         "stage": stage,
         "company_id": company_id,
         "observation_cutoff_date": observation_cutoff_date,
@@ -869,6 +983,7 @@ def build_extraction_input_packet(
         "product_validation_provenance": product_provenance,
         "capability_validation_provenance": capability_provenance,
         **identity_fields,
+        **candidate_fields,
     }
 
 

@@ -73,7 +73,7 @@ def test_the_registry_version_tracks_the_sequence():
     # ADR-064 moved it once more, for the capability successor. ADR-065 moved
     # it to v7 for the quote bound. ADR-069 moves it to v8 for the task
     # successor.
-    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v8"
+    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v9"
 
 
 def test_the_successor_is_first_and_every_predecessor_is_retained():

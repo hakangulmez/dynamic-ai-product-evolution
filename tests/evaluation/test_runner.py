@@ -1207,7 +1207,11 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # prompt and the change request its qualification record pins.
     # 613 = 612 + the one ADR-071 path: the extraction_validation_decision_set
     # successor schema, which carries the task kind and the Snapshot B pin.
-    assert declared == len(paths) == 613
+    # 620 = 613 + the seven ADR-073 (CR-0009) paths: the schema-bound
+    # consolidation prompt, its two output schemas, the packet successor
+    # that carries candidate_context, the consolidation module, and the
+    # change request its qualification record pins.
+    assert declared == len(paths) == 620
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

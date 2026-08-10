@@ -30,7 +30,9 @@ def test_registry_version_is_declared():
     # in the product_extraction sequence. ADR-064: v5 -> v6 when the capability
     # successor took position one in its own. ADR-065: v6 -> v7 for the quote
     # bound. ADR-069: v7 -> v8 when the task successor took position one.
-    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v8"
+    # ADR-073: v8 -> v9 when product_consolidation joined the registry as its
+    # own stage. No existing sequence moved; a fourth key was added.
+    assert PROMPT_REGISTRY_VERSION == "extraction_prompt_registry_v9"
 
 
 def test_every_stage_declares_at_least_one_prompt():
@@ -38,6 +40,8 @@ def test_every_stage_declares_at_least_one_prompt():
         "product_extraction",
         "capability_extraction",
         "task_extraction",
+        # ADR-073 (CR-0009): consolidation is a stage, not a second pass.
+        "product_consolidation",
     }
     for stage, ids in EXTRACTION_PROMPTS.items():
         assert ids, stage

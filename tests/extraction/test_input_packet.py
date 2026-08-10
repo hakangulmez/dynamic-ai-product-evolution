@@ -71,7 +71,13 @@ def _persist(root: Path, reference: str, payload: dict) -> dict:
 
 
 def test_declared_stages_and_scope():
-    assert STAGES == ("product_extraction", "capability_extraction", "task_extraction")
+    assert STAGES == (
+        "product_extraction",
+        "capability_extraction",
+        "task_extraction",
+        # ADR-073. Reads the discovery stage's output, not the corpus.
+        "product_consolidation",
+    )
     assert PACKET_CONTRACT == "extraction_input_packet@0.1.0"
     assert CORPUS_SCOPE_SEC_ONLY == "sec_only_partial"
 

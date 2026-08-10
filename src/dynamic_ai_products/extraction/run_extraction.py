@@ -375,6 +375,10 @@ def run_extraction_stage(
     snapshot_b_pin: dict[str, str] | None = None,
     product_decision_set_pin: dict[str, str] | None = None,
     capability_decision_set_pin: dict[str, str] | None = None,
+    # ADR-073 (CR-0009). The consolidation stage's input is the discovery
+    # stage's output. Optional and unused by the three discovery stages, which
+    # refuse it in the packet builder -- one owner for that rule.
+    candidate_collection_pin: dict[str, str] | None = None,
 ) -> ExtractionOutcome:
     """Resolve every deterministic input, then take one of the three routes."""
     # [A] The caller-supplied contract-pin channel is closed. Checked before the
@@ -401,6 +405,7 @@ def run_extraction_stage(
         snapshot_b_pin=snapshot_b_pin,
         product_decision_set_pin=product_decision_set_pin,
         capability_decision_set_pin=capability_decision_set_pin,
+        candidate_collection_pin=candidate_collection_pin,
         company_identity_root=company_identity_root,
         company_identity_pin=company_identity_pin,
     )
@@ -1337,6 +1342,10 @@ def run_extraction_stage_v2(
     snapshot_b_pin: dict[str, str] | None = None,
     product_decision_set_pin: dict[str, str] | None = None,
     capability_decision_set_pin: dict[str, str] | None = None,
+    # ADR-073 (CR-0009). The consolidation stage's input is the discovery
+    # stage's output. Optional and unused by the three discovery stages, which
+    # refuse it in the packet builder -- one owner for that rule.
+    candidate_collection_pin: dict[str, str] | None = None,
     candidate_collection_root: str | Path | None = None,
     vocabulary_root: str | Path | None = None,
     vocabulary_pin: dict[str, str] | None = None,
@@ -1380,6 +1389,7 @@ def run_extraction_stage_v2(
         snapshot_b_pin=snapshot_b_pin,
         product_decision_set_pin=product_decision_set_pin,
         capability_decision_set_pin=capability_decision_set_pin,
+        candidate_collection_pin=candidate_collection_pin,
         company_identity_root=company_identity_root,
         company_identity_pin=company_identity_pin,
     )

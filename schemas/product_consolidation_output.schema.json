@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "product_consolidation_output.schema.json",
+  "title": "Product consolidation decisions (model output)",
+  "description": "One decision per discovery candidate, referenced by short D label. The model emits decisions only: no observation body, no identifier, no product name. The consolidated universe is assembled downstream from these decisions and the candidates they reference, so nothing the model writes can silently alter an observation field that discovery already produced and a human already judged. Exhaustiveness -- exactly one decision per candidate -- depends on the candidate set and is therefore checked by the conformance layer, not here.",
+  "type": "array",
+  "minItems": 1,
+  "$defs": {
+    "candidate_ref": { "type": "string", "pattern": "^D[1-9][0-9]*$" },
+    "passage_ref": { "type": "string", "pattern": "^P[1-9][0-9]*$" }
+  },
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["ref", "action", "reason", "evidence"],
+    "properties": {
+      "ref": { "$ref": "#/$defs/candidate_ref" },
+      "action": {
+        "enum": [
+          "retain",
+          "merge_alias",
+          "place_family",
+          "classify_bundle",
+          "exclude",
+          "unresolved"
+        ]
+      },
+      "reason": { "type": "string", "minLength": 1 },
+      "canonical_ref": { "$ref": "#/$defs/candidate_ref" },
+      "family_ref": { "$ref": "#/$defs/candidate_ref" },
+      "bundle_kind": { "enum": ["bundle", "plan"] },
+      "constituent_refs": {
+        "type": "array",
+        "minItems": 1,
+        "items": { "$ref": "#/$defs/candidate_ref" }
+      },
+      "open_question": { "type": "string", "minLength": 1 },
+      "evidence": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref", "quote"],
+          "properties": {
+            "ref": { "$ref": "#/$defs/passage_ref" },
+            "quote": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "allOf": [
+      {
+        "comment": "merge_alias names the candidate it is an alias of, and carries no other link field.",
+        "if": {
+          "properties": { "action": { "const": "merge_alias" } },
+          "required": ["action"]
+        },
+        "then": {
+          "required": ["canonical_ref"],
+          "not": {
+            "anyOf": [
+              { "required": ["family_ref"] },
+              { "required": ["bundle_kind"] },
+              { "required": ["constituent_refs"] },
+              { "required": ["open_question"] }
+            ]
+          }
+        }
+      },
+      {
+        "comment": "place_family names the family it belongs to, and carries no other link field.",
+        "if": {
+          "properties": { "action": { "const": "place_family" } },
+          "required": ["action"]
+        },
+        "then": {
+          "required": ["family_ref"],
+          "not": {
+            "anyOf": [
+              { "required": ["canonical_ref"] },
+              { "required": ["bundle_kind"] },
+              { "required": ["constituent_refs"] },
+              { "required": ["open_question"] }
+            ]
+          }
+        }
+      },
+      {
+        "comment": "classify_bundle names its kind and its constituents, and carries no other link field.",
+        "if": {
+          "properties": { "action": { "const": "classify_bundle" } },
+          "required": ["action"]
+        },
+        "then": {
+          "required": ["bundle_kind", "constituent_refs"],
+          "not": {
+            "anyOf": [
+              { "required": ["canonical_ref"] },
+              { "required": ["family_ref"] },
+              { "required": ["open_question"] }
+            ]
+          }
+        }
+      },
+      {
+        "comment": "unresolved states what is open and links nothing. Rule 7: unknown over guess, expressible rather than forced into an action.",
+        "if": {
+          "properties": { "action": { "const": "unresolved" } },
+          "required": ["action"]
+        },
+        "then": {
+          "required": ["open_question"],
+          "not": {
+            "anyOf": [
+              { "required": ["canonical_ref"] },
+              { "required": ["family_ref"] },
+              { "required": ["bundle_kind"] },
+              { "required": ["constituent_refs"] }
+            ]
+          }
+        }
+      },
+      {
+        "comment": "retain and exclude carry a reason and evidence and no link field at all.",
+        "if": {
+          "properties": { "action": { "enum": ["retain", "exclude"] } },
+          "required": ["action"]
+        },
+        "then": {
+          "not": {
+            "anyOf": [
+              { "required": ["canonical_ref"] },
+              { "required": ["family_ref"] },
+              { "required": ["bundle_kind"] },
+              { "required": ["constituent_refs"] },
+              { "required": ["open_question"] }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

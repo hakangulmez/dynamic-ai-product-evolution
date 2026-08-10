@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "product_consolidated_universe.schema.json",
+  "title": "Consolidated product universe",
+  "description": "Assembled deterministically from one candidate collection and one set of consolidation decisions. A retained product keeps its product_observation body byte-unchanged from the candidate it came from: consolidation decides membership and relations, it does not rewrite observations. Alias, family and bundle links are recorded beside the observations rather than folded into them, so the pre-consolidation universe stays derivable and no reader can mistake a consolidation judgement for a discovery finding. This is not an admission decision: a human decision set over this artifact remains a separate stage.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "schema_version",
+    "company_id",
+    "observation_cutoff",
+    "candidate_collection_reference",
+    "candidate_collection_sha256",
+    "raw_artifact_reference",
+    "raw_artifact_sha256",
+    "retained",
+    "aliases",
+    "families",
+    "bundles",
+    "exclusions",
+    "unresolved",
+    "retained_count",
+    "excluded_count",
+    "unresolved_count"
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "candidate_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_id", "passage_id", "quote"],
+        "properties": {
+          "source_id": { "type": "string" },
+          "passage_id": { "type": "string" },
+          "quote": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "reason": { "type": "string", "minLength": 1 }
+  },
+  "properties": {
+    "contract": { "const": "product_consolidated_universe@0.1.0" },
+    "schema_version": { "const": "0.1.0" },
+    "company_id": { "type": "string", "pattern": "^CIK[0-9]{10}$" },
+    "observation_cutoff": { "type": "string", "format": "date" },
+    "candidate_collection_reference": { "type": "string", "minLength": 1 },
+    "candidate_collection_sha256": { "$ref": "#/$defs/sha256" },
+    "raw_artifact_reference": { "type": "string", "minLength": 1 },
+    "raw_artifact_sha256": { "$ref": "#/$defs/sha256" },
+    "retained": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "entity_role", "observation", "reason", "evidence"],
+        "properties": {
+          "candidate_id": { "$ref": "#/$defs/candidate_id" },
+          "entity_role": { "enum": ["product", "bundle", "plan"] },
+          "observation": {
+            "comment": "Byte-identical to the candidate's observation. The assembler validates it against product_observation.schema.json; re-stating that shape here would give it two owners.",
+            "type": "object"
+          },
+          "reason": { "$ref": "#/$defs/reason" },
+          "evidence": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "canonical_candidate_id", "reason", "evidence"],
+        "properties": {
+          "candidate_id": { "$ref": "#/$defs/candidate_id" },
+          "canonical_candidate_id": { "$ref": "#/$defs/candidate_id" },
+          "reason": { "$ref": "#/$defs/reason" },
+          "evidence": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "families": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "family_candidate_id", "reason", "evidence"],
+        "properties": {
+          "candidate_id": { "$ref": "#/$defs/candidate_id" },
+          "family_candidate_id": { "$ref": "#/$defs/candidate_id" },
+          "reason": { "$ref": "#/$defs/reason" },
+          "evidence": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "bundles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "candidate_id",
+          "bundle_kind",
+          "constituent_candidate_ids",
+          "reason",
+          "evidence"
+        ],
+        "properties": {
+          "candidate_id": { "$ref": "#/$defs/candidate_id" },
+          "bundle_kind": { "enum": ["bundle", "plan"] },
+          "constituent_candidate_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/candidate_id" }
+          },
+          "reason": { "$ref": "#/$defs/reason" },
+          "evidence": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "exclusions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "reason", "evidence"],
+        "properties": {
+          "candidate_id": { "$ref": "#/$defs/candidate_id" },
+          "reason": { "$ref": "#/$defs/reason" },
+          "evidence": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "unresolved": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "open_question", "reason", "evidence"],
+        "properties": {
+          "candidate_id": { "$ref": "#/$defs/candidate_id" },
+          "open_question": { "type": "string", "minLength": 1 },
+          "reason": { "$ref": "#/$defs/reason" },
+          "evidence": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "retained_count": { "type": "integer", "minimum": 0 },
+    "excluded_count": { "type": "integer", "minimum": 0 },
+    "unresolved_count": { "type": "integer", "minimum": 0 }
+  }
+}
