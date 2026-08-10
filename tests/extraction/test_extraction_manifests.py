@@ -157,6 +157,8 @@ def test_every_stage_declares_its_released_output_schema():
         "product_extraction",
         "capability_extraction",
         "task_extraction",
+        # ADR-073 (CR-0009).
+        "product_consolidation",
     }
 
 

@@ -46,6 +46,7 @@ __all__ = [
     "LIVE_AUTHORIZATION_V2_CONTRACT",
     "NON_RUN_CONTRACT",
     "NON_RUN_REASONS",
+    "PACKET_CONTRACTS_CARRYING_IDENTITY",
     "PACKET_CONTRACT_REQUIRING_IDENTITY",
     "PROVIDER_COUNT_TIMEOUT_SECONDS_PIN",
     "PROVIDER_DECLARED_MAX_OUTPUT_TOKENS_PIN",
@@ -105,6 +106,19 @@ LIVE_AUTHORIZATION_CONTRACT = "live_call_authorization@0.1.0"
 ACCEPTED_PACKET_CONTRACTS: tuple[str, ...] = (
     "extraction_input_packet@0.1.0",
     "extraction_input_packet@0.2.0",
+    # ADR-073 (CR-0009). @0.3.0 carries candidate_context for the consolidation
+    # stage. It carries the identity fields too, so it is admissible on the
+    # authorized route.
+    "extraction_input_packet@0.3.0",
+)
+# ADR-073. A **set**, not one literal. This was a single constant compared with
+# ``!=``, which is the ADR-053 shape exactly: correct while one contract carried
+# a hydrated identity, and silently wrong the moment a second did. @0.2.0 and
+# @0.3.0 both carry ``legal_name``; @0.1.0 carries no name field at all and is
+# still refused on the authorized route.
+PACKET_CONTRACTS_CARRYING_IDENTITY: tuple[str, ...] = (
+    "extraction_input_packet@0.2.0",
+    "extraction_input_packet@0.3.0",
 )
 PACKET_CONTRACT_REQUIRING_IDENTITY = "extraction_input_packet@0.2.0"
 
@@ -126,6 +140,7 @@ STAGE_OUTPUT_CONTRACT_ID: dict[str, str] = {
     "product_extraction": "product_observation@0.1.0",
     "capability_extraction": "capability_observation@0.1.0",
     "task_extraction": "task_observation@0.2.0",
+    "product_consolidation": "product_consolidation_output@0.1.0",
 }
 
 ENABLEMENT_STATUS_FOR_ROLLOUT: dict[str, str] = {
@@ -372,11 +387,15 @@ STAGE_OUTPUT_SCHEMA = {
     # ADR-069. The @0.2.0 successor -- the one ``candidates._SCHEMA_FOR_KIND``
     # has validated task candidates against since ADR-068.
     "task_extraction": "task_observation_v2.schema.json",
+    # ADR-073 (CR-0009). What this stage returns is a decision array, not an
+    # observation, so its output contract is its own schema.
+    "product_consolidation": "product_consolidation_output.schema.json",
 }
 STAGE_OUTPUT_SCHEMA_SHA256 = {
     "product_extraction": "2d2adcb0b24313c58ed27c51708e4e680e0d4c5abe099ae02788217c45cf1eae",
     "capability_extraction": "4ade397f3383ff756a1aa2ba5f98bdb99f76c002d5cf049d7e8dcd7abf493733",
     "task_extraction": "cbe1f64526fa0f5b77b9aaa8889468afcd1111a74eb2529f9b5d94538c50b801",
+    "product_consolidation": "de6c7746f30bd1710ea70ee2cca4b057c18d7119ebfb70304700fc06a4cbd5e3",
 }
 
 

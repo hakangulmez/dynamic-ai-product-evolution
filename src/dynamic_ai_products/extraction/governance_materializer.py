@@ -196,6 +196,13 @@ STAGE_CHANGE_REQUEST: dict[str, str] = {
         "evals/change_requests/"
         "CR-0008-task-discovery-schema-v1-bootstrap-qualification.md"
     ),
+    # ADR-073 (CR-0009). The consolidation stage's first schema-bound prompt,
+    # the same CR-0005 shape two stages on: a registered prompt with no output
+    # contract that no code path could reach.
+    "product_consolidation": (
+        "evals/change_requests/"
+        "CR-0009-product-consolidation-schema-v1-bootstrap-qualification.md"
+    ),
 }
 
 _STAGE_CHANGE_REQUEST_UNDECLARED = "stage_change_request_undeclared"

@@ -473,18 +473,31 @@ def test_the_released_v0_1_contract_identity_is_unchanged():
     assert PACKET_CONTRACT != PACKET_CONTRACT_V2
 
 
-def test_both_packet_contracts_are_accepted_but_only_v0_2_carries_identity():
+def test_every_packet_contract_is_accepted_and_the_identity_set_is_closed():
+    """ADR-073. The identity check was one constant compared with ``!=`` -- the
+    ADR-053 shape, correct while exactly one contract carried a hydrated
+    identity and silently wrong the moment a second did."""
     from dynamic_ai_products.extraction.manifests import (
         ACCEPTED_PACKET_CONTRACTS,
         PACKET_CONTRACT_REQUIRING_IDENTITY,
+        PACKET_CONTRACTS_CARRYING_IDENTITY,
     )
 
     assert ACCEPTED_PACKET_CONTRACTS == (
         "extraction_input_packet@0.1.0",
         "extraction_input_packet@0.2.0",
+        "extraction_input_packet@0.3.0",
     )
+    assert PACKET_CONTRACTS_CARRYING_IDENTITY == (
+        "extraction_input_packet@0.2.0",
+        "extraction_input_packet@0.3.0",
+    )
+    # @0.1.0 carries no name field at all and is still refused on the
+    # authorized route.
+    assert "extraction_input_packet@0.1.0" not in PACKET_CONTRACTS_CARRYING_IDENTITY
+    for contract in PACKET_CONTRACTS_CARRYING_IDENTITY:
+        assert contract in ACCEPTED_PACKET_CONTRACTS
     assert PACKET_CONTRACT_REQUIRING_IDENTITY == "extraction_input_packet@0.2.0"
-    assert PACKET_CONTRACT_REQUIRING_IDENTITY in ACCEPTED_PACKET_CONTRACTS
 
 
 def test_the_v0_2_schema_file_exists_and_is_strict():

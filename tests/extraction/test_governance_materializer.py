@@ -1092,6 +1092,8 @@ def test_the_change_request_map_is_closed_and_names_a_tracked_document():
         "product_extraction",
         "capability_extraction",
         "task_extraction",
+        # ADR-073 (CR-0009).
+        "product_consolidation",
     }
     for stage, reference in STAGE_CHANGE_REQUEST.items():
         assert (REPO_ROOT / reference).is_file(), stage

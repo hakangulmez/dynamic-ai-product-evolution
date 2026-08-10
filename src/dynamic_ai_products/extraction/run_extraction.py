@@ -50,7 +50,7 @@ from .manifests import (
     BUDGET_POLICY_VERSION,
     CLIENT_CONTRACT_V2_CONTRACT,
     CLIENT_CONTRACT_V2_SCHEMA_VERSION,
-    PACKET_CONTRACT_REQUIRING_IDENTITY,
+    PACKET_CONTRACTS_CARRYING_IDENTITY,
     PROVIDER_ERROR_REASONS,
     build_extraction_run,
     build_non_run_record,
@@ -639,11 +639,11 @@ def _run_authorized_stage(
 
     # [H2] Materialize the contents. The authorized route needs a legal name, so
     # a @0.1.0 packet is refused here rather than sending a literal placeholder.
-    if packet["contract"] != PACKET_CONTRACT_REQUIRING_IDENTITY:
+    if packet["contract"] not in PACKET_CONTRACTS_CARRYING_IDENTITY:
         raise ExtractionError(
-            "the authorized route requires "
-            f"{PACKET_CONTRACT_REQUIRING_IDENTITY}; a packet without a hydrated "
-            "company identity cannot render the provider contents",
+            "the authorized route requires one of "
+            f"{list(PACKET_CONTRACTS_CARRYING_IDENTITY)}; a packet without a "
+            "hydrated company identity cannot render the provider contents",
             reason_code="company_identity_pin_required",
         )
     rendered_contents = render_provider_contents(
@@ -1691,11 +1691,11 @@ def _run_two_operation_stage(
         run_created_at=run_created_at,
         repo_root=repo_root,
     )
-    if packet["contract"] != PACKET_CONTRACT_REQUIRING_IDENTITY:
+    if packet["contract"] not in PACKET_CONTRACTS_CARRYING_IDENTITY:
         raise ExtractionError(
-            "the authorized route requires "
-            f"{PACKET_CONTRACT_REQUIRING_IDENTITY}; a packet without a hydrated "
-            "company identity cannot render the provider contents",
+            "the authorized route requires one of "
+            f"{list(PACKET_CONTRACTS_CARRYING_IDENTITY)}; a packet without a "
+            "hydrated company identity cannot render the provider contents",
             reason_code="company_identity_pin_required",
         )
     rendered_contents = render_provider_contents(

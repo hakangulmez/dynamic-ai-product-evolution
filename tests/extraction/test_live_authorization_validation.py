@@ -690,6 +690,9 @@ def test_the_stage_output_identity_map_is_closed():
         "product_extraction": "product_observation@0.1.0",
         "capability_extraction": "capability_observation@0.1.0",
         "task_extraction": "task_observation@0.2.0",
+        # ADR-073. This stage returns a decision array, not an observation, so
+        # its output contract is its own schema rather than an observation one.
+        "product_consolidation": "product_consolidation_output@0.1.0",
     }
 
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Accepted.
 
 ## Scope note — this introduces a stage, and edits none
 
@@ -150,8 +150,11 @@ byte-unchanged.
 
 ## Decision
 
-Pending.
+Accepted. Implemented and committed as `9757519` under ADR-073.
 
 ## Approval
 
-Pending.
+Approved by Hakan Zeki Gulmez. The governance wiring this CR needs -- the
+stage's output-schema, output-contract, change-request and packet-contract
+registry entries -- landed with the first live call, in the shape ADR-069 used
+for the task stage.
