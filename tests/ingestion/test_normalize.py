@@ -320,18 +320,21 @@ def test_v2_drops_no_text_and_adds_only_the_joins() -> None:
     )
 
 
-def test_the_two_normalizer_versions_are_both_declared() -> None:
+def test_every_normalizer_version_is_declared() -> None:
     from dynamic_ai_products.ingestion.normalize import (
         KNOWN_NORMALIZER_VERSIONS,
         NORMALIZER_VERSION_V2,
+        NORMALIZER_VERSION_V3,
     )
 
     assert KNOWN_NORMALIZER_VERSIONS == (
         "sec_html_item_span_v1",
         "sec_html_item_span_v2",
+        "sec_html_item_span_v3",
     )
     assert NORMALIZER_VERSION == "sec_html_item_span_v1"
     assert NORMALIZER_VERSION_V2 == "sec_html_item_span_v2"
+    assert NORMALIZER_VERSION_V3 == "sec_html_item_span_v3"
 
 
 def test_a_paragraph_containing_bold_text_is_not_a_heading() -> None:
@@ -353,3 +356,209 @@ def test_a_bold_block_that_is_not_a_paragraph_is_not_a_heading() -> None:
     assert not is_heading_block(
         b'<div><span style="font-weight:bold;">Our Services</span></div>'
     )
+
+
+# --- ADR-072: the page-number block is dropped, not concatenated -------------
+
+PAGE_NUMBERS = ("7", "8", "9", "10", "11", "12", "13", "14", "15")
+
+
+def _v3():
+    from dynamic_ai_products.ingestion.normalize import build_passages_v3
+
+    raw, lo, hi, committed = _real_span()
+    passages, ledger = build_passages_v3(
+        raw, source_id=REAL_SOURCE_ID, start_offset=lo, end_offset=hi
+    )
+    return raw, lo, hi, committed, passages, ledger
+
+
+def _v2():
+    from dynamic_ai_products.ingestion.normalize import build_passages_v2
+
+    raw, lo, hi, _ = _real_span()
+    return build_passages_v2(raw, source_id=REAL_SOURCE_ID, start_offset=lo, end_offset=hi)
+
+
+@requires_raw
+def test_v1_and_v2_are_untouched_by_the_successor() -> None:
+    """Successor, not edit: neither released corpus may move.
+
+    v1 is asserted field-for-field against its committed file elsewhere; this
+    adds the same guarantee for v2, which produced Snapshot B, the 69 accepted
+    capability observations and every task run that cites them.
+    """
+    import json
+
+    v2_committed = [
+        json.loads(line)
+        for line in (
+            Path(__file__).resolve().parents[2]
+            / "data/runs/srcsnap-hubspot-fy2024-sec-v2/source_passages.jsonl"
+        ).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    passages, ledger = _v2()
+    assert passages == v2_committed
+    assert len(passages) == 16
+    assert ledger["normalizer_version"] == "sec_html_item_span_v2"
+    assert "dropped_blocks" not in ledger
+
+
+@requires_raw
+def test_v3_keeps_the_sixteen_sections_and_their_spans() -> None:
+    """Design decision (a): a dropped block's bytes stay inside the span.
+
+    Every v3 offset equals v2's, so a diff between the corpora is exactly the
+    set of sections whose *text* changed -- including "Our Customers", whose
+    trailing block is page 10 and is the only case where this is a choice.
+    """
+    _, _, _, _, v3, _ = _v3()
+    v2, _ = _v2()
+    assert len(v3) == 16
+    assert [(p["start_offset"], p["end_offset"]) for p in v3] == [
+        (p["start_offset"], p["end_offset"]) for p in v2
+    ]
+    our_customers = next(p for p in v3 if p["text"].startswith("Our Customers"))
+    assert not our_customers["text"].rstrip().endswith("10")
+
+
+@requires_raw
+def test_v3_changes_eight_sections_and_leaves_eight_identical() -> None:
+    _, _, _, _, v3, _ = _v3()
+    v2, _ = _v2()
+    changed = [i for i, (a, b) in enumerate(zip(v2, v3)) if a["text"] != b["text"]]
+    same = [i for i, (a, b) in enumerate(zip(v2, v3)) if a["text"] == b["text"]]
+    assert len(changed) == 8, changed
+    assert len(same) == 8, same
+    for i in changed:
+        assert v3[i]["text_hash"] != v2[i]["text_hash"]
+        assert v3[i]["passage_id"] != v2[i]["passage_id"]
+    for i in same:
+        assert v3[i]["text_hash"] == v2[i]["text_hash"]
+        # Same text, same source_id, same occurrence -> the id is content
+        # addressed, so it must also be the same.
+        assert v3[i]["passage_id"] == v2[i]["passage_id"]
+
+
+@requires_raw
+def test_the_sales_hub_section_no_longer_carries_a_page_number() -> None:
+    """The contamination this increment exists to remove.
+
+    "…Features include: email 9 templates and tracking…" reached eleven accepted
+    capability observations and ten accepted task observations. The fix is not a
+    rewrite of that sentence: the whole block "9" is gone, so the words on
+    either side simply meet.
+    """
+    _, _, _, _, v3, _ = _v3()
+    v2, _ = _v2()
+    dirty = "Features include: email 9 templates and tracking"
+    clean = "Features include: email templates and tracking"
+    assert any(dirty in p["text"] for p in v2)
+    assert not any(dirty in p["text"] for p in v3)
+    assert sum(clean in p["text"] for p in v3) == 1
+
+
+@requires_raw
+def test_the_ledger_enumerates_exactly_the_nine_dropped_blocks() -> None:
+    """The auditable half of the widened invariant.
+
+    ADR-066 could promise "concatenation only". This cannot, so the removal is
+    named instead: nine records, each carrying the block's offsets and its exact
+    text. A removal that is counted is not a silent repair.
+    """
+    raw, _, _, _, _, ledger = _v3()
+    dropped = ledger["dropped_blocks"]
+    assert len(dropped) == 9
+    assert tuple(d["text"] for d in dropped) == PAGE_NUMBERS
+    for entry in dropped:
+        assert entry["start_offset"] < entry["end_offset"]
+        fragment = raw[entry["start_offset"] : entry["end_offset"]]
+        assert entry["text"] in fragment.decode("utf-8", "replace")
+    # Monotonic in the document, as printed page numbers are.
+    offsets = [d["start_offset"] for d in dropped]
+    assert offsets == sorted(offsets)
+
+
+@requires_raw
+def test_v3_drops_only_whole_blocks_and_rewrites_nothing() -> None:
+    """The widened invariant, stated as a check.
+
+    Every v1 block's text either appears verbatim inside a v3 section or is
+    listed in ``dropped_blocks``. Nothing is edited inside a surviving block,
+    and the only characters added are the joins.
+    """
+    _, _, _, committed, v3, ledger = _v3()
+    joined = " ".join(p["text"] for p in v3)
+    # Matched by offset, not by text: a block is dropped because of where it is,
+    # and two blocks could in principle share a string.
+    dropped_spans = {
+        (d["start_offset"], d["end_offset"]) for d in ledger["dropped_blocks"]
+    }
+    survivors = [
+        b for b in committed
+        if (b["start_offset"], b["end_offset"]) not in dropped_spans
+    ]
+    assert len(survivors) == len(committed) - 9
+    for block in survivors:
+        assert block["text"] in joined, block["text"][:60]
+
+
+@requires_raw
+def test_v3_shrinks_the_corpus_by_exactly_the_measured_amount() -> None:
+    """40,739 -> 40,715: fifteen digits plus the nine joins that no longer run."""
+    _, _, _, _, v3, _ = _v3()
+    v2, _ = _v2()
+    assert sum(len(p["text"]) for p in v2) == 40_739
+    assert sum(len(p["text"]) for p in v3) == 40_715
+
+
+@requires_raw
+def test_the_rule_touches_no_real_figure_in_the_document() -> None:
+    """Zero false positives, asserted rather than asserted-once-in-a-report.
+
+    Every statistic in this filing sits inside a sentence, so it is never the
+    whole of its block. This fails the moment that stops being true.
+    """
+    from dynamic_ai_products.ingestion.normalize import (
+        is_page_number_block,
+        normalize_span,
+    )
+
+    raw, lo, hi, _ = _real_span()
+    blocks = normalize_span(raw, start_offset=lo, end_offset=hi)
+    matched = [
+        block["text"]
+        for block in blocks
+        if is_page_number_block(raw[block["start_offset"] : block["end_offset"]])
+    ]
+    assert tuple(matched) == PAGE_NUMBERS
+    carries_a_figure = [
+        block["text"]
+        for block in blocks
+        if block["text"] not in PAGE_NUMBERS and any(c.isdigit() for c in block["text"])
+    ]
+    assert len(carries_a_figure) == 18
+    for text in carries_a_figure:
+        assert text not in PAGE_NUMBERS
+
+
+def test_a_block_that_merely_contains_a_number_is_not_a_page_number() -> None:
+    """Containment would match a headcount; being the whole block does not."""
+    from dynamic_ai_products.ingestion.normalize import is_page_number_block
+
+    assert is_page_number_block(b"<p><span>9</span></p>")
+    assert is_page_number_block(b"<p><span>247,939</span></p>")
+    assert not is_page_number_block(
+        b"<p>we had 247,939 Customers in more than 135 countries.</p>"
+    )
+    assert not is_page_number_block(b"<p><span>10.5</span></p>")
+    assert not is_page_number_block(b"<p><span>Page 9</span></p>")
+
+
+def test_a_bare_number_that_is_not_a_paragraph_is_not_a_page_number() -> None:
+    """Same restriction as the heading rule, same refusal to generalize."""
+    from dynamic_ai_products.ingestion.normalize import is_page_number_block
+
+    assert not is_page_number_block(b"<div><span>9</span></div>")
+    assert not is_page_number_block(b"<td>9</td>")

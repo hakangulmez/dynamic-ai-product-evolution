@@ -3842,6 +3842,132 @@ tests. No prompt, change request, governance record, run root or published
 artifact changes. No live call. The two task candidates remain undecided until a
 separate authorized round writes the decision set.
 
+## ADR-072 — Page-number blocks are dropped, not concatenated: `sec_html_item_span_v3` (SPEC-006, ADR-066)
+
+**Status:** Accepted.
+
+**What ADR-066 fixed, and what it left.** Under `sec_html_item_span_v1` a printed
+page number became its own passage, and where one sat between the two halves of a
+sentence it split that sentence across two passages. Section grouping made every
+page number *interior* to a section, so no sentence is divided any more. That was
+the whole claim, and it holds.
+
+But interior is not absent. Grouping is concatenation, so joining `…include:
+email`, `9` and `templates and tracking…` produces `…include: email 9
+templates…`. The corpus stopped splitting sentences and started corrupting them.
+
+**Measured cost, not a hypothetical.** That one string — Sales Hub's `Features
+include: email 9 templates and tracking` — is in **22** evidence quotes that have
+already been written: 11 accepted capability observations, 10 accepted task
+observations, and 1 candidate in the v2 product measurement run. C8 (ADR-063) did
+not catch it and should not have: the quote *is* verbatim in its passage. The
+defect is in the passage.
+
+Nine page-number blocks exist in the pinned document's Item 1 — 7 through 15.
+Four of them land mid-sentence and are visible as contamination; five fall after
+a full stop and are silent. All nine are noise.
+
+**The rejected alternative.** Reducing the passage count — the 124 → 116 shape
+ADR-066 prototyped, or any other regrouping — was simulated and does not help.
+Whatever the grouping, the same concatenation puts the same digit between the
+same two words. The only thing that removes the digit is removing the block.
+
+**The discriminator is structural, not a digit hunt.** A block is a page-number
+block when its *entire* normalized text is a bare number (`^\d[\d,]*$`), and it
+closes with `</p>`. Measured over the 124 blocks: 9 matches, all page numbers,
+**zero** false positives. The 18 blocks that do carry figures — "between 2 and
+2,000 employees", "247,939 Customers in more than 135 countries", "20 issued U.S.
+Patents" — match nothing, because a statistic is always part of a sentence and
+therefore never the whole of its block. A regex looking for digits *inside* prose
+could not tell a page number from a headcount; this never has to.
+
+The `</p>` restriction is `is_heading_block`'s, for its reason: all nine already
+close that way, so it costs nothing here and declines to generalize from one
+document.
+
+**ADR-066's own rule was re-measured, and it was answering a different question.**
+That ADR reported a "digits-only block whose predecessor does not end in a full
+stop" test catching "4 of 4". Re-run over all nine, it fires on 4. It was never
+separating page numbers from data — it was already gated on digits-only, so data
+was never in scope. It separated the *sentence-splitting* page numbers from the
+ones that fall on a sentence boundary. Under v1 that mattered, because the remedy
+was merging two passages and a needless merge would have moved a `passage_id`.
+Under section grouping all nine are interior and all nine are equally noise, so
+the successor treats them alike and the predecessor test is not carried forward.
+
+**The invariant is widened, deliberately and visibly.** ADR-066 could promise:
+
+> every v1 passage's text appears verbatim inside exactly one v2 section, and the
+> only characters added are the 108 single spaces joining them
+
+No rule that removes anything can keep that sentence. Rather than quietly drop
+the promise, it is replaced by one that is still checkable:
+
+> every v1 block's text either appears verbatim inside exactly one v3 section
+> **or** is listed in the ledger's `dropped_blocks` with its offsets and its
+> text; the only characters added are the joining spaces; nothing inside a
+> surviving block is rewritten
+
+Two things make that honest. First, the deletion is **whole-block and never
+intra-block**: `email 9 templates` becomes `email templates` because a block
+vanished, not because a sentence was edited. The one thing a reader must be able
+to trust about a passage — that its words are the document's words — still holds.
+Second, `build_passages_v3` writes `dropped_blocks` into the ledger: nine
+records, each carrying the removed block's `start_offset`, `end_offset` and exact
+text. A removal that is counted and named is not the silent repair rule 9
+forbids; an uncounted one would be.
+
+**Section spans are v2's, unchanged (the `Our Customers` decision).** Eight of the
+nine page numbers are interior blocks, so dropping them cannot move a span. The
+ninth is the *last* block of section 7, `Our Customers`, and there the operator
+chose to keep `end_offset` where v2 put it rather than pull it back to the last
+surviving block. The reason is that the ledger already declares offsets to
+address raw bytes while `text_hash` covers normalized text, and that the two are
+not a byte-identical slice — tags and collapsed whitespace are dropped inside
+every span already. Keeping the spans makes all 16 v3 offsets equal to v2's, so a
+diff between the corpora is exactly the set of sections whose *text* changed. The
+alternative would have made one section behave unlike the other fifteen.
+
+**Result.** 16 sections, offsets identical to v2. Eight sections change text,
+`text_hash` and `passage_id`; eight are unchanged in all three. 40,739 → 40,715
+characters: fifteen digits plus the nine joins that no longer run. `Features
+include: email 9 templates` is gone and `Features include: email templates`
+appears exactly once. The new corpus is `srcsnap-hubspot-fy2024-sec-v3`.
+
+**Successor, not edit.** `normalize_span_v3` and `build_passages_v3` sit beside
+v1's and v2's and reuse `normalize_span` for block boundaries and
+`is_heading_block` for section starts, so the three normalizers cannot disagree
+about where a block ends or which block opens a section. A mode flag was rejected
+for ADR-066's reason, which is stronger now than it was then: v1 produced the
+passages behind Snapshot A, and **v2 produced Snapshot B, the 69 accepted
+capability observations and every task run that cites them**. Both are asserted
+field-for-field against their committed snapshots, v2 for the first time here.
+
+**Generalization is explicitly not claimed.** This rule has been measured on one
+filing. Before it is applied to another firm it needs one more condition: that
+the matched blocks form a **monotonically increasing sequence in document order**,
+as printed page numbers do. Without it, a filing whose tables put a bare figure in
+its own `</p>` would lose a real number. The nine blocks here do satisfy that
+condition — the ledger's offsets are already sorted and the values run 7, 8, 9 …
+15 — but the check is not enforced, because enforcing it on a document that
+cannot fail it proves nothing. It belongs to the round that first runs this on a
+second company, and until then this normalizer is a HubSpot-measured rule.
+
+**Out of scope, and named rather than implied.**
+
+- The 21 already-written contaminated observations (11 capability, 10 task) are
+  **not** re-run or corrected here. Fixing the corpus does not retroactively clean
+  artifacts derived from the old one, and whether to re-run them is a separate
+  decision with its own cost.
+- `schemas/ingestion_preflight_manifest.schema.json` still pins
+  `"normalizer_version": {"const": "sec_html_item_span_v1"}`. ADR-066 left it
+  because nothing writes a preflight manifest; that is still true, so it is still
+  left. Worth noting that there are now *three* versions behind that const.
+
+**Scope.** One constant, one predicate, two successor functions, one ledger field,
+11 tests, one new snapshot corpus. No schema, prompt, change request, governance
+record or decision set changes. No provider call.
+
 ## Open decisions
 
 - Required source packet by firm-year.
@@ -3858,4 +3984,5 @@ separate authorized round writes the decision set.
 - The evaluation-artifact root and the `evaluated_comparison` property set that would make an evaluated prompt qualification reachable (see ADR-044).
 - A hash-bound carrier for the analytical period assignment. It stops at the admission artifact today, so no extraction output may be joined to a fiscal-year panel until a successor adds one (see ADR-046).
 - A stage-agnostic rename of `product_candidate_availability_vocabulary@0.1.0`. Three stages now govern `availability_status` through it (see ADR-069); the name still names only the first.
+- Whether the second evidence quote on the `Breeze Agents` and `Breeze Copilot` product observations supports the `general_availability` status recorded for them. That quote — "We are also investing in powerful AI capabilities through Breeze Copilot, Breeze Agents…" — is forward-looking investment language, and investing in a capability is not a statement that the capability is generally available. The primary evidence ("Breeze includes Breeze Copilot, an AI-powered companion…") is present-tense and appears sufficient on its own, so the recorded status would most likely survive review. The product decisions are **not** reopened for now: both products have zero accepted capabilities, so nothing downstream reads them — no capability observation, no Snapshot B member, no task run. Noted here so the weak quote is not later mistaken for a checked one; if action is wanted it belongs in its own round, alongside the more general question of whether one sufficient quote should retire a weaker sibling.
 - Whether `Payments` is a genuine standalone product or a named feature of `Commerce Hub`. The source text presents it as included within Commerce Hub ("It includes an end-to-end payment solution, Payments…") and Commerce Hub's own "Features include" list sits beside it in the same sentence, but Payments alone carries a dedicated risk-factor paragraph (third-party payment facilitator, money-laundering/fraud liability) that none of Commerce Hub's other named features (payment links, invoicing, quoting) carry — a candidate signal for its own commercial/administrative boundary. Not resolved; the existing product boundary (both as separate Snapshot A members) is left unchanged for this round. Surfaced while deciding the first live `task_extraction` candidates, both of which cite Payments as their product.

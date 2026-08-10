@@ -32,12 +32,16 @@ __all__ = [
     "KNOWN_NORMALIZER_VERSIONS",
     "NORMALIZER_VERSION",
     "NORMALIZER_VERSION_V2",
+    "NORMALIZER_VERSION_V3",
     "TRANSFORM_CHAIN",
     "build_passages",
     "build_passages_v2",
+    "build_passages_v3",
     "is_heading_block",
+    "is_page_number_block",
     "normalize_span",
     "normalize_span_v2",
+    "normalize_span_v3",
     "passage_id_for",
 ]
 
@@ -51,12 +55,22 @@ NORMALIZER_VERSION = "sec_html_item_span_v1"
 # ``run_extraction_stage_v2`` do.
 NORMALIZER_VERSION_V2 = "sec_html_item_span_v2"
 
+# ADR-072. Section grouping made the printed page numbers *interior* to a
+# section instead of splitting a sentence across two passages, which is what
+# ADR-066 set out to fix. It did not remove them: joining "…include: email",
+# "9" and "templates and tracking…" yields "…include: email 9 templates…", and
+# that string reached eleven accepted capability observations and ten accepted
+# task observations through Sales Hub. The successor drops the page-number
+# block instead of concatenating it.
+NORMALIZER_VERSION_V3 = "sec_html_item_span_v3"
+
 # Every normalizer version this code has ever published, oldest first. A
 # persisted passage records the version that produced it, so a reader has to
 # recognise the historical ones as well as today's.
 KNOWN_NORMALIZER_VERSIONS: tuple[str, ...] = (
     NORMALIZER_VERSION,
     NORMALIZER_VERSION_V2,
+    NORMALIZER_VERSION_V3,
 )
 
 # Declared, ordered transform chain. Recorded verbatim in the ledger.
@@ -343,6 +357,184 @@ def build_passages_v2(
             "offsets address raw document bytes; text_hash covers normalized "
             "text, so a passage is not a byte-identical raw slice"
         ),
+        "passages": [
+            {
+                "passage_id": passage["passage_id"],
+                "start_offset": passage["start_offset"],
+                "end_offset": passage["end_offset"],
+                "text_hash": passage["text_hash"],
+            }
+            for passage in passages
+        ],
+    }
+    return passages, ledger
+
+
+# --- ADR-072: page-number blocks are dropped, not concatenated ---------------
+
+# A block whose entire normalized text is one bare number. Thousands separators
+# are allowed so a five-figure page number would still match; a decimal point is
+# not, because a bare "10.5" is not how a page is printed.
+_PAGE_NUMBER_RE = re.compile(r"^\d[\d,]*$")
+
+
+def is_page_number_block(fragment: bytes) -> bool:
+    """Is this block nothing but a printed page number?
+
+    **The discriminator is that the block is the number, not that it contains
+    one.** Measured over the pinned document's Item 1: 124 blocks, of which 9
+    match -- the consecutive page numbers 7 through 15 -- and 0 others. The 18
+    blocks that do carry figures ("between 2 and 2,000 employees", "247,939
+    Customers in more than 135 countries", "20 issued U.S. Patents") match
+    nothing here, because a statistic is always part of a sentence and therefore
+    never the whole of its block. That is why this is a structural test and not
+    a regex hunting for digits inside prose: the latter cannot tell a page
+    number from a headcount, and this does not have to.
+
+    ADR-066 prototyped a different test -- digits-only block whose predecessor
+    does not end in a full stop -- and reported it caught "4 of 4". Re-measured
+    here, that rule fires on 4 of these 9. It was never separating page numbers
+    from data (it was already gated on digits-only); it was separating the
+    *sentence-splitting* page numbers from the ones that happen to fall on a
+    sentence boundary. Under v1 that distinction mattered, because the remedy
+    was to merge two passages and a needless merge would have moved a
+    passage_id. Under section grouping all nine are interior to a section and
+    all nine are equally noise, so the successor treats them alike.
+
+    Restricted to blocks closing with ``</p>`` for the reason ``is_heading_block``
+    is: all nine already close that way, so the restriction costs nothing here
+    and declines to generalize from one document.
+    """
+    if not _PARAGRAPH_CLOSE_RE.search(fragment):
+        return False
+    return bool(_PAGE_NUMBER_RE.fullmatch(_normalize_fragment(fragment)))
+
+
+def normalize_span_v3(
+    raw: bytes,
+    *,
+    start_offset: int,
+    end_offset: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """``normalize_span_v2`` with page-number blocks dropped from the join.
+
+    Returns ``(sections, dropped)``. Block boundaries and the heading rule are
+    v2's, reused rather than re-derived, so the three normalizers cannot
+    disagree about where a block ends or which block opens a section.
+
+    **The deletion is whole-block, never intra-block.** "…include: email 9
+    templates…" becomes "…include: email templates…" because a block vanished,
+    not because a sentence was edited. No character inside a surviving block is
+    rewritten, and no character is added except the joining spaces -- so the one
+    thing a reader must be able to trust about a passage, that its words are the
+    document's words, still holds.
+
+    **This deliberately widens ADR-066's invariant.** That one read: every v1
+    passage's text appears verbatim inside exactly one v2 section, and the only
+    characters added are the joining spaces. It cannot survive a rule that
+    removes anything. The replacement, which ``build_passages_v3`` makes
+    checkable by enumerating what it dropped: every v1 passage's text either
+    appears verbatim inside exactly one v3 section **or** is listed in the
+    ledger's ``dropped_blocks`` with its offsets and its text. A removal that is
+    counted and named is not a silent repair.
+
+    **Section spans are v2's, unchanged.** A dropped block's bytes stay inside
+    the span even when the block is the section's last -- which happens once,
+    for "Our Customers", whose trailing block is page 10. The alternative was to
+    pull ``end_offset`` back to the last surviving block, and it was rejected:
+    the ledger already declares that offsets address raw bytes while
+    ``text_hash`` covers normalized text and the two are not a byte-identical
+    slice (tags and whitespace are dropped inside every span already). Keeping
+    the spans makes all 16 v3 offsets equal to v2's, so a diff between the two
+    corpora is exactly the set of sections whose *text* changed.
+    """
+    blocks = normalize_span(raw, start_offset=start_offset, end_offset=end_offset)
+    if not blocks:
+        return [], []
+
+    sections: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    for block in blocks:
+        fragment = bytes(raw[block["start_offset"] : block["end_offset"]])
+        if is_heading_block(fragment) or not sections:
+            sections.append(
+                {
+                    "text": block["text"],
+                    "start_offset": block["start_offset"],
+                    "end_offset": block["end_offset"],
+                }
+            )
+            continue
+        current = sections[-1]
+        # The span grows whether or not the text does: see the docstring.
+        current["end_offset"] = block["end_offset"]
+        if is_page_number_block(fragment):
+            dropped.append(
+                {
+                    "start_offset": block["start_offset"],
+                    "end_offset": block["end_offset"],
+                    "text": block["text"],
+                }
+            )
+            continue
+        current["text"] = f"{current['text']} {block['text']}"
+    return sections, dropped
+
+
+def build_passages_v3(
+    raw: bytes,
+    *,
+    source_id: str,
+    start_offset: int,
+    end_offset: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """``build_passages_v2`` over v3 sections, with the drops recorded.
+
+    The ledger gains ``dropped_blocks``: one entry per removed block, carrying
+    its offsets and its exact text. It is the auditable half of the widened
+    invariant -- without it the corpus would be quietly shorter than its source
+    and no reader could tell what left.
+    """
+    sections, dropped = normalize_span_v3(
+        raw, start_offset=start_offset, end_offset=end_offset
+    )
+
+    seen: dict[str, int] = {}
+    passages: list[dict[str, Any]] = []
+    normalized_bytes = 0
+    for section in sections:
+        text = section["text"]
+        text_hash = sha256(text.encode("utf-8")).hexdigest()
+        occurrence = seen.get(text_hash, 0)
+        seen[text_hash] = occurrence + 1
+        normalized_bytes += len(text.encode("utf-8"))
+        passages.append(
+            {
+                "passage_id": passage_id_for(source_id, text_hash, occurrence),
+                "source_id": source_id,
+                "heading_path": [],
+                "text": text,
+                "text_hash": text_hash,
+                "start_offset": section["start_offset"],
+                "end_offset": section["end_offset"],
+                "page": None,
+                "normalizer_version": NORMALIZER_VERSION_V3,
+            }
+        )
+
+    span_bytes = end_offset - start_offset
+    ledger = {
+        "normalizer_version": NORMALIZER_VERSION_V3,
+        "transform_chain": list(TRANSFORM_CHAIN),
+        "input_span": {"start_offset": start_offset, "end_offset": end_offset},
+        "input_byte_count": span_bytes,
+        "normalized_byte_count": normalized_bytes,
+        "dropped_byte_count": span_bytes - normalized_bytes,
+        "text_provenance_note": (
+            "offsets address raw document bytes; text_hash covers normalized "
+            "text, so a passage is not a byte-identical raw slice"
+        ),
+        "dropped_blocks": dropped,
         "passages": [
             {
                 "passage_id": passage["passage_id"],
