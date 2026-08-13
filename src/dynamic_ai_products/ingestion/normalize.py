@@ -33,15 +33,21 @@ __all__ = [
     "NORMALIZER_VERSION",
     "NORMALIZER_VERSION_V2",
     "NORMALIZER_VERSION_V3",
+    "NORMALIZER_VERSION_V4",
     "TRANSFORM_CHAIN",
     "build_passages",
     "build_passages_v2",
     "build_passages_v3",
+    "build_passages_v4",
+    "find_item_one_span",
     "is_heading_block",
+    "is_heading_block_v4",
     "is_page_number_block",
+    "is_page_number_block_v4",
     "normalize_span",
     "normalize_span_v2",
     "normalize_span_v3",
+    "normalize_span_v4",
     "passage_id_for",
 ]
 
@@ -64,6 +70,17 @@ NORMALIZER_VERSION_V2 = "sec_html_item_span_v2"
 # block instead of concatenating it.
 NORMALIZER_VERSION_V3 = "sec_html_item_span_v3"
 
+# ADR-074. v1 through v3 were measured on one filing and both their detectors
+# were gated on ``</p>``. Measured across fifteen large multi-product US 10-K
+# filers, that gate holds in **one** of them: fourteen are ``</div>``-based with
+# ``font-weight:700``, and in all fourteen ``is_heading_block`` and
+# ``is_page_number_block`` return zero for every block -- not because the
+# documents lack headings or page numbers, but because neither detector ever
+# looked. v1's own docstring predicted this and declined to generalize; the
+# second document proved it right. The successor drops the container gate and
+# admits ``700`` beside ``bold``.
+NORMALIZER_VERSION_V4 = "sec_html_item_span_v4"
+
 # Every normalizer version this code has ever published, oldest first. A
 # persisted passage records the version that produced it, so a reader has to
 # recognise the historical ones as well as today's.
@@ -71,6 +88,7 @@ KNOWN_NORMALIZER_VERSIONS: tuple[str, ...] = (
     NORMALIZER_VERSION,
     NORMALIZER_VERSION_V2,
     NORMALIZER_VERSION_V3,
+    NORMALIZER_VERSION_V4,
 )
 
 # Declared, ordered transform chain. Recorded verbatim in the ledger.
@@ -546,3 +564,323 @@ def build_passages_v3(
         ],
     }
     return passages, ledger
+
+
+# --- ADR-074: the detectors stop depending on one filing's markup ------------
+
+# The emphasis forms this admits are **exactly the ones measured**. Across the
+# fifteen filings: ``font-weight:bold`` appears in 1, ``font-weight:700`` in 14,
+# and ``600``/``800``/``900``, ``<b>`` and ``<strong>`` in **none**. Adding an
+# unmeasured form would be the speculation this project keeps refusing; the zero
+# counts are recorded in ADR-074 so a filing that uses one is a known extension
+# point rather than a rediscovery.
+_EMPHASIS_SPAN_RE = re.compile(
+    rb"(?is)<span[^>]*font-weight:\s*(?:bold|700)[^>]*>(.*?)</span>"
+)
+
+
+def is_heading_block_v4(fragment: bytes) -> bool:
+    """``is_heading_block`` without the container gate and with ``700``.
+
+    Two changes, both measured, and nothing else:
+
+    - **The ``</p>`` requirement is gone.** ``_BLOCK_SPLIT_RE`` already accepts
+      ``p|div|tr|li|h1-6|table|section`` and produced 75-240 blocks in every one
+      of the fifteen filings, so what failed was never the splitting. v1's own
+      docstring had measured that allowing every block type ``finds the same
+      fifteen here`` -- the gate bought nothing even on the document it was
+      written for, and cost everything on the other fourteen.
+    - **``font-weight:700`` is admitted beside ``bold``.** They are the same
+      declaration written two ways; the CSS keyword ``bold`` *is* 700.
+
+    The test is still equality, not presence, for v1's reason: a block is a
+    heading when its whole normalized text is its emphasized text, so a
+    paragraph that merely contains a bold phrase does not match.
+
+    **No regression, measured:** on the pinned HubSpot Item 1 this returns the
+    same 15 blocks as ``is_heading_block``, at the same indices.
+    """
+    emphasized = b" ".join(_EMPHASIS_SPAN_RE.findall(fragment))
+    if not emphasized.strip():
+        return False
+    return _normalize_fragment(fragment) == _normalize_fragment(emphasized)
+
+
+def is_page_number_block_v4(fragment: bytes) -> bool:
+    """``is_page_number_block`` without the container gate.
+
+    The same defect, in the same place. ADR-072 restricted this to ``</p>``
+    because all nine of the pinned document's page numbers closed that way and
+    the restriction was free there. It is not free anywhere else: in fourteen of
+    fifteen filings it returns ``False`` for every block, which reads as "this
+    filing prints no page numbers" and is instead "nothing was examined".
+
+    **No regression, measured:** on the pinned HubSpot Item 1 this drops the
+    same 9 blocks as ``is_page_number_block``, at the same indices.
+    """
+    return bool(_PAGE_NUMBER_RE.fullmatch(_normalize_fragment(fragment)))
+
+
+def normalize_span_v4(
+    raw: bytes,
+    *,
+    start_offset: int,
+    end_offset: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """``normalize_span_v3`` with the v4 detectors.
+
+    Section grouping, the drop-don't-concatenate rule and the span-keeping rule
+    are v3's, called rather than re-derived. Only the two predicates change, so
+    the four normalizers cannot disagree about where a block ends.
+    """
+    blocks = normalize_span(raw, start_offset=start_offset, end_offset=end_offset)
+    if not blocks:
+        return [], []
+
+    sections: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    for block in blocks:
+        fragment = bytes(raw[block["start_offset"] : block["end_offset"]])
+        if is_heading_block_v4(fragment) or not sections:
+            sections.append(
+                {
+                    "text": block["text"],
+                    "start_offset": block["start_offset"],
+                    "end_offset": block["end_offset"],
+                }
+            )
+            continue
+        current = sections[-1]
+        current["end_offset"] = block["end_offset"]
+        if is_page_number_block_v4(fragment):
+            dropped.append(
+                {
+                    "start_offset": block["start_offset"],
+                    "end_offset": block["end_offset"],
+                    "text": block["text"],
+                }
+            )
+            continue
+        current["text"] = f"{current['text']} {block['text']}"
+    return sections, dropped
+
+
+def build_passages_v4(
+    raw: bytes,
+    *,
+    source_id: str,
+    start_offset: int,
+    end_offset: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """``build_passages_v3`` over v4 sections. Same ledger shape, new version."""
+    sections, dropped = normalize_span_v4(
+        raw, start_offset=start_offset, end_offset=end_offset
+    )
+
+    seen: dict[str, int] = {}
+    passages: list[dict[str, Any]] = []
+    normalized_bytes = 0
+    for section in sections:
+        text = section["text"]
+        text_hash = sha256(text.encode("utf-8")).hexdigest()
+        occurrence = seen.get(text_hash, 0)
+        seen[text_hash] = occurrence + 1
+        normalized_bytes += len(text.encode("utf-8"))
+        passages.append(
+            {
+                "passage_id": passage_id_for(source_id, text_hash, occurrence),
+                "source_id": source_id,
+                "heading_path": [],
+                "text": text,
+                "text_hash": text_hash,
+                "start_offset": section["start_offset"],
+                "end_offset": section["end_offset"],
+                "page": None,
+                "normalizer_version": NORMALIZER_VERSION_V4,
+            }
+        )
+
+    span_bytes = end_offset - start_offset
+    ledger = {
+        "normalizer_version": NORMALIZER_VERSION_V4,
+        "transform_chain": list(TRANSFORM_CHAIN),
+        "input_span": {"start_offset": start_offset, "end_offset": end_offset},
+        "input_byte_count": span_bytes,
+        "normalized_byte_count": normalized_bytes,
+        "dropped_byte_count": span_bytes - normalized_bytes,
+        "text_provenance_note": (
+            "offsets address raw document bytes; text_hash covers normalized "
+            "text, so a passage is not a byte-identical raw slice"
+        ),
+        "dropped_blocks": dropped,
+        "passages": [
+            {
+                "passage_id": passage["passage_id"],
+                "start_offset": passage["start_offset"],
+                "end_offset": passage["end_offset"],
+                "text_hash": passage["text_hash"],
+            }
+            for passage in passages
+        ],
+    }
+    return passages, ledger
+
+
+# --- ADR-074: locating Item 1 without depending on one filing's anchors ------
+
+# Anchor ids, when a filing carries them. Measured: 1 of 15 filings does.
+_ITEM_ANCHOR_RE = re.compile(rb'(?i)id="([^"]*item[^"]*)"')
+_ITEM_ONE_ANCHOR = re.compile(r"(?i)item[_\-]?(?:1|i)(?:[_\-]business)?")
+_ITEM_ONE_A_ANCHOR = re.compile(r"(?i)item[_\-]?1a(?:[_\-]risk.*)?")
+
+# Heading text, when it does not. Four variations were measured across the
+# fifteen filings and all four are admitted here:
+#   separator   ``.``  ``:``  ``-``  (and the unicode dashes)
+#   numeral     ``1``  or the Roman ``I``
+#   entities    ``&#160;`` and friends, which must be resolved before matching
+#   spacing     tag boundaries insert runs of whitespace between the words
+_ITEM_SEPARATOR = r"[\.\:\-‐-―]?"
+_ITEM_ONE_TEXT_RE = re.compile(
+    (r"(?i)Item\s{0,20}(?:1|I)\s{0,20}" + _ITEM_SEPARATOR + r"\s{0,20}Business").encode()
+)
+_ITEM_ONE_A_TEXT_RE = re.compile(
+    (r"(?i)Item\s{0,20}(?:1A|IA)\s{0,20}" + _ITEM_SEPARATOR + r"\s{0,20}Risk").encode()
+)
+_ENTITY_RE = re.compile(rb"&[#a-zA-Z0-9]{1,8};")
+_ITEM_SPAN_NOT_FOUND = "item_span_not_found"
+
+
+def _text_offset_map(raw: bytes) -> tuple[bytes, list[int]]:
+    """Tag- and entity-free text, plus each byte's raw offset.
+
+    Markup and entities each collapse to one space, so a heading split across
+    tags reads as ordinary words while every surviving byte still knows where it
+    came from. The map is what lets a match in the text stream become a raw-byte
+    span without a second, drifting notion of position.
+    """
+    text = bytearray()
+    offsets: list[int] = []
+    index = 0
+    inside_tag = False
+    while index < len(raw):
+        byte = raw[index]
+        if byte == 0x3C:  # "<"
+            inside_tag = True
+            index += 1
+            continue
+        if byte == 0x3E:  # ">"
+            inside_tag = False
+            text.append(0x20)
+            offsets.append(index)
+            index += 1
+            continue
+        if inside_tag:
+            index += 1
+            continue
+        if byte == 0x26:  # "&"
+            entity = _ENTITY_RE.match(raw, index)
+            if entity is not None:
+                text.append(0x20)
+                offsets.append(index)
+                index = entity.end()
+                continue
+        text.append(byte)
+        offsets.append(index)
+        index += 1
+    return bytes(text), offsets
+
+
+def _starts_a_block(raw: bytes, position: int) -> bool:
+    """Does this match open a block, or sit inside a sentence?
+
+    Everything between the preceding block close and the match must be markup or
+    whitespace. This is what separates a section heading from a cross-reference:
+    one filing carries seven inline ``see Part I, Item 1A Risk Factors`` phrases,
+    and taking the first of them as the end anchor cuts the span from 104,132
+    bytes to 58,046 -- a silent 44% loss of the section being extracted.
+    """
+    window_start = max(0, position - 4000)
+    closes = list(_BLOCK_SPLIT_RE.finditer(raw, window_start, position))
+    cursor = closes[-1].end() if closes else window_start
+    between = _TAG_RE.sub(b"", raw[cursor:position])
+    return _ENTITY_RE.sub(b" ", between).strip() == b""
+
+
+def find_item_one_span(raw: bytes) -> tuple[int, int]:
+    """Locate Item 1's byte span, by anchor when there is one and by heading
+    text when there is not.
+
+    Returns ``(start_offset, end_offset)`` suitable for any ``build_passages*``.
+
+    **Anchors first, so the pinned chain keeps its exact span.** One of the
+    fifteen measured filings carries ``id="item_i_business"`` and
+    ``id="item_1a_risk_factors"``; that path is tried first and reproduces the
+    span the HubSpot corpus was built from.
+
+    **Then heading text.** The body heading is the *last* qualifying match
+    rather than the first, because every filing lists Item 1 in its table of
+    contents before printing it; and both ends must open a block, for the
+    cross-reference reason in :func:`_starts_a_block`.
+
+    Raises :class:`IngestionError` with ``item_span_not_found`` rather than
+    guessing. A span this stage cannot locate is not one it should approximate.
+    """
+    if not isinstance(raw, (bytes, bytearray)):
+        raise IngestionError(
+            "normalization input must be raw bytes",
+            reason_code="normalize_input_invalid",
+        )
+    raw = bytes(raw)
+
+    anchors = [
+        (match.group(1).decode("utf-8", errors="replace"), match.start())
+        for match in _ITEM_ANCHOR_RE.finditer(raw)
+    ]
+    ones = [pos for name, pos in anchors if _ITEM_ONE_ANCHOR.fullmatch(name)]
+    one_as = [pos for name, pos in anchors if _ITEM_ONE_A_ANCHOR.fullmatch(name)]
+    if len(ones) == 1 and len(one_as) == 1 and ones[0] < one_as[0]:
+        # The span opens at the ``>`` that closes the anchor's own tag and ends
+        # where the next anchor's attribute begins, which is the convention the
+        # pinned corpus was built with. Reproduced here rather than re-chosen:
+        # a span one tag wider would move every offset in that chain.
+        opening = raw.find(b">", ones[0])
+        if opening < 0 or opening >= one_as[0]:
+            raise IngestionError(
+                "the Item 1 anchor is not closed before Item 1A",
+                reason_code=_ITEM_SPAN_NOT_FOUND,
+            )
+        return opening, one_as[0]
+
+    text, offsets = _text_offset_map(raw)
+    starts = [
+        offsets[m.start()]
+        for m in _ITEM_ONE_TEXT_RE.finditer(text)
+        if _starts_a_block(raw, offsets[m.start()])
+    ]
+    ends = [
+        offsets[m.start()]
+        for m in _ITEM_ONE_A_TEXT_RE.finditer(text)
+        if _starts_a_block(raw, offsets[m.start()])
+    ]
+    if not starts or not ends:
+        raise IngestionError(
+            "no Item 1 heading pair was found in this document",
+            reason_code=_ITEM_SPAN_NOT_FOUND,
+        )
+    body_start = max(starts)
+    after = [end for end in ends if end > body_start]
+    if not after:
+        raise IngestionError(
+            "the Item 1 heading is not followed by an Item 1A heading",
+            reason_code=_ITEM_SPAN_NOT_FOUND,
+        )
+
+    # Back off to the enclosing tag boundaries so neither end cuts a tag.
+    start_offset = raw.rfind(b">", 0, body_start)
+    end_offset = raw.rfind(b"<", 0, min(after))
+    if start_offset < 0 or end_offset <= start_offset:
+        raise IngestionError(
+            "the located Item 1 span is empty or inverted",
+            reason_code=_ITEM_SPAN_NOT_FOUND,
+        )
+    return start_offset, end_offset

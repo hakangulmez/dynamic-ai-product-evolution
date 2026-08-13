@@ -4093,6 +4093,105 @@ what stays legible.
 one optional runner parameter, six reason codes, 42 tests. No change to any
 discovery flow.
 
+## ADR-074 — The detectors stop depending on one filing's markup: `sec_html_item_span_v4` (SPEC-006, ADR-066, ADR-072)
+
+**Status:** Accepted.
+
+**The rule warned about itself, and the second document proved it right.**
+`is_heading_block` has carried this sentence since ADR-066:
+
+> Restricted to blocks closing with `</p>` because that is what was verified.
+> Measured: allowing every block type finds the same fifteen here, so the
+> restriction costs nothing today and **refuses to generalize from one
+> document**.
+
+ADR-072 then copied the same gate into `is_page_number_block` for the same
+reason. Both were honest about their evidence base. Both were measured on one
+filing.
+
+**Measured across fifteen filings, the gate holds in one.** The cohort is large
+multi-product US 10-K filers, chosen for size and sector before any markup was
+known: ServiceNow, Adobe, Intuit, Palo Alto Networks, CrowdStrike, Workday,
+Snowflake, Datadog, MongoDB, Okta, Twilio, Atlassian, Veeva, HubSpot,
+Salesforce. Every CIK was verified from EDGAR's `company_tickers.json`; all
+fifteen file 10-K, none was dropped.
+
+| signal | filings |
+|---|---|
+| `</p>` present in Item 1 | **1 / 15** |
+| `</div>` the dominant container | 14 / 15 |
+| `font-weight:bold` | **1 / 15** |
+| `font-weight:700` | 14 / 15 |
+| `font-weight:600` / `800` / `900` | **0 / 15** |
+| `<b>` or `<strong>` | **0 / 15** |
+| `<h1>`…`<h6>` | **0 / 15** |
+| `id=` anchor for Item 1 | **1 / 15** |
+| `is_heading_block` returns zero for every block | **14 / 15** |
+
+The one filing in every left-hand column is the same one: the pinned HubSpot
+10-K the normalizer was written against.
+
+**"Zero dropped" was never "no page numbers".** Because
+`is_page_number_block` shares the gate, fourteen filings reported zero
+page-number blocks — which reads as an absence and is instead a detector that
+never looked. Under v4 the same corpus yields drops in twelve of fifteen, and
+ServiceNow's page furniture (bare `2`, bare `4`) is visible for the first time.
+
+**What was broken was the detector, not the concept.** `_BLOCK_SPLIT_RE`
+already accepts `p|div|tr|li|h1-6|table|section` and produced 75–240 blocks in
+every one of the fifteen. Splitting was general all along. An emphasis detector
+admitting `700` beside `bold`, with the container gate removed, finds headings
+in **15 / 15** — median heading length 13–24 characters, mostly one to four
+words, and only 10 of 419 detections longer than 60 characters. It is finding
+headings, not prose.
+
+**No regression, and this is the load-bearing check.** On the pinned HubSpot
+Item 1, v4's detectors return the same 15 heading blocks and the same 9
+page-number blocks as v3's, at the same indices; `build_passages_v4` reproduces
+the committed 16-passage corpus field for field, with `normalizer_version` the
+only value that differs.
+
+**Only the measured emphasis forms are admitted.** `600`, `800`, `900`, `<b>`
+and `<strong>` measured **zero** across all fifteen and are refused, with a test
+asserting the refusal. Adding an unmeasured pattern because it seems plausible
+is the speculation this project keeps declining; the zero counts are recorded
+here so a filing that uses one is a known extension point rather than a
+rediscovery. The measurement instrument used `[6-9]00`; v4 narrows that to `700`
+on purpose.
+
+**Locating Item 1 does not generalize either.** Only one filing carries an `id=`
+anchor. The other fourteen must be found from heading text, which is written
+four measured ways — separator `.` / `:` / `-`, the numeral as `1` or the Roman
+`I`, `&#160;` entities interleaved, and runs of whitespace inserted at tag
+boundaries. `find_item_one_span` tries the anchor first, so the pinned chain
+keeps its exact span, and falls back to text. Two further properties are
+measured, not assumed: the body heading is the **last** qualifying match,
+because every filing lists Item 1 in its table of contents first; and both ends
+must **open a block**, because one filing carries seven inline `see Part I, Item
+1A Risk Factors` phrases and locking onto the first cuts that section from
+104,132 bytes to 58,046 — a silent 44% loss. It raises `item_span_not_found`
+rather than approximating.
+
+**Successor, not edit, and the reason is concrete.** v1, v2 and v3 are
+byte-unchanged and a test asserts all three still reproduce their committed
+snapshots. The HubSpot chain is hash-pinned to v3's output —
+`srcsnap-hubspot-fy2024-sec-v3`, `ext-smoke-0009`, `ext-smoke-cap-0006`, the
+task runs and every decision set that cites them. A byte moved in v3 would make
+all of it unverifiable.
+
+**Out of scope, and named so it is not mistaken for solved.** ServiceNow's Item
+1 yields 44 detections that are page furniture rather than section headings —
+`Part I`, `2025 Annual Report 1`, bare `2`, bare `4`. Some are page numbers and
+v4's page-number rule removes them; `Part I` is not a number and survives. This
+class was measured in **one** filing of fifteen, which is exactly the evidence
+base that produced the defect this ADR corrects. No furniture rule is added; it
+is left to its own decision, with its own measurement.
+
+**Scope.** One module: four constants, four functions, one finder, no change to
+any existing function. One test file: 14 new tests, one existing full-set
+assertion widened by one entry. Fixtures are synthetic; no filing HTML is
+committed.
+
 ## Open decisions
 
 - Required source packet by firm-year.

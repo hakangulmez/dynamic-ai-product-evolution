@@ -325,16 +325,19 @@ def test_every_normalizer_version_is_declared() -> None:
         KNOWN_NORMALIZER_VERSIONS,
         NORMALIZER_VERSION_V2,
         NORMALIZER_VERSION_V3,
+        NORMALIZER_VERSION_V4,
     )
 
     assert KNOWN_NORMALIZER_VERSIONS == (
         "sec_html_item_span_v1",
         "sec_html_item_span_v2",
         "sec_html_item_span_v3",
+        "sec_html_item_span_v4",
     )
     assert NORMALIZER_VERSION == "sec_html_item_span_v1"
     assert NORMALIZER_VERSION_V2 == "sec_html_item_span_v2"
     assert NORMALIZER_VERSION_V3 == "sec_html_item_span_v3"
+    assert NORMALIZER_VERSION_V4 == "sec_html_item_span_v4"
 
 
 def test_a_paragraph_containing_bold_text_is_not_a_heading() -> None:
@@ -562,3 +565,267 @@ def test_a_bare_number_that_is_not_a_paragraph_is_not_a_page_number() -> None:
 
     assert not is_page_number_block(b"<div><span>9</span></div>")
     assert not is_page_number_block(b"<td>9</td>")
+
+
+# --- ADR-074: the detectors stop depending on one filing's markup ------------
+
+# Synthetic, and deliberately so: the shapes below were measured across fifteen
+# real filings, but no real filing HTML is committed here. Each fixture carries
+# exactly one measured property and nothing incidental.
+
+DIV_700_FIXTURE = (
+    b'<div><span style="font-weight:700;">Our Platform</span></div>'
+    b"<div>The platform does a number of things for customers.</div>"
+    b"<div>4</div>"
+    b'<div><span style="font-weight:700;">Our Customers</span></div>'
+    b"<div>Customers are located in many countries.</div>"
+)
+
+PARAGRAPH_BOLD_FIXTURE = (
+    b'<p><span style="font-weight:bold;">Our Platform</span></p>'
+    b"<p>The platform does a number of things for customers.</p>"
+)
+
+
+def _fixture_passages(builder, fixture: bytes):
+    return builder(fixture, source_id=SOURCE_ID, start_offset=0, end_offset=len(fixture))
+
+
+def test_v4_reads_a_div_and_700_document_that_v3_cannot() -> None:
+    """The measured defect, as a check.
+
+    Fourteen of fifteen filings are ``</div>``-based with ``font-weight:700``.
+    On every one of them both v3 detectors return ``False`` for every block --
+    which reads as "no headings, no page numbers" and is instead "nothing was
+    examined". The successor looks.
+    """
+    from dynamic_ai_products.ingestion.normalize import (
+        build_passages_v3,
+        build_passages_v4,
+    )
+
+    v3, ledger_v3 = _fixture_passages(build_passages_v3, DIV_700_FIXTURE)
+    v4, ledger_v4 = _fixture_passages(build_passages_v4, DIV_700_FIXTURE)
+
+    # v3 finds no heading, so the whole fixture collapses into one passage, and
+    # finds no page number, so the bare "4" is concatenated into the prose.
+    assert len(v3) == 1
+    assert ledger_v3["dropped_blocks"] == []
+    assert " 4 " in f" {v3[0]['text']} "
+
+    # v4 finds both headings, opens a section at each, and drops the page number.
+    assert len(v4) == 2
+    assert v4[0]["text"].startswith("Our Platform")
+    assert v4[1]["text"].startswith("Our Customers")
+    assert [b["text"] for b in ledger_v4["dropped_blocks"]] == ["4"]
+    assert " 4 " not in f" {v4[0]['text']} "
+
+
+def test_v4_still_reads_the_paragraph_and_bold_shape() -> None:
+    """Widening, not replacing: the one filing v3 worked on still works."""
+    from dynamic_ai_products.ingestion.normalize import (
+        build_passages_v3,
+        build_passages_v4,
+    )
+
+    v3, _ = _fixture_passages(build_passages_v3, PARAGRAPH_BOLD_FIXTURE)
+    v4, _ = _fixture_passages(build_passages_v4, PARAGRAPH_BOLD_FIXTURE)
+    assert [p["text"] for p in v4] == [p["text"] for p in v3]
+
+
+def test_v4_admits_only_the_emphasis_forms_that_were_measured() -> None:
+    """``600``/``800``/``900``, ``<b>`` and ``<strong>`` measured zero in 15/15.
+
+    They are refused on purpose. ADR-074 records the zero counts so a filing
+    that uses one is a known extension point rather than a rediscovery -- and
+    this test is what would fail if someone widened the rule without measuring.
+    """
+    from dynamic_ai_products.ingestion.normalize import is_heading_block_v4
+
+    assert is_heading_block_v4(b'<div><span style="font-weight:700;">H</span></div>')
+    assert is_heading_block_v4(b'<div><span style="font-weight:bold;">H</span></div>')
+    for refused in (
+        b'<div><span style="font-weight:600;">H</span></div>',
+        b'<div><span style="font-weight:800;">H</span></div>',
+        b'<div><span style="font-weight:900;">H</span></div>',
+        b"<div><b>H</b></div>",
+        b"<div><strong>H</strong></div>",
+    ):
+        assert not is_heading_block_v4(refused), refused
+
+
+def test_v4_still_requires_the_block_to_be_nothing_but_its_emphasis() -> None:
+    """Equality, not presence -- v1's rule, carried through unchanged."""
+    from dynamic_ai_products.ingestion.normalize import is_heading_block_v4
+
+    assert not is_heading_block_v4(
+        b'<div>A sentence with a <span style="font-weight:700;">bold</span> run.</div>'
+    )
+    assert not is_heading_block_v4(b"<div>Plain prose with no emphasis at all.</div>")
+
+
+def test_v4_page_number_rule_keeps_its_discriminator() -> None:
+    """Dropping the container gate must not turn a statistic into a page number."""
+    from dynamic_ai_products.ingestion.normalize import is_page_number_block_v4
+
+    assert is_page_number_block_v4(b"<div>7</div>")
+    assert is_page_number_block_v4(b"<div>1,024</div>")
+    assert not is_page_number_block_v4(b"<div>247,939 Customers in 135 countries</div>")
+    assert not is_page_number_block_v4(b"<div>10.5</div>")
+
+
+# --- ADR-074: locating Item 1 across four measured heading variations --------
+
+ITEM_ONE_VARIATIONS = {
+    "roman_numeral_and_period": (b"ITEM I. BUSINESS", b"ITEM IA. RISK FACTORS"),
+    "digit_and_entities": (b"ITEM 1.&#160;&#160;BUSINESS", b"ITEM 1A. RISK FACTORS"),
+    "digit_and_colon": (b"ITEM 1: Business", b"ITEM 1A: Risk Factors"),
+    "digit_and_dash": (b"ITEM 1 - BUSINESS", b"Item&#160;1A. Risk Factors"),
+}
+
+
+def _document(opening: bytes, closing: bytes, body: bytes = b"Body prose here.") -> bytes:
+    """A table of contents, then the body, in the shape every filing uses."""
+    return (
+        b"<div>Table of Contents</div>"
+        b"<div>" + opening + b" 4 " + closing + b" 11</div>"
+        b"<div>" + opening + b"</div>"
+        b"<div>" + body + b"</div>"
+        b"<div>" + closing + b"</div>"
+        b"<div>Risk prose that must stay outside the span.</div>"
+    )
+
+
+@pytest.mark.parametrize("name", sorted(ITEM_ONE_VARIATIONS))
+def test_the_item_one_finder_reads_every_measured_variation(name: str) -> None:
+    from dynamic_ai_products.ingestion.normalize import (
+        find_item_one_span,
+        normalize_span,
+    )
+
+    opening, closing = ITEM_ONE_VARIATIONS[name]
+    raw = _document(opening, closing)
+    lo, hi = find_item_one_span(raw)
+    text = " ".join(b["text"] for b in normalize_span(raw, start_offset=lo, end_offset=hi))
+    assert "Body prose here." in text
+    assert "Risk prose that must stay outside the span." not in text
+    # The table-of-contents copy is not the body heading.
+    assert "Table of Contents" not in text
+
+
+def test_the_end_anchor_does_not_lock_onto_an_inline_cross_reference() -> None:
+    """One filing carries seven ``see Part I, Item 1A Risk Factors`` phrases.
+
+    Taking the first of them cuts that filing's Item 1 from 104,132 bytes to
+    58,046 -- a silent 44% loss. The end anchor must open a block.
+    """
+    from dynamic_ai_products.ingestion.normalize import (
+        find_item_one_span,
+        normalize_span,
+    )
+
+    raw = (
+        b"<div>Table of Contents</div>"
+        b"<div>Item 1. Business 4 Item 1A. Risk Factors 11</div>"
+        b"<div>Item 1. Business</div>"
+        b"<div>Opening prose.</div>"
+        b"<div>For more, see Part I, Item 1A Risk Factors in this Form 10-K.</div>"
+        b"<div>Closing prose that must survive.</div>"
+        b"<div>Item 1A. Risk Factors</div>"
+        b"<div>Risk prose that must stay outside the span.</div>"
+    )
+    lo, hi = find_item_one_span(raw)
+    text = " ".join(b["text"] for b in normalize_span(raw, start_offset=lo, end_offset=hi))
+    assert "Opening prose." in text
+    assert "Closing prose that must survive." in text
+    assert "Risk prose that must stay outside the span." not in text
+
+
+def test_the_item_one_finder_prefers_an_anchor_when_the_filing_carries_one() -> None:
+    from dynamic_ai_products.ingestion.normalize import find_item_one_span
+
+    raw = (
+        b'<div id="item_i_business"><span>ITEM I. BUSINESS</span></div>'
+        b"<div>Body prose here.</div>"
+        b'<div id="item_1a_risk_factors"><span>ITEM 1A. RISK FACTORS</span></div>'
+    )
+    lo, hi = find_item_one_span(raw)
+    assert raw[lo : lo + 1] == b">"
+    assert raw[hi:].startswith(b'id="item_1a_risk_factors"')
+
+
+def test_the_item_one_finder_refuses_rather_than_guessing() -> None:
+    from dynamic_ai_products.ingestion.normalize import find_item_one_span
+
+    with pytest.raises(IngestionError) as excinfo:
+        find_item_one_span(b"<div>A filing with no Item 1 heading at all.</div>")
+    assert excinfo.value.reason_code == "item_span_not_found"
+
+
+@requires_raw
+def test_the_finder_reproduces_the_pinned_span_exactly() -> None:
+    """The anchor path must return the span the committed corpus was built from.
+
+    A span one tag wider would move every offset in the HubSpot chain.
+    """
+    from dynamic_ai_products.ingestion.normalize import find_item_one_span
+
+    raw, lo, hi, _ = _real_span()
+    assert find_item_one_span(raw) == (lo, hi)
+
+
+@requires_raw
+def test_v4_reproduces_the_committed_v3_corpus_apart_from_its_version() -> None:
+    """No regression on the document v3 was written for.
+
+    Same 16 sections, same offsets, same text, same nine dropped blocks. The
+    only field that differs is the one that must.
+    """
+    from dynamic_ai_products.ingestion.normalize import build_passages_v4
+
+    _, _, _, _, v3, ledger_v3 = _v3()
+    raw, lo, hi, _ = _real_span()
+    v4, ledger_v4 = build_passages_v4(
+        raw, source_id=REAL_SOURCE_ID, start_offset=lo, end_offset=hi
+    )
+    assert len(v4) == 16
+    strip = lambda ps: [  # noqa: E731
+        {k: v for k, v in p.items() if k != "normalizer_version"} for p in ps
+    ]
+    assert strip(v4) == strip(v3)
+    assert {p["normalizer_version"] for p in v4} == {"sec_html_item_span_v4"}
+    assert ledger_v4["dropped_blocks"] == ledger_v3["dropped_blocks"]
+    assert len(ledger_v4["dropped_blocks"]) == 9
+
+
+@requires_raw
+def test_v1_v2_and_v3_are_byte_identical_after_the_successor_lands() -> None:
+    """Successor, not edit. The concrete reason: the HubSpot chain is hash-pinned
+    to v3's output -- srcsnap-v3, ext-smoke-0009, cap-0006 and every task run and
+    decision set that cites them. A byte moved here invalidates all of it.
+    """
+    import json
+
+    from dynamic_ai_products.ingestion.normalize import (
+        build_passages_v2,
+        build_passages_v3,
+    )
+
+    raw, lo, hi, committed_v1 = _real_span()
+    root = Path(__file__).resolve().parents[2] / "data/runs"
+
+    def committed(version: str) -> list[dict]:
+        return [
+            json.loads(line)
+            for line in (
+                root / f"srcsnap-hubspot-fy2024-sec-{version}/source_passages.jsonl"
+            ).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
+    v1, _ = build_passages(raw, source_id=REAL_SOURCE_ID, start_offset=lo, end_offset=hi)
+    v2, _ = build_passages_v2(raw, source_id=REAL_SOURCE_ID, start_offset=lo, end_offset=hi)
+    v3, _ = build_passages_v3(raw, source_id=REAL_SOURCE_ID, start_offset=lo, end_offset=hi)
+    assert v1 == committed_v1
+    assert v2 == committed("v2")
+    assert v3 == committed("v3")
