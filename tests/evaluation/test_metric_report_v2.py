@@ -527,7 +527,10 @@ def test_manifest_count():
     # consolidation prompt, its two output schemas, the packet successor
     # that carries candidate_context, the consolidation module, and the
     # change request its qualification record pins.
-    assert declared == len(paths) == 620
+    # 626 = 620 + CR-0010 and the five draft-reading paths: three readings,
+    # the instruction one of them was made under, and the README that records
+    # why none of them is a gold record.
+    assert declared == len(paths) == 626
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 
