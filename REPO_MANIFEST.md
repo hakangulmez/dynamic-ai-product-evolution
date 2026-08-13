@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **620**
+Total tracked/scaffold files listed: **626**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -188,6 +188,11 @@ Total tracked/scaffold files listed: **620**
 - `evals/fixtures/universe_sentinel/negative_audit_results.json`
 - `evals/fixtures/universe_sentinel/screen_outputs.json`
 - `evals/gold/README.md`
+- `evals/gold/draft/HUBS_FY2024_reading_opus.md`
+- `evals/gold/draft/HUBS_FY2025_reading_opus.md`
+- `evals/gold/draft/HUBS_NOW_reading_executor.md`
+- `evals/gold/draft/README.md`
+- `evals/gold/draft/_reading_instruction_opus.md`
 - `evals/regression/README.md`
 - `evals/reports/.gitkeep`
 - `evals/rubrics/MATCHING_RUBRIC.md`
