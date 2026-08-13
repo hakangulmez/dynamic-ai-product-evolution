@@ -129,6 +129,7 @@ Total tracked/scaffold files listed: **620**
 - `evals/change_requests/CR-0007-capability-discovery-schema-v3-bootstrap-qualification.md`
 - `evals/change_requests/CR-0008-task-discovery-schema-v1-bootstrap-qualification.md`
 - `evals/change_requests/CR-0009-product-consolidation-schema-v1-bootstrap-qualification.md`
+- `evals/change_requests/CR-0010-consolidation-capability-placement.md`
 - `evals/change_requests/README.md`
 - `evals/expected/.gitkeep`
 - `evals/fixtures/README.md`
