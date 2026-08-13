@@ -816,7 +816,10 @@ def test_repo_manifest_count_and_paths():
     # 626 = 620 + CR-0010 and the five draft-reading paths: three readings,
     # the instruction one of them was made under, and the README that records
     # why none of them is a gold record.
-    assert "Total tracked/scaffold files listed: **626**" in text
+    # 627 = 626 + the HubSpot FY2024 adjudication record, the first
+    # instance of the artefact SPEC-022 requires gold provenance to
+    # reference and for which no schema exists.
+    assert "Total tracked/scaffold files listed: **627**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

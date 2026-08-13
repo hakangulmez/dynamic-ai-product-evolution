@@ -530,7 +530,10 @@ def test_manifest_count():
     # 626 = 620 + CR-0010 and the five draft-reading paths: three readings,
     # the instruction one of them was made under, and the README that records
     # why none of them is a gold record.
-    assert declared == len(paths) == 626
+    # 627 = 626 + the HubSpot FY2024 adjudication record, the first
+    # instance of the artefact SPEC-022 requires gold provenance to
+    # reference and for which no schema exists.
+    assert declared == len(paths) == 627
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 
