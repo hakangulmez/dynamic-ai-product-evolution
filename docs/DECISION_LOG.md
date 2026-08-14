@@ -4361,6 +4361,77 @@ three count regression tests. Untouched: packets, prompts, providers,
 normalisation, the sentinel runner, the notebook, `configs/project.yaml`,
 pipelines/01–14, and every existing schema.
 
+## ADR-077 — W0 design freeze: cutoff, filing window, and the comparison design (THESIS_EXECUTION_PLAN W0)
+
+This is the W0 decision record the thesis plan requires before any live
+collection. It freezes the design quantities named below, states exactly what
+it does not freeze, and unblocks the live index-acquisition canary. It makes
+no live request and enables no model call.
+
+**Baseline cutoff: 2022-11-29, frozen ex ante.** One day before the ChatGPT
+public launch of 2022-11-30, the shock date the literature review pins and
+warns against treating imprecisely. Recorded in `configs/project.yaml`
+`universe.baseline_cutoff` — the freeze surface
+`docs/methodology/SOFTWARE_FIRM_UNIVERSE.md` §3.1 committed to — and to be
+recorded in every universe manifest. Baseline incumbency uses only evidence
+available on or before this date; the cutoff is a source-admission and
+membership bound in the sense of `docs/TEMPORAL_POLICY.md`, not a fiscal
+label.
+
+**FRAME filing-date admission window: 2020-01-01 through 2026-06-30** (2020
+QTR1 through 2026 QTR2 of the EDGAR full index), recorded as
+`universe.filing_window_start` / `universe.filing_window_end`. This freezes
+**filing-date admission only**. `observation_window` in `configs/project.yaml`
+is deliberately unchanged in this increment, and that is **not a decision to
+exclude FY2020/FY2021 baseline PCT evidence**: filing dates and fiscal
+reporting periods differ across firms, so the eventual fiscal-period carrier
+(the ADR-046 open item) and PCT observation coverage remain a separate
+successor decision. The only frozen 2020–2026 range is FRAME filing-date
+admission.
+
+**FY2022 is retained as a transition observation.** Final
+pre/transition/post classification is based on **actual reporting-period
+start and end dates**, never firm fiscal-year labels — FY labels straddle the
+shock differently across issuers, and a label-based split would misclassify
+firms whose fiscal 2022 ends months before or after the cutoff.
+
+**Comparison design.** Stated in full so no later reading narrows it:
+
+- **No binary treated/control group is frozen.** The design has no discrete
+  treatment assignment.
+- **All eligible firms remain in the universe.** No firm is excluded by
+  exposure level or by response.
+- **Baseline frontier task replicability is a future continuous ex-ante
+  exposure measure**, computed from pre-shock product-task observations only
+  (the construct of `docs/methodology/MEASUREMENT_DESIGN.md` §1).
+- **Post-shock AI transformation, mechanism reach, and deployment are
+  observed responses**, never treatment criteria and never eligibility
+  criteria. Baseline eligibility is governed by
+  `docs/methodology/SOFTWARE_FIRM_UNIVERSE.md` §1 and §3.1; `CLAUDE.md`
+  Rule 12 supports the construct separation but does not itself establish
+  the eligibility rule.
+- **The exact FTR rubric, weights, outcome variable, and estimator/FE
+  specification remain pilot-gated.** The thesis plan's W0 scope is thereby
+  split explicitly: the structural design above is frozen now; the
+  specification is not, and the SAMPLE_v1 gate still stops for a scope
+  decision if the pilot-determined firm requirement exceeds the 200-firm
+  extraction ceiling.
+
+**What W0 unblocks and what stays gated.** Live EDGAR full-index acquisition
+(the canary first, reviewed before any range run) is unblocked from this
+record. Model calls remain gated behind W3/W4 prompt qualification; the full
+frame run remains gated behind the reviewed canary; `full_edgar_run_enabled`
+stays `false`.
+
+**Scope.** Modified: `configs/project.yaml` (three `universe` keys),
+`docs/THESIS_EXECUTION_PLAN.md` (W0 gate entry),
+`docs/methodology/SOFTWARE_FIRM_UNIVERSE.md` (§3.1 value, §11 item resolved),
+`tests/universe/test_universe_design.py` (the legacy cutoff-is-None assertion
+updated so no contradictory test survives, plus one focused W0 consistency
+test). Untouched: extraction, measurement, taxonomy, every schema and both
+pinned registry hashes, CLI behaviour, `observation_window`,
+`REPO_MANIFEST.md` and its count tests, and all pipelines.
+
 ## Open decisions
 
 - Required source packet by firm-year.

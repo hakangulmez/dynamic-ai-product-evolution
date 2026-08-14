@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -61,7 +62,21 @@ def test_stage_00_declares_universe_release_outputs() -> None:
     assert "data/manifests/company_universe_manifest.json" in outputs
 
 
-def test_project_blocks_full_edgar_run_by_default() -> None:
+def test_project_freezes_cutoff_and_blocks_full_edgar_run() -> None:
     project = yaml.safe_load((ROOT / "configs/project.yaml").read_text())
-    assert project["universe"]["baseline_cutoff"] is None
+    # W0 (ADR-077): the baseline cutoff is frozen ex ante; the full EDGAR run
+    # stays blocked until its own later gate.
+    assert project["universe"]["baseline_cutoff"] == date(2022, 11, 29)
     assert project["universe"]["full_edgar_run_enabled"] is False
+
+
+def test_w0_universe_freeze_values_are_consistent() -> None:
+    universe = yaml.safe_load((ROOT / "configs/project.yaml").read_text())["universe"]
+    cutoff = universe["baseline_cutoff"]
+    window_start = universe["filing_window_start"]
+    window_end = universe["filing_window_end"]
+    assert cutoff == date(2022, 11, 29)  # one day before the 2022-11-30 shock
+    assert window_start == date(2020, 1, 1)  # 2020 QTR1
+    assert window_end == date(2026, 6, 30)  # 2026 QTR2
+    assert window_start < cutoff < window_end
+    assert universe["domestic_form_scope"] == ["10-K", "10-KT"]

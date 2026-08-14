@@ -6,7 +6,9 @@ observation_window:
 source_policy: official_only
 full_run_enabled: false
 universe:
-  baseline_cutoff: null
+  baseline_cutoff: 2022-11-29
+  filing_window_start: 2020-01-01
+  filing_window_end: 2026-06-30
   domestic_form_scope:
   - 10-K
   - 10-KT

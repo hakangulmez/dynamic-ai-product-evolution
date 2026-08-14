@@ -45,7 +45,7 @@ The target definition is economic rather than keyword-based. A firm can qualify 
 
 ### 3.1 Ex-ante incumbent cohort
 
-The main incumbent cohort is defined using the last eligible annual filing on or before the project baseline cutoff. The cutoff will be frozen in `configs/project.yaml` and recorded in every universe manifest.
+The main incumbent cohort is defined using the last eligible annual filing on or before the project baseline cutoff. The cutoff is frozen at `2022-11-29` in `configs/project.yaml` (ADR-077) and recorded in every universe manifest.
 
 Baseline inclusion uses only information available on or before that cutoff. Post-baseline product pages, later AI pivots, later success, later failure, or current index membership cannot affect incumbent eligibility.
 
@@ -467,7 +467,7 @@ Only after the sentinel passes should the high-recall screen be run across the h
 
 The following are intentionally not frozen before the sentinel:
 
-- exact baseline cutoff date;
+- exact baseline cutoff date — resolved: frozen at `2022-11-29` by ADR-077;
 - whether Tier A includes all `DATA_ANALYTICS_PRODUCT` firms or only software-dominant cases;
 - treatment of certain transaction-infrastructure firms;
 - minimum evidence packet coverage;

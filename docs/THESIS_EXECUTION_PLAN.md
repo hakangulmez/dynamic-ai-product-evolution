@@ -89,13 +89,28 @@ sensitivity result and **does not expand the primary corpus**.
 ## Gate sequence
 
 ```text
-W0   design            treatment variation, required pre-period, baseline cutoff
-                       (set once, then frozen ex ante), control-group size,
-                       feasible fixed-effects specification. Checks the firm
-                       count identification requires against the extraction
-                       ceiling; if it exceeds the ceiling, the plan stops for a
-                       scope decision. The panel size itself is not fixed here.
-                       No filing is collected before this gate.
+W0   design            DECIDED (ADR-077). Baseline cutoff 2022-11-29, frozen
+                       ex ante in configs/project.yaml. FRAME filing-date
+                       admission window 2020-01-01 through 2026-06-30 (2020
+                       QTR1 to 2026 QTR2); this freezes filing-date admission
+                       only — the fiscal-period carrier and PCT observation
+                       coverage are a separate successor decision, and no
+                       FY2020/FY2021 baseline PCT evidence is excluded by it.
+                       FY2022 is retained as a transition observation, and
+                       final pre/transition/post classification uses actual
+                       reporting-period start and end dates, never firm
+                       fiscal-year labels. No binary treated/control group is
+                       frozen: all eligible firms remain in the universe;
+                       baseline frontier task replicability is a future
+                       continuous ex-ante exposure measure; post-shock AI
+                       transformation, mechanism reach, and deployment are
+                       observed responses, not treatment criteria. The exact
+                       FTR rubric, weights, outcome, and estimator/FE
+                       specification remain pilot-gated; if the
+                       pilot-determined firm requirement exceeds the
+                       extraction ceiling, the plan stops for a scope
+                       decision. Filing collection is unblocked from this
+                       gate; model calls and the full frame run stay gated.
 
 W1   frame             FRAME_v1 from EDGAR full index; DERA FSDS is an
                        independent validation source only, never the frame
