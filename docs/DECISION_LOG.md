@@ -4432,6 +4432,82 @@ test). Untouched: extraction, measurement, taxonomy, every schema and both
 pinned registry hashes, CLI behaviour, `observation_window`,
 `REPO_MANIFEST.md` and its count tests, and all pipelines.
 
+## ADR-078 — The live SEC index transport is a successor binding, not a widened fixture (SPEC-003, ADR-076, ADR-077)
+
+W0 (ADR-077) unblocked live index acquisition. This increment adds the
+smallest live successor path for a one-quarter canary. The canary itself has
+**not** been run: no live request has been made, and no model is called.
+
+**Placement.** The live transport lives in the new top-level module
+`src/dynamic_ai_products/sec_index_transport.py`, not in the universe
+package: the universe package imports neither `collection` nor `ingestion`
+and contains no network code (the committed boundary tests), so the transport
+is built outside and injected into the acquisition runner as a callable, with
+its identity passed alongside as data. The repository-wide httpx allowlist —
+the exact-importer guard ADR-037 set at one module and ADR-040 widened to
+two — widens to three named modules to admit this transport; both guard
+tests record this ADR as the reason, which is precisely the review those
+guards exist to force.
+
+**Committed live contract** (`SEC_LIVE_TRANSPORT_CONTRACT`, embedded verbatim
+in every v0.2 manifest beside its hash): a descriptive SEC-compliant user
+agent carrying a contact address; at most one request per second, enforced by
+monotonic-clock spacing; a 30-second per-request timeout; at most two retries
+per URL with a fixed 5s/15s backoff ladder, applied to retryable statuses
+(429/500/502/503/504) and transport exceptions; redirects never followed —
+a redirect status is returned as-is and the runner refuses it. The send, the
+sleeper, and the monotonic clock are injectable, so every test asserts
+spacing and backoff against fakes; the default httpx send (fresh client per
+request, cookie isolation) is the only place a network request can originate,
+and nothing in the test suite calls it.
+
+**Successor manifest, not a widened contract.**
+`edgar_index_acquisition_manifest.v2@0.2.0` admits only `sec_live` and
+requires the embedded transport contract; v0.1 remains the fixture_replay
+contract, byte-identical, and fixture runs still write it unchanged. The
+runner takes an explicit `TransportIdentity`; omitting it preserves the
+fixture-replay identity and v0.1 output exactly. The failure-receipt model's
+kind literal widens to carry either identity truthfully.
+
+**Frame consumption is deliberately absent.** Per ADR-076, the live manifest
+gets its own explicitly reviewed consumption path in a later increment;
+`run_frame_builder` refuses a v0.2 manifest today, and a regression test
+pins that refusal. The v0.2 manifest says so in its limitations.
+
+**CLI.** `--mode acquire-index` gains `--transport {fixture,sec-live}` with
+`fixture` as the default, so every pre-existing invocation is unchanged;
+`sec-live` forbids `--replay-dir`, performs real requests when actually run,
+and writes the v0.2 manifest. Dry-run validates the plan before any
+transport call, so a `sec-live --dry-run` never sends. The canonical
+one-quarter canary request plan is committed at
+`configs/edgar_index_canary_request_plan.json` — exactly one entry, 2020
+QTR1, the earliest frozen-window quarter — so the reviewed canary makes
+exactly one real request; the three-quarter plan under
+`evals/fixtures/edgar_index_request_plan/` remains a synthetic fixture
+input, unchanged. The CLI still requires `--request-plan` explicitly; no
+plan is ever implied.
+
+**Schema governance.** Registry manifest_version 0.24.0 → 0.25.0, 56 → 57
+entries; every released schema byte-identical; both pinned registry hashes
+rebaselined, following the ADR-073 pattern.
+
+**Deferred, named so it is not mistaken for done.** Running the one-quarter
+canary (a separately authorized action with its own reviewed manifest); the
+full-range download; DERA validation; the live-manifest frame-consumption
+path; the real FRAME_v1 build and freeze.
+
+**Scope.** New: the transport module, the v0.2 schema, the canonical
+one-quarter canary request plan, and one mocked-transport test file.
+Modified: `frame_acquisition.py` (identity parametrization, the v0.2
+builder, and a module docstring that describes the two-transport
+architecture; fixture default unchanged), the Stage 00 CLI (`--transport`
+flag), the schema registry and its two pinned hashes, the two httpx
+exact-allowlist guard tests (two → three named importers),
+`REPO_MANIFEST.md` and its three count regression tests. Untouched:
+`frame.py` and all frame consumption, packets, prompts, providers,
+normalisation, the sentinel runner, the notebook, `configs/project.yaml`,
+pipelines/01–14, and every existing schema.
+
 ## Open decisions
 
 - Required source packet by firm-year.

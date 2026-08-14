@@ -1,0 +1,10 @@
+{
+  "plan_contract": "edgar_index_request_plan@0.1.0",
+  "description": "Canonical one-quarter SEC canary request plan (ADR-078). Exactly one planned quarter - 2020 QTR1, the earliest quarter of the frozen FRAME filing window (ADR-077) - so a sec-live canary invocation makes exactly one real request. The canary run itself is separately authorized; this file only declares its request authority. The three-quarter plan under evals/fixtures/edgar_index_request_plan/ is a synthetic fixture input and is deliberately unchanged.",
+  "entries": [
+    {
+      "quarter": "2020-QTR1",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2020/QTR1/master.idx"
+    }
+  ]
+}

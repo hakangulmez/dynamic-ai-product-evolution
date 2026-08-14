@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **642**
+Total tracked/scaffold files listed: **646**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -44,6 +44,7 @@ Total tracked/scaffold files listed: **642**
 - `apps/research_console/README.md`
 - `apps/research_console/app.py`
 - `artifacts/.gitkeep`
+- `configs/edgar_index_canary_request_plan.json`
 - `configs/frontier_registry.example.yaml`
 - `configs/master_notebook.yaml`
 - `configs/model_routes.example.yaml`
@@ -279,6 +280,7 @@ Total tracked/scaffold files listed: **642**
 - `schemas/documentation_collection_receipt.v5.schema.json`
 - `schemas/documentation_evidence_validation.schema.json`
 - `schemas/edgar_index_acquisition_manifest.schema.json`
+- `schemas/edgar_index_acquisition_manifest.v2.schema.json`
 - `schemas/extraction_execution_outcome.schema.json`
 - `schemas/extraction_input_packet.schema.json`
 - `schemas/extraction_input_packet.v2.schema.json`
@@ -475,6 +477,7 @@ Total tracked/scaffold files listed: **642**
 - `src/dynamic_ai_products/providers/sdk_factory.py`
 - `src/dynamic_ai_products/providers/vertex_gemini.py`
 - `src/dynamic_ai_products/providers/vertex_gemini_v2.py`
+- `src/dynamic_ai_products/sec_index_transport.py`
 - `src/dynamic_ai_products/universe/__init__.py`
 - `src/dynamic_ai_products/universe/audit.py`
 - `src/dynamic_ai_products/universe/classification.py`
@@ -640,6 +643,7 @@ Total tracked/scaffold files listed: **642**
 - `tests/universe/test_repo_hygiene.py`
 - `tests/universe/test_review_and_audit.py`
 - `tests/universe/test_screening_and_classification.py`
+- `tests/universe/test_sec_live_acquisition.py`
 - `tests/universe/test_sentinel_runner.py`
 - `tests/universe/test_tier_rules.py`
 - `tests/universe/test_universe_design.py`

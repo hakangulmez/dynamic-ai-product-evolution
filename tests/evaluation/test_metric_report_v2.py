@@ -546,7 +546,11 @@ def test_manifest_count():
     # 642 = 638 + the four fixture-replay acquisition paths (ADR-076): the
     # acquisition module, its manifest schema, the declared request-plan
     # fixture, and the acquisition test file.
-    assert declared == len(paths) == 642
+    # 646 = 642 + the four live-binding paths (ADR-078): the sec_live
+    # transport module, the v0.2 successor manifest schema, the canonical
+    # one-quarter canary request plan, and the mocked-transport live-binding
+    # test file.
+    assert declared == len(paths) == 646
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

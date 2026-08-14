@@ -832,7 +832,11 @@ def test_repo_manifest_count_and_paths():
     # 642 = 638 + the four fixture-replay acquisition paths (ADR-076): the
     # acquisition module, its manifest schema, the declared request-plan
     # fixture, and the acquisition test file.
-    assert "Total tracked/scaffold files listed: **642**" in text
+    # 646 = 642 + the four live-binding paths (ADR-078): the sec_live
+    # transport module, the v0.2 successor manifest schema, the canonical
+    # one-quarter canary request plan, and the mocked-transport live-binding
+    # test file.
+    assert "Total tracked/scaffold files listed: **646**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

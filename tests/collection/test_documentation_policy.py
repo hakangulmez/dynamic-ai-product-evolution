@@ -128,7 +128,9 @@ def test_only_the_policy_modules_import_the_adapter():
     assert not offenders, offenders
 
 
-def test_exactly_two_modules_import_httpx():
+def test_exactly_three_modules_import_httpx():
+    # ADR-078 widened the exact allowlist from two to three, admitting the
+    # committed sec_live index transport.
     importers = []
     for module in sorted((SRC.parent).rglob("*.py")):
         tree = ast.parse(module.read_text(encoding="utf-8"))
@@ -139,7 +141,11 @@ def test_exactly_two_modules_import_httpx():
                 importers.append(module.name)
             elif isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == "httpx":
                 importers.append(module.name)
-    assert sorted(set(importers)) == ["http_adapter.py", "response_capture.py"]
+    assert sorted(set(importers)) == [
+        "http_adapter.py",
+        "response_capture.py",
+        "sec_index_transport.py",
+    ]
 
 
 # --- the sentinel -------------------------------------------------------------

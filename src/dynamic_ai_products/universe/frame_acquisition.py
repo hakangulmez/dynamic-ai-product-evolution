@@ -1,19 +1,26 @@
-"""Fixture-replay EDGAR full-index acquisition (W1, pre-live increment).
+"""EDGAR full-index acquisition runner: injected transports, write-once runs.
 
 Governing documents:
 - specs/SPEC-001-company-universe.md (Stage A input acquisition)
 - specs/SPEC-003-sec-ingestion.md (hash coverage, no overwrite, error records)
-- docs/THESIS_EXECUTION_PLAN.md (W1; W0 gates all live collection)
+- docs/THESIS_EXECUTION_PLAN.md (W1; live collection unblocked by ADR-077)
 
 Acquires a declared request plan of ``master.idx`` URLs through an injected
 transport callable and persists write-once raw files plus one write-once,
-schema-validated acquisition manifest. This module contains no network code:
-the only transport that exists in this increment is a deterministic local
-fixture replay, and the manifest truthfully records
-``transport_kind = "fixture_replay"`` with the fixture-replay transport's own
-contract hash. A real SEC transport contract — live user agent, rate-limit
-enforcement, retries, and its client hash — belongs to the later post-W0
-live-binding increment and is deliberately absent here.
+schema-validated acquisition manifest. This module itself contains no network
+code. Two transports exist, and the runner records whichever identity
+actually ran (``TransportIdentity``, passed in as data):
+
+- the deterministic local **fixture replay**, defined here; its runs are
+  written under the v0.1 manifest contract
+  (``edgar_index_acquisition_manifest@0.1.0``), unchanged since ADR-076;
+- the committed **sec_live** transport, defined outside this package in
+  ``dynamic_ai_products.sec_index_transport`` (live user agent with contact,
+  rate-limit spacing, bounded retry/backoff, timeout, no redirects) and
+  injected in; its runs are written under the v0.2 successor contract
+  (``edgar_index_acquisition_manifest.v2@0.2.0``), which embeds the live
+  transport contract verbatim — never by widening the fixture contract
+  (ADR-078).
 
 Request-plan trust boundary: an entry declares only a quarter label and a
 URL. The two must agree under the canonical full-index grammar
@@ -83,11 +90,52 @@ FIXTURE_REPLAY_TRANSPORT_CONTRACT: dict[str, str] = {
     ),
 }
 
+TRANSPORT_KIND_SEC_LIVE = "sec_live"
+ADMITTED_TRANSPORT_KINDS = (TRANSPORT_KIND_FIXTURE_REPLAY, TRANSPORT_KIND_SEC_LIVE)
+
 ACQUISITION_MANIFEST_FILENAME = "edgar_index_acquisition_manifest.json"
 FAILURE_RECEIPT_FILENAME = "acquisition_failure_receipt.json"
 ACQUISITION_MANIFEST_SCHEMA_RELATIVE_PATH = Path(
     "schemas/edgar_index_acquisition_manifest.schema.json"
 )
+ACQUISITION_MANIFEST_V2_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/edgar_index_acquisition_manifest.v2.schema.json"
+)
+
+
+@dataclass(frozen=True)
+class TransportIdentity:
+    """The declared identity of the transport that produced an acquisition.
+
+    The identity is passed INTO this package as data — the live transport
+    implementation lives outside the universe package, which imports neither
+    ``collection`` nor ``ingestion`` and contains no network code. Fixture
+    runs keep the v0.1 manifest contract; ``sec_live`` runs are written under
+    the v0.2 successor schema, never by widening the fixture contract.
+    """
+
+    kind: str
+    contract: dict
+
+    def __post_init__(self) -> None:
+        if self.kind not in ADMITTED_TRANSPORT_KINDS:
+            raise AcquisitionPlanError(
+                f"Unknown transport kind {self.kind!r}; admitted: "
+                f"{list(ADMITTED_TRANSPORT_KINDS)}."
+            )
+        if self.contract.get("transport_kind") != self.kind:
+            raise AcquisitionPlanError(
+                "Transport contract transport_kind "
+                f"{self.contract.get('transport_kind')!r} does not match the "
+                f"declared identity kind {self.kind!r}."
+            )
+
+    def contract_hash(self) -> str:
+        payload = json.dumps(
+            self.contract, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        return sha256(payload).hexdigest()
 
 INDEX_URL_TEMPLATE = (
     "https://www.sec.gov/Archives/edgar/full-index/{year}/QTR{qtr}/master.idx"
@@ -112,6 +160,12 @@ def transport_contract_hash() -> str:
         ensure_ascii=False,
     ).encode("utf-8")
     return sha256(payload).hexdigest()
+
+
+FIXTURE_REPLAY_TRANSPORT_IDENTITY = TransportIdentity(
+    kind=TRANSPORT_KIND_FIXTURE_REPLAY,
+    contract=FIXTURE_REPLAY_TRANSPORT_CONTRACT,
+)
 
 
 class PlannedIndexEntry(StrictModel):
@@ -146,7 +200,7 @@ class AcquisitionFailureReceipt(StrictModel):
 
     run_id: str
     request_plan_sha256: str
-    transport_kind: Literal["fixture_replay"]
+    transport_kind: Literal["fixture_replay", "sec_live"]
     transport_contract_hash: str
     reason_code: Literal[
         "redirect_refused",
@@ -312,14 +366,19 @@ def run_index_acquisition(
     transport: Callable[[str], IndexTransportResponse],
     clock: Callable[[], datetime] | None = None,
     dry_run: bool = False,
+    transport_identity: TransportIdentity | None = None,
 ) -> AcquisitionRunResult:
     """Acquire every planned index file, or fail closed with a receipt.
 
     Only planned URLs are ever passed to the transport. The clock is injected
-    so a fixture run's manifest is reproducible byte for byte.
+    so a fixture run's manifest is reproducible byte for byte. Omitting
+    ``transport_identity`` keeps the fixture-replay identity and the v0.1
+    manifest contract exactly as before; a ``sec_live`` identity writes the
+    v0.2 successor manifest instead.
     """
     root = Path(repo_root)
     now = clock or (lambda: datetime.now(timezone.utc))
+    identity = transport_identity or FIXTURE_REPLAY_TRANSPORT_IDENTITY
     if not _RUN_ID_RE.match(run_id):
         raise AcquisitionPlanError(
             f"Invalid run id {run_id!r}: only letters, digits, '.', '_', '-' "
@@ -344,8 +403,8 @@ def run_index_acquisition(
         receipt = AcquisitionFailureReceipt(
             run_id=run_id,
             request_plan_sha256=plan_sha256,
-            transport_kind=TRANSPORT_KIND_FIXTURE_REPLAY,
-            transport_contract_hash=transport_contract_hash(),
+            transport_kind=identity.kind,  # type: ignore[arg-type]
+            transport_contract_hash=identity.contract_hash(),
             reason_code=reason,  # type: ignore[arg-type]
             detail=detail,
             attempted_entry=entry,
@@ -403,13 +462,23 @@ def run_index_acquisition(
             )
         )
 
-    manifest = build_acquisition_manifest(
-        repo_root=root,
-        run_id=run_id,
-        request_plan_sha256=plan_sha256,
-        receipts=result.receipts,
-        run_timestamp=now(),
-    )
+    if identity.kind == TRANSPORT_KIND_SEC_LIVE:
+        manifest = build_acquisition_manifest_v2(
+            repo_root=root,
+            run_id=run_id,
+            request_plan_sha256=plan_sha256,
+            receipts=result.receipts,
+            run_timestamp=now(),
+            transport_identity=identity,
+        )
+    else:
+        manifest = build_acquisition_manifest(
+            repo_root=root,
+            run_id=run_id,
+            request_plan_sha256=plan_sha256,
+            receipts=result.receipts,
+            run_timestamp=now(),
+        )
     payload = (
         json.dumps(manifest, indent=2, sort_keys=True) + "\n"
     ).encode("utf-8")
@@ -462,5 +531,67 @@ def build_acquisition_manifest(
         details = "; ".join(f"{e.json_path}: {e.message}" for e in errors[:5])
         raise ValueError(
             f"Acquisition manifest violates the canonical schema: {details}"
+        )
+    return manifest
+
+
+def build_acquisition_manifest_v2(
+    *,
+    repo_root: str | Path,
+    run_id: str,
+    request_plan_sha256: str,
+    receipts: list[IndexFileReceipt],
+    run_timestamp: datetime,
+    transport_identity: TransportIdentity,
+) -> dict:
+    """Assemble and schema-validate the v0.2 (live-transport) manifest.
+
+    The successor schema, not a widened fixture contract: it admits only
+    ``sec_live`` and embeds the full transport contract verbatim beside its
+    hash, so the recorded user agent, spacing, retry, and timeout policy are
+    reproducible from the manifest alone.
+    """
+    if transport_identity.kind != TRANSPORT_KIND_SEC_LIVE:
+        raise AcquisitionPlanError(
+            "The v0.2 manifest is reserved for the sec_live transport; "
+            f"got {transport_identity.kind!r}."
+        )
+    root = Path(repo_root)
+    schema_versions = read_json(root / "schemas" / "schema_version_manifest.json")[
+        "schemas"
+    ]
+    manifest = {
+        "run_id": run_id,
+        "request_plan_sha256": request_plan_sha256,
+        "transport_kind": TRANSPORT_KIND_SEC_LIVE,
+        "transport_contract": dict(transport_identity.contract),
+        "transport_contract_hash": transport_identity.contract_hash(),
+        "files": [receipt.model_dump(mode="json") for receipt in receipts],
+        "counts": {
+            "planned_entries": len(receipts),
+            "files_acquired": len(receipts),
+        },
+        "run_timestamp": run_timestamp.isoformat(),
+        "schema_versions": {
+            "edgar_index_acquisition_manifest_v2": schema_versions[
+                "edgar_index_acquisition_manifest_v2"
+            ]
+        },
+        "limitations": [
+            "Live EDGAR full-index retrieval; the sec_live transport "
+            "contract (user agent, spacing, retry, timeout) is embedded in "
+            "this manifest.",
+            "This manifest does not authorize frame consumption: the "
+            "live-manifest frame-consumption path is a separate reviewed "
+            "increment (ADR-076).",
+        ],
+    }
+    schema = read_json(root / ACQUISITION_MANIFEST_V2_SCHEMA_RELATIVE_PATH)
+    validator = Draft202012Validator(schema)
+    errors = sorted(validator.iter_errors(manifest), key=lambda e: e.json_path)
+    if errors:
+        details = "; ".join(f"{e.json_path}: {e.message}" for e in errors[:5])
+        raise ValueError(
+            f"Acquisition manifest (v2) violates the canonical schema: {details}"
         )
     return manifest

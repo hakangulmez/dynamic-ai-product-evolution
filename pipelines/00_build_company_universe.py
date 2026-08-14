@@ -18,8 +18,10 @@ so every pre-existing invocation is unchanged):
   (``--acquisition-manifest``), verifying every acquired raw-file hash before
   parsing. No network access.
 - ``acquire-index`` acquires a declared master.idx request plan through the
-  fixture-replay transport. No live SEC transport exists in this increment;
-  live EDGAR collection remains gated behind W0.
+  fixture-replay transport (default) or, post-W0, the committed ``sec_live``
+  transport (``--transport sec-live``), which performs real SEC requests
+  under the recorded user-agent, spacing, retry, and timeout contract and
+  writes the v0.2 successor manifest.
 
 Examples:
     python pipelines/00_build_company_universe.py \
@@ -55,6 +57,10 @@ from dynamic_ai_products.universe.frame import (  # noqa: E402
     FrameInputError,
     FrameReconciliationError,
     run_frame_builder,
+)
+from dynamic_ai_products.sec_index_transport import (  # noqa: E402
+    SEC_LIVE_TRANSPORT_IDENTITY,
+    make_sec_live_transport,
 )
 from dynamic_ai_products.universe.frame_acquisition import (  # noqa: E402
     AcquisitionPlanError,
@@ -143,8 +149,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--replay-dir", default=None,
-        help="Acquire-index mode only: directory whose local files the "
-             "fixture-replay transport serves. No live transport exists.",
+        help="Acquire-index mode with the fixture transport: directory whose "
+             "local files the fixture-replay transport serves.",
+    )
+    parser.add_argument(
+        "--transport", default=None, choices=["fixture", "sec-live"],
+        help="Acquire-index mode only: transport binding (default: fixture). "
+             "'sec-live' performs real SEC requests under the committed "
+             "sec_live contract and writes the v0.2 manifest.",
     )
     return parser
 
@@ -173,6 +185,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
     acquire_flags = (
         ("--request-plan", args.request_plan),
         ("--replay-dir", args.replay_dir),
+        ("--transport", args.transport),
     )
 
     if args.mode == "frame":
@@ -201,9 +214,19 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         )
         if offending:
             return f"acquire-index mode does not accept: {', '.join(offending)}"
-        missing = _missing(acquire_flags)
-        if missing:
-            return f"acquire-index mode requires: {', '.join(missing)}"
+        if args.request_plan is None:
+            return "acquire-index mode requires: --request-plan"
+        transport_choice = args.transport or "fixture"
+        if transport_choice == "fixture" and args.replay_dir is None:
+            return (
+                "acquire-index mode with the fixture transport requires: "
+                "--replay-dir"
+            )
+        if transport_choice == "sec-live" and args.replay_dir is not None:
+            return (
+                "acquire-index mode with the sec-live transport does not "
+                "accept: --replay-dir"
+            )
         return None
 
     offending = _present(frame_flags + acquire_flags)
@@ -310,21 +333,29 @@ def _main_frame(args: argparse.Namespace) -> int:
 
 def _main_acquire(args: argparse.Namespace) -> int:
     request_plan = Path(args.request_plan)
-    replay_dir = Path(args.replay_dir)
     if not request_plan.is_file():
         print(f"ERROR: request plan not found: {request_plan}", file=sys.stderr)
         return 2
-    if not replay_dir.is_dir():
-        print(f"ERROR: replay directory not found: {replay_dir}", file=sys.stderr)
-        return 2
+    transport_choice = args.transport or "fixture"
+    if transport_choice == "sec-live":
+        transport = make_sec_live_transport()
+        transport_identity = SEC_LIVE_TRANSPORT_IDENTITY
+    else:
+        replay_dir = Path(args.replay_dir)
+        if not replay_dir.is_dir():
+            print(f"ERROR: replay directory not found: {replay_dir}", file=sys.stderr)
+            return 2
+        transport = make_fixture_replay_transport(replay_dir)
+        transport_identity = None  # fixture-replay identity, v0.1 manifest
     try:
         result = run_index_acquisition(
             repo_root=REPO_ROOT,
             request_plan_path=request_plan,
             output_dir=Path(args.output_dir),
             run_id=args.run_id,
-            transport=make_fixture_replay_transport(replay_dir),
+            transport=transport,
             dry_run=args.dry_run,
+            transport_identity=transport_identity,
         )
     except AcquisitionPlanError as exc:
         print(f"ERROR: invalid request plan: {exc}", file=sys.stderr)
@@ -335,6 +366,9 @@ def _main_acquire(args: argparse.Namespace) -> int:
 
     payload = {
         "run_id": result.run_id,
+        "transport_kind": (
+            transport_identity.kind if transport_identity else "fixture_replay"
+        ),
         "dry_run": result.dry_run,
         "run_dir": str(result.run_dir) if result.run_dir else None,
         "request_plan_sha256": result.request_plan_sha256,

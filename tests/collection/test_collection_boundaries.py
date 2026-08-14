@@ -132,8 +132,13 @@ def test_exactly_one_collection_module_imports_httpx() -> None:
     assert importers == [HTTPX_ALLOWED_MODULE], importers
 
 
-def test_exactly_two_source_modules_import_httpx_repository_wide() -> None:
-    """The recorded weakening: one importer becomes an exact allowlist of two."""
+def test_exactly_three_source_modules_import_httpx_repository_wide() -> None:
+    """The recorded weakenings: an exact allowlist of three named importers.
+
+    ADR-037 made it one, ADR-040 two, and ADR-078 three — admitting the
+    committed sec_live index transport, whose default send is the only place
+    the live acquisition path can originate a request.
+    """
     src = COLLECTION_DIR.parent
     importers = sorted(
         {
@@ -144,7 +149,11 @@ def test_exactly_two_source_modules_import_httpx_repository_wide() -> None:
             if n.split(".")[0] == "httpx"
         }
     )
-    assert importers == ["http_adapter.py", "response_capture.py"], importers
+    assert importers == [
+        "http_adapter.py",
+        "response_capture.py",
+        "sec_index_transport.py",
+    ], importers
 
 
 # ADR-040 (E-C-D3) records a bounded weakening: the adapter's importer set goes
