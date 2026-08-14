@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **638**
+Total tracked/scaffold files listed: **642**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -140,6 +140,7 @@ Total tracked/scaffold files listed: **638**
 - `evals/fixtures/edgar_full_index/master-2022-QTR3.idx`
 - `evals/fixtures/edgar_full_index/master-2022-QTR4.idx`
 - `evals/fixtures/edgar_full_index/master-2023-QTR1.idx`
+- `evals/fixtures/edgar_index_request_plan/request_plan.json`
 - `evals/fixtures/evaluation_harness/case_sets/valid_base_case_set_manifest.json`
 - `evals/fixtures/evaluation_harness/case_sets/valid_frozen_case_set_manifest.json`
 - `evals/fixtures/evaluation_harness/case_sets/valid_membership_events.jsonl`
@@ -277,6 +278,7 @@ Total tracked/scaffold files listed: **638**
 - `schemas/documentation_collection_receipt.v4.schema.json`
 - `schemas/documentation_collection_receipt.v5.schema.json`
 - `schemas/documentation_evidence_validation.schema.json`
+- `schemas/edgar_index_acquisition_manifest.schema.json`
 - `schemas/extraction_execution_outcome.schema.json`
 - `schemas/extraction_input_packet.schema.json`
 - `schemas/extraction_input_packet.v2.schema.json`
@@ -477,6 +479,7 @@ Total tracked/scaffold files listed: **638**
 - `src/dynamic_ai_products/universe/audit.py`
 - `src/dynamic_ai_products/universe/classification.py`
 - `src/dynamic_ai_products/universe/frame.py`
+- `src/dynamic_ai_products/universe/frame_acquisition.py`
 - `src/dynamic_ai_products/universe/freeze.py`
 - `src/dynamic_ai_products/universe/identifiers.py`
 - `src/dynamic_ai_products/universe/io_utils.py`
@@ -629,6 +632,7 @@ Total tracked/scaffold files listed: **638**
 - `tests/temporal/test_temporal_rule.py`
 - `tests/ui/test_local_ui_scaffold.py`
 - `tests/universe/test_evidence_packets.py`
+- `tests/universe/test_frame_acquisition.py`
 - `tests/universe/test_frame_builder.py`
 - `tests/universe/test_identifiers.py`
 - `tests/universe/test_issuer_filters.py`

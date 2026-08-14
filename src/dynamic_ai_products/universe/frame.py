@@ -50,6 +50,7 @@ from jsonschema import Draft202012Validator
 from pydantic import Field, model_validator
 
 from . import UNIVERSE_CODE_VERSION
+from .frame_acquisition import ACQUISITION_MANIFEST_SCHEMA_RELATIVE_PATH
 from .freeze import create_run_directory
 from .identifiers import IdentifierError, normalize_accession, normalize_cik
 from .io_utils import read_json, sha256_file, write_json, write_jsonl
@@ -62,6 +63,11 @@ AMENDMENT_CANDIDATE_RULE = (
 )
 FRAME_MANIFEST_SCHEMA_RELATIVE_PATH = Path("schemas/filer_frame_manifest.schema.json")
 FIXTURE_MANIFEST_FILENAME = "fixture_manifest.json"
+
+# Code-owned frame version for builds that consume an acquisition manifest.
+# The label is fixed here, never CLI-supplied; the FRAME_v1 freeze (a later
+# increment) records the released version.
+FRAME_VERSION_ON_ACQUIRED_BUILD = "FRAME_v1.0-draft"
 
 _SEPARATOR_RE = re.compile(r"^-{10,}\s*$")
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -540,14 +546,25 @@ def run_frame_builder(
     *,
     repo_root: str | Path,
     project_config_path: str | Path,
-    index_dir: str | Path,
+    index_dir: str | Path | None = None,
     output_dir: str | Path,
     run_id: str,
     filing_window_start: date,
     filing_window_end: date,
     dry_run: bool = False,
+    acquisition_manifest_path: str | Path | None = None,
 ) -> FrameRunResult:
-    """Run the fixture-only frame build and, unless dry, write the run."""
+    """Run the frame build from one index inventory; unless dry, write the run.
+
+    Exactly one inventory source is required: ``index_dir`` (a fixture bundle
+    carrying ``fixture_manifest.json``) or ``acquisition_manifest_path`` (an
+    acquisition manifest that is validated against its canonical schema, must
+    carry ``transport_kind == "fixture_replay"`` — the only reviewed
+    consumption path in v0.1 — may not repeat a receipt filename, and whose
+    raw-file hashes are verified against their receipts before any parsing;
+    the frame version for that route is the code-owned
+    ``FRAME_VERSION_ON_ACQUIRED_BUILD`` label, never caller text).
+    """
     root = Path(repo_root)
     if not _RUN_ID_RE.match(run_id):
         raise FrameInputError(
@@ -576,28 +593,115 @@ def run_frame_builder(
         extension_forms=extension_forms,
     )
 
-    index_path = Path(index_dir)
-    if not index_path.is_dir():
-        raise FrameInputError(f"Index fixture directory not found: {index_path}")
-    fixture_manifest_path = index_path / FIXTURE_MANIFEST_FILENAME
-    if not fixture_manifest_path.is_file():
+    if (index_dir is None) == (acquisition_manifest_path is None):
         raise FrameInputError(
-            f"Index fixture bundle is missing {FIXTURE_MANIFEST_FILENAME}."
+            "Exactly one index inventory source is required: index_dir or "
+            "acquisition_manifest_path."
         )
-    fixture_manifest = read_json(fixture_manifest_path)
-    required_keys = {"description", "frame_version_on_build", "index_files"}
-    missing = required_keys - set(fixture_manifest)
-    if missing:
-        raise FrameInputError(
-            f"{FIXTURE_MANIFEST_FILENAME} is missing keys: {sorted(missing)}"
+    if acquisition_manifest_path is not None:
+        manifest_file = Path(acquisition_manifest_path)
+        if not manifest_file.is_file():
+            raise FrameInputError(
+                f"Acquisition manifest not found: {manifest_file}"
+            )
+        acquisition = read_json(manifest_file)
+        acquisition_schema = read_json(
+            root / ACQUISITION_MANIFEST_SCHEMA_RELATIVE_PATH
         )
-    listed = sorted(str(name) for name in fixture_manifest["index_files"])
-    present = sorted(path.name for path in index_path.glob("*.idx"))
-    if listed != present:
-        raise FrameInputError(
-            "fixture index_files and on-disk *.idx files disagree: "
-            f"listed={listed}, present={present}"
+        schema_errors = sorted(
+            Draft202012Validator(acquisition_schema).iter_errors(acquisition),
+            key=lambda e: e.json_path,
         )
+        if schema_errors:
+            details = "; ".join(
+                f"{e.json_path}: {e.message}" for e in schema_errors[:5]
+            )
+            raise FrameInputError(
+                f"Acquisition manifest violates its canonical schema: {details}"
+            )
+        # v0.1 consumption path: only fixture_replay is admitted, checked
+        # explicitly beside the schema enum. A live successor schema must get
+        # its own reviewed consumption path here, not a widened conditional.
+        if acquisition["transport_kind"] != "fixture_replay":
+            raise FrameInputError(
+                "Acquisition manifest transport_kind "
+                f"{acquisition['transport_kind']!r} has no reviewed frame-"
+                "consumption path; only 'fixture_replay' is admitted."
+            )
+        index_path = manifest_file.parent
+        receipt_by_name: dict[str, str] = {}
+        for item in acquisition["files"]:
+            name = str(item["filename"])
+            if "/" in name or "\\" in name or ".." in name:
+                raise FrameInputError(
+                    f"Unsafe filename in acquisition manifest: {name!r}"
+                )
+            if name in receipt_by_name:
+                raise FrameInputError(
+                    "Duplicate receipt filename in acquisition manifest: "
+                    f"{name!r}"
+                )
+            receipt_by_name[name] = str(item["sha256"])
+        listed = sorted(receipt_by_name)
+        present = sorted(path.name for path in index_path.glob("*.idx"))
+        if listed != present:
+            raise FrameInputError(
+                "acquisition manifest files and on-disk *.idx files disagree: "
+                f"listed={listed}, present={present}"
+            )
+        for name in listed:
+            observed = sha256_file(index_path / name)
+            if observed != receipt_by_name[name]:
+                raise FrameInputError(
+                    f"Acquired index file hash mismatch for {name}: receipt "
+                    f"{receipt_by_name[name]}, observed {observed}. "
+                    "Refusing to parse."
+                )
+        frame_version = FRAME_VERSION_ON_ACQUIRED_BUILD
+        limitations = [
+            "Index inventory from acquisition manifest "
+            f"sha256={sha256_file(manifest_file)}; every raw-file hash "
+            "verified against its receipt before parsing.",
+            "Out-of-scope-form and out-of-window rows are counted, not "
+            "copied; the hashed index files are their recoverable record.",
+            "Amendment originals are deterministic candidates derived from "
+            "index metadata only, not proven relationships.",
+            "Acquisition transport was fixture_replay, not live EDGAR "
+            "retrieval (W0 gate).",
+        ]
+    else:
+        index_path = Path(index_dir)
+        if not index_path.is_dir():
+            raise FrameInputError(f"Index fixture directory not found: {index_path}")
+        fixture_manifest_path = index_path / FIXTURE_MANIFEST_FILENAME
+        if not fixture_manifest_path.is_file():
+            raise FrameInputError(
+                f"Index fixture bundle is missing {FIXTURE_MANIFEST_FILENAME}."
+            )
+        fixture_manifest = read_json(fixture_manifest_path)
+        required_keys = {"description", "frame_version_on_build", "index_files"}
+        missing = required_keys - set(fixture_manifest)
+        if missing:
+            raise FrameInputError(
+                f"{FIXTURE_MANIFEST_FILENAME} is missing keys: {sorted(missing)}"
+            )
+        listed = sorted(str(name) for name in fixture_manifest["index_files"])
+        present = sorted(path.name for path in index_path.glob("*.idx"))
+        if listed != present:
+            raise FrameInputError(
+                "fixture index_files and on-disk *.idx files disagree: "
+                f"listed={listed}, present={present}"
+            )
+        frame_version = str(fixture_manifest["frame_version_on_build"])
+        limitations = [
+            "Fixture-only frame build: the index files are local synthetic "
+            "fixtures, not live EDGAR full-index retrievals (W0 gate).",
+            "Out-of-scope-form and out-of-window rows are counted, not "
+            "copied; the hashed index files are their recoverable record.",
+            "Amendment originals are deterministic candidates derived from "
+            "index metadata only, not proven relationships.",
+            f"Fixture bundle: {fixture_manifest['description']}",
+        ]
 
     parsed_files: list[ParsedIndexFile] = []
     index_file_entries: list[dict] = []
@@ -618,7 +722,6 @@ def run_frame_builder(
         )
 
     frame = build_frame(parsed_files, parameters)
-    frame_version = str(fixture_manifest["frame_version_on_build"])
     result = FrameRunResult(
         run_id=run_id,
         run_dir=None,
@@ -668,15 +771,7 @@ def run_frame_builder(
         out_of_scope_form_counts=frame.out_of_scope_form_counts,
         reconciliation=frame.reconciliation,
         output_hashes=output_hashes,
-        limitations=[
-            "Fixture-only frame build: the index files are local synthetic "
-            "fixtures, not live EDGAR full-index retrievals (W0 gate).",
-            "Out-of-scope-form and out-of-window rows are counted, not "
-            "copied; the hashed index files are their recoverable record.",
-            "Amendment originals are deterministic candidates derived from "
-            "index metadata only, not proven relationships.",
-            f"Fixture bundle: {fixture_manifest['description']}",
-        ],
+        limitations=limitations,
         code_revision=_git_revision(root),
     )
     result.manifest_path = write_json(run_dir / "filer_frame_manifest.json", manifest)

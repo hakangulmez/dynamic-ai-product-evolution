@@ -174,7 +174,10 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-075: manifest_version 0.22.0 -> 0.23.0, 54 -> 55
+    # Rebaselined by ADR-076: manifest_version 0.23.0 -> 0.24.0, 55 -> 56
+    # entries, registering edgar_index_acquisition_manifest for the
+    # fixture-replay index acquisition. Before it,
+    # ADR-075: manifest_version 0.22.0 -> 0.23.0, 54 -> 55
     # entries, registering filer_frame_manifest for the FRAME builder's run
     # manifest. Before it,
     # ADR-073 (CR-0009): manifest_version 0.21.0 -> 0.22.0,
@@ -197,7 +200,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "69b6115ffd0d89659be65e422c1ccadbdb929a838b544915d50e691b3655430d"
+    "15e572f2999d78b9a0bf2181529de7e475c585815c974cf1f9aeb8dc24574970"
 )
 
 

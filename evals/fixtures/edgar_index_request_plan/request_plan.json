@@ -1,0 +1,18 @@
+{
+  "plan_contract": "edgar_index_request_plan@0.1.0",
+  "description": "Fixture request plan for the FRAME acquisition increment. Declares the three quarters whose synthetic master.idx bytes are committed in evals/fixtures/edgar_full_index; the fixture-replay transport serves those bytes, so acquisition followed by a frame build must reproduce the committed expected_frame.json gold. URLs use the canonical EDGAR full-index grammar; no request is ever made to them in this increment.",
+  "entries": [
+    {
+      "quarter": "2022-QTR3",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2022/QTR3/master.idx"
+    },
+    {
+      "quarter": "2022-QTR4",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2022/QTR4/master.idx"
+    },
+    {
+      "quarter": "2023-QTR1",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2023/QTR1/master.idx"
+    }
+  ]
+}

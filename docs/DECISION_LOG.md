@@ -4276,6 +4276,91 @@ quarters, expected-frame gold), and one test file. Modified: the Stage 00 CLI
 prompts, providers, normalisation, the sentinel runner, the notebook, and
 every existing schema.
 
+## ADR-076 — Index acquisition ships before its live transport, and says so (SPEC-001 Stage A, SPEC-003, W1)
+
+This is not the W0 design record. That record — baseline cutoff, filing
+window, identification design — remains undrafted and blocks all live
+collection; this ADR covers only the fixture-replay acquisition increment.
+
+**Decision.** `src/dynamic_ai_products/universe/frame_acquisition.py`
+acquires a declared request plan of EDGAR full-index `master.idx` URLs
+through an **injected transport callable** and persists write-once raw files
+plus one write-once, schema-validated acquisition manifest. The only
+transport that exists is a deterministic local fixture replay; the module
+contains no network code and no live callable.
+
+**Transport identity is truthful.** The manifest records
+`transport_kind = "fixture_replay"` and the fixture-replay transport's own
+contract hash. It does **not** record `collection.transport`'s
+`CLIENT_CONTRACT` or its hash: no live client executes here, no user agent is
+sent, no rate limit is enforced, and no retry policy applies. The real SEC
+transport contract and its enforcement belong to the post-W0 live-binding
+increment, which will extend the manifest schema in a successor version (the
+`transport_kind` enum currently admits only `fixture_replay` on purpose).
+
+**Request-plan trust boundary.** A plan entry declares only a quarter label
+and a URL, which must agree exactly under the canonical grammar
+`https://www.sec.gov/Archives/edgar/full-index/<YYYY>/QTR<n>/master.idx`
+(https only, `www.sec.gov` only, years 1993–2100). The local output filename
+is derived in code from the validated label — a plan-supplied filename or any
+unknown key is refused, so separators, traversal text, duplicate local
+targets, and duplicate quarters can never reach the filesystem. The plan file
+is hash-pinned into the manifest.
+
+**Failure semantics.** Redirect statuses are refused outright (the pilot
+Route A stance; static index files never legitimately redirect), as are
+terminal-URL mismatches, non-200 statuses, transport exceptions, and
+write-once refusals. Any failure **while acquiring a raw planned entry**
+persists a write-once, non-authoritative `acquisition_failure_receipt.json`
+carrying a stable reason code, the attempted planned entry, and the files
+acquired before the failure. The receipt's coverage stops there: a failure
+while persisting the manifest itself is not converted into a receipt — it
+propagates, leaving the run directory with raw files and no manifest. In
+both cases no acquisition manifest exists after a failure, and manifest
+presence is the sole mark of an authoritative acquisition. The failure
+receipt is defined by a strict in-code model and this entry rather than a
+JSON schema, because it is non-authoritative by construction and nothing
+downstream may consume it.
+
+**Determinism is tested honestly.** The clock is injected; a fixture run with
+a fixed clock and the same run id produces a byte-identical manifest, and the
+test asserts exactly that rather than excusing embedded timestamps.
+
+**Frame consumption.** `run_frame_builder` accepts exactly one inventory
+source: the existing fixture bundle (byte-identical behaviour, untouched
+outputs) or an acquisition manifest. The manifest crosses a trust boundary
+and is gated before any raw file is read or hashed: it must validate against
+its canonical schema (every violation is a refusal); its `transport_kind`
+must equal `fixture_replay`, checked explicitly beside the schema enum —
+the only reviewed consumption path in v0.1, so a live successor schema must
+receive its own reviewed path rather than widening a conditional; and a
+duplicate receipt filename is refused rather than silently overwriting an
+earlier receipt. Only then is every raw-file hash verified against its
+receipt **before any parsing** — a mismatch refuses the build. The acquired
+route's frame version is the code-owned `FRAME_VERSION_ON_ACQUIRED_BUILD`
+(`FRAME_v1.0-draft`), never CLI text; the FRAME_v1 freeze records the
+released version later.
+
+**Schema governance.** `edgar_index_acquisition_manifest.schema.json@0.1.0`
+is registered (manifest_version 0.23.0 → 0.24.0, 55 → 56 entries; every
+released schema byte-identical, only the registry grew), and both pinned
+hashes of the registry — `tests/evaluation/test_schema_registry.py` and
+`tests/evaluation/test_run_manifest_v2.py` — are rebaselined, following the
+ADR-073 pattern.
+
+**Deferred, named so it is not mistaken for done.** Live SEC binding (real
+client contract, user agent, rate limiting, retries), the DERA FSDS coverage
+comparison (a W1 validation artefact consuming this same machinery), and the
+real FRAME_v1 build and freeze. All remain gated behind W0.
+
+**Scope.** New: the acquisition module, its manifest schema, the request-plan
+fixture, and one test file. Modified: the frame builder (inventory input and
+hash verification only), the Stage 00 CLI (third mode plus mode validation),
+the schema registry and its two pinned hashes, `REPO_MANIFEST.md` and its
+three count regression tests. Untouched: packets, prompts, providers,
+normalisation, the sentinel runner, the notebook, `configs/project.yaml`,
+pipelines/01–14, and every existing schema.
+
 ## Open decisions
 
 - Required source packet by firm-year.

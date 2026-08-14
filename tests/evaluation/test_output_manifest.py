@@ -829,7 +829,10 @@ def test_repo_manifest_count_and_paths():
     # frame builder module, its manifest schema, the synthetic full-index
     # fixture bundle (manifest, three master.idx quarters, expected-frame
     # gold), and the frame-builder test file.
-    assert "Total tracked/scaffold files listed: **638**" in text
+    # 642 = 638 + the four fixture-replay acquisition paths (ADR-076): the
+    # acquisition module, its manifest schema, the declared request-plan
+    # fixture, and the acquisition test file.
+    assert "Total tracked/scaffold files listed: **642**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

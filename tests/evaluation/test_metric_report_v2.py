@@ -543,7 +543,10 @@ def test_manifest_count():
     # frame builder module, its manifest schema, the synthetic full-index
     # fixture bundle (manifest, three master.idx quarters, expected-frame
     # gold), and the frame-builder test file.
-    assert declared == len(paths) == 638
+    # 642 = 638 + the four fixture-replay acquisition paths (ADR-076): the
+    # acquisition module, its manifest schema, the declared request-plan
+    # fixture, and the acquisition test file.
+    assert declared == len(paths) == 642
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 
