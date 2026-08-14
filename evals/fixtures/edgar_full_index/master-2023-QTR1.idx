@@ -1,0 +1,12 @@
+Description:           Master Index of EDGAR Dissemination Feed (synthetic fixture)
+Last Data Received:    March 31, 2023
+Comments:              webmaster@sec.gov
+Cloud HTTP:            https://www.sec.gov/Archives/
+
+
+CIK|Company Name|Form Type|Date Filed|Filename
+--------------------------------------------------------------------------------
+2000001|SYNTHETIC LEDGERWORKS INC|10-K|2023-01-25|edgar/data/2000001/0002000001-23-000002.txt
+2000010|SYNTHETIC LATECOMER HOLDINGS INC|10-K|2023-03-10|edgar/data/2000010/0002000010-23-000001.txt
+2000009|SYNTHETIC CONFLICT AB|10-K|2022-10-31|edgar/data/2000009/0002000009-22-000002.txt
+2000011|SYNTHETIC QUARTERLY ONLY LLC|10-Q/A|2023-01-15|edgar/data/2000011/0002000011-23-000001.txt

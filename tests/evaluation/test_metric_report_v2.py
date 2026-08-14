@@ -539,7 +539,11 @@ def test_manifest_count():
     # the stable identities SPEC-022 requires because textual labels are not
     # identifiers; and the thesis execution plan that sequences the
     # FRAME_v1 -> UNIVERSE_v1 -> SAMPLE_v1 -> PCT_v1 artefact chain.
-    assert declared == len(paths) == 630
+    # 638 = 630 + the eight FRAME fixture-increment paths (ADR-075): the
+    # frame builder module, its manifest schema, the synthetic full-index
+    # fixture bundle (manifest, three master.idx quarters, expected-frame
+    # gold), and the frame-builder test file.
+    assert declared == len(paths) == 638
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

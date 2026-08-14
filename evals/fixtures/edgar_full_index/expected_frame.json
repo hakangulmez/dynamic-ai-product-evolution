@@ -1,0 +1,62 @@
+{
+  "description": "Gold expectations for the edgar_full_index fixture bundle built at filing window 2022-08-01..2023-02-28 with domestic forms 10-K/10-KT and extension forms 20-F/40-F (configs/project.yaml).",
+  "counts": {
+    "index_files": 3,
+    "data_lines": 17,
+    "parsed_rows": 15,
+    "parse_failures": 2,
+    "integrity_failure_rows": 2,
+    "duplicate_rows": 1,
+    "admitted_rows": 12,
+    "domestic_annual_records": 3,
+    "fpi_extension_records": 1,
+    "amendment_links": 3,
+    "amendment_links_with_candidate": 2,
+    "amendment_links_unmatched": 1,
+    "out_of_scope_form_rows": 3,
+    "out_of_window_rows": 2
+  },
+  "out_of_scope_form_counts": {
+    "10-Q": 1,
+    "10-Q/A": 1,
+    "8-K": 1
+  },
+  "domestic_accessions": [
+    "0002000001-22-000010",
+    "0002000001-23-000002",
+    "0002000002-22-000004"
+  ],
+  "fpi_extension_accessions": [
+    "0002000003-22-000007"
+  ],
+  "amendment_links": [
+    {
+      "amendment_accession": "0002000001-22-000015",
+      "partition": "domestic",
+      "candidate_status": "deterministic_candidate",
+      "candidate_original_accession": "0002000001-22-000010"
+    },
+    {
+      "amendment_accession": "0002000003-22-000009",
+      "partition": "fpi_extension",
+      "candidate_status": "deterministic_candidate",
+      "candidate_original_accession": "0002000003-22-000007"
+    },
+    {
+      "amendment_accession": "0002000008-22-000006",
+      "partition": "domestic",
+      "candidate_status": "unmatched",
+      "candidate_original_accession": null
+    }
+  ],
+  "duplicate_accessions": [
+    "0002000001-22-000010"
+  ],
+  "integrity_failure_accessions": [
+    "0002000009-22-000002"
+  ],
+  "parse_failure_reasons": [
+    "invalid_cik",
+    "wrong_field_count"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "description": "Synthetic EDGAR full-index fixture bundle for the FRAME_v1 builder. Every CIK, company name, accession, and date is invented for methodological testing; no real company data. The three files reproduce the exact master.idx structural format: variable historical preamble text, the canonical column-header line, the dashed separator, and pipe-delimited data rows. Cases cover plain 10-K and 10-KT filings, a 20-F and a 20-F/A extension filing, a matched 10-K/A, an orphan 10-K/A, out-of-scope forms (10-Q, 8-K, 10-Q/A), an identical duplicate row across two files, conflicting same-accession rows, a malformed line, an invalid CIK, rows outside the filing window on both sides, and one CIK with two annual filings to exercise filing-history preservation.",
+  "filing_window_start": "2022-08-01",
+  "filing_window_end": "2023-02-28",
+  "frame_version_on_build": "FRAME_v0.0-fixture",
+  "index_files": [
+    "master-2022-QTR3.idx",
+    "master-2022-QTR4.idx",
+    "master-2023-QTR1.idx"
+  ]
+}

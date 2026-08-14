@@ -4192,6 +4192,90 @@ any existing function. One test file: 14 new tests, one existing full-set
 assertion widened by one entry. Fixtures are synthetic; no filing HTML is
 committed.
 
+## ADR-075 — FRAME is a per-accession filing frame built from full-index fixtures (SPEC-001 Stage A, W1)
+
+**Decision.** The first FRAME_v1 increment is a fixture-only builder:
+`src/dynamic_ai_products/universe/frame.py` parses SEC EDGAR full-index
+`master.idx` files supplied as local fixtures and assembles the per-accession
+annual-filing frame. No live SEC or DERA collection, no real FRAME_v1 run, and
+no model call occurs; all three remain gated behind W0. The W0 gate does not
+block this implementation, because nothing is collected and no cutoff is
+frozen: the filing window is a per-run parameter with no default.
+
+**Grain.** One record per annual-filing accession. CIKs and firm-years are
+never collapsed; a CIK with two annual filings inside the window yields two
+records. A derived company/CIK view is a later artefact, not this one.
+
+**Window naming.** The frame window is `filing_window_start` /
+`filing_window_end`, explicit filing-date admission bounds on the index
+`Date Filed` field. The name `analytical_period` is not used anywhere in the
+frame code, schema, CLI, or fixtures — fiscal analytical-period assignment
+stays a PCT/schema concern with its own open decision (ADR-046), and
+`docs/THESIS_EXECUTION_PLAN.md` W1 is corrected accordingly in this round.
+`baseline_status` is never assigned by the builder; the baseline cutoff is
+W0-owned.
+
+**Accession derivation.** The accession is derived deterministically from the
+index `Filename` field — basename stem, validated by the existing
+`normalize_accession` rule — and the raw SEC filename is preserved verbatim as
+a `sec_filename:` source id beside an `edgar_full_index:<file>#L<line>`
+position id. A stem that fails normalization is a parse failure, never a
+guess.
+
+**Amendments.** `10-K/A`-style forms whose base form is in scope never create
+an annual observation. They are written to a separate `amendment_links.jsonl`
+artefact whose original relationship is an explicit **deterministic
+candidate**, not a proven link: `candidate_status` is
+`deterministic_candidate` with the latest eligible same-CIK, same-base-form
+annual record filed on or before the amendment date
+(`latest_same_cik_same_base_form_filing_dated_on_or_before_amendment_v1`,
+recorded per link and in the manifest), or `unmatched` where none exists.
+Proving the relationship would require reading the amendment's cover page,
+which this increment does not do.
+
+**Exhaustive accounting.** Every index data line lands in exactly one bucket,
+with precedence: parse failure → integrity failure (conflicting rows sharing
+one accession; none of them enters the frame, because the accession's true
+fields are unknown and unknown is never coerced) → duplicate (identical
+repeated row, recorded against the first occurrence) → out-of-window → form
+partition (domestic annual | FPI extension | amendment link | out-of-scope
+form). The manifest records the count identities and the build refuses to
+write when one fails. Out-of-scope-form rows (counted per form) and
+out-of-window rows are counted, not copied into artefacts: the hashed
+immutable index files are their recoverable record.
+
+**Structural format.** The canonical `master.idx` table header
+(`CIK|Company Name|Form Type|Date Filed|Filename`) and the dashed separator
+directly beneath it are required exactly; the preamble text above them may
+vary, as historical EDGAR preambles do. Fixtures are fully synthetic — every
+CIK, name, accession, and date invented — but reproduce that structural format
+exactly.
+
+**Interface.** The existing Stage 00 CLI gains a mutually exclusive
+`--mode {sentinel,frame}` with `sentinel` as the default, so every
+pre-existing invocation is byte-for-byte unchanged; each mode rejects the
+other mode's flags explicitly. Frame mode reads the form scopes from
+`configs/project.yaml` (`universe.domestic_form_scope`,
+`universe.foreign_private_issuer_extension_forms`) and records the config
+hash; the window bounds are required CLI parameters. No new pipeline stage,
+no registry change, no notebook change.
+
+**Schema governance.** `filer_frame_manifest.schema.json@0.1.0` is registered
+in `schema_version_manifest.json` (manifest_version 0.22.0 → 0.23.0, 54 → 55
+entries; every released schema byte-identical, only the registry grew), and
+both pinned hashes of that manifest —
+`tests/evaluation/test_schema_registry.py` and
+`tests/evaluation/test_run_manifest_v2.py` — are rebaselined on that edit,
+following the ADR-073 pattern.
+
+**Scope.** New: the frame module, its manifest schema, the
+`evals/fixtures/edgar_full_index` bundle (manifest, three `master.idx`
+quarters, expected-frame gold), and one test file. Modified: the Stage 00 CLI
+(mode dispatch only), the schema registry and its pinned hash, the W1 wording,
+`REPO_MANIFEST.md` and its three count regression tests. Untouched: packets,
+prompts, providers, normalisation, the sentinel runner, the notebook, and
+every existing schema.
+
 ## Open decisions
 
 - Required source packet by firm-year.

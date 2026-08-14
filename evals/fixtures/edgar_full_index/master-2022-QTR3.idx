@@ -1,0 +1,15 @@
+Description:           Master Index of EDGAR Dissemination Feed (synthetic fixture)
+Last Data Received:    September 30, 2022
+Comments:              webmaster@sec.gov
+Anonymous FTP:         ftp://ftp.sec.gov/edgar/
+Cloud HTTP:            https://www.sec.gov/Archives/
+
+CIK|Company Name|Form Type|Date Filed|Filename
+--------------------------------------------------------------------------------
+2000001|SYNTHETIC LEDGERWORKS INC|10-K|2022-09-15|edgar/data/2000001/0002000001-22-000010.txt
+2000002|SYNTHETIC TRANSIT DATA COOP|10-KT|2022-08-05|edgar/data/2000002/0002000002-22-000004.txt
+2000003|SYNTHETIC FOREIGN GRID PLC|20-F|2022-09-20|edgar/data/2000003/0002000003-22-000007.txt
+2000001|SYNTHETIC LEDGERWORKS INC|10-Q|2022-08-10|edgar/data/2000001/0002000001-22-000008.txt
+2000005|SYNTHETIC EARLYBIRD SYSTEMS INC|10-K|2022-07-15|edgar/data/2000005/0002000005-22-000003.txt
+2000006|SYNTHETIC BROKENROW LLC|10-K|2022-09-01
+200000A|SYNTHETIC BADCIK CORP|10-K|2022-09-02|edgar/data/200000A/0002000007-22-000001.txt

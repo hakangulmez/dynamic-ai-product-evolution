@@ -1223,7 +1223,11 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # the stable identities SPEC-022 requires because textual labels are not
     # identifiers; and the thesis execution plan that sequences the
     # FRAME_v1 -> UNIVERSE_v1 -> SAMPLE_v1 -> PCT_v1 artefact chain.
-    assert declared == len(paths) == 630
+    # 638 = 630 + the eight FRAME fixture-increment paths (ADR-075): the
+    # frame builder module, its manifest schema, the synthetic full-index
+    # fixture bundle (manifest, three master.idx quarters, expected-frame
+    # gold), and the frame-builder test file.
+    assert declared == len(paths) == 638
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

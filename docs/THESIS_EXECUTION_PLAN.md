@@ -100,7 +100,10 @@ W0   design            treatment variation, required pre-period, baseline cutoff
 W1   frame             FRAME_v1 from EDGAR full index; DERA FSDS is an
                        independent validation source only, never the frame
                        source. Admission audit of existing sec-v4 snapshots.
-                       analytical_period carrier.
+                       The frame window is carried as explicit
+                       filing_window_start / filing_window_end filing-date
+                       bounds; fiscal analytical-period assignment is a later
+                       PCT/schema concern and is not carried by FRAME_v1.
 
 W2   first metric      one interpretable, source-derived HubSpot MetricReport.
                        C4 consolidation design evaluated against a pre-registered

@@ -825,7 +825,11 @@ def test_repo_manifest_count_and_paths():
     # the stable identities SPEC-022 requires because textual labels are not
     # identifiers; and the thesis execution plan that sequences the
     # FRAME_v1 -> UNIVERSE_v1 -> SAMPLE_v1 -> PCT_v1 artefact chain.
-    assert "Total tracked/scaffold files listed: **630**" in text
+    # 638 = 630 + the eight FRAME fixture-increment paths (ADR-075): the
+    # frame builder module, its manifest schema, the synthetic full-index
+    # fixture bundle (manifest, three master.idx quarters, expected-frame
+    # gold), and the frame-builder test file.
+    assert "Total tracked/scaffold files listed: **638**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text
