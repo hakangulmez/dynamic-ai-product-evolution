@@ -819,7 +819,13 @@ def test_repo_manifest_count_and_paths():
     # 627 = 626 + the HubSpot FY2024 adjudication record, the first
     # instance of the artefact SPEC-022 requires gold provenance to
     # reference and for which no schema exists.
-    assert "Total tracked/scaffold files listed: **627**" in text
+    # 630 = 627 + three paths: CR-0011, which records six measured
+    # AI-mechanism probes, eliminates five of them and closes at `revise`;
+    # the first target registry, which gives that adjudication's decisions
+    # the stable identities SPEC-022 requires because textual labels are not
+    # identifiers; and the thesis execution plan that sequences the
+    # FRAME_v1 -> UNIVERSE_v1 -> SAMPLE_v1 -> PCT_v1 artefact chain.
+    assert "Total tracked/scaffold files listed: **630**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

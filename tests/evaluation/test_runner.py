@@ -1217,7 +1217,13 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # 627 = 626 + the HubSpot FY2024 adjudication record, the first
     # instance of the artefact SPEC-022 requires gold provenance to
     # reference and for which no schema exists.
-    assert declared == len(paths) == 627
+    # 630 = 627 + three paths: CR-0011, which records six measured
+    # AI-mechanism probes, eliminates five of them and closes at `revise`;
+    # the first target registry, which gives that adjudication's decisions
+    # the stable identities SPEC-022 requires because textual labels are not
+    # identifiers; and the thesis execution plan that sequences the
+    # FRAME_v1 -> UNIVERSE_v1 -> SAMPLE_v1 -> PCT_v1 artefact chain.
+    assert declared == len(paths) == 630
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

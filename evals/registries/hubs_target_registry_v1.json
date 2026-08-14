@@ -1,0 +1,174 @@
+{
+ "registry_version": "hubs-target-registry-v1",
+ "contracts": [
+  {
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "contract_hash": "2d2adcb0b24313c58ed27c51708e4e680e0d4c5abe099ae02788217c45cf1eae"
+  }
+ ],
+ "entries": [
+  {
+   "reference_id": "HUBS.FAMILY.CUSTOMER_PLATFORM",
+   "reference_kind": "target",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "customer platform",
+    "HubSpot customer platform"
+   ],
+   "description": "Adjudication decision 1: a family. The ontology excludes a platform label without an offering."
+  },
+  {
+   "reference_id": "HUBS.FAMILY.BREEZE",
+   "reference_kind": "target",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Breeze"
+   ],
+   "description": "Adjudication decision 2: a family. 'Breeze includes X, Y and Z' is the grouping construction; its own verb is 'powers'. A `complementary` level is under consideration and would change this."
+  },
+  {
+   "reference_id": "HUBS.PRODUCT.SMART_CRM",
+   "reference_kind": "target",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Smart CRM"
+   ],
+   "description": "Separately usable; the platform's foundational layer."
+  },
+  {
+   "reference_id": "HUBS.PRODUCT.MARKETING_HUB",
+   "reference_kind": "target",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Marketing Hub"
+   ],
+   "description": "Engagement Hub; standalone, free and paid tiers."
+  },
+  {
+   "reference_id": "HUBS.PRODUCT.SALES_HUB",
+   "reference_kind": "target",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Sales Hub"
+   ],
+   "description": "Engagement Hub; standalone, free and paid tiers."
+  },
+  {
+   "reference_id": "HUBS.PRODUCT.SERVICE_HUB",
+   "reference_kind": "target",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Service Hub"
+   ],
+   "description": "Engagement Hub; standalone, free and paid tiers."
+  },
+  {
+   "reference_id": "HUBS.PRODUCT.OPERATIONS_HUB",
+   "reference_kind": "target",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Operations Hub"
+   ],
+   "description": "Engagement Hub; standalone, free and paid tiers."
+  },
+  {
+   "reference_id": "HUBS.PRODUCT.CONTENT_HUB",
+   "reference_kind": "target",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Content Hub"
+   ],
+   "description": "Engagement Hub. FY2023 and earlier name this 'CMS Hub' with an otherwise identical sentence; that alias is deliberately absent because only FY2024 was adjudicated."
+  },
+  {
+   "reference_id": "HUBS.PRODUCT.COMMERCE_HUB",
+   "reference_kind": "target",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Commerce Hub"
+   ],
+   "description": "Engagement Hub; standalone, free and paid tiers."
+  },
+  {
+   "reference_id": "HUBS.CAPABILITY.PAYMENTS",
+   "reference_kind": "target",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Payments"
+   ],
+   "description": "Adjudication decision 3: a capability of Commerce Hub. 'It includes an end-to-end payment solution, Payments' places it inside. The risk-factor argument is Item 1A and outside the item1_only arm."
+  },
+  {
+   "reference_id": "HUBS.CAPABILITY.BREEZE_COPILOT",
+   "reference_kind": "target",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Breeze Copilot"
+   ],
+   "description": "Adjudication decision 2: capability level. Its described function is a benefit claim, so whether it yields a capability observation is a separate question this entry does not settle."
+  },
+  {
+   "reference_id": "HUBS.CAPABILITY.BREEZE_AGENTS",
+   "reference_kind": "target",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Breeze Agents"
+   ],
+   "description": "Adjudication decision 2: capability level."
+  },
+  {
+   "reference_id": "HUBS.CAPABILITY.BREEZE_INTELLIGENCE",
+   "reference_kind": "target",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Breeze Intelligence"
+   ],
+   "description": "Adjudication decision 2: capability level. Absent from FY2025."
+  },
+  {
+   "reference_id": "HUBS.EXCLUDED.PROFESSIONAL_SERVICES",
+   "reference_kind": "gold",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Professional services",
+    "professional services"
+   ],
+   "description": "Adjudication decision 4: not a product. The sentence itself says these COMPLEMENT the product offerings."
+  },
+  {
+   "reference_id": "HUBS.ACQUISITION.CLEARBIT",
+   "reference_kind": "gold",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Clearbit"
+   ],
+   "description": "Adjudication decision 6: an acquisition, recorded with availability_status=announced, not a product."
+  },
+  {
+   "reference_id": "HUBS.ACQUISITION.CACHEFLOW",
+   "reference_kind": "gold",
+   "contract_id": "product_observation",
+   "contract_version": "0.1.0",
+   "aliases": [
+    "Cacheflow"
+   ],
+   "description": "Adjudication decision 6: an acquisition, recorded with availability_status=announced, not a product."
+  }
+ ]
+}

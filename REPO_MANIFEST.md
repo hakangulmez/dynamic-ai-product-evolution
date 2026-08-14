@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **627**
+Total tracked/scaffold files listed: **630**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -73,6 +73,7 @@ Total tracked/scaffold files listed: **627**
 - `docs/ROADMAP_90_DAYS.md`
 - `docs/SOURCE_POLICY.md`
 - `docs/TEMPORAL_POLICY.md`
+- `docs/THESIS_EXECUTION_PLAN.md`
 - `docs/THESIS_METHODOLOGY_AND_DATA.md`
 - `docs/agents/domain.md`
 - `docs/agents/issue-tracker.md`
@@ -130,6 +131,7 @@ Total tracked/scaffold files listed: **627**
 - `evals/change_requests/CR-0008-task-discovery-schema-v1-bootstrap-qualification.md`
 - `evals/change_requests/CR-0009-product-consolidation-schema-v1-bootstrap-qualification.md`
 - `evals/change_requests/CR-0010-consolidation-capability-placement.md`
+- `evals/change_requests/CR-0011-ai-mechanism-and-reach.md`
 - `evals/change_requests/README.md`
 - `evals/expected/.gitkeep`
 - `evals/fixtures/README.md`
@@ -195,6 +197,7 @@ Total tracked/scaffold files listed: **627**
 - `evals/gold/draft/README.md`
 - `evals/gold/draft/_reading_instruction_opus.md`
 - `evals/regression/README.md`
+- `evals/registries/hubs_target_registry_v1.json`
 - `evals/reports/.gitkeep`
 - `evals/rubrics/MATCHING_RUBRIC.md`
 - `evals/rubrics/MEASUREMENT_RUBRIC.md`
