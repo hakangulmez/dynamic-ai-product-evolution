@@ -1,0 +1,11 @@
+{
+  "plan_contract": "dera_fsds_request_plan@0.1.0",
+  "description": "Synthetic DERA FSDS archive request plan for the fixture-replay acquisition tests (ADR-082). The two ZIPs beside this plan carry sub.txt members byte-identical to the committed dera_fsds fixture TSVs, so acquisition followed by dera-validate must reproduce the ADR-081 gold. The url_template is a candidate only: no request is ever made to it from fixtures, and the real path is verified by the separately authorized live canary.",
+  "url_template": "https://www.sec.gov/files/dera/data/financial-statement-data-sets/{release}.zip",
+  "observed_through": "2022-12-31",
+  "observed_through_basis": "Deliberately conservative fixture value inside the loaded 2023q1 release so the right_boundary_unobserved category is exercised in gold; see the dera_fsds fixture rationale (ADR-081).",
+  "releases": [
+    "2022q4",
+    "2023q1"
+  ]
+}

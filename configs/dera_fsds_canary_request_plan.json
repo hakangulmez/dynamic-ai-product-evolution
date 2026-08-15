@@ -1,0 +1,10 @@
+{
+  "plan_contract": "dera_fsds_request_plan@0.1.0",
+  "description": "Canonical one-release DERA FSDS canary request plan (ADR-082). Exactly one release - 2020q1, the earliest quarter of the frozen FRAME filing window (ADR-077) - so a sec-live canary invocation makes exactly one real request. The url_template is a candidate path: the canary's own run is what verifies it empirically, and a failure receipts cleanly and revises the plan rather than any code. Possessing this plan does not authorize a live request; the canary run and any full-range plan (including the post-window release-buffer decision) remain separately authorized.",
+  "url_template": "https://www.sec.gov/files/dera/data/financial-statement-data-sets/{release}.zip",
+  "observed_through": "2020-03-31",
+  "observed_through_basis": "Conservative release-quarter-end basis: FSDS release 2020q1 covers filings accepted through 2020-03-31. Recorded per ADR-082 decision 2; the canary and the later full-range plan must revisit this basis with observed evidence before any real FRAME validation consumes it.",
+  "releases": [
+    "2020q1"
+  ]
+}

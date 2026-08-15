@@ -557,7 +557,11 @@ def test_manifest_count():
     # module, its manifest schema, the synthetic FSDS SUB fixture bundle
     # (manifest, two sub TSVs, expected-validation gold), and the validation
     # test file.
-    assert declared == len(paths) == 654
+    # 662 = 654 + the eight DERA acquisition paths (ADR-082): the acquisition
+    # module, its v0.1 and v0.2 manifest schemas, the canonical one-release
+    # canary request plan, the synthetic archive fixture bundle (plan, two
+    # ZIPs), and the acquisition test file.
+    assert declared == len(paths) == 662
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

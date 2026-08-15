@@ -4747,6 +4747,85 @@ pipelines/01–14, and all live-network activity. The validation of the real
 full FRAME run against real DERA data is a later, separately authorized
 action that first requires the live-DERA acquisition increment.
 
+## ADR-082 — DERA archives are acquired, receipted, and extracted; never assumed (THESIS W1, ADR-081)
+
+The fixture-first DERA FSDS archive acquisition increment. No real DERA or
+SEC request is made here; no model is called; the universe package stays
+network-free — the live transport is the committed `sec_live` policy
+wrapper, built outside the package and injected in with its identity as
+data, exactly as the index acquisition does.
+
+**Plan contract (`dera_fsds_request_plan@0.1.0`).** The plan declares one
+`url_template` — enforced in code to be `https://`, host `www.sec.gov`,
+with exactly one `{release}` placeholder — plus release labels matching
+`YYYYq[1-4]` (2009–2100, no duplicates), `observed_through`, and its
+required `observed_through_basis` evidence field. The template path is a
+*candidate*: the separately authorized canary verifies it empirically, and
+a wrong path fails closed with a receipt and revises the plan, never code.
+Local filenames (`dera-<release>.zip`, `dera-<release>-sub.tsv`) are
+derived in code, never read from the plan. The canonical one-release canary
+plan is committed at `configs/dera_fsds_canary_request_plan.json`
+(2020q1; basis recorded as the conservative release-quarter-end rule per
+decision 2); possessing it authorizes nothing.
+
+**Acquisition and extraction.** Raw release ZIPs are preserved write-once
+with hash receipts before anything is extracted. Exactly one member named
+`sub.txt` is then extracted per archive: a corrupt archive, a missing or
+duplicate `sub.txt`, any member carrying an absolute path, a backslash, or
+`..`, and an uncompressed `sub.txt` above the code-owned 512 MB ceiling
+(recorded in every manifest; a bounded read also caps a lying size header)
+are each refused with a stable-reason, write-once failure receipt — the
+raw ZIP stays on disk, nothing is extracted, and no acquisition manifest or
+bundle exists after any failure. Manifest presence is the sole mark of an
+authoritative acquisition; a failure while persisting the final manifests
+propagates and leaves no manifest, non-authoritative under the same rule.
+
+**Two-schema pattern, per precedent.**
+`dera_fsds_acquisition_manifest@0.1.0` admits only `fixture_replay`;
+`dera_fsds_acquisition_manifest.v2@0.2.0` admits only `sec_live` and embeds
+the live transport contract verbatim beside its hash — never a widened
+fixture contract. Both record the plan hash, the template, the
+plan-authored `observed_through` and its basis (copied verbatim; the runner
+never infers coverage), the extraction ceiling, and per-archive receipts
+(ZIP hash/bytes/status, member name and hash, extracted output hash).
+
+**Consumer bundle.** The run directory doubles as a `dera-validate` input:
+the runner writes the exact bundle shape the committed validator reads
+(`fixture_manifest.json` — the name is the consumer contract — plus the
+extracted `*.tsv` files), carrying the plan-authored `observed_through` and
+basis, the release list, and provenance extras (acquisition run id, plan
+hash) the validator ignores. `frame_dera_validation.py` is untouched
+(decision 5); the end-to-end test proves a fixture acquisition validates
+the fixture frame reproducing the ADR-081 gold exactly. Enforcing the
+acquisition-to-bundle hash chain inside the validator remains deferred.
+
+**CLI.** Fifth Stage 00 mode `acquire-dera`, sharing
+`--request-plan`/`--replay-dir`/`--transport` with `acquire-index` under
+the same fixture-default, sec-live-forbids-replay rules; every other mode
+rejects its flags and vice versa. Dry-run validates the plan before any
+transport call.
+
+**Schema governance.** Registry manifest_version 0.26.0 → 0.27.0 (58 → 60
+entries); every released schema byte-identical; both pinned registry hashes
+rebaselined, following the ADR-073 pattern.
+
+**Deferred, named so it is not mistaken for done.** The real one-release
+canary download (separately authorized; it verifies the URL path and must
+revisit the `observed_through` basis with observed evidence); the
+full-range DERA plan and acquisition (authored after canary evidence,
+including the post-window release-buffer decision); the real validation of
+the existing full FRAME artifact; the FRAME_v1 freeze decision.
+
+**Scope.** New: the acquisition module, the v0.1 and v0.2 schemas, the
+canary plan config, the three-file archive fixture bundle, and one test
+file. Modified: the Stage 00 CLI (fifth mode), the schema registry and its
+two pinned hashes, `REPO_MANIFEST.md` (654 → 662) and its three count
+regression tests. Untouched: `frame_dera_validation.py`, `frame.py`,
+`frame_acquisition.py`, `sec_index_transport.py`, the committed `dera_fsds`
+fixture bundle and its gold, `configs/project.yaml`, all `data/runs`
+artifacts, prompts, the notebook, pipelines/01–14, and all live-network
+activity.
+
 ## Open decisions
 
 - Required source packet by firm-year.

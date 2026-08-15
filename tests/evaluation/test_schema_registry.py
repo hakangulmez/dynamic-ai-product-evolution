@@ -174,7 +174,10 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-081: manifest_version 0.25.0 -> 0.26.0, 57 -> 58
+    # Rebaselined by ADR-082: manifest_version 0.26.0 -> 0.27.0, 58 -> 60
+    # entries, registering dera_fsds_acquisition_manifest (fixture replay)
+    # and its v2 sec_live successor for DERA archive acquisition. Before it,
+    # ADR-081: manifest_version 0.25.0 -> 0.26.0, 57 -> 58
     # entries, registering frame_dera_validation_manifest for the DERA FSDS
     # validation artifact. Before it,
     # ADR-078: manifest_version 0.24.0 -> 0.25.0, 56 -> 57
@@ -206,7 +209,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "91792f30ff1ea1dfccb8cd46d7d1a28b0fa98bf14fa4b1b9025ee9579c1a5931"
+    "7959bf84172f7ceb7d80916e2fa9e27cfb1082eff1502c148925dff280004afd"
 )
 
 

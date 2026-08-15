@@ -1241,7 +1241,11 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # module, its manifest schema, the synthetic FSDS SUB fixture bundle
     # (manifest, two sub TSVs, expected-validation gold), and the validation
     # test file.
-    assert declared == len(paths) == 654
+    # 662 = 654 + the eight DERA acquisition paths (ADR-082): the acquisition
+    # module, its v0.1 and v0.2 manifest schemas, the canonical one-release
+    # canary request plan, the synthetic archive fixture bundle (plan, two
+    # ZIPs), and the acquisition test file.
+    assert declared == len(paths) == 662
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dera_fsds_acquisition_manifest.v2.schema.json",
+  "title": "DERA FSDS acquisition manifest (v0.2, live transport)",
+  "description": "Successor of dera_fsds_acquisition_manifest@0.1.0 for live DERA FSDS retrieval (ADR-082). Admits only the sec_live transport and embeds the full transport contract verbatim beside its hash. The archive URL path comes from the plan-declared template, which the separately authorized canary verifies empirically. observed_through and its evidence basis are plan-authored, never inferred. Presence of this manifest is the sole mark of an authoritative acquisition; validation of any FRAME run is separately gated by dera-validate (ADR-081).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "request_plan_sha256",
+    "url_template",
+    "observed_through",
+    "observed_through_basis",
+    "transport_kind",
+    "transport_contract_hash",
+    "transport_contract",
+    "max_sub_uncompressed_bytes",
+    "archives",
+    "counts",
+    "output_hashes",
+    "run_timestamp",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "request_plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "url_template": {
+      "type": "string",
+      "pattern": "^https://www\\.sec\\.gov/\\S+$"
+    },
+    "observed_through": {
+      "type": "string",
+      "format": "date"
+    },
+    "observed_through_basis": {
+      "type": "string",
+      "minLength": 1
+    },
+    "transport_kind": {
+      "enum": [
+        "sec_live"
+      ]
+    },
+    "transport_contract_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "max_sub_uncompressed_bytes": {
+      "type": "integer",
+      "exclusiveMinimum": 0
+    },
+    "archives": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "release",
+          "url",
+          "zip_filename",
+          "zip_sha256",
+          "zip_byte_count",
+          "status_code",
+          "retrieved_at",
+          "member_name",
+          "member_sha256",
+          "sub_filename",
+          "sub_sha256",
+          "sub_byte_count"
+        ],
+        "properties": {
+          "release": {
+            "type": "string",
+            "pattern": "^\\d{4}q[1-4]$"
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https://www\\.sec\\.gov/\\S+$"
+          },
+          "zip_filename": {
+            "type": "string",
+            "pattern": "^dera-\\d{4}q[1-4]\\.zip$"
+          },
+          "zip_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "zip_byte_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status_code": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 599
+          },
+          "retrieved_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "member_name": {
+            "const": "sub.txt"
+          },
+          "member_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "sub_filename": {
+            "type": "string",
+            "pattern": "^dera-\\d{4}q[1-4]-sub\\.tsv$"
+          },
+          "sub_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "sub_byte_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "run_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "transport_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transport_kind",
+        "transport_version",
+        "user_agent",
+        "min_request_spacing_seconds",
+        "request_timeout_seconds",
+        "max_retries_per_url",
+        "retry_backoff_seconds",
+        "retry_statuses",
+        "follows_redirects"
+      ],
+      "properties": {
+        "transport_kind": {
+          "enum": [
+            "sec_live"
+          ]
+        },
+        "transport_version": {
+          "type": "string"
+        },
+        "user_agent": {
+          "type": "string",
+          "pattern": "@"
+        },
+        "min_request_spacing_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "request_timeout_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_retries_per_url": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retry_backoff_seconds": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        },
+        "retry_statuses": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 599
+          }
+        },
+        "follows_redirects": {
+          "const": false
+        }
+      }
+    }
+  }
+}

@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **654**
+Total tracked/scaffold files listed: **662**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -44,6 +44,7 @@ Total tracked/scaffold files listed: **654**
 - `apps/research_console/README.md`
 - `apps/research_console/app.py`
 - `artifacts/.gitkeep`
+- `configs/dera_fsds_canary_request_plan.json`
 - `configs/edgar_index_canary_request_plan.json`
 - `configs/edgar_index_full_request_plan.json`
 - `configs/frontier_registry.example.yaml`
@@ -141,6 +142,9 @@ Total tracked/scaffold files listed: **654**
 - `evals/fixtures/dera_fsds/fixture_manifest.json`
 - `evals/fixtures/dera_fsds/sub_2022q4.tsv`
 - `evals/fixtures/dera_fsds/sub_2023q1.tsv`
+- `evals/fixtures/dera_fsds_archives/dera-2022q4.zip`
+- `evals/fixtures/dera_fsds_archives/dera-2023q1.zip`
+- `evals/fixtures/dera_fsds_archives/request_plan.json`
 - `evals/fixtures/edgar_full_index/expected_frame.json`
 - `evals/fixtures/edgar_full_index/fixture_manifest.json`
 - `evals/fixtures/edgar_full_index/master-2022-QTR3.idx`
@@ -274,6 +278,8 @@ Total tracked/scaffold files listed: **654**
 - `schemas/capability_observation.schema.json`
 - `schemas/company.schema.json`
 - `schemas/company_universe_classification.schema.json`
+- `schemas/dera_fsds_acquisition_manifest.schema.json`
+- `schemas/dera_fsds_acquisition_manifest.v2.schema.json`
 - `schemas/evaluation_case.schema.json`
 - `schemas/evaluation_result.schema.json`
 - `schemas/evaluation_result.v2.schema.json`
@@ -487,6 +493,7 @@ Total tracked/scaffold files listed: **654**
 - `src/dynamic_ai_products/universe/__init__.py`
 - `src/dynamic_ai_products/universe/audit.py`
 - `src/dynamic_ai_products/universe/classification.py`
+- `src/dynamic_ai_products/universe/dera_acquisition.py`
 - `src/dynamic_ai_products/universe/frame.py`
 - `src/dynamic_ai_products/universe/frame_acquisition.py`
 - `src/dynamic_ai_products/universe/frame_dera_validation.py`
@@ -641,6 +648,7 @@ Total tracked/scaffold files listed: **654**
 - `tests/schema/test_schemas_are_valid.py`
 - `tests/temporal/test_temporal_rule.py`
 - `tests/ui/test_local_ui_scaffold.py`
+- `tests/universe/test_dera_acquisition.py`
 - `tests/universe/test_evidence_packets.py`
 - `tests/universe/test_frame_acquisition.py`
 - `tests/universe/test_frame_builder.py`

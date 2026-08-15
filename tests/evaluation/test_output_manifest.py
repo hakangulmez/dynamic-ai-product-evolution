@@ -843,7 +843,11 @@ def test_repo_manifest_count_and_paths():
     # module, its manifest schema, the synthetic FSDS SUB fixture bundle
     # (manifest, two sub TSVs, expected-validation gold), and the validation
     # test file.
-    assert "Total tracked/scaffold files listed: **654**" in text
+    # 662 = 654 + the eight DERA acquisition paths (ADR-082): the acquisition
+    # module, its v0.1 and v0.2 manifest schemas, the canonical one-release
+    # canary request plan, the synthetic archive fixture bundle (plan, two
+    # ZIPs), and the acquisition test file.
+    assert "Total tracked/scaffold files listed: **662**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

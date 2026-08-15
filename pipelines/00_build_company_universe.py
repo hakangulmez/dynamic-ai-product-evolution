@@ -25,6 +25,11 @@ so every pre-existing invocation is unchanged):
 - ``dera-validate`` validates a completed FRAME run against local DERA FSDS
   SUB files (ADR-081). Independent validation only: DERA never feeds the
   frame. No network access.
+- ``acquire-dera`` acquires declared DERA FSDS release ZIP archives
+  (ADR-082) through the fixture-replay transport (default) or the committed
+  ``sec_live`` transport, preserves raw ZIPs with receipts, extracts exactly
+  one ``sub.txt`` member per archive, and writes a bundle that
+  ``dera-validate`` consumes unchanged.
 
 Examples:
     python pipelines/00_build_company_universe.py \
@@ -70,6 +75,11 @@ from dynamic_ai_products.universe.frame_acquisition import (  # noqa: E402
     make_fixture_replay_transport,
     run_index_acquisition,
 )
+from dynamic_ai_products.universe.dera_acquisition import (  # noqa: E402
+    DeraPlanError,
+    make_dera_fixture_replay_transport,
+    run_dera_acquisition,
+)
 from dynamic_ai_products.universe.frame_dera_validation import (  # noqa: E402
     DeraInputError,
     run_dera_validation,
@@ -92,7 +102,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode", default="sentinel",
-        choices=["sentinel", "frame", "acquire-index", "dera-validate"],
+        choices=["sentinel", "frame", "acquire-index", "dera-validate",
+                 "acquire-dera"],
         help="Stage 00 sub-pipeline to run (default: sentinel).",
     )
     parser.add_argument(
@@ -219,6 +230,28 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         missing = _missing(dera_flags)
         if missing:
             return f"dera-validate mode requires: {', '.join(missing)}"
+        return None
+
+    if args.mode == "acquire-dera":
+        offending = _present(
+            sentinel_flags + frame_flags + dera_flags
+            + (("--config", args.config),)
+        )
+        if offending:
+            return f"acquire-dera mode does not accept: {', '.join(offending)}"
+        if args.request_plan is None:
+            return "acquire-dera mode requires: --request-plan"
+        transport_choice = args.transport or "fixture"
+        if transport_choice == "fixture" and args.replay_dir is None:
+            return (
+                "acquire-dera mode with the fixture transport requires: "
+                "--replay-dir"
+            )
+        if transport_choice == "sec-live" and args.replay_dir is not None:
+            return (
+                "acquire-dera mode with the sec-live transport does not "
+                "accept: --replay-dir"
+            )
         return None
 
     if args.mode == "frame":
@@ -429,6 +462,77 @@ def _main_acquire(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_acquire_dera(args: argparse.Namespace) -> int:
+    request_plan = Path(args.request_plan)
+    if not request_plan.is_file():
+        print(f"ERROR: request plan not found: {request_plan}", file=sys.stderr)
+        return 2
+    transport_choice = args.transport or "fixture"
+    if transport_choice == "sec-live":
+        transport = make_sec_live_transport()
+        transport_identity = SEC_LIVE_TRANSPORT_IDENTITY
+    else:
+        replay_dir = Path(args.replay_dir)
+        if not replay_dir.is_dir():
+            print(f"ERROR: replay directory not found: {replay_dir}", file=sys.stderr)
+            return 2
+        transport = make_dera_fixture_replay_transport(replay_dir)
+        transport_identity = None  # fixture-replay identity, v0.1 manifest
+    try:
+        result = run_dera_acquisition(
+            repo_root=REPO_ROOT,
+            request_plan_path=request_plan,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            transport=transport,
+            dry_run=args.dry_run,
+            transport_identity=transport_identity,
+        )
+    except DeraPlanError as exc:
+        print(f"ERROR: invalid DERA request plan: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "transport_kind": (
+            transport_identity.kind if transport_identity else "fixture_replay"
+        ),
+        "dry_run": result.dry_run,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "request_plan_sha256": result.request_plan_sha256,
+        "planned_releases": len(result.entries),
+        "archives_acquired": len(result.receipts),
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+        "bundle_manifest_path": (
+            str(result.bundle_manifest_path)
+            if result.bundle_manifest_path
+            else None
+        ),
+        "failure_reason_code": (
+            result.failure.reason_code if result.failure else None
+        ),
+        "failure_receipt_path": (
+            str(result.failure_receipt_path)
+            if result.failure_receipt_path
+            else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    if result.failure is not None:
+        print(
+            "ERROR: DERA acquisition failed; see the failure receipt. No "
+            "acquisition manifest was written.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def _main_dera_validate(args: argparse.Namespace) -> int:
     frame_manifest = Path(args.frame_manifest)
     dera_dir = Path(args.dera_dir)
@@ -487,6 +591,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_frame(args)
     if args.mode == "acquire-index":
         return _main_acquire(args)
+    if args.mode == "acquire-dera":
+        return _main_acquire_dera(args)
     if args.mode == "dera-validate":
         return _main_dera_validate(args)
     return _main_sentinel(args)
