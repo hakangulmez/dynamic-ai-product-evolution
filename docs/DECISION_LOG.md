@@ -4469,10 +4469,13 @@ runner takes an explicit `TransportIdentity`; omitting it preserves the
 fixture-replay identity and v0.1 output exactly. The failure-receipt model's
 kind literal widens to carry either identity truthfully.
 
-**Frame consumption is deliberately absent.** Per ADR-076, the live manifest
-gets its own explicitly reviewed consumption path in a later increment;
-`run_frame_builder` refuses a v0.2 manifest today, and a regression test
-pins that refusal. The v0.2 manifest says so in its limitations.
+**Frame consumption was deliberately absent at this increment.** Per
+ADR-076, the live manifest required its own explicitly reviewed consumption
+path; `run_frame_builder` refused a v0.2 manifest and a regression test
+pinned that refusal. *Superseded by ADR-079*, which delivers the reviewed
+sec_live consumption branch and replaces the refusal regression with
+consumption and refusal coverage. The v0.2 manifest still never
+self-authorizes consumption; the reviewed consumer path does.
 
 **CLI.** `--mode acquire-index` gains `--transport {fixture,sec-live}` with
 `fixture` as the default, so every pre-existing invocation is unchanged;
@@ -4494,7 +4497,7 @@ rebaselined, following the ADR-073 pattern.
 **Deferred, named so it is not mistaken for done.** Running the one-quarter
 canary (a separately authorized action with its own reviewed manifest); the
 full-range download; DERA validation; the live-manifest frame-consumption
-path; the real FRAME_v1 build and freeze.
+path (since delivered by ADR-079); the real FRAME_v1 build and freeze.
 
 **Scope.** New: the transport module, the v0.2 schema, the canonical
 one-quarter canary request plan, and one mocked-transport test file.
@@ -4507,6 +4510,71 @@ exact-allowlist guard tests (two → three named importers),
 `frame.py` and all frame consumption, packets, prompts, providers,
 normalisation, the sentinel runner, the notebook, `configs/project.yaml`,
 pipelines/01–14, and every existing schema.
+
+## ADR-079 — The reviewed sec_live consumption path: a v0.2 manifest never self-authorizes (SPEC-001 Stage A, ADR-076, ADR-078)
+
+ADR-076 established that a live acquisition manifest must receive its own
+explicitly reviewed frame-consumption path, and ADR-078 pinned the interim
+refusal. This ADR delivers that path. It supersedes ADR-078's temporary
+refusal statement and nothing else. No SEC request is made here, no further
+quarter is downloaded, no model is called, and the real FRAME canary build
+has not been run.
+
+**Authority interpretation, stated precisely.** An immutable v0.2 manifest
+does not self-authorize anything — its own limitation text says so, and the
+already-created canary manifest's ADR-076-era wording remains true as
+written. What now permits consuming a *valid* v0.2 manifest is this
+separately reviewed consumer branch together with this ADR. That permission
+covers the one-QTR canary artifact already on disk:
+`edgar_index_acquisition_manifest.json` sha256
+`c9b850d6ee93e0ec5aa0af4f35b323ce7a5ef52806d8603fbd15d02d6d7a1e6f` with raw
+`master-2020-QTR1.idx` sha256
+`1973b14fc2c8e437db28e733d23148e3b1ac7c07fe1fe5c81009031d8cde02fd`
+(29,145,406 bytes, status 200). Manifests written from now on carry the
+ADR-079 wording ("does not authorize frame consumption by itself").
+
+**Consumption dispatch.** `run_frame_builder` selects the consumption branch
+by the manifest's declared `transport_kind` and validates against the schema
+that kind selects — not a widened conditional. `fixture_replay` keeps the
+v0.1 branch behaviourally unchanged, including its defensive explicit kind
+check. `sec_live` gets the new branch: v0.2 schema validation (every
+violation a refusal), then the embedded transport contract is **recomputed
+under the one canonical JSON form** (`canonical_contract_hash`, shared with
+identity recording) **and matched against the recorded
+`transport_contract_hash` before any raw `.idx` file is read**. Any other
+kind is refused with the admitted paths named.
+
+**Fail-closed checks preserved.** Both branches then share the same
+inventory gate: safe filenames only, duplicate receipt filenames refused,
+exact on-disk/manifest inventory match, and SHA-256 verification of every
+raw index file against its receipt — all before parsing.
+
+**Provenance.** The resulting FRAME manifest's limitations carry the parent
+acquisition-manifest SHA-256, the `sec_live` identity, and the verified
+transport-contract SHA-256. The frame version stays the code-owned
+`FRAME_VERSION_ON_ACQUIRED_BUILD`; no schema is added or changed and the
+registry is untouched — the existing `filer_frame_manifest@0.1.0` carries
+the provenance in its limitations field.
+
+**Tests.** The ADR-078 refusal regression is replaced by a consumption test:
+fixture bytes served through the sec_live wrapper reproduce the committed
+expected-frame gold exactly, with the three provenance lines asserted.
+Refusals proven to fire before any raw read: malformed v0.2 manifest (extra
+property, missing governed field), tampered `transport_contract_hash`
+(schema-valid but wrong), tampered raw file (hash mismatch), and an unknown
+transport kind. The v0.1 fixture-regression suite is untouched, and CLI
+frame mode is exercised end-to-end against a fixture-backed v0.2 manifest.
+No test reads `data/runs` or the network.
+
+**Still gated.** The real FRAME canary build over the live 2020-QTR1
+artifact (the next separately authorized action), the full-range download,
+DERA validation, and all model calls.
+
+**Scope.** Modified only: `frame.py` (dispatch + sec_live branch + shared
+schema-validation helper), `frame_acquisition.py` (`canonical_contract_hash`
+helper and the forward limitation wording), one test file, and ADR-078's
+superseded statements. No new files, no schema change, no registry or
+REPO_MANIFEST change.
 
 ## Open decisions
 

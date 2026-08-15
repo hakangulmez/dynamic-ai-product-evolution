@@ -50,7 +50,11 @@ from jsonschema import Draft202012Validator
 from pydantic import Field, model_validator
 
 from . import UNIVERSE_CODE_VERSION
-from .frame_acquisition import ACQUISITION_MANIFEST_SCHEMA_RELATIVE_PATH
+from .frame_acquisition import (
+    ACQUISITION_MANIFEST_SCHEMA_RELATIVE_PATH,
+    ACQUISITION_MANIFEST_V2_SCHEMA_RELATIVE_PATH,
+    canonical_contract_hash,
+)
 from .freeze import create_run_directory
 from .identifiers import IdentifierError, normalize_accession, normalize_cik
 from .io_utils import read_json, sha256_file, write_json, write_jsonl
@@ -557,13 +561,22 @@ def run_frame_builder(
     """Run the frame build from one index inventory; unless dry, write the run.
 
     Exactly one inventory source is required: ``index_dir`` (a fixture bundle
-    carrying ``fixture_manifest.json``) or ``acquisition_manifest_path`` (an
-    acquisition manifest that is validated against its canonical schema, must
-    carry ``transport_kind == "fixture_replay"`` — the only reviewed
-    consumption path in v0.1 — may not repeat a receipt filename, and whose
-    raw-file hashes are verified against their receipts before any parsing;
-    the frame version for that route is the code-owned
-    ``FRAME_VERSION_ON_ACQUIRED_BUILD`` label, never caller text).
+    carrying ``fixture_manifest.json``) or ``acquisition_manifest_path``. An
+    acquisition manifest is consumed by the reviewed path its declared
+    ``transport_kind`` selects:
+
+    - ``fixture_replay`` — validated against the unchanged v0.1 schema
+      (ADR-076);
+    - ``sec_live`` — validated against the v0.2 successor schema, with the
+      embedded transport contract recomputed and matched against its
+      recorded hash before any raw file is read (ADR-079).
+
+    Any other kind is refused. Both paths then enforce the same inventory
+    gate — safe filenames only, no duplicate receipt filenames, exact
+    on-disk/manifest inventory match — and verify every raw-file hash
+    against its receipt before any parsing. The frame version for either
+    acquisition route is the code-owned ``FRAME_VERSION_ON_ACQUIRED_BUILD``
+    label, never caller text.
     """
     root = Path(repo_root)
     if not _RUN_ID_RE.match(run_id):
@@ -605,28 +618,57 @@ def run_frame_builder(
                 f"Acquisition manifest not found: {manifest_file}"
             )
         acquisition = read_json(manifest_file)
-        acquisition_schema = read_json(
-            root / ACQUISITION_MANIFEST_SCHEMA_RELATIVE_PATH
+        declared_kind = (
+            acquisition.get("transport_kind")
+            if isinstance(acquisition, dict)
+            else None
         )
-        schema_errors = sorted(
-            Draft202012Validator(acquisition_schema).iter_errors(acquisition),
-            key=lambda e: e.json_path,
-        )
-        if schema_errors:
-            details = "; ".join(
-                f"{e.json_path}: {e.message}" for e in schema_errors[:5]
+        if declared_kind == "fixture_replay":
+            # v0.1 consumption path (ADR-076): validated against the fixture
+            # contract; the explicit kind check beside the schema enum is kept
+            # as defense in depth.
+            _validate_acquisition_manifest_schema(
+                root, ACQUISITION_MANIFEST_SCHEMA_RELATIVE_PATH, acquisition
             )
-            raise FrameInputError(
-                f"Acquisition manifest violates its canonical schema: {details}"
+            if acquisition["transport_kind"] != "fixture_replay":
+                raise FrameInputError(
+                    "Acquisition manifest transport_kind "
+                    f"{acquisition['transport_kind']!r} has no reviewed frame-"
+                    "consumption path; only 'fixture_replay' is admitted."
+                )
+            transport_note = (
+                "Acquisition transport was fixture_replay, not live EDGAR "
+                "retrieval (W0 gate)."
             )
-        # v0.1 consumption path: only fixture_replay is admitted, checked
-        # explicitly beside the schema enum. A live successor schema must get
-        # its own reviewed consumption path here, not a widened conditional.
-        if acquisition["transport_kind"] != "fixture_replay":
+        elif declared_kind == "sec_live":
+            # v0.2 consumption path (ADR-079): the separately reviewed
+            # sec_live branch. The manifest never self-authorizes; this
+            # consumer path is what permits consuming a valid v0.2 manifest.
+            # The embedded transport contract is recomputed and matched
+            # against its recorded hash before any raw file is read.
+            _validate_acquisition_manifest_schema(
+                root, ACQUISITION_MANIFEST_V2_SCHEMA_RELATIVE_PATH, acquisition
+            )
+            recomputed = canonical_contract_hash(
+                acquisition["transport_contract"]
+            )
+            if recomputed != acquisition["transport_contract_hash"]:
+                raise FrameInputError(
+                    "Embedded sec_live transport contract does not match its "
+                    f"recorded hash: recorded "
+                    f"{acquisition['transport_contract_hash']}, recomputed "
+                    f"{recomputed}. Refusing to consume."
+                )
+            transport_note = (
+                "Acquisition transport was sec_live (live EDGAR retrieval); "
+                f"transport contract sha256={recomputed}, embedded contract "
+                "verified against its recorded hash."
+            )
+        else:
             raise FrameInputError(
-                "Acquisition manifest transport_kind "
-                f"{acquisition['transport_kind']!r} has no reviewed frame-"
-                "consumption path; only 'fixture_replay' is admitted."
+                f"Acquisition manifest transport_kind {declared_kind!r} has "
+                "no reviewed frame-consumption path; admitted: "
+                "fixture_replay (v0.1, ADR-076) and sec_live (v0.2, ADR-079)."
             )
         index_path = manifest_file.parent
         receipt_by_name: dict[str, str] = {}
@@ -666,8 +708,7 @@ def run_frame_builder(
             "copied; the hashed index files are their recoverable record.",
             "Amendment originals are deterministic candidates derived from "
             "index metadata only, not proven relationships.",
-            "Acquisition transport was fixture_replay, not live EDGAR "
-            "retrieval (W0 gate).",
+            transport_note,
         ]
     else:
         index_path = Path(index_dir)
@@ -828,6 +869,23 @@ def build_frame_manifest(
         details = "; ".join(f"{e.json_path}: {e.message}" for e in errors[:5])
         raise ValueError(f"Frame manifest violates the canonical schema: {details}")
     return manifest
+
+
+def _validate_acquisition_manifest_schema(
+    repo_root: Path, schema_relative_path: Path, acquisition: object
+) -> None:
+    """Validate an acquisition manifest against the schema its declared
+    transport kind selects; every violation is a consumption refusal."""
+    schema = read_json(repo_root / schema_relative_path)
+    errors = sorted(
+        Draft202012Validator(schema).iter_errors(acquisition),
+        key=lambda e: e.json_path,
+    )
+    if errors:
+        details = "; ".join(f"{e.json_path}: {e.message}" for e in errors[:5])
+        raise FrameInputError(
+            f"Acquisition manifest violates its canonical schema: {details}"
+        )
 
 
 def _git_revision(repo_root: Path) -> str | None:

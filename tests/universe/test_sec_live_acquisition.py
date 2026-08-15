@@ -23,7 +23,11 @@ from dynamic_ai_products.sec_index_transport import (
     make_sec_live_transport,
     request_headers,
 )
-from dynamic_ai_products.universe.frame import FrameInputError, run_frame_builder
+from dynamic_ai_products.universe.frame import (
+    FRAME_VERSION_ON_ACQUIRED_BUILD,
+    FrameInputError,
+    run_frame_builder,
+)
 from dynamic_ai_products.universe.frame_acquisition import (
     ACQUISITION_MANIFEST_FILENAME,
     AcquisitionPlanError,
@@ -32,7 +36,7 @@ from dynamic_ai_products.universe.frame_acquisition import (
     load_request_plan,
     run_index_acquisition,
 )
-from dynamic_ai_products.universe.io_utils import read_json
+from dynamic_ai_products.universe.io_utils import read_json, sha256_file
 
 ROOT = Path(__file__).resolve().parents[2]
 REPLAY_DIR = ROOT / "evals" / "fixtures" / "edgar_full_index"
@@ -41,6 +45,7 @@ CANARY_PLAN_PATH = ROOT / "configs" / "edgar_index_canary_request_plan.json"
 PROJECT_CONFIG = ROOT / "configs" / "project.yaml"
 V2_SCHEMA_PATH = ROOT / "schemas" / "edgar_index_acquisition_manifest.v2.schema.json"
 CLI = ROOT / "pipelines" / "00_build_company_universe.py"
+EXPECTED_FRAME = read_json(REPLAY_DIR / "expected_frame.json")
 
 FIXED_CLOCK = lambda: datetime(2026, 2, 2, 9, 0, 0, tzinfo=timezone.utc)  # noqa: E731
 
@@ -239,21 +244,120 @@ def test_sec_live_failure_receipt_records_live_identity(tmp_path: Path) -> None:
     assert not (result.run_dir / ACQUISITION_MANIFEST_FILENAME).exists()
 
 
-def test_frame_consumption_refuses_the_v2_live_manifest(
+def _frame_from(manifest_path: Path, tmp_path: Path, run_id: str):
+    return run_frame_builder(
+        repo_root=ROOT,
+        project_config_path=PROJECT_CONFIG,
+        acquisition_manifest_path=manifest_path,
+        output_dir=tmp_path / "frame-out",
+        run_id=run_id,
+        filing_window_start=date(2022, 8, 1),
+        filing_window_end=date(2023, 2, 28),
+    )
+
+
+def test_frame_consumes_a_valid_v2_live_manifest(
     live_identity_run, tmp_path: Path
 ) -> None:
-    # ADR-076: the live manifest gets its own reviewed consumption path in a
-    # later increment; today's frame builder must refuse it outright.
-    with pytest.raises(FrameInputError, match="fixture_replay"):
-        run_frame_builder(
-            repo_root=ROOT,
-            project_config_path=PROJECT_CONFIG,
-            acquisition_manifest_path=live_identity_run.manifest_path,
-            output_dir=tmp_path,
-            run_id="frame-from-live",
-            filing_window_start=date(2022, 8, 1),
-            filing_window_end=date(2023, 2, 28),
-        )
+    # ADR-079: the separately reviewed sec_live consumption path. The fixture
+    # bytes served through the sec_live wrapper are the committed synthetic
+    # quarters, so the build must reproduce the committed gold exactly.
+    result = _frame_from(live_identity_run.manifest_path, tmp_path, "frame-from-live")
+    assert result.counts == EXPECTED_FRAME["counts"]
+    assert result.frame_version == FRAME_VERSION_ON_ACQUIRED_BUILD
+    limitations = read_json(result.manifest_path)["limitations"]
+    parent_sha = sha256_file(live_identity_run.manifest_path)
+    assert any(f"sha256={parent_sha}" in line for line in limitations)
+    assert any("sec_live" in line for line in limitations)
+    assert any(live_transport_contract_hash() in line for line in limitations)
+
+
+def _mutated_v2_manifest(live_identity_run, tmp_path: Path, mutate) -> Path:
+    """Copy the v0.2 manifest, mutate it, write it into a bare directory.
+
+    No ``.idx`` files are placed beside it: every refusal under test must
+    happen at manifest validation, before any raw file is read or hashed.
+    """
+    manifest = read_json(live_identity_run.manifest_path)
+    mutate(manifest)
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    path = bundle / ACQUISITION_MANIFEST_FILENAME
+    path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return path
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda m: m.__setitem__("extra_property", True),
+        lambda m: m.__delitem__("transport_contract"),
+    ],
+    ids=["extra-property", "missing-transport-contract"],
+)
+def test_frame_refuses_malformed_v2_manifest(
+    live_identity_run, tmp_path: Path, mutate
+) -> None:
+    path = _mutated_v2_manifest(live_identity_run, tmp_path, mutate)
+    with pytest.raises(FrameInputError, match="canonical schema"):
+        _frame_from(path, tmp_path, "refuse-malformed-v2")
+
+
+def test_frame_refuses_tampered_transport_contract_hash(
+    live_identity_run, tmp_path: Path
+) -> None:
+    def mutate(manifest: dict) -> None:
+        manifest["transport_contract_hash"] = "0" * 64  # schema-valid, wrong
+
+    path = _mutated_v2_manifest(live_identity_run, tmp_path, mutate)
+    with pytest.raises(FrameInputError, match="does not match its recorded hash"):
+        _frame_from(path, tmp_path, "refuse-tampered-contract")
+
+
+def test_frame_refuses_tampered_raw_file_before_parsing(
+    live_identity_run, tmp_path: Path
+) -> None:
+    import shutil
+
+    bundle = tmp_path / "bundle"
+    shutil.copytree(live_identity_run.run_dir, bundle)
+    target = bundle / "master-2022-QTR3.idx"
+    data = bytearray(target.read_bytes())
+    data[-1] ^= 0xFF
+    target.write_bytes(bytes(data))
+    with pytest.raises(FrameInputError, match="hash mismatch"):
+        _frame_from(bundle / ACQUISITION_MANIFEST_FILENAME, tmp_path, "refuse-raw-tamper")
+
+
+def test_frame_refuses_unknown_transport_kind_v2_shape(
+    live_identity_run, tmp_path: Path
+) -> None:
+    def mutate(manifest: dict) -> None:
+        manifest["transport_kind"] = "carrier_pigeon"
+
+    path = _mutated_v2_manifest(live_identity_run, tmp_path, mutate)
+    with pytest.raises(FrameInputError, match="no reviewed frame-consumption path"):
+        _frame_from(path, tmp_path, "refuse-unknown-kind")
+
+
+def test_cli_frame_mode_consumes_v2_manifest(
+    live_identity_run, tmp_path: Path
+) -> None:
+    completed = _cli(
+        "--mode", "frame",
+        "--config", str(PROJECT_CONFIG),
+        "--acquisition-manifest", str(live_identity_run.manifest_path),
+        "--filing-window-start", "2022-08-01",
+        "--filing-window-end", "2023-02-28",
+        "--output-dir", str(tmp_path / "frame"),
+        "--run-id", "cli-frame-from-v2",
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["frame_version"] == FRAME_VERSION_ON_ACQUIRED_BUILD
+    assert payload["counts"] == EXPECTED_FRAME["counts"]
 
 
 # --- fixture-replay behaviour preserved --------------------------------------

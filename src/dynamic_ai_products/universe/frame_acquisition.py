@@ -131,11 +131,20 @@ class TransportIdentity:
             )
 
     def contract_hash(self) -> str:
-        payload = json.dumps(
-            self.contract, sort_keys=True, separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
-        return sha256(payload).hexdigest()
+        return canonical_contract_hash(self.contract)
+
+
+def canonical_contract_hash(contract: dict) -> str:
+    """SHA-256 over the canonical JSON form of a transport contract.
+
+    The one canonical form shared by identity recording (this module) and
+    consumption-side verification (``frame.py``), so an embedded contract can
+    be recomputed and matched against its recorded hash byte-for-byte.
+    """
+    payload = json.dumps(
+        contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return sha256(payload).hexdigest()
 
 INDEX_URL_TEMPLATE = (
     "https://www.sec.gov/Archives/edgar/full-index/{year}/QTR{qtr}/master.idx"
@@ -581,9 +590,9 @@ def build_acquisition_manifest_v2(
             "Live EDGAR full-index retrieval; the sec_live transport "
             "contract (user agent, spacing, retry, timeout) is embedded in "
             "this manifest.",
-            "This manifest does not authorize frame consumption: the "
-            "live-manifest frame-consumption path is a separate reviewed "
-            "increment (ADR-076).",
+            "This manifest does not authorize frame consumption by itself: "
+            "consumption authority lives in the separately reviewed consumer "
+            "path (ADR-079).",
         ],
     }
     schema = read_json(root / ACQUISITION_MANIFEST_V2_SCHEMA_RELATIVE_PATH)
