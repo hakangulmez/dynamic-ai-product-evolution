@@ -1,0 +1,94 @@
+{
+  "description": "Gold expectations for validating the edgar_full_index fixture frame (window 2022-08-01..2023-02-28) against the dera_fsds fixture bundle (observed_through 2022-12-31). Gate passes: noncoverage, the right-boundary absence, and the PARTIAL-set unresolved filer are reported, never contradictions.",
+  "gate_status": "pass",
+  "counts": {
+    "dera_input_files": 2,
+    "dera_data_rows": 7,
+    "dera_parse_failures": 0,
+    "dera_duplicate_rows": 0,
+    "dera_conflicting_rows": 0,
+    "dera_unique_submissions": 7,
+    "dera_out_of_window": 1,
+    "dera_out_of_scope_form": 1,
+    "dera_annual_submissions": 4,
+    "dera_amendment_submissions": 1,
+    "annual_frame_records": 9,
+    "annual_matched": 6,
+    "annual_matched_under_partial": 1,
+    "annual_identity_mismatch": 0,
+    "annual_noncoverage": 1,
+    "annual_right_boundary_unobserved": 1,
+    "annual_unresolved_partial_registrant_set": 1,
+    "annual_frame_filer_not_in_dera_registrants": 0,
+    "annual_dera_expanded_pairs": 6,
+    "annual_dera_matched_pairs": 6,
+    "annual_dera_only_unexplained": 0,
+    "annual_dera_only_integrity_excluded": 0,
+    "annual_dera_registrant_not_in_frame": 0,
+    "amendment_frame_links": 3,
+    "amendment_matched": 1,
+    "amendment_identity_mismatch": 0,
+    "amendment_noncoverage": 2,
+    "amendment_right_boundary_unobserved": 0,
+    "amendment_unresolved_partial_registrant_set": 0,
+    "amendment_frame_filer_not_in_dera_registrants": 0,
+    "amendment_dera_expanded_pairs": 1,
+    "amendment_dera_matched_pairs": 1,
+    "amendment_dera_only_unexplained": 0,
+    "amendment_dera_only_integrity_excluded": 0,
+    "amendment_dera_registrant_not_in_frame": 0
+  },
+  "noncoverage_by_form": {
+    "10-K": {
+      "records": 5,
+      "observable_records": 4,
+      "matched": 4,
+      "noncoverage": 0,
+      "noncoverage_rate": 0.0,
+      "right_boundary_unobserved": 1,
+      "unresolved_partial_registrant_set": 0
+    },
+    "10-KT": {
+      "records": 1,
+      "observable_records": 1,
+      "matched": 0,
+      "noncoverage": 1,
+      "noncoverage_rate": 1.0,
+      "right_boundary_unobserved": 0,
+      "unresolved_partial_registrant_set": 0
+    },
+    "20-F": {
+      "records": 1,
+      "observable_records": 1,
+      "matched": 1,
+      "noncoverage": 0,
+      "noncoverage_rate": 0.0,
+      "right_boundary_unobserved": 0,
+      "unresolved_partial_registrant_set": 0
+    },
+    "40-F": {
+      "records": 2,
+      "observable_records": 1,
+      "matched": 1,
+      "noncoverage": 0,
+      "noncoverage_rate": 0.0,
+      "right_boundary_unobserved": 0,
+      "unresolved_partial_registrant_set": 1
+    },
+    "total": {
+      "records": 9,
+      "observable_records": 7,
+      "matched": 6,
+      "noncoverage": 1,
+      "noncoverage_rate": 0.142857,
+      "right_boundary_unobserved": 1,
+      "unresolved_partial_registrant_set": 1
+    }
+  },
+  "key_members": {
+    "annual_noncoverage": [["0002000002", "0002000002-22-000004"]],
+    "annual_right_boundary_unobserved": [["0002000001", "0002000001-23-000002"]],
+    "annual_unresolved_partial_registrant_set": [["0002000016", "0002000015-22-000003"]],
+    "amendment_matched": [["0002000001", "0002000001-22-000015"]]
+  }
+}

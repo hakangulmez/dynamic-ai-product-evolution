@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **647**
+Total tracked/scaffold files listed: **654**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -137,6 +137,10 @@ Total tracked/scaffold files listed: **647**
 - `evals/change_requests/README.md`
 - `evals/expected/.gitkeep`
 - `evals/fixtures/README.md`
+- `evals/fixtures/dera_fsds/expected_validation.json`
+- `evals/fixtures/dera_fsds/fixture_manifest.json`
+- `evals/fixtures/dera_fsds/sub_2022q4.tsv`
+- `evals/fixtures/dera_fsds/sub_2023q1.tsv`
 - `evals/fixtures/edgar_full_index/expected_frame.json`
 - `evals/fixtures/edgar_full_index/fixture_manifest.json`
 - `evals/fixtures/edgar_full_index/master-2022-QTR3.idx`
@@ -296,6 +300,7 @@ Total tracked/scaffold files listed: **647**
 - `schemas/extraction_validation_decision_set_v2.schema.json`
 - `schemas/extraction_validation_decision_set_v3.schema.json`
 - `schemas/filer_frame_manifest.schema.json`
+- `schemas/frame_dera_validation_manifest.schema.json`
 - `schemas/firm_lineage.schema.json`
 - `schemas/firm_year_eligibility.schema.json`
 - `schemas/frontier_baseline.schema.json`
@@ -484,6 +489,7 @@ Total tracked/scaffold files listed: **647**
 - `src/dynamic_ai_products/universe/classification.py`
 - `src/dynamic_ai_products/universe/frame.py`
 - `src/dynamic_ai_products/universe/frame_acquisition.py`
+- `src/dynamic_ai_products/universe/frame_dera_validation.py`
 - `src/dynamic_ai_products/universe/freeze.py`
 - `src/dynamic_ai_products/universe/identifiers.py`
 - `src/dynamic_ai_products/universe/io_utils.py`
@@ -638,6 +644,7 @@ Total tracked/scaffold files listed: **647**
 - `tests/universe/test_evidence_packets.py`
 - `tests/universe/test_frame_acquisition.py`
 - `tests/universe/test_frame_builder.py`
+- `tests/universe/test_frame_dera_validation.py`
 - `tests/universe/test_identifiers.py`
 - `tests/universe/test_issuer_filters.py`
 - `tests/universe/test_pilot_packet.py`

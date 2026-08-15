@@ -1,0 +1,12 @@
+{
+  "description": "Synthetic DERA FSDS SUB-level fixture bundle for the FRAME validation increment (ADR-081). Every accession, CIK, name, and date is invented and aligned to the edgar_full_index frame fixture so that a fixture frame build validates against known gold categories. Files carry the genuine 36-column FSDS sub.txt header; unused columns are empty. Cases cover a matched 10-K, a matched 20-F, a combined multi-registrant 10-K with complete aciks, a combined 40-F declaring only its primary registrant with a terminal PARTIAL token, a matched 10-K/A amendment, uncovered amendments, an out-of-scope 10-Q, and an out-of-window 10-K. observed_through is deliberately conservative (2022-12-31, inside the loaded 2023q1 release) so that gold exercises the right_boundary_unobserved category for an absent 2023 filing; the validator uses the declared value and never infers coverage.",
+  "observed_through": "2022-12-31",
+  "loaded_releases": [
+    "2022q4",
+    "2023q1"
+  ],
+  "sub_files": [
+    "sub_2022q4.tsv",
+    "sub_2023q1.tsv"
+  ]
+}

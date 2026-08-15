@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Three mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
+Four mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
 so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -22,6 +22,9 @@ so every pre-existing invocation is unchanged):
   transport (``--transport sec-live``), which performs real SEC requests
   under the recorded user-agent, spacing, retry, and timeout contract and
   writes the v0.2 successor manifest.
+- ``dera-validate`` validates a completed FRAME run against local DERA FSDS
+  SUB files (ADR-081). Independent validation only: DERA never feeds the
+  frame. No network access.
 
 Examples:
     python pipelines/00_build_company_universe.py \
@@ -67,6 +70,10 @@ from dynamic_ai_products.universe.frame_acquisition import (  # noqa: E402
     make_fixture_replay_transport,
     run_index_acquisition,
 )
+from dynamic_ai_products.universe.frame_dera_validation import (  # noqa: E402
+    DeraInputError,
+    run_dera_validation,
+)
 from dynamic_ai_products.universe.freeze import FreezeBlockedError  # noqa: E402
 from dynamic_ai_products.universe.runner import (  # noqa: E402
     FixtureError,
@@ -85,7 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode", default="sentinel",
-        choices=["sentinel", "frame", "acquire-index"],
+        choices=["sentinel", "frame", "acquire-index", "dera-validate"],
         help="Stage 00 sub-pipeline to run (default: sentinel).",
     )
     parser.add_argument(
@@ -158,6 +165,16 @@ def build_parser() -> argparse.ArgumentParser:
              "'sec-live' performs real SEC requests under the committed "
              "sec_live contract and writes the v0.2 manifest.",
     )
+    parser.add_argument(
+        "--frame-manifest", default=None,
+        help="Dera-validate mode only: path to a completed FRAME run's "
+             "filer_frame_manifest.json.",
+    )
+    parser.add_argument(
+        "--dera-dir", default=None,
+        help="Dera-validate mode only: directory of local DERA FSDS SUB "
+             "files plus fixture_manifest.json (see evals/fixtures/dera_fsds).",
+    )
     return parser
 
 
@@ -187,9 +204,25 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         ("--replay-dir", args.replay_dir),
         ("--transport", args.transport),
     )
+    dera_flags = (
+        ("--frame-manifest", args.frame_manifest),
+        ("--dera-dir", args.dera_dir),
+    )
+
+    if args.mode == "dera-validate":
+        offending = _present(
+            sentinel_flags + frame_flags + acquire_flags
+            + (("--config", args.config),)
+        )
+        if offending:
+            return f"dera-validate mode does not accept: {', '.join(offending)}"
+        missing = _missing(dera_flags)
+        if missing:
+            return f"dera-validate mode requires: {', '.join(missing)}"
+        return None
 
     if args.mode == "frame":
-        offending = _present(sentinel_flags + acquire_flags)
+        offending = _present(sentinel_flags + acquire_flags + dera_flags)
         if offending:
             return f"frame mode does not accept: {', '.join(offending)}"
         missing = _missing(
@@ -210,7 +243,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
 
     if args.mode == "acquire-index":
         offending = _present(
-            sentinel_flags + frame_flags + (("--config", args.config),)
+            sentinel_flags + frame_flags + dera_flags
+            + (("--config", args.config),)
         )
         if offending:
             return f"acquire-index mode does not accept: {', '.join(offending)}"
@@ -229,7 +263,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             )
         return None
 
-    offending = _present(frame_flags + acquire_flags)
+    offending = _present(frame_flags + acquire_flags + dera_flags)
     if offending:
         return f"sentinel mode does not accept: {', '.join(offending)}"
     missing = _missing((("--config", args.config), ("--input", args.input)))
@@ -395,6 +429,54 @@ def _main_acquire(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_dera_validate(args: argparse.Namespace) -> int:
+    frame_manifest = Path(args.frame_manifest)
+    dera_dir = Path(args.dera_dir)
+    if not frame_manifest.is_file():
+        print(f"ERROR: frame manifest not found: {frame_manifest}", file=sys.stderr)
+        return 2
+    if not dera_dir.is_dir():
+        print(f"ERROR: DERA input directory not found: {dera_dir}", file=sys.stderr)
+        return 2
+    try:
+        result = run_dera_validation(
+            repo_root=REPO_ROOT,
+            frame_manifest_path=frame_manifest,
+            dera_dir=dera_dir,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            dry_run=args.dry_run,
+        )
+    except DeraInputError as exc:
+        print(f"ERROR: invalid DERA validation input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "gate_status": result.gate_status,
+        "failed_conditions": result.failed_conditions,
+        "counts": result.counts,
+        "noncoverage_by_form": result.noncoverage_by_form,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    if result.gate_status == "fail":
+        print(
+            "ERROR: DERA validation gate failed; see failed_conditions above.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     error = _reject_cross_mode_flags(args)
@@ -405,6 +487,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_frame(args)
     if args.mode == "acquire-index":
         return _main_acquire(args)
+    if args.mode == "dera-validate":
+        return _main_dera_validate(args)
     return _main_sentinel(args)
 
 

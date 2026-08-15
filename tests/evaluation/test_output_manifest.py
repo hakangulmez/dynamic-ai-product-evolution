@@ -839,7 +839,11 @@ def test_repo_manifest_count_and_paths():
     # 647 = 646 + the canonical full-range request plan (ADR-078): 26
     # contiguous quarters covering the frozen FRAME filing window (ADR-077);
     # possessing the plan does not authorize a live request.
-    assert "Total tracked/scaffold files listed: **647**" in text
+    # 654 = 647 + the seven DERA validation paths (ADR-081): the validation
+    # module, its manifest schema, the synthetic FSDS SUB fixture bundle
+    # (manifest, two sub TSVs, expected-validation gold), and the validation
+    # test file.
+    assert "Total tracked/scaffold files listed: **654**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

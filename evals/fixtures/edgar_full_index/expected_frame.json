@@ -2,14 +2,14 @@
   "description": "Gold expectations for the edgar_full_index fixture bundle built at filing window 2022-08-01..2023-02-28 with domestic forms 10-K/10-KT and extension forms 20-F/40-F (configs/project.yaml). Frame grain is (CIK, accession): the combined multi-filer 10-K (accession 0002000012-23-000004 under three filer CIKs) yields one domestic record per filer (ADR-080).",
   "counts": {
     "index_files": 3,
-    "data_lines": 20,
-    "parsed_rows": 18,
+    "data_lines": 22,
+    "parsed_rows": 20,
     "parse_failures": 2,
     "integrity_failure_rows": 2,
     "duplicate_rows": 1,
-    "admitted_rows": 15,
+    "admitted_rows": 17,
     "domestic_annual_records": 6,
-    "fpi_extension_records": 1,
+    "fpi_extension_records": 3,
     "amendment_links": 3,
     "amendment_links_with_candidate": 2,
     "amendment_links_unmatched": 1,
@@ -30,7 +30,9 @@
     ["0002000014", "0002000012-23-000004"]
   ],
   "fpi_extension_accessions": [
-    "0002000003-22-000007"
+    "0002000003-22-000007",
+    "0002000015-22-000003",
+    "0002000015-22-000003"
   ],
   "combined_filing": {
     "accession": "0002000012-23-000004",

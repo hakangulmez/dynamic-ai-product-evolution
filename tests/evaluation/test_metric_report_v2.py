@@ -553,7 +553,11 @@ def test_manifest_count():
     # 647 = 646 + the canonical full-range request plan (ADR-078): 26
     # contiguous quarters covering the frozen FRAME filing window (ADR-077);
     # possessing the plan does not authorize a live request.
-    assert declared == len(paths) == 647
+    # 654 = 647 + the seven DERA validation paths (ADR-081): the validation
+    # module, its manifest schema, the synthetic FSDS SUB fixture bundle
+    # (manifest, two sub TSVs, expected-validation gold), and the validation
+    # test file.
+    assert declared == len(paths) == 654
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

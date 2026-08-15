@@ -4654,6 +4654,99 @@ registry, REPO_MANIFEST, or pipeline change. W0, source policy,
 AI-mechanism work, PCT, and prompts are untouched. The real FRAME canary
 has not been rerun; that is the next separately authorized action.
 
+## ADR-081 — DERA FSDS validates the frame and never defines it (THESIS W1, ADR-080)
+
+The thesis plan fixes DERA FSDS as an independent validation source only,
+never the frame source. This entry delivers the fixture-first validation
+increment and records its construct rules. No live DERA or SEC request is
+made; the live-DERA acquisition remains a separate, later increment whose
+canary must verify the actual archive URL and derive `observed_through`
+(with or without a post-window release buffer) from evidence rather than
+assumption.
+
+**Construct.** A completed FRAME run is compared against locally supplied
+FSDS `SUB`-level files at the ADR-080 filer-accession `(CIK, accession)`
+grain. The validator consumes the frame read-only — every frame artifact is
+verified against the frame manifest's `output_hashes` before comparison —
+and writes only its own schema-validated, write-once artifact
+(`frame_dera_validation_manifest@0.1.0`). DERA is never a universe
+eligibility or filtering source. The input contract is header-name lookup
+over exactly `adsh`, `cik`, `name` (display only), `form`, `filed`,
+`nciks`, `aciks`; real full-width `sub.txt` files parse unchanged.
+
+**Registrant sets follow the official FSDS contract.** `aciks` is
+space-delimited additional CIKs, optionally ending in a terminal `PARTIAL`
+token, which is valid input and never a parse failure. `nciks` must always
+be a positive integer. Non-PARTIAL rows must satisfy
+`nciks == 1 + declared additional CIKs`; PARTIAL rows must satisfy
+`nciks > 1 + declared additional CIKs`, because PARTIAL asserts that at
+least one co-registrant is omitted. Every violation is an explicit parse
+failure. PARTIAL rows retain every declared pair, mark the submission and
+every affected comparison `dera_registrant_set_partial`, and never infer
+omitted CIKs; a FRAME filer unlisted in a PARTIAL set lands in the visible,
+non-gating `unresolved_partial_registrant_set` class, excluded from
+noncoverage rates and structurally unable to become a contradiction. A
+registrant-set disagreement against a **non-PARTIAL** (complete) set is a
+genuine contradiction in either direction and gates. Each submission
+expands to one comparison pair per declared registrant
+(`primary` / `co_registrant`), so combined filings are compared per filer
+and never collapsed — the ADR-080 lesson applied to the validation side.
+
+**Categories and identities.** Every FRAME annual record lands in exactly
+one of: matched (with under-PARTIAL sub-count), identity_mismatch,
+noncoverage, right_boundary_unobserved, unresolved_partial_registrant_set,
+frame_filer_not_in_dera_registrants. Every DERA expanded pair lands in:
+matched, mismatched, registrant_not_in_frame, only_explained
+(integrity-excluded accessions), only_unexplained. Six reconciliation
+identities bind both sides and both strata.
+
+**Absence is non-coverage, not error; the boundary is declared.** A FRAME
+record absent from DERA is expected FSDS/XBRL non-coverage — reported in
+total and per base form (10-K, 10-KT, 20-F, 40-F) as counts and rates over
+observable records, never gated. `observed_through` is a declared input:
+an absence filed after it is `right_boundary_unobserved`, so a possible
+post-cutoff DERA release omission is never misreported as non-coverage,
+and the validator never infers coverage it was not told about.
+
+**Gate (`frame_dera_validation_gate_v1`).** Equality is not the gate. Fail
+closed on: any annual `dera_only_unexplained`; any annual
+`identity_mismatch` (form and filed-date comparison is literal — no
+timing-rollover exception exists unless a real DERA canary supplies
+evidence for one, at which point it would need its own entry); any annual
+non-PARTIAL registrant-set contradiction
+(`frame_filer_not_in_dera_registrants` or `dera_registrant_not_in_frame` —
+only the explicitly PARTIAL unresolved class is non-gating); any DERA
+parse failure (`dera_parse_failures > 0`: a malformed or inconsistent row
+must never yield a passing validation merely because it was excluded from
+comparison; the manifest is still written with `gate_status: fail`); any
+broken reconciliation identity; zero annual matches when both comparable
+populations are nonempty. The amendment stratum reconciles and is fully
+reported but is report-only and cannot fail the gate.
+
+**Fixtures.** Synthetic bundle with the genuine 36-column FSDS header,
+aligned to the frame fixture: matched 10-K/20-F, a complete-`aciks`
+combined 10-K, a PARTIAL combined 40-F (the frame fixture gained a
+two-filer 40-F pair for this), a matched amendment, uncovered filings on
+both sides of `observed_through`, an out-of-scope 10-Q, and an
+out-of-window row. Gate failures are proven with mutated bundles; the
+committed gold passes. Everything is offline and independent of
+`data/runs`.
+
+**Schema governance.** `frame_dera_validation_manifest@0.1.0` registered;
+manifest_version 0.25.0 → 0.26.0 (57 → 58 entries); both pinned registry
+hashes rebaselined, following the ADR-073 pattern.
+
+**Scope.** New: the validation module, its manifest schema, the four-file
+DERA fixture bundle, and one test file. Modified: the Stage 00 CLI (fourth
+mode `dera-validate`), the frame fixture bundle (combined 40-F pair; FPI
+gold 1 → 3), the schema registry and its two pinned hashes,
+`REPO_MANIFEST.md` (647 → 654) and its three count regression tests.
+Untouched: FRAME/acquisition/transport code and schemas,
+`configs/project.yaml`, all `data/runs` artifacts, prompts, the notebook,
+pipelines/01–14, and all live-network activity. The validation of the real
+full FRAME run against real DERA data is a later, separately authorized
+action that first requires the live-DERA acquisition increment.
+
 ## Open decisions
 
 - Required source packet by firm-year.

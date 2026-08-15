@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "frame_dera_validation_manifest.schema.json",
+  "title": "FRAME versus DERA FSDS validation manifest",
+  "description": "Immutable record of one validation of a completed FRAME run against DERA Financial Statement Data Set SUB files (ADR-081). DERA is an independent validation source only: never the FRAME denominator, never a universe eligibility or filtering source. Absence from DERA is expected FSDS/XBRL non-coverage, reported per base form and never gated; equality is not the gate. observed_through is a declared input, and absences filed after it are right_boundary_unobserved rather than non-coverage. PARTIAL registrant sets follow the official FSDS contract and are marked, non-gating. The amendment stratum is report-only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "frame_manifest_sha256",
+    "frame_run_dir",
+    "frame_version",
+    "filing_window_start",
+    "filing_window_end",
+    "domestic_forms",
+    "extension_forms",
+    "observed_through",
+    "loaded_releases",
+    "dera_inputs",
+    "counts",
+    "noncoverage_by_form",
+    "reconciliation",
+    "samples",
+    "gate",
+    "run_timestamp",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "frame_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "frame_run_dir": {
+      "type": "string"
+    },
+    "frame_version": {
+      "type": "string"
+    },
+    "filing_window_start": {
+      "type": "string",
+      "format": "date"
+    },
+    "filing_window_end": {
+      "type": "string",
+      "format": "date"
+    },
+    "domestic_forms": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "extension_forms": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "observed_through": {
+      "type": "string",
+      "format": "date"
+    },
+    "loaded_releases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "dera_inputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "filename",
+          "sha256",
+          "data_rows",
+          "parse_failures"
+        ],
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "data_rows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "parse_failures": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "noncoverage_by_form": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "records",
+          "observable_records",
+          "matched",
+          "noncoverage",
+          "noncoverage_rate",
+          "right_boundary_unobserved",
+          "unresolved_partial_registrant_set"
+        ],
+        "properties": {
+          "records": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observable_records": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "matched": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "noncoverage": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "noncoverage_rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "right_boundary_unobserved": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unresolved_partial_registrant_set": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "samples": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "maxItems": 10,
+        "items": {
+          "type": "object"
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "rule_id",
+        "failed_conditions"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "rule_id": {
+          "type": "string"
+        },
+        "failed_conditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "run_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
