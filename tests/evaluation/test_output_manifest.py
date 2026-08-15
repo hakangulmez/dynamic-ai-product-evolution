@@ -836,7 +836,10 @@ def test_repo_manifest_count_and_paths():
     # transport module, the v0.2 successor manifest schema, the canonical
     # one-quarter canary request plan, and the mocked-transport live-binding
     # test file.
-    assert "Total tracked/scaffold files listed: **646**" in text
+    # 647 = 646 + the canonical full-range request plan (ADR-078): 26
+    # contiguous quarters covering the frozen FRAME filing window (ADR-077);
+    # possessing the plan does not authorize a live request.
+    assert "Total tracked/scaffold files listed: **647**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

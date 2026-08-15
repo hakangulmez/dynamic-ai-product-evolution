@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **646**
+Total tracked/scaffold files listed: **647**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -45,6 +45,7 @@ Total tracked/scaffold files listed: **646**
 - `apps/research_console/app.py`
 - `artifacts/.gitkeep`
 - `configs/edgar_index_canary_request_plan.json`
+- `configs/edgar_index_full_request_plan.json`
 - `configs/frontier_registry.example.yaml`
 - `configs/master_notebook.yaml`
 - `configs/model_routes.example.yaml`

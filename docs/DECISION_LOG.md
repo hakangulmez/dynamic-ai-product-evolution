@@ -4486,23 +4486,32 @@ self-authorizes consumption; the reviewed consumer path does.
 `fixture` as the default, so every pre-existing invocation is unchanged;
 `sec-live` forbids `--replay-dir`, performs real requests when actually run,
 and writes the v0.2 manifest. Dry-run validates the plan before any
-transport call, so a `sec-live --dry-run` never sends. The canonical
-one-quarter canary request plan is committed at
-`configs/edgar_index_canary_request_plan.json` — exactly one entry, 2020
-QTR1, the earliest frozen-window quarter — so the reviewed canary makes
-exactly one real request; the three-quarter plan under
-`evals/fixtures/edgar_index_request_plan/` remains a synthetic fixture
-input, unchanged. The CLI still requires `--request-plan` explicitly; no
-plan is ever implied.
+transport call, so a `sec-live --dry-run` never sends. Two canonical live
+request plans are committed, and possessing either authorizes nothing: the
+one-quarter canary plan at `configs/edgar_index_canary_request_plan.json`
+(exactly one entry, 2020 QTR1, the earliest frozen-window quarter, so the
+reviewed canary makes exactly one real request) and the full-range plan at
+`configs/edgar_index_full_request_plan.json` (26 contiguous quarters, 2020
+QTR1 through 2026 QTR2, the frozen filing-date admission window of
+ADR-077). Every actual live run remains separately authorized. The
+three-quarter plan under `evals/fixtures/edgar_index_request_plan/` remains
+a synthetic fixture input, unchanged. The CLI still requires
+`--request-plan` explicitly; no plan is ever implied.
 
 **Schema governance.** Registry manifest_version 0.24.0 → 0.25.0, 56 → 57
 entries; every released schema byte-identical; both pinned registry hashes
 rebaselined, following the ADR-073 pattern.
 
-**Deferred, named so it is not mistaken for done.** Running the one-quarter
-canary (a separately authorized action with its own reviewed manifest); the
-full-range download; DERA validation; the live-manifest frame-consumption
-path (since delivered by ADR-079); the real FRAME_v1 build and freeze.
+**Deferred, named so it is not mistaken for done.** The full-range
+download; DERA validation; the real full FRAME_v1 build and freeze.
+
+**Subsequent execution status (note added after this entry).** The
+separately authorized one-quarter 2020-QTR1 canary was later run and
+completed successfully — one request, one acquired file, a schema-valid
+v0.2 manifest. Its immutable artifacts and the evidence they produced are
+governed by ADR-079, which pins the artifact hashes and permits consumption
+of the valid manifest, and ADR-080, which records the grain defect the
+canary measured and its correction.
 
 **Scope.** New: the transport module, the v0.2 schema, the canonical
 one-quarter canary request plan, and one mocked-transport test file.

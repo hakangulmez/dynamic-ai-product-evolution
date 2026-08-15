@@ -42,6 +42,7 @@ ROOT = Path(__file__).resolve().parents[2]
 REPLAY_DIR = ROOT / "evals" / "fixtures" / "edgar_full_index"
 PLAN_PATH = ROOT / "evals" / "fixtures" / "edgar_index_request_plan" / "request_plan.json"
 CANARY_PLAN_PATH = ROOT / "configs" / "edgar_index_canary_request_plan.json"
+FULL_PLAN_PATH = ROOT / "configs" / "edgar_index_full_request_plan.json"
 PROJECT_CONFIG = ROOT / "configs" / "project.yaml"
 V2_SCHEMA_PATH = ROOT / "schemas" / "edgar_index_acquisition_manifest.v2.schema.json"
 CLI = ROOT / "pipelines" / "00_build_company_universe.py"
@@ -177,6 +178,37 @@ def test_canary_request_plan_is_valid_and_single_quarter() -> None:
     assert entry.filename == "master-2020-QTR1.idx"
     assert len(plan_sha256) == 64
     # The three-quarter fixture plan is untouched and stays three quarters.
+    fixture_entries, _ = load_request_plan(PLAN_PATH)
+    assert len(fixture_entries) == 3
+
+
+def test_full_range_request_plan_covers_the_frozen_window_contiguously() -> None:
+    # Offline only: load_request_plan validates grammar and derives filenames
+    # in code; no transport exists in this test.
+    entries, plan_sha256 = load_request_plan(FULL_PLAN_PATH)
+    assert len(plan_sha256) == 64
+    assert len(entries) == 26
+
+    expected_quarters = [
+        f"{year}-QTR{qtr}" for year in range(2020, 2026) for qtr in (1, 2, 3, 4)
+    ] + ["2026-QTR1", "2026-QTR2"]
+    quarters = [entry.quarter for entry in entries]
+    assert quarters == expected_quarters  # contiguous, chronological
+    assert len(set(quarters)) == 26  # no duplicates
+
+    assert entries[0].quarter == "2020-QTR1"
+    assert entries[-1].quarter == "2026-QTR2"
+    for entry in entries:
+        assert entry.url == (
+            "https://www.sec.gov/Archives/edgar/full-index/"
+            f"{entry.year}/QTR{entry.qtr}/master.idx"
+        )
+        assert entry.filename == f"master-{entry.quarter}.idx"
+
+    # The one-quarter canary plan and the synthetic fixture plan are
+    # distinct, unchanged inputs.
+    canary_entries, _ = load_request_plan(CANARY_PLAN_PATH)
+    assert len(canary_entries) == 1
     fixture_entries, _ = load_request_plan(PLAN_PATH)
     assert len(fixture_entries) == 3
 

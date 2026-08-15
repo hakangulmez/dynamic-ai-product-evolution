@@ -1,0 +1,110 @@
+{
+  "plan_contract": "edgar_index_request_plan@0.1.0",
+  "description": "Canonical full-range SEC request plan for the frozen FRAME filing-date admission window (ADR-077): 26 contiguous quarters, 2020 QTR1 through 2026 QTR2, each at the canonical master.idx URL. Possessing this plan does not authorize a live request: the full live acquisition remains separately authorized, and the CLI always requires --request-plan explicitly. The one-quarter canary plan (configs/edgar_index_canary_request_plan.json) and the synthetic three-quarter fixture plan (evals/fixtures/edgar_index_request_plan/) are distinct inputs and are unchanged.",
+  "entries": [
+    {
+      "quarter": "2020-QTR1",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2020/QTR1/master.idx"
+    },
+    {
+      "quarter": "2020-QTR2",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2020/QTR2/master.idx"
+    },
+    {
+      "quarter": "2020-QTR3",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2020/QTR3/master.idx"
+    },
+    {
+      "quarter": "2020-QTR4",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2020/QTR4/master.idx"
+    },
+    {
+      "quarter": "2021-QTR1",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2021/QTR1/master.idx"
+    },
+    {
+      "quarter": "2021-QTR2",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2021/QTR2/master.idx"
+    },
+    {
+      "quarter": "2021-QTR3",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2021/QTR3/master.idx"
+    },
+    {
+      "quarter": "2021-QTR4",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2021/QTR4/master.idx"
+    },
+    {
+      "quarter": "2022-QTR1",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2022/QTR1/master.idx"
+    },
+    {
+      "quarter": "2022-QTR2",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2022/QTR2/master.idx"
+    },
+    {
+      "quarter": "2022-QTR3",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2022/QTR3/master.idx"
+    },
+    {
+      "quarter": "2022-QTR4",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2022/QTR4/master.idx"
+    },
+    {
+      "quarter": "2023-QTR1",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2023/QTR1/master.idx"
+    },
+    {
+      "quarter": "2023-QTR2",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2023/QTR2/master.idx"
+    },
+    {
+      "quarter": "2023-QTR3",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2023/QTR3/master.idx"
+    },
+    {
+      "quarter": "2023-QTR4",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2023/QTR4/master.idx"
+    },
+    {
+      "quarter": "2024-QTR1",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2024/QTR1/master.idx"
+    },
+    {
+      "quarter": "2024-QTR2",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2024/QTR2/master.idx"
+    },
+    {
+      "quarter": "2024-QTR3",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2024/QTR3/master.idx"
+    },
+    {
+      "quarter": "2024-QTR4",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2024/QTR4/master.idx"
+    },
+    {
+      "quarter": "2025-QTR1",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2025/QTR1/master.idx"
+    },
+    {
+      "quarter": "2025-QTR2",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2025/QTR2/master.idx"
+    },
+    {
+      "quarter": "2025-QTR3",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2025/QTR3/master.idx"
+    },
+    {
+      "quarter": "2025-QTR4",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2025/QTR4/master.idx"
+    },
+    {
+      "quarter": "2026-QTR1",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2026/QTR1/master.idx"
+    },
+    {
+      "quarter": "2026-QTR2",
+      "url": "https://www.sec.gov/Archives/edgar/full-index/2026/QTR2/master.idx"
+    }
+  ]
+}

@@ -550,7 +550,10 @@ def test_manifest_count():
     # transport module, the v0.2 successor manifest schema, the canonical
     # one-quarter canary request plan, and the mocked-transport live-binding
     # test file.
-    assert declared == len(paths) == 646
+    # 647 = 646 + the canonical full-range request plan (ADR-078): 26
+    # contiguous quarters covering the frozen FRAME filing window (ADR-077);
+    # possessing the plan does not authorize a live request.
+    assert declared == len(paths) == 647
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 
