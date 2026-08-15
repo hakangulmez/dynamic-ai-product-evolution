@@ -1,14 +1,14 @@
 {
-  "description": "Gold expectations for the edgar_full_index fixture bundle built at filing window 2022-08-01..2023-02-28 with domestic forms 10-K/10-KT and extension forms 20-F/40-F (configs/project.yaml).",
+  "description": "Gold expectations for the edgar_full_index fixture bundle built at filing window 2022-08-01..2023-02-28 with domestic forms 10-K/10-KT and extension forms 20-F/40-F (configs/project.yaml). Frame grain is (CIK, accession): the combined multi-filer 10-K (accession 0002000012-23-000004 under three filer CIKs) yields one domestic record per filer (ADR-080).",
   "counts": {
     "index_files": 3,
-    "data_lines": 17,
-    "parsed_rows": 15,
+    "data_lines": 20,
+    "parsed_rows": 18,
     "parse_failures": 2,
     "integrity_failure_rows": 2,
     "duplicate_rows": 1,
-    "admitted_rows": 12,
-    "domestic_annual_records": 3,
+    "admitted_rows": 15,
+    "domestic_annual_records": 6,
     "fpi_extension_records": 1,
     "amendment_links": 3,
     "amendment_links_with_candidate": 2,
@@ -21,14 +21,21 @@
     "10-Q/A": 1,
     "8-K": 1
   },
-  "domestic_accessions": [
-    "0002000001-22-000010",
-    "0002000001-23-000002",
-    "0002000002-22-000004"
+  "domestic_filer_accessions": [
+    ["0002000001", "0002000001-22-000010"],
+    ["0002000001", "0002000001-23-000002"],
+    ["0002000002", "0002000002-22-000004"],
+    ["0002000012", "0002000012-23-000004"],
+    ["0002000013", "0002000012-23-000004"],
+    ["0002000014", "0002000012-23-000004"]
   ],
   "fpi_extension_accessions": [
     "0002000003-22-000007"
   ],
+  "combined_filing": {
+    "accession": "0002000012-23-000004",
+    "filer_ciks": ["0002000012", "0002000013", "0002000014"]
+  },
   "amendment_links": [
     {
       "amendment_accession": "0002000001-22-000015",
@@ -52,8 +59,8 @@
   "duplicate_accessions": [
     "0002000001-22-000010"
   ],
-  "integrity_failure_accessions": [
-    "0002000009-22-000002"
+  "integrity_failure_filer_accessions": [
+    ["0002000009", "0002000009-22-000002"]
   ],
   "parse_failure_reasons": [
     "invalid_cik",

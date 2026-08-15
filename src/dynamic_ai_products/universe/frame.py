@@ -6,18 +6,22 @@ Governing documents:
 - docs/methodology/SOFTWARE_FIRM_UNIVERSE.md (Section 6.1)
 
 Parses SEC EDGAR full-index ``master.idx`` files supplied as local fixtures
-and assembles the per-accession annual-filing frame. The frame preserves
-filing history: one record per annual-filing accession, no CIK or firm-year
-collapse. Amendment forms (``10-K/A``-style) never create an annual
-observation; they are represented in a separate amendment-link artefact whose
-original relationship is an explicit deterministic candidate, not a proven
-link.
+and assembles the annual-filing frame at **filer-accession grain**: the
+natural key is ``(CIK, accession_number)``, one record per filer CIK per
+filing, with no CIK or firm-year collapse. A combined multi-filer submission
+(one accession legitimately listed under several filer CIKs — parent plus
+co-registrant subsidiaries, for example) yields one frame record per filer
+and is never an integrity failure (ADR-080). Amendment forms
+(``10-K/A``-style) never create an annual observation; they are represented
+in a separate amendment-link artefact whose original relationship is an
+explicit deterministic candidate, not a proven link.
 
 Row accounting is exhaustive and mutually exclusive, with this precedence:
 
     parse failure
-    -> integrity failure (conflicting rows sharing one accession)
-    -> duplicate (identical repeated row for an already-admitted accession)
+    -> integrity failure (conflicting rows sharing one filer-accession key)
+    -> duplicate (identical repeated row for an already-admitted
+       filer-accession key)
     -> out-of-window (filing date outside the filing window)
     -> form partition: domestic annual | FPI extension | amendment link
        | out-of-scope form
@@ -70,8 +74,9 @@ FIXTURE_MANIFEST_FILENAME = "fixture_manifest.json"
 
 # Code-owned frame version for builds that consume an acquisition manifest.
 # The label is fixed here, never CLI-supplied; the FRAME_v1 freeze (a later
-# increment) records the released version.
-FRAME_VERSION_ON_ACQUIRED_BUILD = "FRAME_v1.0-draft"
+# increment) records the released version. v1.1-draft: filer-accession
+# (CIK, accession) grain replaces the global-accession assumption (ADR-080).
+FRAME_VERSION_ON_ACQUIRED_BUILD = "FRAME_v1.1-draft"
 
 _SEPARATOR_RE = re.compile(r"^-{10,}\s*$")
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -131,7 +136,7 @@ class FrameParseFailure(StrictModel):
 
 
 class FrameDuplicateRow(StrictModel):
-    """An identical repeat of an already-admitted accession row."""
+    """An identical repeat of an already-admitted filer-accession row."""
 
     accession_number: str
     cik: str
@@ -142,12 +147,18 @@ class FrameDuplicateRow(StrictModel):
 
 
 class FrameIntegrityFailure(StrictModel):
-    """Conflicting rows sharing one accession. None of them enters the frame:
-    the accession's true fields are unknown, and unknown is never coerced."""
+    """Conflicting rows sharing one ``(CIK, accession)`` filer-accession key.
 
+    Only this filer-accession group is excluded — other filer CIKs sharing
+    the same accession (a legitimate combined multi-filer submission) are
+    unaffected. The group's true fields are unknown, and unknown is never
+    coerced.
+    """
+
+    cik: str
     accession_number: str
-    reason_code: Literal["conflicting_same_accession_rows"] = (
-        "conflicting_same_accession_rows"
+    reason_code: Literal["conflicting_same_filer_accession_rows"] = (
+        "conflicting_same_filer_accession_rows"
     )
     rows: list[ParsedIndexRow] = Field(min_length=2)
 
@@ -356,7 +367,7 @@ def _accession_from_filename(filename: str) -> str | None:
 def build_frame(
     parsed_files: list[ParsedIndexFile], parameters: FrameParameters
 ) -> FrameResult:
-    """Assemble the per-accession frame from parsed index files.
+    """Assemble the filer-accession-grain frame from parsed index files.
 
     Raises :class:`FrameReconciliationError` if any count identity fails.
     """
@@ -366,18 +377,26 @@ def build_frame(
         key=lambda item: (item.source_index_file, item.source_line),
     )
 
-    by_accession: dict[str, list[ParsedIndexRow]] = {}
+    # The natural key is (CIK, accession): the same accession under several
+    # filer CIKs is a legitimate combined multi-filer submission and yields
+    # one row per filer (ADR-080). Duplicates and conflicts exist only
+    # within one filer-accession group.
+    by_filer_accession: dict[tuple[str, str], list[ParsedIndexRow]] = {}
     for row in all_rows:
-        by_accession.setdefault(row.accession_number, []).append(row)
+        by_filer_accession.setdefault(
+            (row.cik, row.accession_number), []
+        ).append(row)
 
     admitted: list[ParsedIndexRow] = []
     duplicates: list[FrameDuplicateRow] = []
     integrity: list[FrameIntegrityFailure] = []
-    for accession in sorted(by_accession):
-        group = by_accession[accession]
+    for cik, accession in sorted(by_filer_accession):
+        group = by_filer_accession[(cik, accession)]
         if len({row.content_key() for row in group}) > 1:
             integrity.append(
-                FrameIntegrityFailure(accession_number=accession, rows=group)
+                FrameIntegrityFailure(
+                    cik=cik, accession_number=accession, rows=group
+                )
             )
             continue
         first, *rest = group

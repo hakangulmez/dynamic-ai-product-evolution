@@ -91,7 +91,7 @@ def test_variable_preamble_text_is_permitted() -> None:
 
 def test_fixture_files_all_parse_with_distinct_preambles(frame_run) -> None:
     assert frame_run.counts["index_files"] == 3
-    assert frame_run.counts["parsed_rows"] == 15
+    assert frame_run.counts["parsed_rows"] == EXPECTED["counts"]["parsed_rows"]
 
 
 # --- parameters ---------------------------------------------------------------
@@ -129,14 +129,16 @@ def test_counts_match_gold(frame_run) -> None:
 def test_partitions_match_gold(frame_run) -> None:
     domestic = read_jsonl(frame_run.run_dir / "historical_annual_filers.jsonl")
     fpi = read_jsonl(frame_run.run_dir / "fpi_extension_filers.jsonl")
-    assert [r["accession_number"] for r in domestic] == EXPECTED["domestic_accessions"]
+    assert [
+        [r["cik"], r["accession_number"]] for r in domestic
+    ] == EXPECTED["domestic_filer_accessions"]
     assert [r["accession_number"] for r in fpi] == EXPECTED["fpi_extension_accessions"]
 
 
-# --- per-accession grain and record shape ------------------------------------
+# --- filer-accession (CIK, accession) grain and record shape ------------------
 
 
-def test_filing_history_is_preserved_per_accession(frame_run) -> None:
+def test_filing_history_is_preserved_per_filer_accession(frame_run) -> None:
     domestic = read_jsonl(frame_run.run_dir / "historical_annual_filers.jsonl")
     ledgerworks = [r for r in domestic if r["cik"] == "0002000001"]
     assert len(ledgerworks) == 2  # two annual filings, no CIK/firm-year collapse
@@ -224,18 +226,46 @@ def test_reconciliation_identities_are_exhaustive(frame_run) -> None:
     )
 
 
-def test_conflicting_same_accession_rows_are_integrity_failures(frame_run) -> None:
+def test_conflicting_same_filer_accession_rows_are_integrity_failures(
+    frame_run,
+) -> None:
     failures = read_jsonl(frame_run.run_dir / "frame_integrity_failures.jsonl")
-    assert [f["accession_number"] for f in failures] == EXPECTED[
-        "integrity_failure_accessions"
-    ]
+    assert [
+        [f["cik"], f["accession_number"]] for f in failures
+    ] == EXPECTED["integrity_failure_filer_accessions"]
     conflict = failures[0]
-    assert conflict["reason_code"] == "conflicting_same_accession_rows"
+    assert conflict["reason_code"] == "conflicting_same_filer_accession_rows"
     assert len(conflict["rows"]) == 2
-    # Neither conflicting row enters any frame partition.
+    # Neither conflicting row enters any frame partition; only this
+    # filer-accession group is excluded.
     for artefact in ("historical_annual_filers.jsonl", "fpi_extension_filers.jsonl"):
         for record in read_jsonl(frame_run.run_dir / artefact):
-            assert record["accession_number"] != conflict["accession_number"]
+            assert (record["cik"], record["accession_number"]) != (
+                conflict["cik"],
+                conflict["accession_number"],
+            )
+
+
+def test_combined_multi_filer_annual_filing_yields_one_record_per_filer(
+    frame_run,
+) -> None:
+    # ADR-080: one accession under several filer CIKs is a legitimate
+    # combined submission — one domestic record per filer, never an
+    # integrity failure, and no filer's annual record is silently excluded.
+    expected = EXPECTED["combined_filing"]
+    domestic = read_jsonl(frame_run.run_dir / "historical_annual_filers.jsonl")
+    combined = [
+        r for r in domestic if r["accession_number"] == expected["accession"]
+    ]
+    assert sorted(r["cik"] for r in combined) == expected["filer_ciks"]
+    failures = read_jsonl(frame_run.run_dir / "frame_integrity_failures.jsonl")
+    assert all(
+        f["accession_number"] != expected["accession"] for f in failures
+    )
+    duplicates = read_jsonl(frame_run.run_dir / "frame_duplicates.jsonl")
+    assert all(
+        d["accession_number"] != expected["accession"] for d in duplicates
+    )
 
 
 def test_identical_duplicate_row_is_recorded_against_first_occurrence(frame_run) -> None:

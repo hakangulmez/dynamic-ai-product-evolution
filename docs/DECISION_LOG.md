@@ -4205,6 +4205,11 @@ frozen: the filing window is a per-run parameter with no default.
 **Grain.** One record per annual-filing accession. CIKs and firm-years are
 never collapsed; a CIK with two annual filings inside the window yields two
 records. A derived company/CIK view is a later artefact, not this one.
+*Superseded in part by ADR-080*: the live 2020-QTR1 canary measured that
+accession alone is not unique in the real index — combined multi-filer
+submissions list one accession under several filer CIKs — so the natural key
+is `(CIK, accession)`, one record per filer-accession. The
+no-collapse principle and everything else in this entry stand.
 
 **Window naming.** The frame window is `filing_window_start` /
 `filing_window_end`, explicit filing-date admission bounds on the index
@@ -4575,6 +4580,70 @@ schema-validation helper), `frame_acquisition.py` (`canonical_contract_hash`
 helper and the forward limitation wording), one test file, and ADR-078's
 superseded statements. No new files, no schema change, no registry or
 REPO_MANIFEST change.
+
+## ADR-080 — The frame key is (CIK, accession): the canary refutes global-accession grain (SPEC-001 Stage A, ADR-075, ADR-079)
+
+**The measurement that forces this entry.** The first real FRAME canary —
+run `frame-live-canary-2020-qtr1-20260815` over the live 2020-QTR1 artifact
+(acquisition manifest sha256
+`c9b850d6ee93e0ec5aa0af4f35b323ce7a5ef52806d8603fbd15d02d6d7a1e6f`, raw
+`master-2020-QTR1.idx` sha256
+`1973b14fc2c8e437db28e733d23148e3b1ac7c07fe1fe5c81009031d8cde02fd`,
+324,904 data lines, zero parse failures) — put 203,854 rows (63%) into the
+integrity-failure bucket under ADR-075's global-accession rule. Read-only
+characterization of that artifact: 97,300 groups, of which **97,296 span
+multiple filer CIKs** — EDGAR's legitimate combined multi-filer submissions,
+dominated by Section 16 Forms 4/3/5 (127,598 rows) and SC 13G/D group
+filings — and only 4 are genuine single-CIK conflicts. The materially
+important subset: 194 groups contained in-scope annual forms, wrongly
+excluding 451 10-K/20-F filer rows, e.g. American Electric Power's combined
+10-K (accession `0000004904-20-000007`) filed by the parent and its
+registrant subsidiaries. The global-accession assumption was
+synthetic-fixture-only; the real index's natural key is `(CIK, accession)`.
+
+**Decision.** The FRAME observation key is the filer-accession pair
+`(CIK, accession_number)`:
+
+- same accession, different CIKs — a legitimate multi-filer/combined
+  filing: one frame record per filer CIK, never an integrity failure;
+- same `(CIK, accession)`, identical content differing only in provenance —
+  a duplicate: the deterministic first row is kept and the repeat recorded;
+- same `(CIK, accession)`, conflicting non-provenance content — a genuine
+  integrity failure that excludes **only that filer-accession group**, never
+  another CIK sharing the accession.
+
+All four reconciliation identities keep their exact form and remain
+exhaustive; the buckets are unchanged, only their key is corrected. The
+amendment candidate rule already matched within one CIK and is unchanged; a
+combined amendment now simply resolves per filer. The
+`FrameIntegrityFailure` record gains the filer `cik` beside the accession
+and its reason code is renamed to `conflicting_same_filer_accession_rows`.
+
+**Version label.** Production FRAME semantics changed, so the code-owned
+acquired-build label moves `FRAME_v1.0-draft` → `FRAME_v1.1-draft`. The
+existing `data/runs` artifacts — the acquisition canary and the v1.0-draft
+frame canary that measured this defect — remain immutable and are
+superseded, not edited; the manifest schema is untouched (the grain is not
+encoded in the schema).
+
+**Fixtures and tests.** The synthetic bundle gains a combined multi-filer
+10-K (accession `0002000012-23-000004` under three filer CIKs), and the
+gold moves from accession lists to filer-accession pairs. Tests assert:
+each combined filer enters the domestic partition (one record per CIK) and
+appears in neither the integrity nor the duplicate bucket — the direct
+regression that a combined filing can never silently exclude another
+filer's annual record; the same-CIK conflict fixture still lands, alone, in
+the integrity bucket; the identical-duplicate case still lands at its
+`(CIK, accession)` key. Everything stays offline and independent of
+`data/runs`.
+
+**Scope.** Modified only: `frame.py` (grouping key, integrity model and
+reason code, version label, grain wording), the fixture bundle (one file
+extended, manifest description, expected-frame gold), one test file, and
+ADR-075's superseded grain claim. No new files, no schema change, no
+registry, REPO_MANIFEST, or pipeline change. W0, source policy,
+AI-mechanism work, PCT, and prompts are untouched. The real FRAME canary
+has not been rerun; that is the next separately authorized action.
 
 ## Open decisions
 
