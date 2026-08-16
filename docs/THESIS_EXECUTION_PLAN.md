@@ -2,7 +2,22 @@
 
 ## Status
 
-Accepted direction. No implementation increment has been executed against it.
+Accepted direction, partially executed. W0 is decided (ADR-077) and the frame
+work is complete and frozen: `FRAME_v1` is released by ADR-087 against run
+`frame-live-full-v11-2020q1-2026q2-20260815`. Decisions ADR-077 through
+ADR-089 have been accepted, and at least five material runs have executed —
+live EDGAR index acquisition, the FRAME build, DERA FSDS acquisition, the
+gate-passing FRAME-versus-DERA validation, and the firm-level baseline
+carrier — recorded in eleven immutable run directories in total, the
+remainder being canaries, one superseded draft-grain canary, one dead
+acquisition, and two gate-failing validation runs, all preserved rather than
+deleted. The analytical path beyond the frame is unstarted: no screening, no
+classification, no tier derivation, no universe freeze, no sample draw and no
+PCT extraction has run, and no model call has been made on this path. That
+statement is about the analytical path only — it does not describe the
+post-frame denominator work already named above, which has executed (the
+firm-level baseline carrier) or exists as tested capability awaiting its own
+authorization (bounded baseline-document acquisition, canary unexecuted).
 
 This is the canonical record of the thesis-first path. It supersedes no
 methodology document: `docs/methodology/SOFTWARE_FIRM_UNIVERSE.md` and
@@ -52,12 +67,12 @@ exists and is manifested.
 
 Concretely:
 
-| quantity | measured by | before it is measured |
+| quantity | measured by | status |
 |---|---|---|
-| frame size, filer counts | `FRAME_v1` | unverified |
-| DERA-versus-full-index coverage delta | `FRAME_v1` validation artefact | unverified |
-| firms surviving deterministic issuer filters | Stage 00B run | unverified |
-| download volume and wall-clock | canary, then Stage 00C | unverified |
+| frame size, filer counts | `FRAME_v1` | measured: 48,793 domestic annual + 7,478 FPI extension = 56,271 filer-accession records (ADR-087) |
+| DERA-versus-full-index coverage delta | `FRAME_v1` validation artefact | measured: gate pass, zero unexplained residuals, five committed adjudications applied (ADR-086) |
+| firms surviving deterministic issuer filters | Stage 00B run | unverified — the firm-level carrier exists (12,160 firms; 9,916 baseline candidates) but applies no exclusions and leaves every issuer status unknown pending cover-page evidence, so this quantity is unmeasured; that is pre-00B carrier work (ADR-088) |
+| download volume and wall-clock | canary, then Stage 00C | unverified — the request plan and the bounded document transport exist (ADR-089); the 12-document canary is unexecuted |
 | positive-and-boundary rate | Stage 00D, at the budget gate | unverified |
 | classification cost | Stage 00E projection at that gate | unverified |
 | false-omission rate | bounded negative audit | unverified |
@@ -109,16 +124,37 @@ W0   design            DECIDED (ADR-077). Baseline cutoff 2022-11-29, frozen
                        specification remain pilot-gated; if the
                        pilot-determined firm requirement exceeds the
                        extraction ceiling, the plan stops for a scope
-                       decision. Filing collection is unblocked from this
-                       gate; model calls and the full frame run stay gated.
+                       decision. As decided here, filing collection was
+                       unblocked from this gate while model calls and the
+                       full frame run were gated. That frame gating has since
+                       been lifted by reviewed increments: the full FRAME run
+                       executed and FRAME_v1 is frozen under ADR-087 (see W1).
+                       Model calls remain gated and unexecuted on this thesis
+                       path.
 
-W1   frame             FRAME_v1 from EDGAR full index; DERA FSDS is an
-                       independent validation source only, never the frame
-                       source. Admission audit of existing sec-v4 snapshots.
-                       The frame window is carried as explicit
+W1   frame             FRAME_v1 COMPLETE AND FROZEN (ADR-087); one separate
+                       legacy item in this gate is outstanding, stated at the
+                       end of this entry. FRAME_v1 is released
+                       against run
+                       frame-live-full-v11-2020q1-2026q2-20260815, manifest
+                       SHA-256 5203660fe4c6093041383284ad36614a5ac4d7116a1e
+                       1259138e14ebde164cee, carrying 56,271 filer-accession
+                       records with zero parse failures; the freeze record is
+                       configs/frame_v1_freeze.json. Built from the EDGAR
+                       full index; DERA FSDS was an independent validation
+                       source only, never the frame source, and its
+                       validation gate passes with zero unexplained residuals
+                       (ADR-086). The frame window is carried as explicit
                        filing_window_start / filing_window_end filing-date
                        bounds; fiscal analytical-period assignment is a later
                        PCT/schema concern and is not carried by FRAME_v1.
+                       SEPARATELY OUTSTANDING, and outside the scope of the
+                       FRAME_v1 freeze: the admission audit of the existing
+                       legacy sec-v4 snapshots has not been performed and no
+                       audit artefact exists. The freeze covers the frame
+                       artefact and its validation evidence only; it makes no
+                       claim about those snapshots, and this audit is neither
+                       completed by it nor dropped from the plan.
 
 W2   first metric      one interpretable, source-derived HubSpot MetricReport.
                        C4 consolidation design evaluated against a pre-registered
@@ -257,12 +293,17 @@ parallel orchestration notebook is created.
 The notebook is a scaffold and status surface: it loads the stage registry, runs
 preflight checks, and reports project safety state. It does not yet orchestrate a
 production run, because the stages it would drive are mostly unimplemented —
-`pipelines/00_build_company_universe.py` runs against local fixtures with a
-deterministic mock provider only, and `pipelines/01`–`09` raise
-`NotImplementedError`. Of the CLI contract below, `00` currently accepts
-`--config`, `--run-id`, `--dry-run`, `--output-dir`, `--provider` and `--seed`,
-writes a run manifest, and exits non-zero on a failed hard gate; `--resume` does
-not exist on any stage.
+`pipelines/01`–`14` all raise `NotImplementedError`. `pipelines/00_build_company_universe.py`
+is the exception and is no longer fixture-only: it carries seven modes
+(`sentinel`, `frame`, `acquire-index`, `dera-validate`, `acquire-dera`,
+`baseline-carrier`, `acquire-docs`), has performed real SEC network
+acquisition under the committed `sec_live` transport contract, and accepts
+seventeen flags — the original `--config`, `--run-id`, `--dry-run`,
+`--output-dir`, `--provider`, `--seed` and `--input`, plus `--mode`,
+`--index-dir`, `--filing-window-start`, `--filing-window-end`,
+`--acquisition-manifest`, `--request-plan`, `--replay-dir`, `--transport`,
+`--frame-manifest` and `--dera-dir`. It writes a run manifest and exits
+non-zero on a failed hard gate; `--resume` does not exist on any stage.
 
 **Required implementation condition, not a current capability.** As each critical
 stage is implemented it must support an explicit config, a run id, dry-run where
