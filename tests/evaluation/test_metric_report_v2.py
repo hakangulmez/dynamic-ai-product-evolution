@@ -567,7 +567,10 @@ def test_manifest_count():
     # 664 = 663 + the committed DERA validation adjudication file (ADR-085):
     # three evidence-backed replaced-submission records; unadjudicated
     # contradictions still gate.
-    assert declared == len(paths) == 664
+    # 666 = 664 + the FRAME_v1 freeze record and its guard-test file
+    # (ADR-087): the freeze pins the released frame artifact and its
+    # gate-passing validation evidence; data/runs stays unmodified.
+    assert declared == len(paths) == 666
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

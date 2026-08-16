@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **664**
+Total tracked/scaffold files listed: **666**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -49,6 +49,7 @@ Total tracked/scaffold files listed: **664**
 - `configs/dera_validation_adjudications.json`
 - `configs/edgar_index_canary_request_plan.json`
 - `configs/edgar_index_full_request_plan.json`
+- `configs/frame_v1_freeze.json`
 - `configs/frontier_registry.example.yaml`
 - `configs/master_notebook.yaml`
 - `configs/model_routes.example.yaml`
@@ -655,6 +656,7 @@ Total tracked/scaffold files listed: **664**
 - `tests/universe/test_frame_acquisition.py`
 - `tests/universe/test_frame_builder.py`
 - `tests/universe/test_frame_dera_validation.py`
+- `tests/universe/test_frame_freeze.py`
 - `tests/universe/test_identifiers.py`
 - `tests/universe/test_issuer_filters.py`
 - `tests/universe/test_pilot_packet.py`

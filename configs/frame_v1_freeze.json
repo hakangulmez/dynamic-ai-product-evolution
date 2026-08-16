@@ -1,0 +1,62 @@
+{
+  "freeze_contract": "frame_v1_freeze@0.1.0",
+  "frozen_version": "FRAME_v1",
+  "adr_reference": "ADR-087",
+  "description": "FRAME_v1 release record (ADR-087). Freezing designates an existing immutable run artifact as the released frame; nothing is rebuilt and nothing under data/runs is modified. FRAME_v1 is the run pinned below, whose manifest carries the code-owned build label FRAME_v1.1-draft; future builds remain drafts until a successor freeze record designates one. Corrections create FRAME_v1.x through a new run and a new freeze record, never by editing this one. FRAME_v1 is the denominator only: universe filtering, issuer flags, Item 1 packet creation, prompts, product/capability/task extraction, and scoring are all out of scope and downstream.",
+  "frame_artifact": {
+    "run_id": "frame-live-full-v11-2020q1-2026q2-20260815",
+    "frame_version_on_build": "FRAME_v1.1-draft",
+    "manifest_path": "data/runs/frame-full/frame-live-full-v11-2020q1-2026q2-20260815/filer_frame_manifest.json",
+    "manifest_sha256": "5203660fe4c6093041383284ad36614a5ac4d7116a1e1259138e14ebde164cee",
+    "code_revision": "215557d0d0bfecc008c110665845c2c42724f843",
+    "project_config_hash": "efc1b4a4ce05e9d9be125073f72958198e998938a8d9ae10fe8754aa1a4fbc3e",
+    "filing_window_start": "2020-01-01",
+    "filing_window_end": "2026-06-30",
+    "domestic_forms": ["10-K", "10-KT"],
+    "extension_forms": ["20-F", "40-F"],
+    "output_sha256": {
+      "historical_annual_filers.jsonl": "0c11153c59570fa4056a37bdbe81c5033fe1ea12a7d4197fb82003329086fa57",
+      "fpi_extension_filers.jsonl": "545aa3a1d3a67bc68887a33861721daf35fb049062ba39de02eff5fca699d4b0",
+      "amendment_links.jsonl": "3a97d3eddd4dced3a27f24537778da8cf65fe88beb8d0bd67866f11a526391e1",
+      "frame_parse_failures.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "frame_duplicates.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "frame_integrity_failures.jsonl": "591a5403419f89e47dd4e85e8ba46094f8cd93e64b44879cc0e62ba16d316cc2"
+    },
+    "counts": {
+      "index_files": 26,
+      "data_lines": 7694062,
+      "parsed_rows": 7694062,
+      "parse_failures": 0,
+      "integrity_failure_rows": 510,
+      "duplicate_rows": 0,
+      "admitted_rows": 7693552,
+      "domestic_annual_records": 48793,
+      "fpi_extension_records": 7478,
+      "amendment_links": 6795,
+      "amendment_links_with_candidate": 6692,
+      "amendment_links_unmatched": 103,
+      "out_of_scope_form_rows": 7630486,
+      "out_of_window_rows": 0
+    }
+  },
+  "validation_evidence": {
+    "run_id": "frame-dera-validation-full-v11-2020q1-2026q1-adr086-20260816",
+    "manifest_path": "data/runs/frame-dera-validation/frame-dera-validation-full-v11-2020q1-2026q1-adr086-20260816/frame_dera_validation_manifest.json",
+    "manifest_sha256": "6154fe43f6a2577f2f3bdee2736c0b45299947568ed46f0b80c9d4965899af48",
+    "gate_status": "pass",
+    "failed_conditions": [],
+    "annual_frame_records": 56271,
+    "annual_dera_only_unexplained": 0,
+    "amendment_dera_only_unexplained": 0,
+    "annual_identity_mismatch": 0,
+    "annual_identity_adjudicated": 2,
+    "annual_dera_only_adjudicated": 3,
+    "adjudications_file_sha256": "6140782601f374f68ecad7e8ca9e234cec6ab76a9f37aadcd139ef166b8af199",
+    "adjudication_records": 5,
+    "adjudications_applied": 5,
+    "reconciliation_identities_all_true": true,
+    "dera_observed_through": "2026-03-31",
+    "annual_right_boundary_unobserved": 1169,
+    "right_boundary_note": "DERA FSDS is observed through 2026-03-31 (ADR-084); the 1169 annual right-boundary rows are unobserved, not contradicted. A future 2026q2 revalidation under a successor plan is optional and does not reopen this freeze."
+  }
+}

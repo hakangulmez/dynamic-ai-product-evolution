@@ -5112,6 +5112,68 @@ or count-test change, no pinned-hash rebaseline. Deferred: the gate-passing
 validation rerun and the FRAME_v1 freeze decision, each separately
 authorized.
 
+## ADR-087 — FRAME_v1 freeze: the released frame artifact and its validation evidence
+
+**Status.** Accepted. Closes THESIS_EXECUTION_PLAN W1.
+
+**What freezing is.** Freezing designates an existing immutable run artifact
+as the released frame; nothing is rebuilt and nothing under `data/runs` is
+modified. FRAME_v1 is the run `frame-live-full-v11-2020q1-2026q2-20260815`,
+whose manifest (SHA-256
+`5203660fe4c6093041383284ad36614a5ac4d7116a1e1259138e14ebde164cee`) carries
+the code-owned build label `FRAME_v1.1-draft`. The committed freeze record
+`configs/frame_v1_freeze.json` (`frame_v1_freeze@0.1.0`, the
+adjudications-file pattern: a contract-declaring config validated by tests,
+no `schemas/` entry) maps the released name onto that build and pins the run
+identity, the manifest hash, the six output-file hashes, the recorded
+provenance (`code_revision 215557d0…`, `project_config_hash efc1b4a4…`), the
+W0-frozen window 2020-01-01..2026-06-30, the form scopes 10-K/10-KT and
+20-F/40-F, and the final counts. Deeper chain links — the EDGAR acquisition
+manifest and request plan — are already hash-chained inside the pinned frame
+manifest and are not repeated.
+
+**The code label does not change.**
+`FRAME_VERSION_ON_ACQUIRED_BUILD = "FRAME_v1.1-draft"` labels *future*
+builds, which are correctly drafts until a freeze record designates one; the
+constant's own comment anticipated exactly this division. Corrections create
+FRAME_v1.x through a new run and a successor freeze record, never by editing
+this one (Rule 4: immutable raw sources; no silent repair).
+
+**Final FRAME_v1 counts.** 26 index files; 7,694,062 data lines, all parsed,
+zero parse failures; 510 integrity-failure rows; zero duplicates; 7,693,552
+admitted; **48,793 domestic annual filer-accession records** and **7,478 FPI
+extension records** (denominator 56,271); 6,795 amendment links (6,692 with a
+deterministic candidate, 103 unmatched); 7,630,486 out-of-scope-form rows;
+zero out-of-window rows.
+
+**Validation evidence.** The freeze cites the gate-passing DERA validation
+run `frame-dera-validation-full-v11-2020q1-2026q1-adr086-20260816` (manifest
+SHA-256 `6154fe43f6a2577f2f3bdee2736c0b45299947568ed46f0b80c9d4965899af48`):
+`gate_status = pass`, no failed conditions, zero unexplained dera-only rows
+in both strata, zero identity mismatches, 47,535 annual matches, the five
+committed adjudications (file SHA-256 `61407826…`) all applied
+(`identity_adjudicated = 2`, `dera_only_adjudicated = 3`), and all six
+reconciliation identities true (ADR-081, ADR-085, ADR-086). DERA is observed
+through 2026-03-31 (ADR-084); the 1,169 annual right-boundary rows are
+unobserved, not contradicted, and a future 2026q2 revalidation under a
+successor plan is optional and does not reopen this freeze.
+
+**Out of scope.** FRAME_v1 is the denominator only; nothing is excluded from
+it. Universe filtering and issuer flags (Stage 00B), Item 1 packet creation,
+prompts, product/capability/task extraction, and scoring/measurement all
+remain downstream, each behind its own spec and authorization.
+`universe.release_status: draft_pending_sentinel` in `configs/project.yaml`
+gates the universe stage, not the frame, and is untouched.
+
+**Scope.** Added: `configs/frame_v1_freeze.json` and its guard-test file
+`tests/universe/test_frame_freeze.py` (all assertions run against the
+committed record; one read-only verification test recomputes the two
+manifest hashes and skips where `data/runs` is absent). Modified:
+`REPO_MANIFEST.md` (664 → 666) and the three manifest count tests. No
+`src/`, `schemas/`, fixture, pipeline, or `configs/project.yaml` change; the
+schema registry stays at 0.27.0 with 60 entries and no pinned hash is
+rebaselined.
+
 ## Open decisions
 
 - Required source packet by firm-year.

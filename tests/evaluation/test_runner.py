@@ -1251,7 +1251,10 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # 664 = 663 + the committed DERA validation adjudication file (ADR-085):
     # three evidence-backed replaced-submission records; unadjudicated
     # contradictions still gate.
-    assert declared == len(paths) == 664
+    # 666 = 664 + the FRAME_v1 freeze record and its guard-test file
+    # (ADR-087): the freeze pins the released frame artifact and its
+    # gate-passing validation evidence; data/runs stays unmodified.
+    assert declared == len(paths) == 666
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):
