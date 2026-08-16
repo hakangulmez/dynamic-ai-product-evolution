@@ -5661,6 +5661,135 @@ the three count tests, and this log — eleven paths. No issuer filtering,
 screening, classification, tier derivation or PCT extraction, and no
 `data/runs` artifact is read or written.
 
+## ADR-092 — W2-C: two-hop primary-document acquisition and its Canary B plan
+
+**Status.** Accepted. Fixture-first; the live Canary B run is separately
+authorized and has not been executed.
+
+**Why two hops.** The completed 12-document submission canary (ADR-089)
+measured 508.3 MB for twelve filings, one of them 213.5 MB. Reading those
+submissions offline showed the primary annual-report document is **8.8% of
+the bytes** — 44.8 MB inside 508.3 MB, an 11.4× reduction, largest primary
+9.27 MB. The packet route therefore fetches the filing index and then only
+the selected primary; the accession-wide `.txt` is unreachable from this
+module by construction.
+
+**What is reused rather than rebuilt.** The bounded streaming transport
+(ADR-089), the filing-index URL grammar and the whole probe parser (ADR-090)
+— identity-first table selection, declared-type matching, and
+`href_document_basename`, which understands both the direct archive link and
+the `/ix?doc=` viewer form. New here: the sequencing module, the canonical
+primary-document URL derivation, a code-validated
+`primary_document_request_plan@0.1.0`, and the v0.1/v0.2 acquisition
+manifests. **The committed bundle schema and packet builder are untouched.**
+
+**The primary URL is derived, never taken from the href.** It is built from
+the filing directory and the selected basename, so the inline-XBRL viewer
+wrapper is never fetched. `href_form` (`direct` | `viewer`) is **measured and
+recorded per document**, because existing evidence — the probe manifest
+records candidate *names*, not hrefs — cannot say in advance which filings
+link through the viewer.
+
+**The filing directory is the lowest sharing CIK, enforced at plan load.**
+`directory_cik` must equal the lowest normalized carrier-row CIK for its
+accession — checked **before any URL is derived and before any request**, for
+a one-row accession as much as a shared one. The accession's own 10-digit
+prefix is frequently a filing agent that owns no EDGAR directory, and a
+non-lowest *real* sharing filer is the plausible wrong answer, so both are
+refused rather than resolved. A skipif-guarded test re-derives the rule from
+the committed carrier run when present: every Canary-B row must match a real
+baseline candidate on CIK, accession, form, domestic stratum and baseline
+filing date, the plan must list the **complete** accession group, and each
+`directory_cik` must be that group's minimum.
+
+**Shared accessions.** One accession is fetched **once** and emits **one
+bundle entry per carrier filer row**, every entry naming the same stored file
+and the same hashes and differing only in CIK. That is legal under the
+bundle's `(cik, accession)` duplicate rule and yields one packet per firm from
+a single download. Request accounting is therefore exactly two per accession,
+independent of how many filers share it.
+
+**Storage naming.** `local_filename` is `primary-<accession_without_dashes>.html`;
+`selected_document` remains the real SEC basename. The two are distinct facts
+and are never required to be equal — and with this convention they always
+differ in a real bundle, so W2-C-beta's distinctness property is exercised by
+every entry rather than only by a synthetic test.
+
+**Provenance is a directed graph with no cycle.** The bundle points back to
+artifacts that already exist and are immutable — carrier manifest
+`50a2582f…`, freeze record `27eb6d23…`, route probe `7aa16a0e…` — plus its
+own per-document `filing_index_response_sha256`, and it names its producing
+run by **id only**. The acquisition manifest's `output_hashes` covers exactly
+the bundle manifest and every raw primary — *N + 1* entries — and **never
+itself**; it carries no self-hash field, and no self-excluding hash convention
+is introduced anywhere. Nothing hashes an artifact that hashes it back.
+
+**Authority, stated as the contracts behave.** `bundle_manifest.json` is the
+governed input marker that `build-baseline-packets` consumes; that builder
+requires the bundle and nothing else, and it is **not** extended here. The
+bundle together with this acquisition manifest is the evidence of a complete
+successful acquisition run — an operational-policy statement about runs, not
+a new builder requirement. A bundle manifest without an acquisition manifest
+is therefore an incomplete acquisition-run record that the packet builder
+still accepts; that asymmetry is recorded and tested honestly rather than
+enforced by expanding the builder.
+
+**Failure semantics: all-or-nothing authoritative bundle production.** On a
+later per-document failure, raw primaries already written **remain** in the
+immutable failed run directory and are named in the failure receipt's
+`retained_raw_filenames`. They persist, and they are non-authoritative: no
+bundle manifest and no acquisition manifest is written, so the builder cannot
+consume the directory — it refuses on the missing bundle manifest before
+opening any file. This path is never described as "nothing persisted".
+
+**Transport provenance.** One *active* `transport_kind` per run. The two hops
+are recorded separately — `metadata_hop` and `primary_document_hop` — because
+each is constructed with a different plan-owned ceiling (8 MiB and 256 MiB);
+their `transport_contract_hash` values are **equal**, because the byte bound
+is deliberately not part of the transport contract, and a test asserts that
+equality so a future divergence becomes visible. The failure receipt records
+the same shape plus `attempted_hop`.
+
+**Canary B, planned and not executed.** Six domestic baseline candidates from
+frozen FRAME_v1 → **12 requests** (6 index + 6 primary) → **8 bundle entries**
+→ ≈21.9 MB of primaries against ≈96.4 MB for the same six as submissions.
+Three real 10-KT filings are included, one of them `form10-kt.htm`, a filename
+no convention would match; the Spire combined 10-K supplies the shared
+accession mapping three carrier rows. **All six index pages are fetched by
+that run, including the three the probe already covered**: route validation
+proves a URL grammar, never per-firm selection, so every document must carry
+its own filing-index response hash. The plan records
+`expected_primary_document` from the submission canary's own DOCUMENT blocks
+but **omits `ground_truth_source_sha256`**, because the standalone primary
+file has never been downloaded and only its filename is known. Each
+acquisition therefore records `ground_truth_basis` — one of `none`,
+`expected_filename_only`, `expected_filename_and_source_sha256` — stating
+exactly what the plan supplied and this run then checked. A boolean
+`ground_truth_verified` was withdrawn as ambiguous: it could not distinguish a
+filename check from a byte check. **All six Canary-B entries are
+`expected_filename_only`**, and the manifest may not claim source-byte ground
+truth that does not exist. A source hash without an expected filename is
+refused at plan load, which keeps the three states exhaustive; the fixture
+bundle exercises all three. Canary B will
+measure primary sizes and ceiling behaviour, selection provenance, `href_form`
+distribution, and bundle integrity; the packet build over its bundle — and
+with it the Item-1 boundary-kind distribution and any real instance of the
+TOC-only limitation ADR-091 recorded — remains a **separate authorization**.
+
+**Scope.** Added: the acquisition module, its v0.1 and v0.2 manifest schemas,
+the committed Canary B request plan, the synthetic fixture bundle (plan,
+three index pages covering direct/viewer/shared, three primaries, gold), and
+the acquisition test file — thirteen paths. Modified: the pipeline entrypoint
+(one mode, `acquire-primary-docs`, reusing the existing acquisition flags),
+the schema registry (0.31.0 → 0.32.0, 68 → 70) with both pinned-hash
+rebaselines, `REPO_MANIFEST.md` (702 → 715), the three count tests, and this
+log — nine paths. Domestic 10-K/10-KT only; the FPI extension cohort is
+preserved by the frame and carrier and is neither acquired nor excluded. No
+cover-page or DEI parsing, no third fetch, no issuer filtering, no subsection
+tagging, no screening, classification, tiering or PCT extraction, no model
+call, and no cohort-wide download plan — batched, resumable acquisition of
+the 9,916 candidates remains the W3 queue increment.
+
 ## Open decisions
 
 - Required source packet by firm-year.

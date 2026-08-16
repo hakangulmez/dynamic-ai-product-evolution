@@ -596,7 +596,13 @@ def test_manifest_count():
     # record, run manifest), the six-document synthetic bundle with its
     # manifest and gold, and the packet test file. Fixture-first and
     # offline: no acquisition, no screening, no classification.
-    assert declared == len(paths) == 702
+    # 715 = 702 + the thirteen W2-C primary-document acquisition paths
+    # (ADR-092): the two-hop acquisition module, its v0.1 fixture and v0.2
+    # sec_live manifest schemas, the committed six-accession Canary B
+    # request plan, the synthetic fixture bundle (plan, three index pages,
+    # three primaries, gold), and the acquisition test file. It emits the
+    # already-governed bundle; the packet builder is unchanged.
+    assert declared == len(paths) == 715
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

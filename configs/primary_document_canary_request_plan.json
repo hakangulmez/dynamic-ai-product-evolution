@@ -1,0 +1,108 @@
+{
+  "plan_contract": "primary_document_request_plan@0.1.0",
+  "description": "Canonical Canary B: two-hop primary-document acquisition over six domestic baseline candidates from frozen FRAME_v1 (ADR-092). Six accessions yield twelve requests \u2014 one filing-index page and one primary document each \u2014 and eight bundle entries, because the Spire combined 10-K (0001437749-22-027522) is fetched once and mapped to its three carrier filer rows. Three real 10-KT filings are included (Quad M, Royal Gold, LUB), one of which is 'form10-kt.htm', a filename no ticker-and-date convention would match. All six index pages are fetched by this run, including the three the filing-index probe already covered: route validation proves a URL grammar, never per-firm selection, so every document carries its own filing-index response hash. expected_primary_document is recorded from the completed 12-document submission canary's own DOCUMENT blocks; ground_truth_source_sha256 is deliberately absent, because the standalone primary file has never been downloaded and only its filename is known. href_form is measured, not assumed. Possessing this plan does not authorize a live request.",
+  "base_url": "https://www.sec.gov/Archives/",
+  "max_metadata_bytes": 8388608,
+  "max_document_bytes": 268435456,
+  "provenance": {
+    "carrier_run_id": "universe-baseline-carrier-frame-v1-20260816",
+    "carrier_manifest_sha256": "50a2582f9a255c4402151aa4d963ce5d7bd7c952b8e4a5e77f4a7e7ce454521f",
+    "freeze_record_sha256": "27eb6d236b2e3f81a3b52437027f076a52ae04b245694c9645a4bfb6303e342c"
+  },
+  "route_validation": {
+    "probe_run_id": "filing-index-probe-frame-v1-20260816-r2",
+    "probe_manifest_sha256": "7aa16a0ee076800634f4185ba9af47588f084fc9d0ed7a754cbeca81f258e270",
+    "covered_accessions": 3,
+    "note": "URL-route grammar only, proven for the probe's own three accessions; never selection evidence for any firm in this plan."
+  },
+  "documents": [
+    {
+      "accession": "0001104659-22-081498",
+      "form": "10-K",
+      "directory_cik": "0000001750",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0000001750",
+          "baseline_filing_date": "2022-07-21"
+        }
+      ],
+      "expected_primary_document": "air-20220531x10k.htm"
+    },
+    {
+      "accession": "0001104659-22-025141",
+      "form": "10-K",
+      "directory_cik": "0000001800",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0000001800",
+          "baseline_filing_date": "2022-02-18"
+        }
+      ],
+      "expected_primary_document": "abt-20211231x10k.htm"
+    },
+    {
+      "accession": "0001493152-22-010080",
+      "form": "10-KT",
+      "directory_cik": "0000066600",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0000066600",
+          "baseline_filing_date": "2022-04-15"
+        }
+      ],
+      "expected_primary_document": "form10-kt.htm"
+    },
+    {
+      "accession": "0001437749-22-027522",
+      "form": "10-K",
+      "directory_cik": "0000003146",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0000003146",
+          "baseline_filing_date": "2022-11-16"
+        },
+        {
+          "stratum": "domestic",
+          "cik": "0000057183",
+          "baseline_filing_date": "2022-11-16"
+        },
+        {
+          "stratum": "domestic",
+          "cik": "0001126956",
+          "baseline_filing_date": "2022-11-16"
+        }
+      ],
+      "expected_primary_document": "spre20220930_10k.htm"
+    },
+    {
+      "accession": "0001104659-22-024443",
+      "form": "10-KT",
+      "directory_cik": "0000085535",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0000085535",
+          "baseline_filing_date": "2022-02-17"
+        }
+      ],
+      "expected_primary_document": "rgld-20211231x10k.htm"
+    },
+    {
+      "accession": "0001628280-22-024293",
+      "form": "10-KT",
+      "directory_cik": "0000016099",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0000016099",
+          "baseline_filing_date": "2022-09-02"
+        }
+      ],
+      "expected_primary_document": "lub-20220531.htm"
+    }
+  ]
+}

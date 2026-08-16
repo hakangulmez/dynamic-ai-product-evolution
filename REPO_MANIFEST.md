@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **702**
+Total tracked/scaffold files listed: **715**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -56,6 +56,7 @@ Total tracked/scaffold files listed: **702**
 - `configs/master_notebook.yaml`
 - `configs/model_routes.example.yaml`
 - `configs/pipeline_stages.yaml`
+- `configs/primary_document_canary_request_plan.json`
 - `configs/project.yaml`
 - `configs/source_types.yaml`
 - `configs/universe_sample_rules.yaml`
@@ -217,6 +218,14 @@ Total tracked/scaffold files listed: **702**
 - `evals/fixtures/evaluation_harness/validator_bundle_v2/validator_bundle_artifact.v2.json`
 - `evals/fixtures/evaluation_harness/validator_parameters/validator_rule_parameters.json`
 - `evals/fixtures/evaluation_harness/validator_parameters_v2/validator_rule_parameters.v2.json`
+- `evals/fixtures/primary_documents/0009200001-22-000001-index.htm`
+- `evals/fixtures/primary_documents/0009200002-22-000002-index.htm`
+- `evals/fixtures/primary_documents/0009200003-22-000003-index.htm`
+- `evals/fixtures/primary_documents/expected_acquisition.json`
+- `evals/fixtures/primary_documents/form10-kt.htm`
+- `evals/fixtures/primary_documents/request_plan.json`
+- `evals/fixtures/primary_documents/shared-10k.htm`
+- `evals/fixtures/primary_documents/synth-a-20211231x10k.htm`
 - `evals/fixtures/universe_sentinel/adjudications.json`
 - `evals/fixtures/universe_sentinel/classification_outputs.json`
 - `evals/fixtures/universe_sentinel/evidence_packets.json`
@@ -343,6 +352,8 @@ Total tracked/scaffold files listed: **702**
 - `schemas/live_call_authorization_v2.schema.json`
 - `schemas/official_web_candidate.schema.json`
 - `schemas/official_web_collection_manifest.schema.json`
+- `schemas/primary_document_acquisition_manifest.schema.json`
+- `schemas/primary_document_acquisition_manifest.v2.schema.json`
 - `schemas/product_candidate_availability_vocabulary.schema.json`
 - `schemas/product_consolidated_universe.schema.json`
 - `schemas/product_consolidation_output.schema.json`
@@ -539,6 +550,7 @@ Total tracked/scaffold files listed: **702**
 - `src/dynamic_ai_products/universe/models.py`
 - `src/dynamic_ai_products/universe/packets.py`
 - `src/dynamic_ai_products/universe/pilot_packet.py`
+- `src/dynamic_ai_products/universe/primary_document_acquisition.py`
 - `src/dynamic_ai_products/universe/review.py`
 - `src/dynamic_ai_products/universe/rules.py`
 - `src/dynamic_ai_products/universe/runner.py`
@@ -696,6 +708,7 @@ Total tracked/scaffold files listed: **702**
 - `tests/universe/test_identifiers.py`
 - `tests/universe/test_issuer_filters.py`
 - `tests/universe/test_pilot_packet.py`
+- `tests/universe/test_primary_document_acquisition.py`
 - `tests/universe/test_repo_hygiene.py`
 - `tests/universe/test_review_and_audit.py`
 - `tests/universe/test_screening_and_classification.py`

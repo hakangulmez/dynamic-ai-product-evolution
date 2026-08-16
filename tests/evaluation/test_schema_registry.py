@@ -174,7 +174,11 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-091: manifest_version 0.30.0 -> 0.31.0, 65 -> 68
+    # Rebaselined by ADR-092: manifest_version 0.31.0 -> 0.32.0, 68 -> 70
+    # entries, registering primary_document_acquisition_manifest and its
+    # v2 sec_live successor for two-hop primary-document acquisition.
+    # Before it,
+    # ADR-091: manifest_version 0.30.0 -> 0.31.0, 65 -> 68
     # entries, registering baseline_primary_document_bundle (the packet
     # builder's governed input), universe_baseline_packet, and
     # baseline_packet_manifest for W2-C-beta Stage 00C packets.
@@ -225,7 +229,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "67ae0e87d8faea87e51a043bf8e213c3a298b4f7ee846b4d5e47d04ac3518be5"
+    "5f79692a4b683b20832f837ab762116a1bbce9d06867b99d2e170dbd80211aa0"
 )
 
 

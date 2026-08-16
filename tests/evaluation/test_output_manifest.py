@@ -882,7 +882,13 @@ def test_repo_manifest_count_and_paths():
     # record, run manifest), the six-document synthetic bundle with its
     # manifest and gold, and the packet test file. Fixture-first and
     # offline: no acquisition, no screening, no classification.
-    assert "Total tracked/scaffold files listed: **702**" in text
+    # 715 = 702 + the thirteen W2-C primary-document acquisition paths
+    # (ADR-092): the two-hop acquisition module, its v0.1 fixture and v0.2
+    # sec_live manifest schemas, the committed six-accession Canary B
+    # request plan, the synthetic fixture bundle (plan, three index pages,
+    # three primaries, gold), and the acquisition test file. It emits the
+    # already-governed bundle; the packet builder is unchanged.
+    assert "Total tracked/scaffold files listed: **715**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

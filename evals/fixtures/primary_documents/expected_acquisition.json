@@ -1,0 +1,92 @@
+{
+  "description": "Gold expectations for fixture-replay two-hop primary-document acquisition (ADR-092). Three accessions produce six requests and four bundle entries: the shared accession is fetched once and mapped to two carrier rows sharing one stored file and identical hashes. href_form is measured per document \u2014 one direct link and two inline-XBRL viewer links \u2014 and the primary URL is always derived from the filing directory, never from the viewer href. directory_cik must be the lowest carrier-row CIK, enforced at plan load. The three entries also exercise all three ground_truth_basis states: filename-and-source-hash, filename-only, and none. The bundle names its producing run by id and never carries the acquisition manifest's hash.",
+  "counts": {
+    "planned_accessions": 3,
+    "accessions_acquired": 3,
+    "filing_index_requests": 3,
+    "primary_document_requests": 3,
+    "total_requests": 6,
+    "bundle_entries": 4,
+    "shared_accessions": 1,
+    "href_forms": {
+      "direct": 1,
+      "viewer": 2
+    },
+    "primary_bytes_total": 1357,
+    "primary_bytes_max": 462
+  },
+  "acquisitions": [
+    {
+      "accession": "0009200001-22-000001",
+      "form": "10-K",
+      "selected_document": "synth-a-20211231x10k.htm",
+      "href_form": "direct",
+      "primary_url": "https://www.sec.gov/Archives/edgar/data/9200001/000920000122000001/synth-a-20211231x10k.htm",
+      "local_filename": "primary-000920000122000001.html",
+      "candidate_count": 3,
+      "mapped_carrier_rows": 1,
+      "source_byte_length": 452,
+      "ground_truth_basis": "expected_filename_and_source_sha256"
+    },
+    {
+      "accession": "0009200002-22-000002",
+      "form": "10-KT",
+      "selected_document": "form10-kt.htm",
+      "href_form": "viewer",
+      "primary_url": "https://www.sec.gov/Archives/edgar/data/9200002/000920000222000002/form10-kt.htm",
+      "local_filename": "primary-000920000222000002.html",
+      "candidate_count": 3,
+      "mapped_carrier_rows": 1,
+      "source_byte_length": 462,
+      "ground_truth_basis": "expected_filename_only"
+    },
+    {
+      "accession": "0009200003-22-000003",
+      "form": "10-K",
+      "selected_document": "shared-10k.htm",
+      "href_form": "viewer",
+      "primary_url": "https://www.sec.gov/Archives/edgar/data/9200003/000920000322000003/shared-10k.htm",
+      "local_filename": "primary-000920000322000003.html",
+      "candidate_count": 2,
+      "mapped_carrier_rows": 2,
+      "source_byte_length": 443,
+      "ground_truth_basis": "none"
+    }
+  ],
+  "bundle_entries": [
+    {
+      "cik": "0009200001",
+      "accession": "0009200001-22-000001",
+      "form": "10-K",
+      "local_filename": "primary-000920000122000001.html",
+      "selected_document": "synth-a-20211231x10k.htm"
+    },
+    {
+      "cik": "0009200002",
+      "accession": "0009200002-22-000002",
+      "form": "10-KT",
+      "local_filename": "primary-000920000222000002.html",
+      "selected_document": "form10-kt.htm"
+    },
+    {
+      "cik": "0009200003",
+      "accession": "0009200003-22-000003",
+      "form": "10-K",
+      "local_filename": "primary-000920000322000003.html",
+      "selected_document": "shared-10k.htm"
+    },
+    {
+      "cik": "0009200004",
+      "accession": "0009200003-22-000003",
+      "form": "10-K",
+      "local_filename": "primary-000920000322000003.html",
+      "selected_document": "shared-10k.htm"
+    }
+  ],
+  "bundle_provenance_keys": [
+    "acquisition_run_id",
+    "carrier_manifest_sha256",
+    "carrier_run_id",
+    "freeze_record_sha256"
+  ]
+}

@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Nine mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
+Ten mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
 so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -41,6 +41,10 @@ so every pre-existing invocation is unchanged):
   are a deterministic, type-bearing metadata source for a later two-hop
   packet route (ADR-090). Metadata only: it acquires no primary document,
   builds no packet, and authorizes nothing downstream.
+- ``acquire-primary-docs`` acquires primary annual-report documents in two
+  bounded hops — filing index, then the type-selected primary HTML — and
+  emits the governed ``baseline_primary_document_bundle@0.1.0`` that
+  ``build-baseline-packets`` consumes unchanged (ADR-092). Documents only.
 - ``build-baseline-packets`` builds Stage 00C baseline evidence packets from
   a local, hash-verified primary-document bundle (ADR-091). Fixture-first and
   offline: it performs no network access, decides no exclusion, and records
@@ -119,6 +123,12 @@ from dynamic_ai_products.ingestion.baseline_packet import (  # noqa: E402
     PacketBundleError,
     run_baseline_packet_build,
 )
+from dynamic_ai_products.universe.primary_document_acquisition import (  # noqa: E402
+    PrimaryDocumentPlanError,
+    load_request_plan as load_primary_document_plan,
+    make_primary_document_fixture_replay_transport,
+    run_primary_document_acquisition,
+)
 from dynamic_ai_products.universe.filing_index_probe import (  # noqa: E402
     ProbePlanError,
     load_probe_plan,
@@ -149,7 +159,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode", default="sentinel",
         choices=["sentinel", "frame", "acquire-index", "dera-validate",
                  "acquire-dera", "baseline-carrier", "acquire-docs",
-                 "probe-filing-index", "build-baseline-packets"],
+                 "probe-filing-index", "build-baseline-packets",
+                 "acquire-primary-docs"],
         help="Stage 00 sub-pipeline to run (default: sentinel).",
     )
     parser.add_argument(
@@ -330,6 +341,31 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         )
         if missing:
             return f"build-baseline-packets mode requires: {', '.join(missing)}"
+        return None
+
+    if args.mode == "acquire-primary-docs":
+        offending = _present(
+            sentinel_flags + frame_flags + dera_flags + packet_flags
+            + (("--config", args.config),)
+        )
+        if offending:
+            return (
+                "acquire-primary-docs mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        if args.request_plan is None:
+            return "acquire-primary-docs mode requires: --request-plan"
+        transport_choice = args.transport or "fixture"
+        if transport_choice == "fixture" and args.replay_dir is None:
+            return (
+                "acquire-primary-docs mode with the fixture transport "
+                "requires: --replay-dir"
+            )
+        if transport_choice == "sec-live" and args.replay_dir is not None:
+            return (
+                "acquire-primary-docs mode with the sec-live transport does "
+                "not accept: --replay-dir"
+            )
         return None
 
     if args.mode == "probe-filing-index":
@@ -724,6 +760,100 @@ def _main_dera_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_acquire_primary_docs(args: argparse.Namespace) -> int:
+    request_plan = Path(args.request_plan)
+    if not request_plan.is_file():
+        print(f"ERROR: request plan not found: {request_plan}", file=sys.stderr)
+        return 2
+    # Both ceilings are plan-owned, so the plan is read before the transports
+    # are built; the runner then refuses any transport bound differently.
+    try:
+        _, plan_fields, _ = load_primary_document_plan(request_plan)
+    except PrimaryDocumentPlanError as exc:
+        print(f"ERROR: invalid primary document request plan: {exc}", file=sys.stderr)
+        return 2
+    metadata_ceiling = plan_fields["max_metadata_bytes"]
+    document_ceiling = plan_fields["max_document_bytes"]
+    transport_choice = args.transport or "fixture"
+    if transport_choice == "sec-live":
+        metadata_transport = make_sec_live_document_transport(
+            max_bytes=metadata_ceiling
+        )
+        primary_transport = make_sec_live_document_transport(
+            max_bytes=document_ceiling
+        )
+        transport_identity = SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY
+    else:
+        replay_dir = Path(args.replay_dir)
+        if not replay_dir.is_dir():
+            print(f"ERROR: replay directory not found: {replay_dir}", file=sys.stderr)
+            return 2
+        metadata_transport = make_filing_index_fixture_replay_transport(
+            replay_dir, max_bytes=metadata_ceiling
+        )
+        primary_transport = make_primary_document_fixture_replay_transport(
+            replay_dir, max_bytes=document_ceiling
+        )
+        transport_identity = None  # fixture-replay identity, v0.1 manifest
+    try:
+        result = run_primary_document_acquisition(
+            repo_root=REPO_ROOT,
+            request_plan_path=request_plan,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            metadata_transport=metadata_transport,
+            primary_transport=primary_transport,
+            metadata_transport_max_bytes=metadata_ceiling,
+            primary_transport_max_bytes=document_ceiling,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+            transport_identity=transport_identity,
+        )
+    except PrimaryDocumentPlanError as exc:
+        print(f"ERROR: invalid primary document acquisition input: {exc}",
+              file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "transport_kind": (
+            transport_identity.kind if transport_identity else "fixture_replay"
+        ),
+        "dry_run": result.dry_run,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "plan_sha256": result.plan_sha256,
+        "counts": result.counts,
+        "bundle_manifest_path": (
+            str(result.bundle_manifest_path)
+            if result.bundle_manifest_path else None
+        ),
+        "acquisition_manifest_path": (
+            str(result.acquisition_manifest_path)
+            if result.acquisition_manifest_path else None
+        ),
+        "failure_reason_code": (
+            result.failure.reason_code if result.failure else None
+        ),
+        "failure_receipt_path": (
+            str(result.failure_receipt_path)
+            if result.failure_receipt_path else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    if result.failure is not None:
+        print(
+            "ERROR: primary document acquisition failed; see the failure "
+            "receipt. No bundle manifest and no acquisition manifest were "
+            "written, so this run is not an authoritative bundle.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def _main_build_baseline_packets(args: argparse.Namespace) -> int:
     bundle_dir = Path(args.bundle_dir)
     config_path = Path(args.config)
@@ -993,6 +1123,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_acquire_docs(args)
     if args.mode == "build-baseline-packets":
         return _main_build_baseline_packets(args)
+    if args.mode == "acquire-primary-docs":
+        return _main_acquire_primary_docs(args)
     if args.mode == "probe-filing-index":
         return _main_probe_filing_index(args)
     return _main_sentinel(args)

@@ -1,0 +1,64 @@
+{
+  "plan_contract": "primary_document_request_plan@0.1.0",
+  "description": "Synthetic two-hop primary-document request plan for fixture-replay runs. Every CIK, accession and document is invented for methodological testing; no real filing data. Three accessions cover the structural cases: a direct-link primary, an inline-XBRL viewer-link primary whose filename no convention would match, and a shared accession fetched once and mapped to two carrier rows. Provenance and route hashes are synthetic placeholders.",
+  "base_url": "https://www.sec.gov/Archives/",
+  "max_metadata_bytes": 8388608,
+  "max_document_bytes": 268435456,
+  "provenance": {
+    "carrier_run_id": "synthetic-fixture-carrier",
+    "carrier_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "freeze_record_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "route_validation": {
+    "probe_run_id": "synthetic-fixture-probe",
+    "probe_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "covered_accessions": 3,
+    "note": "URL-route grammar only, for the probe's own accessions; never selection evidence for any firm in this plan."
+  },
+  "documents": [
+    {
+      "accession": "0009200001-22-000001",
+      "form": "10-K",
+      "directory_cik": "0009200001",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0009200001",
+          "baseline_filing_date": "2022-09-15"
+        }
+      ],
+      "expected_primary_document": "synth-a-20211231x10k.htm",
+      "ground_truth_source_sha256": "a8cb9822168ba430abab2539e3dde6efd53064cf7d639969553d6198c50638d1"
+    },
+    {
+      "accession": "0009200002-22-000002",
+      "form": "10-KT",
+      "directory_cik": "0009200002",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0009200002",
+          "baseline_filing_date": "2022-08-05"
+        }
+      ],
+      "expected_primary_document": "form10-kt.htm"
+    },
+    {
+      "accession": "0009200003-22-000003",
+      "form": "10-K",
+      "directory_cik": "0009200003",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0009200003",
+          "baseline_filing_date": "2022-10-01"
+        },
+        {
+          "stratum": "domestic",
+          "cik": "0009200004",
+          "baseline_filing_date": "2022-10-01"
+        }
+      ]
+    }
+  ]
+}
