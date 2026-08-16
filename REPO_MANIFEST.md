@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **715**
+Total tracked/scaffold files listed: **716**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -354,6 +354,7 @@ Total tracked/scaffold files listed: **715**
 - `schemas/official_web_collection_manifest.schema.json`
 - `schemas/primary_document_acquisition_manifest.schema.json`
 - `schemas/primary_document_acquisition_manifest.v2.schema.json`
+- `schemas/primary_document_acquisition_manifest.v3.schema.json`
 - `schemas/product_candidate_availability_vocabulary.schema.json`
 - `schemas/product_consolidated_universe.schema.json`
 - `schemas/product_consolidation_output.schema.json`

@@ -5790,6 +5790,53 @@ tagging, no screening, classification, tiering or PCT extraction, no model
 call, and no cohort-wide download plan — batched, resumable acquisition of
 the 9,916 candidates remains the W3 queue increment.
 
+## ADR-093 — v0.3 observational successor: declared Content-Length per hop
+
+**Status.** Accepted. Fixture-first; no live request was made, Canary B was
+not re-run, and no acquisition behaviour changed.
+
+**What the completed Canary B could not answer.** The live run (ADR-092)
+retrieved six primaries totalling 21.9 MB with the largest at 6.50 MB, 2.42%
+of the 256 MiB ceiling. Full-cohort byte planning wants the *declared* size
+next to the *retained* size — the earlier document canary (ADR-089) recorded
+`declared_content_length` per document and measured that SEC's declared
+lengths understated retained bytes by up to 13.2×, because responses are
+gzip-encoded. The primary-document acquisition manifest never recorded that
+field, so its own run cannot be read that way. This increment adds the
+recording and nothing else.
+
+**Observational only.** Each live acquisition now records
+`filing_index_declared_content_length` and
+`primary_declared_content_length`: the parsed value the transport had
+**already produced** for that specific hop, unchanged. Either may be `null`,
+meaning the transport had no usable value because the header was absent or
+malformed; nothing is reconstructed, normalized, inferred, or retained as a
+raw header string. They are **not** retained byte counts and play no part in
+ceiling enforcement, URL selection, retries, bundle construction, or
+authority. Download behaviour is byte-for-byte identical to ADR-092.
+
+**A successor, not a migration.** `schemas/primary_document_acquisition_manifest.schema.json`
+(fixture v0.1) and `.v2.schema.json` (the historical `sec_live` contract) are
+left **byte-for-byte unchanged**, and the completed Canary B artifact remains
+a valid v0.2 record with no declared-length fields — a skipif-guarded test
+re-validates that real artifact against the unchanged v0.2 schema and asserts
+it was not rewritten. Live runs now emit **v0.3**, which requires the two new
+fields; fixture replay still emits **v0.1**, which admits no such fields.
+Each contract rejects the others' manifests.
+
+**Governance.** `primary_document_acquisition_manifest_v3` registered at
+0.3.0; registry 0.32.0 → 0.33.0, 70 → 71 entries; both established pinned
+hashes rebaselined; `REPO_MANIFEST.md` 715 → 716.
+
+**Scope.** Added: the v0.3 schema. Modified: the acquisition module (record
+fields, live branch only), its test file, the schema registry, both pin
+tests, `REPO_MANIFEST.md`, the three count tests, and this log — eleven paths
+in total. Deliberately untouched: `sec_document_transport.py`, the
+request-plan grammar, `bundle_manifest.json` and the bundle schema,
+`baseline_packet.py`, the CLI, acquisition URLs, retry behaviour, and the
+failed-run receipt format. **No new acquisition capability or policy is
+introduced.**
+
 ## Open decisions
 
 - Required source packet by firm-year.

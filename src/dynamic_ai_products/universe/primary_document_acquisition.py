@@ -28,6 +28,14 @@ unreachable from this module by construction.
   href — so the inline-XBRL viewer wrapper is never fetched, under the plan's
   ``max_document_bytes``.
 
+**Declared lengths are observational (ADR-093).** A live run records, per
+acquisition, the parsed ``Content-Length`` the transport already produced for
+each hop — or ``None`` where it had no usable value. They exist so
+full-cohort byte planning can compare declared against retained size; they
+are never retained byte counts, never reconstructed from a raw header, and
+never consulted for ceiling enforcement. They appear on the ``sec_live`` v0.3
+contract only; the fixture v0.1 contract is unchanged.
+
 **Transport provenance.** One *active* transport kind per run. The two hops
 are separately constructed and recorded separately, because each is bound to a
 different plan-owned ceiling; their contract hashes are expected to be equal,
@@ -102,8 +110,13 @@ BUNDLE_SCHEMA_RELATIVE_PATH = Path(
 ACQUISITION_SCHEMA_RELATIVE_PATH = Path(
     "schemas/primary_document_acquisition_manifest.schema.json"
 )
+#: The historical sec_live contract. Artifacts written before ADR-093 remain
+#: valid against it; nothing migrates, and live runs now emit v0.3.
 ACQUISITION_V2_SCHEMA_RELATIVE_PATH = Path(
     "schemas/primary_document_acquisition_manifest.v2.schema.json"
+)
+ACQUISITION_V3_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/primary_document_acquisition_manifest.v3.schema.json"
 )
 
 GROUND_TRUTH_NONE = "none"
@@ -198,6 +211,10 @@ class AcquiredAccession:
     filing_index_status: int
     filing_index_byte_length: int
     filing_index_response_sha256: str
+    #: The parsed Content-Length the transport already produced for this hop,
+    #: or None when it had no usable value. Observational only: never a
+    #: retained byte count, and never used for ceiling enforcement.
+    filing_index_declared_content_length: Optional[int]
     selected_document: str
     href_form: str
     candidate_count: int
@@ -205,6 +222,7 @@ class AcquiredAccession:
     primary_final_url: str
     primary_status: int
     local_filename: str
+    primary_declared_content_length: Optional[int]
     source_sha256: str
     source_byte_length: int
     mapped_carrier_rows: int
@@ -741,6 +759,9 @@ def run_primary_document_acquisition(
                 filing_index_status=index_response.status_code,
                 filing_index_byte_length=len(index_response.content),
                 filing_index_response_sha256=sha256_bytes(index_response.content),
+                filing_index_declared_content_length=(
+                    index_response.declared_content_length
+                ),
                 selected_document=selected.document,
                 href_form=href_form_of(selected.href),
                 candidate_count=len(rows),
@@ -748,6 +769,9 @@ def run_primary_document_acquisition(
                 primary_final_url=primary_response.final_url,
                 primary_status=primary_response.status_code,
                 local_filename=entry.local_filename,
+                primary_declared_content_length=(
+                    primary_response.declared_content_length
+                ),
                 source_sha256=source_sha,
                 source_byte_length=len(primary_response.content),
                 mapped_carrier_rows=len(entry.carrier_rows),
@@ -990,12 +1014,22 @@ def build_acquisition_manifest(
     }
     if live:
         manifest["transport_contract"] = dict(transport_identity.contract)
+        # v0.3 adds the transport's already-parsed declared lengths for both
+        # hops. They are recorded on the live contract only: the fixture v0.1
+        # contract is unchanged and admits no such fields.
+        for record, item in zip(manifest["acquisitions"], acquired):
+            record["filing_index_declared_content_length"] = (
+                item.filing_index_declared_content_length
+            )
+            record["primary_declared_content_length"] = (
+                item.primary_declared_content_length
+            )
         manifest["schema_versions"] = {
-            "primary_document_acquisition_manifest_v2": schema_versions[
-                "primary_document_acquisition_manifest_v2"
+            "primary_document_acquisition_manifest_v3": schema_versions[
+                "primary_document_acquisition_manifest_v3"
             ]
         }
-        schema_path = ACQUISITION_V2_SCHEMA_RELATIVE_PATH
+        schema_path = ACQUISITION_V3_SCHEMA_RELATIVE_PATH
     else:
         manifest["schema_versions"] = {
             "primary_document_acquisition_manifest": schema_versions[

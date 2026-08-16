@@ -55,6 +55,9 @@ ACQ_SCHEMA = ROOT / "schemas" / "primary_document_acquisition_manifest.schema.js
 ACQ_V2_SCHEMA = (
     ROOT / "schemas" / "primary_document_acquisition_manifest.v2.schema.json"
 )
+ACQ_V3_SCHEMA = (
+    ROOT / "schemas" / "primary_document_acquisition_manifest.v3.schema.json"
+)
 PROJECT_CONFIG = ROOT / "configs" / "project.yaml"
 CLI = ROOT / "pipelines" / "00_build_company_universe.py"
 EXPECTED = read_json(FIXTURE_DIR / "expected_acquisition.json")
@@ -306,7 +309,7 @@ def test_one_active_transport_kind_and_two_hop_records(tmp_path):
     assert metadata["max_bytes"] != primary["max_bytes"]
 
 
-def test_live_identity_writes_the_v2_manifest_with_its_contract(tmp_path):
+def test_live_identity_writes_the_v3_manifest_with_its_contract(tmp_path):
     result = _acquire(
         tmp_path, run_id="live-shaped",
         transport_identity=SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY,
@@ -317,10 +320,167 @@ def test_live_identity_writes_the_v2_manifest_with_its_contract(tmp_path):
     assert manifest["metadata_hop"]["ceiling_enforcement"]["mechanism"] == (
         "streaming_chunk_bound"
     )
+    assert manifest["schema_versions"] == {
+        "primary_document_acquisition_manifest_v3": "0.3.0"
+    }
+    # v0.3 accepts it; both earlier contracts reject it.
     assert not list(
-        Draft202012Validator(read_json(ACQ_V2_SCHEMA)).iter_errors(manifest)
+        Draft202012Validator(read_json(ACQ_V3_SCHEMA)).iter_errors(manifest)
     )
+    assert list(Draft202012Validator(read_json(ACQ_V2_SCHEMA)).iter_errors(manifest))
     assert list(Draft202012Validator(read_json(ACQ_SCHEMA)).iter_errors(manifest))
+
+
+# --- ADR-093: observational declared lengths -------------------------------
+
+
+def _declaring_transports(index_declared, primary_declared):
+    """Transports whose responses carry chosen declared Content-Lengths."""
+    index_source = make_filing_index_fixture_replay_transport(
+        FIXTURE_DIR, max_bytes=METADATA_CEILING
+    )
+    primary_source = make_primary_document_fixture_replay_transport(
+        FIXTURE_DIR, max_bytes=DOCUMENT_CEILING
+    )
+
+    def metadata(url: str) -> DocumentTransportResponse:
+        base = index_source(url)
+        return DocumentTransportResponse(
+            status_code=base.status_code, final_url=base.final_url,
+            content=base.content, declared_content_length=index_declared,
+            bytes_received=base.bytes_received,
+        )
+
+    def primary(url: str) -> DocumentTransportResponse:
+        base = primary_source(url)
+        return DocumentTransportResponse(
+            status_code=base.status_code, final_url=base.final_url,
+            content=base.content, declared_content_length=primary_declared,
+            bytes_received=base.bytes_received,
+        )
+
+    return metadata, primary
+
+
+def test_declared_lengths_are_propagated_independently_per_hop(tmp_path):
+    metadata, primary = _declaring_transports(4321, 98765)
+    result = _acquire(
+        tmp_path, run_id="declared-both",
+        metadata_transport=metadata, primary_transport=primary,
+        transport_identity=SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY,
+    )
+    manifest = read_json(result.acquisition_manifest_path)
+    for record in manifest["acquisitions"]:
+        assert record["filing_index_declared_content_length"] == 4321
+        assert record["primary_declared_content_length"] == 98765
+        # Observational only: never the retained byte count.
+        assert record["source_byte_length"] != 98765
+    assert not list(
+        Draft202012Validator(read_json(ACQ_V3_SCHEMA)).iter_errors(manifest)
+    )
+
+
+def test_declared_lengths_do_not_swap_between_hops(tmp_path):
+    metadata, primary = _declaring_transports(11, 22)
+    result = _acquire(
+        tmp_path, run_id="declared-order",
+        metadata_transport=metadata, primary_transport=primary,
+        transport_identity=SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY,
+    )
+    for record in read_json(result.acquisition_manifest_path)["acquisitions"]:
+        assert record["filing_index_declared_content_length"] == 11
+        assert record["primary_declared_content_length"] == 22
+
+
+def test_null_declared_lengths_are_preserved_for_both_fields(tmp_path):
+    """An absent or malformed header yields None; nothing is reconstructed."""
+    metadata, primary = _declaring_transports(None, None)
+    result = _acquire(
+        tmp_path, run_id="declared-null",
+        metadata_transport=metadata, primary_transport=primary,
+        transport_identity=SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY,
+    )
+    manifest = read_json(result.acquisition_manifest_path)
+    for record in manifest["acquisitions"]:
+        assert record["filing_index_declared_content_length"] is None
+        assert record["primary_declared_content_length"] is None
+    assert not list(
+        Draft202012Validator(read_json(ACQ_V3_SCHEMA)).iter_errors(manifest)
+    )
+
+
+def test_one_null_and_one_present_are_both_kept(tmp_path):
+    metadata, primary = _declaring_transports(None, 777)
+    result = _acquire(
+        tmp_path, run_id="declared-mixed",
+        metadata_transport=metadata, primary_transport=primary,
+        transport_identity=SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY,
+    )
+    for record in read_json(result.acquisition_manifest_path)["acquisitions"]:
+        assert record["filing_index_declared_content_length"] is None
+        assert record["primary_declared_content_length"] == 777
+
+
+def test_fixture_v01_manifest_is_unchanged_and_carries_no_declared_fields(tmp_path):
+    result = _acquire(tmp_path, run_id="fixture-unchanged")
+    manifest = read_json(result.acquisition_manifest_path)
+    assert manifest["transport_kind"] == "fixture_replay"
+    assert manifest["schema_versions"] == {
+        "primary_document_acquisition_manifest": "0.1.0"
+    }
+    for record in manifest["acquisitions"]:
+        assert "filing_index_declared_content_length" not in record
+        assert "primary_declared_content_length" not in record
+    assert not list(
+        Draft202012Validator(read_json(ACQ_SCHEMA)).iter_errors(manifest)
+    )
+    assert list(Draft202012Validator(read_json(ACQ_V3_SCHEMA)).iter_errors(manifest))
+
+
+def test_a_v02_shaped_artifact_without_the_fields_stays_valid(tmp_path):
+    """Historical validity: v0.2 still accepts artifacts written before v0.3."""
+    result = _acquire(
+        tmp_path, run_id="as-v2",
+        transport_identity=SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY,
+    )
+    manifest = read_json(result.acquisition_manifest_path)
+    historical = json.loads(json.dumps(manifest))
+    for record in historical["acquisitions"]:
+        del record["filing_index_declared_content_length"]
+        del record["primary_declared_content_length"]
+    historical["schema_versions"] = {
+        "primary_document_acquisition_manifest_v2": "0.2.0"
+    }
+    assert not list(
+        Draft202012Validator(read_json(ACQ_V2_SCHEMA)).iter_errors(historical)
+    )
+
+
+CANARY_B_MANIFEST = (
+    ROOT / "data" / "runs" / "primary-document-canary"
+    / "primary-document-canary-frame-v1-20260816"
+    / "primary_document_acquisition_manifest.json"
+)
+
+
+@pytest.mark.skipif(
+    not CANARY_B_MANIFEST.exists(),
+    reason="completed Canary B artifact absent; historical validity not checkable",
+)
+def test_the_completed_canary_b_artifact_remains_valid_and_unmigrated():
+    """The real v0.2 artifact is untouched and still validates as v0.2."""
+    artifact = read_json(CANARY_B_MANIFEST)
+    assert artifact["schema_versions"] == {
+        "primary_document_acquisition_manifest_v2": "0.2.0"
+    }
+    assert all(
+        "filing_index_declared_content_length" not in a
+        and "primary_declared_content_length" not in a
+        for a in artifact["acquisitions"]
+    )
+    assert not list(
+        Draft202012Validator(read_json(ACQ_V2_SCHEMA)).iter_errors(artifact)
+    )
 
 
 def test_fixture_manifest_is_rejected_by_the_v2_schema(tmp_path):

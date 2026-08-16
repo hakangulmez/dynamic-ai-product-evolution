@@ -1286,7 +1286,11 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # request plan, the synthetic fixture bundle (plan, three index pages,
     # three primaries, gold), and the acquisition test file. It emits the
     # already-governed bundle; the packet builder is unchanged.
-    assert declared == len(paths) == 715
+    # 716 = 715 + the v0.3 observational sec_live acquisition manifest
+    # schema (ADR-093): live runs record each hop's parsed Content-Length
+    # for byte planning. v0.1 and v0.2 are byte-unchanged and the completed
+    # Canary B artifact remains a valid v0.2 record; nothing migrates.
+    assert declared == len(paths) == 716
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

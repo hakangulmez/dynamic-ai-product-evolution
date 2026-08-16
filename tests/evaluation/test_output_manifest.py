@@ -888,7 +888,11 @@ def test_repo_manifest_count_and_paths():
     # request plan, the synthetic fixture bundle (plan, three index pages,
     # three primaries, gold), and the acquisition test file. It emits the
     # already-governed bundle; the packet builder is unchanged.
-    assert "Total tracked/scaffold files listed: **715**" in text
+    # 716 = 715 + the v0.3 observational sec_live acquisition manifest
+    # schema (ADR-093): live runs record each hop's parsed Content-Length
+    # for byte planning. v0.1 and v0.2 are byte-unchanged and the completed
+    # Canary B artifact remains a valid v0.2 record; nothing migrates.
+    assert "Total tracked/scaffold files listed: **716**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text
