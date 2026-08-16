@@ -158,22 +158,23 @@ def test_plan_requires_observed_through_and_basis() -> None:
         validate_dera_request_plan(_plan_payload(observed_through_basis="  "))
 
 
-def test_full_range_plan_covers_the_frozen_window_contiguously() -> None:
+def test_full_range_plan_covers_available_releases_contiguously() -> None:
     # Offline only: load_dera_request_plan validates grammar and derives
     # URLs/filenames in code; no transport exists in this test.
     full_plan = ROOT / "configs" / "dera_fsds_full_request_plan.json"
     entries, fields, plan_sha256 = load_dera_request_plan(full_plan)
     assert len(plan_sha256) == 64
-    assert len(entries) == 26
+    assert len(entries) == 25
 
     expected_releases = [
         f"{year}q{q}" for year in range(2020, 2026) for q in (1, 2, 3, 4)
-    ] + ["2026q1", "2026q2"]
+    ] + ["2026q1"]
     releases = [entry.release for entry in entries]
     assert releases == expected_releases  # contiguous, chronological
-    assert len(set(releases)) == 26  # no duplicates
+    assert len(set(releases)) == 25  # no duplicates
     assert entries[0].release == "2020q1"
-    assert entries[-1].release == "2026q2"
+    assert entries[-1].release == "2026q1"
+    assert "2026q2" not in releases  # measured unavailable (ADR-084)
 
     # Every URL comes from the canary-verified template; filenames canonical.
     assert fields["url_template"] == TEMPLATE
@@ -182,10 +183,13 @@ def test_full_range_plan_covers_the_frozen_window_contiguously() -> None:
         assert entry.zip_filename == f"dera-{entry.release}.zip"
         assert entry.sub_filename == f"dera-{entry.release}-sub.tsv"
 
-    # Plan-authored boundary evidence (ADR-083 decisions A and B).
-    assert fields["observed_through"] == "2026-06-30"
+    # Plan-authored boundary evidence (ADR-084): last-available-release
+    # quarter end, with the measured 2026q2 unavailability recorded.
+    assert fields["observed_through"] == "2026-03-31"
     assert fields["observed_through_basis"].strip()
-    assert "2026q3" in fields["observed_through_basis"]
+    assert "2026q2" in fields["observed_through_basis"]
+    assert "404" in fields["observed_through_basis"]
+    assert "right_boundary_unobserved" in fields["observed_through_basis"]
 
     # The canary and archive-fixture plans are distinct, unchanged inputs.
     canary_entries, _, _ = load_dera_request_plan(CANARY_PLAN_PATH)

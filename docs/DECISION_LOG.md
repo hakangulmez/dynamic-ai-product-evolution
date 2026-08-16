@@ -4834,6 +4834,12 @@ separately authorized acquisition will consume, following the
 commit-before-acquire pattern the EDGAR index plan established: possessing
 the plan authorizes nothing.
 
+*Superseded in part by ADR-084*: the authorized 26-request acquisition
+measured 2026q2 unavailable (HTTP 404 at the verified template), so the
+**Release set** paragraph's 26-release span and **decision A's
+`observed_through` = 2026-06-30** are revised there to 25 releases and
+2026-03-31. Everything else in this entry stands.
+
 **Canary evidence, pinned.** Run `dera-fsds-canary-2020q1-20260816`
 (one real request, exit 0) empirically verified the URL template
 `https://www.sec.gov/files/dera/data/financial-statement-data-sets/{release}.zip`:
@@ -4888,6 +4894,71 @@ hashes, `frame_dera_validation.py`, `dera_acquisition.py`,
 `sec_index_transport.py`, FRAME code and artifacts, `data/runs`,
 `configs/project.yaml`, the canary and fixture plans, prompts, the
 notebook, and pipelines.
+
+## ADR-084 — 2026q2 is measured unavailable: the DERA plan drops to 25 releases (ADR-081, ADR-083)
+
+**The measurement that forces this entry.** The separately authorized
+26-request full-range acquisition
+(run `dera-fsds-full-2020q1-2026q2-20260816`, consuming the ADR-083 plan,
+sha256 `1d03bd0843a70531498d507a80c9a73d9f26614b6459124b1efc2515d5c3aefd`)
+acquired 25 archives — 2020q1 through 2026q1, every one status 200,
+write-once with `sub.txt` safely extracted, ~2.53 GB of raw ZIPs — and then
+failed closed on the 26th: **HTTP 404 for
+`https://www.sec.gov/files/dera/data/financial-statement-data-sets/2026q2.zip`
+on 2026-08-16**, receipted at
+`dera_acquisition_failure_receipt.json` in the run directory. DERA has not
+yet published the 2026q2 FSDS release; its publication lag exceeds the ~6.5
+weeks since that quarter ended. ADR-083's residual-risk language
+anticipated exactly this evidence class.
+
+**Fail-closed behavior worked as designed, and the dead run stays dead.**
+No acquisition manifest and no consumer bundle were written; manifest
+presence is the sole mark of authority, so the run is non-authoritative and
+`dera-validate` structurally cannot consume it (its required bundle
+manifest never exists). The 25 acquired ZIPs and extracted TSVs remain
+immutable and gitignored under `data/runs/dera-fsds-full/…-20260816` —
+never deleted, never repaired, never partially salvaged. Runs are
+all-or-nothing: the rerun re-acquires all 25 releases under a fresh run-id,
+which is the price of the no-silent-repair guarantee.
+
+**Revised construct (in-place plan revision).**
+`configs/dera_fsds_full_request_plan.json` is revised in place — it is a
+versioned repository config, not an immutable run artifact; the superseded
+26-release version survives in git history and its hash is pinned by the
+failure receipt, and keeping a known-unusable plan active would invite
+accidental reuse. The revised plan (sha256
+`87e216b3ad56bc082a11c801a41ba968d5391b9ee77db83059ac4e25252abf1c`)
+declares:
+
+- **25 releases, 2020q1 through 2026q1** — every FSDS release measured
+  available;
+- **`observed_through` = 2026-03-31**, on the last-available-release
+  quarter-end basis, with the 404 evidence recorded verbatim in the basis;
+- the classification consequence, stated in the plan and enforced by the
+  committed ADR-081 boundary rule without any code change: **every FRAME
+  absence filed after 2026-03-31 (all of Q2 2026) is
+  `right_boundary_unobserved`, never FSDS/XBRL noncoverage** — publication
+  reality now forces the shape previously rejected as a choice;
+- unchanged boundaries: possessing the plan authorizes nothing, and DERA
+  remains an independent FRAME validation source only, never eligibility or
+  universe input.
+
+**Successor path.** Once DERA publishes 2026q2, a successor plan revision
+may add it and restore `observed_through` 2026-06-30 under ADR-083's
+acceptance-rule basis — only via its own reviewed revision and separately
+authorized acquisition.
+
+**Deferred, named so it is not mistaken for done.** Committing this
+revision; the 25-release rerun under a new run-id; the real validation of
+the full FRAME_v1.1-draft artifact through the ADR-081 gate; the FRAME_v1
+freeze decision.
+
+**Scope.** Modified only: `configs/dera_fsds_full_request_plan.json`
+(in-place revision), one offline test in
+`tests/universe/test_dera_acquisition.py`, and ADR-083's superseded
+paragraphs. No new files, no code, no schema, no registry bump, no
+REPO_MANIFEST or count-test change, no pinned-hash rebaseline, and no
+deletion or reuse of any `data/runs` artifact.
 
 ## Open decisions
 

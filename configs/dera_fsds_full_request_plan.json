@@ -1,9 +1,9 @@
 {
   "plan_contract": "dera_fsds_request_plan@0.1.0",
-  "description": "Canonical full-range DERA FSDS request plan for validating the frozen FRAME filing window 2020-01-01 through 2026-06-30 (ADR-077, ADR-083): 26 releases, 2020q1 through 2026q2, at the URL template empirically verified by canary run dera-fsds-canary-2020q1-20260816 (acquisition manifest sha256 7e6c44389a4299a76737533cc3144404b5a50354649467adc327272ccc3234d6, raw ZIP sha256 48ed9834c66d565c21130d087eae941b25770e2d7cc8351d17652612289fcd67, extracted sub sha256 5c89b0295c403903909c34b9293d9a050f589b0722585f3ee6d6035b16501950, 5,817 lines). No 2026q3 buffer release is included: it is not currently acquirable for this freeze window (its quarter is incomplete), and a successor plan may add it later only if real validation shows late-June edge clustering. Possessing this plan does not authorize a live request; the full acquisition remains separately authorized. DERA is an independent FRAME validation source only, never eligibility or universe input (ADR-081).",
+  "description": "Canonical full-range DERA FSDS request plan for validating the frozen FRAME filing window 2020-01-01 through 2026-06-30 (ADR-077, ADR-084): 25 releases, 2020q1 through 2026q1, at the URL template empirically verified by canary run dera-fsds-canary-2020q1-20260816. The 2026q2 release is NOT included: it was measured unavailable - HTTP 404 at the verified template on 2026-08-16, receipted in the fail-closed run dera-fsds-full-2020q1-2026q2-20260816, which consumed the superseded 26-release plan sha256 1d03bd0843a70531498d507a80c9a73d9f26614b6459124b1efc2515d5c3aefd. FRAME absences filed after 2026-03-31 (Q2 2026) are classified right_boundary_unobserved, never noncoverage, until a successor plan adds 2026q2 after DERA publishes it. Possessing this plan does not authorize a live request; the full acquisition remains separately authorized. DERA is an independent FRAME validation source only, never eligibility or universe input (ADR-081).",
   "url_template": "https://www.sec.gov/files/dera/data/financial-statement-data-sets/{release}.zip",
-  "observed_through": "2026-06-30",
-  "observed_through_basis": "EDGAR's published acceptance rule assigns a filing date no earlier than the acceptance day (post-5:30 p.m. ET acceptances receive the next business day's filing date), so the 2020q1-2026q2 release union spans every in-window filed date. The residual risk is dataset-cut slippage of late-June 2026 filings into the unpublished 2026q3 release, which is operationally possible but not derivable from published rules. Noncoverage is non-gating (ADR-081); if the full validation shows late-June edge clustering, a successor plan revisits this value and/or adds 2026q3 (ADR-083).",
+  "observed_through": "2026-03-31",
+  "observed_through_basis": "Last-available-release-quarter-end basis: the newest available FSDS release is 2026q1, covering filings accepted through 2026-03-31. Measured evidence: 2026q2 returned HTTP 404 at the verified template on 2026-08-16 (failure receipt in run dera-fsds-full-2020q1-2026q2-20260816; superseded 26-release plan sha256 1d03bd0843a70531498d507a80c9a73d9f26614b6459124b1efc2515d5c3aefd). Consequently every FRAME absence filed after 2026-03-31 is right_boundary_unobserved, never FSDS/XBRL noncoverage (ADR-081 boundary rule). A successor plan restores observed_through 2026-06-30 under the acceptance-rule basis and adds 2026q2 once DERA publishes it (ADR-084).",
   "releases": [
     "2020q1",
     "2020q2",
@@ -29,7 +29,6 @@
     "2025q2",
     "2025q3",
     "2025q4",
-    "2026q1",
-    "2026q2"
+    "2026q1"
   ]
 }
