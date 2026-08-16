@@ -5401,6 +5401,100 @@ both files are new in this increment and uncommitted, that is authoring
 rather than a governed schema change, and no successor version is required.
 `data/runs` untouched; no live request has been made.
 
+## ADR-090 — W2-C-alpha: the filing-index metadata probe
+
+**Status.** Accepted. Fixture-first capability only; the three-request live
+probe is separately authorized and has not been run.
+
+**Why a probe at all.** Building baseline evidence packets for the domestic
+candidate cohort by downloading whole SEC submissions is not viable: the
+completed 12-document canary (ADR-089) measured 508.3 MB for twelve filings,
+one of them 213.5 MB — 79.5% of the 256 MiB ceiling. Reading those same
+submissions offline shows the primary annual-report document is **8.8% of
+the bytes**, an 11.4× reduction, with the largest primary at 9.27 MB. A
+two-hop route — filing-directory metadata, then the selected primary — is
+therefore worth building, but it depends entirely on there being a
+deterministic, type-bearing metadata source. This increment proves or
+refutes that, and does nothing else.
+
+**Two candidates eliminated offline, before any request.** `FilingSummary.xml`
+is declared `TYPE=XML` in all twelve canary filings and names no form type;
+it identifies nothing. The SGML `<SEC-HEADER>` block carries no per-document
+list at all — roughly 1 KB of filer metadata — so `-index-headers.html`,
+which renders that header, cannot carry the mapping either. The
+`<TYPE>`/`<FILENAME>` pairs that do select a primary uniquely (12/12) exist
+only inside the full submission, which the two-hop route must never fetch.
+
+**What is probed, and only that.** One endpoint:
+`…/Archives/edgar/data/<cik_without_leading_zeros>/<accession_without_dashes>/<accession_with_dashes>-index.htm`.
+Table selection is identity first, shape second. The parser requires the SEC
+Document Format Files table **identity** — the table's own `summary`
+attribute, or an explicitly associated heading — and only then validates that
+the identified table declares Document and Type columns. Header cells alone
+never identify the table: the same index page carries a Data Files table with
+the identical two columns, nothing guarantees it appears second, and a
+shape-only parser would select a plausible annual-form row out of it. A page
+where no table claims the identity, or where more than one does, or where the
+identified table lacks those columns, is refused as `metadata_unparseable`.
+The primary is then the single row of that table whose declared type equals
+the planned annual form. **Filename
+convention is never used**: the measured corpus contains `form10-kt.htm` and
+`lub-20220531.htm`, which no ticker-and-date pattern matches. Zero matches,
+more than one match, a sole non-HTML match, an unparseable page, a
+transport-level failure, a ceiling refusal, or a filename disagreeing with
+the plan's recorded ground truth each refuse with a distinct reason code and
+end the run with a write-once receipt and no manifest. `index.json` is a
+**separately authorized fallback** and is never requested by this module; a
+test asserts that against the URLs actually requested rather than against
+prose.
+
+**Ground truth is local.** All three committed live entries are domestic,
+single-filer accessions whose full submissions are already on disk from the
+ADR-089 canary, so the probe's selection is checked against known primaries
+(`air-20220531x10k.htm`, `abt-20211231x10k.htm`, `form10-kt.htm`) rather
+than against belief. The third is included precisely because its filename
+defeats every convention.
+
+**Ceiling.** `max_metadata_bytes` is an explicit, required plan field set to
+8388608 (8 MiB) — never defaulted in code. The transport is constructed with
+exactly that bound and the runner refuses any mismatch **before a request is
+made**; enforcement itself is the committed bounded streaming transport
+(ADR-089), reused unchanged, and the manifest records both the plan ceiling
+and the mechanism applied.
+
+**Fixture/live contract separation.** Two schemas, never one widened
+contract: v0.1 admits `fixture_replay` only and carries no embedded
+transport contract; the v0.2 `sec_live` successor requires the embedded
+contract alongside its recorded canonical hash. Tests assert each schema
+**rejects** the other transport's manifest.
+
+**Scope.** Added: the probe module, its v0.1 and v0.2 manifest schemas, the
+committed three-request probe plan, the synthetic index-page fixture bundle
+(plan, two pages, gold), and the probe test file — nine paths. Modified: the
+pipeline entrypoint (one new mode, `probe-filing-index`, no new CLI flag),
+the schema registry (0.29.0 → 0.30.0, 63 → 65 entries) with both pinned-hash
+rebaselines, `REPO_MANIFEST.md` (680 → 689), the three manifest count tests,
+and this log — nine paths. **Not in this increment**: packet contracts,
+primary-document acquisition, any `ingestion` change, any packet CLI mode,
+and any live request. The full-submission acquisition path is untouched, so
+the completed canary stays reproducible.
+
+**Deliberately unchanged and carried forward.** Domestic annual forms only
+(10-K, 10-KT); the FPI extension cohort is preserved, not probed and not
+excluded. When packets are later built, cover-page absence is **non-fatal**
+— recorded through `missing_sections`, never a failure and never an
+exclusion — while missing Item 1 remains a packet failure, and issuer status
+stays `unknown` where cover-page evidence is absent, recorded as the
+deferred Stage 00B limitation. The orchestration boundary stands:
+`ingestion` may import `universe`, `universe` never imports `ingestion`, and
+the Stage-00 CLI wires both without violating either guard.
+
+**Decision gate.** A 3/3 pass makes the probe manifest the cited evidence
+for the next increment (packet contracts, then extraction, then
+primary-document acquisition, then a packet mode and its canary). Any
+failure stops the direction here; `index.json` then becomes a separately
+authorized fallback probe under the same success condition.
+
 ## Open decisions
 
 - Required source packet by firm-year.

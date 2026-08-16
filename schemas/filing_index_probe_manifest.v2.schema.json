@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "filing_index_probe_manifest.v2.schema.json",
+  "title": "Filing-index metadata probe manifest (sec_live successor)",
+  "description": "Immutable record of one live SEC probe of filing-index pages (W2-C-alpha, ADR-090). Successor to the fixture-replay v0.1 contract: transport_kind is sec_live only, and the embedded transport_contract is REQUIRED alongside its recorded canonical hash so a consumer can recompute the hash and match it byte-for-byte. Neither schema admits the other transport. The probe establishes metadata grammar only: it acquires no primary document, builds no packet, and authorizes nothing downstream. The primary document is selected by declared document type, never by filename convention. max_metadata_bytes is the plan-declared, enforced per-response ceiling; for a streaming transport one chunk may straddle it, so ceiling_enforcement records the exact transport-level bound max_metadata_bytes + stream_chunk_bytes. The Document Format Files table is identified by its summary attribute or an explicitly associated heading, never by column shape alone. Ground truth is provenance-bound: carrier_provenance cites the completed submission-canary acquisition manifest, and each observation carries the SHA-256 of the local full submission its expected primary filename was read from. planned_probes is sourced from the plan and probes_resolved from observations, so their equality is a real completeness check.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "plan_contract",
+    "plan_sha256",
+    "base_url",
+    "max_metadata_bytes",
+    "ceiling_enforcement",
+    "carrier_provenance",
+    "transport_kind",
+    "transport_contract_hash",
+    "observations",
+    "counts",
+    "reconciliation",
+    "run_timestamp",
+    "schema_versions",
+    "limitations",
+    "transport_contract"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "plan_contract": {
+      "const": "filing_index_probe_plan@0.1.0"
+    },
+    "plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "base_url": {
+      "const": "https://www.sec.gov/Archives/"
+    },
+    "max_metadata_bytes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "ceiling_enforcement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_metadata_bytes",
+        "mechanism",
+        "content_length_preflight",
+        "stream_chunk_bytes",
+        "max_transport_bytes"
+      ],
+      "properties": {
+        "max_metadata_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mechanism": {
+          "enum": [
+            "streaming_chunk_bound",
+            "bounded_local_read"
+          ]
+        },
+        "content_length_preflight": {
+          "type": "boolean"
+        },
+        "stream_chunk_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "max_transport_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "carrier_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrier_run_id",
+        "carrier_manifest_sha256",
+        "freeze_record_sha256",
+        "canary_acquisition_manifest_sha256"
+      ],
+      "properties": {
+        "carrier_run_id": {
+          "type": "string"
+        },
+        "carrier_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "freeze_record_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "canary_acquisition_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "transport_kind": {
+      "const": "sec_live"
+    },
+    "transport_contract_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "observations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "accession",
+          "form",
+          "directory_cik",
+          "url",
+          "final_url",
+          "status_code",
+          "response_byte_length",
+          "response_sha256",
+          "declared_content_length",
+          "candidates",
+          "selected_document",
+          "expected_primary_document",
+          "ground_truth_match",
+          "retrieved_at",
+          "ground_truth_source_sha256"
+        ],
+        "properties": {
+          "accession": {
+            "type": "string",
+            "pattern": "^\\d{10}-\\d{2}-\\d{6}$"
+          },
+          "form": {
+            "enum": [
+              "10-K",
+              "10-KT"
+            ]
+          },
+          "directory_cik": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https://www\\.sec\\.gov/Archives/edgar/data/\\d{1,10}/\\d{18}/\\d{10}-\\d{2}-\\d{6}-index\\.htm$"
+          },
+          "final_url": {
+            "type": "string"
+          },
+          "status_code": {
+            "const": 200
+          },
+          "response_byte_length": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "response_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "declared_content_length": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "candidates": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "document",
+                "document_type",
+                "reported_size"
+              ],
+              "properties": {
+                "document": {
+                  "type": "string"
+                },
+                "document_type": {
+                  "type": "string"
+                },
+                "reported_size": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "selected_document": {
+            "type": "string",
+            "pattern": "(?i)\\.(htm|html)$"
+          },
+          "expected_primary_document": {
+            "type": "string"
+          },
+          "ground_truth_match": {
+            "const": true
+          },
+          "retrieved_at": {
+            "type": "string"
+          },
+          "ground_truth_source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planned_probes",
+        "probes_resolved",
+        "ground_truth_matches"
+      ],
+      "properties": {
+        "planned_probes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "probes_resolved": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ground_truth_matches": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 3,
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filing_index_probe_manifest_v2"
+      ],
+      "properties": {
+        "filing_index_probe_manifest_v2": {
+          "type": "string"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "transport_contract": {
+      "type": "object",
+      "required": [
+        "transport_kind"
+      ],
+      "properties": {
+        "transport_kind": {
+          "const": "sec_live"
+        }
+      }
+    }
+  }
+}

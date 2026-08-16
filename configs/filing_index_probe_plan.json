@@ -1,0 +1,35 @@
+{
+  "plan_contract": "filing_index_probe_plan@0.1.0",
+  "description": "Canonical three-request filing-index metadata probe over frozen FRAME_v1 (ADR-090). Its sole purpose is to prove that the filing index page is a deterministic, type-bearing metadata source for the two-hop baseline packet route: parse the Document Format Files table, find exactly one HTML row whose declared Type equals the planned annual form, and match its filename to ground truth already held locally from the completed 12-document submission canary. Two alternatives were eliminated offline from that canary: FilingSummary.xml is declared TYPE=XML in all twelve filings and names no form type, and the SGML SEC-HEADER carries no per-document list at all. index.json is a separately authorized fallback and is never requested by this plan. Domestic annual forms only; the FPI extension cohort is preserved, not probed and not excluded. The third entry is included deliberately: its primary document is form10-kt.htm, which no ticker-and-date filename convention would match. Possessing this plan does not authorize a live request; the probe run is separately authorized. Ground truth is provenance-bound: provenance cites the completed submission-canary acquisition manifest, and each entry carries the SHA-256 of the local full submission whose DOCUMENT blocks the expected primary filename was read from.",
+  "base_url": "https://www.sec.gov/Archives/",
+  "max_metadata_bytes": 8388608,
+  "provenance": {
+    "carrier_run_id": "universe-baseline-carrier-frame-v1-20260816",
+    "carrier_manifest_sha256": "50a2582f9a255c4402151aa4d963ce5d7bd7c952b8e4a5e77f4a7e7ce454521f",
+    "freeze_record_sha256": "27eb6d236b2e3f81a3b52437027f076a52ae04b245694c9645a4bfb6303e342c",
+    "canary_acquisition_manifest_sha256": "9ada7a0d3e5b1311d046632f17350f492b4f6899d09811909f297a1713a6250d"
+  },
+  "entries": [
+    {
+      "accession": "0001104659-22-081498",
+      "form": "10-K",
+      "directory_cik": "0000001750",
+      "expected_primary_document": "air-20220531x10k.htm",
+      "ground_truth_source_sha256": "ac65cb3a6fd9f6a02991da931fd89795192b5bd0f3fb58ca23d86ce4e435ce19"
+    },
+    {
+      "accession": "0001104659-22-025141",
+      "form": "10-K",
+      "directory_cik": "0000001800",
+      "expected_primary_document": "abt-20211231x10k.htm",
+      "ground_truth_source_sha256": "91b4135862450a84c1e3da41b09598a1658b5bfa5977e169f2c2c95576d67b8a"
+    },
+    {
+      "accession": "0001493152-22-010080",
+      "form": "10-KT",
+      "directory_cik": "0000066600",
+      "expected_primary_document": "form10-kt.htm",
+      "ground_truth_source_sha256": "88995d076d24b8aae623fb7b7a3550cde6b97afa7e5283aa88871cbd4bd5929c"
+    }
+  ]
+}

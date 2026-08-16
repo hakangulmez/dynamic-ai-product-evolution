@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Seven mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
+Eight mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
 so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -37,6 +37,10 @@ so every pre-existing invocation is unchanged):
   downloading. ``sec_filename`` is validated provenance; every URL is
   derived in the SEC filing-directory form. Documents only: no packet, no
   screen, no classification.
+- ``probe-filing-index`` probes SEC filing-index pages to prove that they
+  are a deterministic, type-bearing metadata source for a later two-hop
+  packet route (ADR-090). Metadata only: it acquires no primary document,
+  builds no packet, and authorizes nothing downstream.
 - ``baseline-carrier`` derives the Stage 00B firm-level baseline carrier
   (W2-A, ADR-088) from a completed FRAME run: hash-verified read-only frame
   consumption, per-stratum CIK grouping, baseline-filing selection against
@@ -107,6 +111,12 @@ from dynamic_ai_products.sec_document_transport import (  # noqa: E402
     SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY,
     make_sec_live_document_transport,
 )
+from dynamic_ai_products.universe.filing_index_probe import (  # noqa: E402
+    ProbePlanError,
+    load_probe_plan,
+    make_filing_index_fixture_replay_transport,
+    run_filing_index_probe,
+)
 from dynamic_ai_products.universe.frame_dera_validation import (  # noqa: E402
     DeraInputError,
     run_dera_validation,
@@ -130,7 +140,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mode", default="sentinel",
         choices=["sentinel", "frame", "acquire-index", "dera-validate",
-                 "acquire-dera", "baseline-carrier", "acquire-docs"],
+                 "acquire-dera", "baseline-carrier", "acquire-docs",
+                 "probe-filing-index"],
         help="Stage 00 sub-pipeline to run (default: sentinel).",
     )
     parser.add_argument(
@@ -286,6 +297,30 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         if transport_choice == "sec-live" and args.replay_dir is not None:
             return (
                 "acquire-docs mode with the sec-live transport does not "
+                "accept: --replay-dir"
+            )
+        return None
+
+    if args.mode == "probe-filing-index":
+        offending = _present(
+            sentinel_flags + frame_flags + dera_flags
+            + (("--config", args.config),)
+        )
+        if offending:
+            return (
+                f"probe-filing-index mode does not accept: {', '.join(offending)}"
+            )
+        if args.request_plan is None:
+            return "probe-filing-index mode requires: --request-plan"
+        transport_choice = args.transport or "fixture"
+        if transport_choice == "fixture" and args.replay_dir is None:
+            return (
+                "probe-filing-index mode with the fixture transport requires: "
+                "--replay-dir"
+            )
+        if transport_choice == "sec-live" and args.replay_dir is not None:
+            return (
+                "probe-filing-index mode with the sec-live transport does not "
                 "accept: --replay-dir"
             )
         return None
@@ -658,6 +693,88 @@ def _main_dera_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_probe_filing_index(args: argparse.Namespace) -> int:
+    request_plan = Path(args.request_plan)
+    if not request_plan.is_file():
+        print(f"ERROR: probe plan not found: {request_plan}", file=sys.stderr)
+        return 2
+    # The ceiling is plan-owned, so the plan is read before the transport is
+    # built; the runner then refuses any transport bound to a different value.
+    try:
+        _, plan_fields, _ = load_probe_plan(request_plan)
+    except ProbePlanError as exc:
+        print(f"ERROR: invalid filing index probe plan: {exc}", file=sys.stderr)
+        return 2
+    max_metadata_bytes = plan_fields["max_metadata_bytes"]
+    transport_choice = args.transport or "fixture"
+    if transport_choice == "sec-live":
+        transport = make_sec_live_document_transport(max_bytes=max_metadata_bytes)
+        transport_identity = SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY
+    else:
+        replay_dir = Path(args.replay_dir)
+        if not replay_dir.is_dir():
+            print(f"ERROR: replay directory not found: {replay_dir}", file=sys.stderr)
+            return 2
+        transport = make_filing_index_fixture_replay_transport(
+            replay_dir, max_bytes=max_metadata_bytes
+        )
+        transport_identity = None  # fixture-replay identity, v0.1 manifest
+    try:
+        result = run_filing_index_probe(
+            repo_root=REPO_ROOT,
+            plan_path=request_plan,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            transport=transport,
+            transport_max_bytes=max_metadata_bytes,
+            dry_run=args.dry_run,
+            transport_identity=transport_identity,
+        )
+    except ProbePlanError as exc:
+        print(f"ERROR: invalid filing index probe input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "transport_kind": (
+            transport_identity.kind if transport_identity else "fixture_replay"
+        ),
+        "dry_run": result.dry_run,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "plan_sha256": result.plan_sha256,
+        "max_metadata_bytes": max_metadata_bytes,
+        "planned_probes": len(result.entries),
+        "probes_resolved": len(result.observations),
+        "ground_truth_matches": sum(
+            1 for o in result.observations if o.ground_truth_match
+        ),
+        "selected_documents": [o.selected_document for o in result.observations],
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+        "failure_reason_code": (
+            result.failure.reason_code if result.failure else None
+        ),
+        "failure_receipt_path": (
+            str(result.failure_receipt_path)
+            if result.failure_receipt_path
+            else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    if result.failure is not None:
+        print(
+            "ERROR: filing index probe failed; see the failure receipt. No "
+            "probe manifest was written.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def _main_acquire_docs(args: argparse.Namespace) -> int:
     request_plan = Path(args.request_plan)
     if not request_plan.is_file():
@@ -800,6 +917,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_baseline_carrier(args)
     if args.mode == "acquire-docs":
         return _main_acquire_docs(args)
+    if args.mode == "probe-filing-index":
+        return _main_probe_filing_index(args)
     return _main_sentinel(args)
 
 

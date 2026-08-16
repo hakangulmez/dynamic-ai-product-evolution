@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **680**
+Total tracked/scaffold files listed: **689**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -50,6 +50,7 @@ Total tracked/scaffold files listed: **680**
 - `configs/dera_validation_adjudications.json`
 - `configs/edgar_index_canary_request_plan.json`
 - `configs/edgar_index_full_request_plan.json`
+- `configs/filing_index_probe_plan.json`
 - `configs/frame_v1_freeze.json`
 - `configs/frontier_registry.example.yaml`
 - `configs/master_notebook.yaml`
@@ -150,6 +151,10 @@ Total tracked/scaffold files listed: **680**
 - `evals/fixtures/baseline_documents/0002777777-22-000005.txt`
 - `evals/fixtures/baseline_documents/expected_acquisition.json`
 - `evals/fixtures/baseline_documents/request_plan.json`
+- `evals/fixtures/filing_index_probe/0009000001-22-000001-index.htm`
+- `evals/fixtures/filing_index_probe/0009000002-22-000002-index.htm`
+- `evals/fixtures/filing_index_probe/expected_probe.json`
+- `evals/fixtures/filing_index_probe/request_plan.json`
 - `evals/fixtures/dera_fsds_archives/dera-2022q4.zip`
 - `evals/fixtures/dera_fsds_archives/dera-2023q1.zip`
 - `evals/fixtures/dera_fsds_archives/request_plan.json`
@@ -317,6 +322,8 @@ Total tracked/scaffold files listed: **680**
 - `schemas/extraction_validation_decision_set_v2.schema.json`
 - `schemas/extraction_validation_decision_set_v3.schema.json`
 - `schemas/filer_frame_manifest.schema.json`
+- `schemas/filing_index_probe_manifest.schema.json`
+- `schemas/filing_index_probe_manifest.v2.schema.json`
 - `schemas/frame_dera_validation_manifest.schema.json`
 - `schemas/firm_lineage.schema.json`
 - `schemas/firm_year_eligibility.schema.json`
@@ -509,6 +516,7 @@ Total tracked/scaffold files listed: **680**
 - `src/dynamic_ai_products/universe/classification.py`
 - `src/dynamic_ai_products/universe/dera_acquisition.py`
 - `src/dynamic_ai_products/universe/document_acquisition.py`
+- `src/dynamic_ai_products/universe/filing_index_probe.py`
 - `src/dynamic_ai_products/universe/frame.py`
 - `src/dynamic_ai_products/universe/frame_acquisition.py`
 - `src/dynamic_ai_products/universe/frame_dera_validation.py`
@@ -667,6 +675,7 @@ Total tracked/scaffold files listed: **680**
 - `tests/universe/test_dera_acquisition.py`
 - `tests/universe/test_document_acquisition.py`
 - `tests/universe/test_evidence_packets.py`
+- `tests/universe/test_filing_index_probe.py`
 - `tests/universe/test_frame_acquisition.py`
 - `tests/universe/test_frame_builder.py`
 - `tests/universe/test_frame_dera_validation.py`

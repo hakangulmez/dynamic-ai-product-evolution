@@ -585,7 +585,13 @@ def test_manifest_count():
     # policy module joins the tree. It imports no HTTP library; the one
     # httpx-originating send stays in sec_index_transport.py and the
     # repository-wide allowlist stays at three modules.
-    assert declared == len(paths) == 680
+    # 689 = 680 + the nine W2-C filing-index metadata-probe paths
+    # (ADR-090): the probe module, its v0.1 fixture and v0.2 sec_live
+    # manifest schemas, the committed three-request probe plan, the
+    # synthetic index-page fixture bundle (plan, two pages, gold), and the
+    # probe test file. Metadata grammar only: no primary document is
+    # acquired and no packet is built.
+    assert declared == len(paths) == 689
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

@@ -871,7 +871,13 @@ def test_repo_manifest_count_and_paths():
     # policy module joins the tree. It imports no HTTP library; the one
     # httpx-originating send stays in sec_index_transport.py and the
     # repository-wide allowlist stays at three modules.
-    assert "Total tracked/scaffold files listed: **680**" in text
+    # 689 = 680 + the nine W2-C filing-index metadata-probe paths
+    # (ADR-090): the probe module, its v0.1 fixture and v0.2 sec_live
+    # manifest schemas, the committed three-request probe plan, the
+    # synthetic index-page fixture bundle (plan, two pages, gold), and the
+    # probe test file. Metadata grammar only: no primary document is
+    # acquired and no packet is built.
+    assert "Total tracked/scaffold files listed: **689**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

@@ -1,0 +1,34 @@
+{
+  "description": "Gold expectations for the fixture-replay filing-index probe (ADR-090). Table identity, not column shape, decides: page one places a DECOY Data Files table FIRST that carries the same Document and Type columns and a plausible 10-K row ('decoy-20211231x10k.htm'); the parser must reject it and read only the table identified as Document Format Files. Page two supplies that identity through an associated heading rather than a summary attribute, and its primary is 'form10-kt.htm', which no ticker-and-date filename pattern would match. Selection is by declared type; planned_probes comes from the plan and probes_resolved from observations, so their equality is a real completeness check.",
+  "max_metadata_bytes": 8388608,
+  "counts": {
+    "planned_probes": 2,
+    "probes_resolved": 2,
+    "ground_truth_matches": 2
+  },
+  "observations": [
+    {
+      "accession": "0009000001-22-000001",
+      "form": "10-K",
+      "directory_cik": "0009000001",
+      "url": "https://www.sec.gov/Archives/edgar/data/9000001/000900000122000001/0009000001-22-000001-index.htm",
+      "candidate_count": 5,
+      "selected_document": "synth-20211231x10k.htm",
+      "expected_primary_document": "synth-20211231x10k.htm",
+      "ground_truth_match": true,
+      "ground_truth_source_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "accession": "0009000002-22-000002",
+      "form": "10-KT",
+      "directory_cik": "0009000002",
+      "url": "https://www.sec.gov/Archives/edgar/data/9000002/000900000222000002/0009000002-22-000002-index.htm",
+      "candidate_count": 3,
+      "selected_document": "form10-kt.htm",
+      "expected_primary_document": "form10-kt.htm",
+      "ground_truth_match": true,
+      "ground_truth_source_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "decoy_document_never_selected": "decoy-20211231x10k.htm"
+}

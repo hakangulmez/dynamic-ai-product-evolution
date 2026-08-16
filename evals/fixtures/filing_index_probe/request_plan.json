@@ -1,0 +1,28 @@
+{
+  "plan_contract": "filing_index_probe_plan@0.1.0",
+  "description": "Synthetic filing-index probe plan for fixture-replay runs. Every CIK, accession and document name is invented for methodological testing; no real filing data. Two cases: a ticker-and-date primary filename, and a generic 'form10-kt.htm' primary that no ticker-and-date pattern would match \u2014 the fixture analogue of a case measured in the live submission canary. Provenance hashes are synthetic placeholders: this plan documents no real carrier run.",
+  "base_url": "https://www.sec.gov/Archives/",
+  "max_metadata_bytes": 8388608,
+  "provenance": {
+    "carrier_run_id": "synthetic-fixture-carrier",
+    "carrier_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "freeze_record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "canary_acquisition_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "entries": [
+    {
+      "accession": "0009000001-22-000001",
+      "form": "10-K",
+      "directory_cik": "0009000001",
+      "expected_primary_document": "synth-20211231x10k.htm",
+      "ground_truth_source_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "accession": "0009000002-22-000002",
+      "form": "10-KT",
+      "directory_cik": "0009000002",
+      "expected_primary_document": "form10-kt.htm",
+      "ground_truth_source_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}
