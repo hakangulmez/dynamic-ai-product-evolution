@@ -4826,6 +4826,69 @@ fixture bundle and its gold, `configs/project.yaml`, all `data/runs`
 artifacts, prompts, the notebook, pipelines/01–14, and all live-network
 activity.
 
+## ADR-083 — The full-range DERA plan: 26 canary-verified releases, no buffer yet (ADR-081, ADR-082)
+
+A plan/config-only increment: no code, no schema, no registry bump, no
+pinned-hash rebaseline. It commits the full-range DERA request plan the
+separately authorized acquisition will consume, following the
+commit-before-acquire pattern the EDGAR index plan established: possessing
+the plan authorizes nothing.
+
+**Canary evidence, pinned.** Run `dera-fsds-canary-2020q1-20260816`
+(one real request, exit 0) empirically verified the URL template
+`https://www.sec.gov/files/dera/data/financial-statement-data-sets/{release}.zip`:
+acquisition manifest sha256
+`7e6c44389a4299a76737533cc3144404b5a50354649467adc327272ccc3234d6`, raw ZIP
+sha256
+`48ed9834c66d565c21130d087eae941b25770e2d7cc8351d17652612289fcd67`
+(96,584,608 bytes, status 200), extracted `sub.txt` sha256
+`5c89b0295c403903909c34b9293d9a050f589b0722585f3ee6d6035b16501950`
+(1,739,253 bytes, 5,817 lines), with the real SUB header matching the
+parser's column contract exactly. The 5,816-submission quarter against the
+index's 324,904 rows is the expected XBRL-only FSDS scoping that ADR-081's
+non-coverage reporting was built to measure, not to gate.
+
+**Release set.** 26 releases, 2020q1 through 2026q2 — one per quarter of
+the frozen FRAME filing window (ADR-077). EDGAR's published acceptance rule
+assigns a filing date no earlier than the acceptance day (post-5:30 p.m. ET
+acceptances receive the next business day's filing date), so the release
+union spans every in-window filed date; December-2019 filings appearing in
+2020q1's dataset fall into the validator's `dera_out_of_window` bucket
+harmlessly.
+
+**No buffer release (decision B).** 2026q3 is not currently acquirable for
+this freeze window — its quarter is incomplete and the release does not
+exist. A successor plan may add it later **only if** real validation shows
+late-June edge clustering; the right-boundary construct absorbs the edge
+until then.
+
+**`observed_through` = 2026-06-30 (decision A).** Plan-authored with the
+acceptance-rule basis above and explicit residual-risk language: the
+residual is dataset-cut slippage of late-June 2026 filings into the
+unpublished 2026q3 release — operationally possible, not derivable from
+published rules. Noncoverage is non-gating (ADR-081), and the basis names
+the review checkpoint: if the full validation shows late-June edge
+clustering, a successor plan revisits the value and/or adds 2026q3. The
+ultra-conservative 2026-03-31 alternative was considered and rejected.
+
+**Scale note for the later authorization.** ~26 requests at the committed
+1 request/second spacing; roughly 2.5 GB of raw ZIPs by canary scale, with
+extracted SUB files in the tens of megabytes.
+
+**Deferred, named so it is not mistaken for done.** The full 26-release
+live acquisition (separately authorized, consuming this plan); the real
+validation of the full FRAME_v1.1-draft artifact through the ADR-081 gate;
+the FRAME_v1 freeze decision.
+
+**Scope.** New: `configs/dera_fsds_full_request_plan.json`. Modified: one
+offline test in `tests/universe/test_dera_acquisition.py`,
+`REPO_MANIFEST.md` (662 → 663), and its three count regression tests.
+Untouched: everything else — all code, all schemas and both pinned registry
+hashes, `frame_dera_validation.py`, `dera_acquisition.py`,
+`sec_index_transport.py`, FRAME code and artifacts, `data/runs`,
+`configs/project.yaml`, the canary and fixture plans, prompts, the
+notebook, and pipelines.
+
 ## Open decisions
 
 - Required source packet by firm-year.

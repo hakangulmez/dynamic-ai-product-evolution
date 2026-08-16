@@ -561,7 +561,10 @@ def test_manifest_count():
     # module, its v0.1 and v0.2 manifest schemas, the canonical one-release
     # canary request plan, the synthetic archive fixture bundle (plan, two
     # ZIPs), and the acquisition test file.
-    assert declared == len(paths) == 662
+    # 663 = 662 + the canonical full-range DERA request plan (ADR-083): 26
+    # releases covering the frozen FRAME window at the canary-verified URL
+    # template; possessing the plan does not authorize a live request.
+    assert declared == len(paths) == 663
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 
