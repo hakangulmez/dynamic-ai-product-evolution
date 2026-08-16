@@ -5244,6 +5244,163 @@ fixture row changed). Modified: the pipeline entrypoint (sixth mode
 real carrier run over the frozen FRAME_v1 is a separately authorized
 execution.
 
+## ADR-089 — W2-B baseline filing-document acquisition
+
+**Status.** Accepted. First increment after the baseline carrier (ADR-088)
+toward Stage 00C packets. Fixture-first; the live canary is separately
+authorized.
+
+**Scope of the artifact.** Documents only. This runner acquires the baseline
+annual-report document of planned baseline candidates and preserves the raw
+bytes write-once with receipts. No section extraction, no packet, no
+high-recall screen, no classification, no tier, no model call. DERA is not
+imported and plays no role.
+
+**URL derivation — the corrected contract.** `sec_filename` from the FRAME
+row is provenance and a validation input; it is **never** concatenated into
+a URL. An earlier draft of this plan proposed
+`https://www.sec.gov/Archives/` + `sec_filename`; that form was withdrawn
+before implementation. Each planned carrier row must carry a `sec_filename`
+of the full-index shape `edgar/data/<cik>/<accession>.txt`, and three
+separate refusals apply: malformed shape, embedded CIK unequal to the row
+CIK, embedded accession unequal to the entry accession. The requested URL is
+then derived in the SEC filing-directory form already used on the Pilot 0
+path:
+
+```text
+https://www.sec.gov/Archives/edgar/data/<cik_without_leading_zeros>/<accession_without_dashes>/<accession_with_dashes>.txt
+```
+
+**Document unit and shared accessions.** The unit is the accession, not the
+firm. A combined filing selected by several carrier rows is requested once
+and mapped to every one of them; `firm_document_mapping` carries the full
+mapping, and the plan itself must prove it through per-entry `carrier_rows`.
+The directory CIK is the **lowest** CIK among the sharing rows. The
+accession's own 10-digit prefix can never be used: it is frequently a filing
+agent that owns no EDGAR directory. Both cases are real in the measured
+cohort and both are in the canary — the 10-K group `0001437749-22-027522`
+has a filing-agent prefix owning no directory, and the 40-F group
+`0001232384-22-000014` has a prefix that *is* a filer but not the lowest
+sharing CIK.
+
+**Cohort.** `baseline_candidates` only, enforced by the plan grammar.
+Post-baseline entrants carry no baseline accession, so there is nothing to
+acquire; this is a structural consequence of the carrier, not a preference.
+
+**Byte ceiling: the download is bounded, not just the write.**
+`max_document_bytes` is an explicit, required plan field — never defaulted
+in code — set to 268435456 (256 MiB) in the committed canary plan. A first
+implementation checked the ceiling *after* the transport had materialized
+the whole response body; that proved only "never persist over-ceiling
+bytes", while an unexpectedly huge submission would still be downloaded in
+full and held in memory. **That check was withdrawn as the enforcement
+mechanism before any live request was made**, and survives only as a
+defensive assertion against a transport that ignores its own bound.
+
+Enforcement now lives in the transport, with this contract (chunk size
+65536):
+
+- a parseable `Content-Length` strictly greater than the ceiling refuses
+  before a single body chunk is consumed. The header lookup is explicitly
+  case-insensitive — HTTP header names fold case, a plain `dict` does not,
+  and an adapted mapping may preserve whatever casing the server sent;
+- an absent, empty, non-numeric, or negative `Content-Length` is treated as
+  *absent*: never fatal, never a bypass. A malformed header is not evidence
+  of size, and the stream check below is authoritative;
+- chunks are consumed with a running count, and the first chunk that would
+  cross the ceiling is never appended — not even a partial slice — so the
+  retained body is always `<= max_document_bytes`;
+- transport-level received bytes may reach `max_document_bytes +
+  stream_chunk_bytes`, because one chunk may straddle the limit. That bound
+  is stated in the contract, recorded in each manifest's
+  `ceiling_enforcement`, and asserted in tests;
+- a ceiling refusal is terminal and never retried;
+- a non-200 status and a terminal-URL mismatch are refused *before* any body
+  chunk is read. Both are classified by the runner, so a 200 served from a
+  URL other than the one requested must not first be read up to the ceiling;
+  the mismatching URL is returned unchanged so the runner's existing
+  `terminal_url_mismatch` receipt is unaffected.
+
+**Streaming resource lifetime.** The seam is an explicit streaming response
+exposing status, final URL, headers, chunk iteration, and an idempotent
+`close()`; returning a naked iterator from an exited `with httpx.Client(...)`
+block would hand back either an already-closed stream or a leaked
+connection, so the client and stream contexts are entered manually and held
+until `close()`. The document transport closes in a `finally` on every path:
+accepted response, preflight refusal, chunk-limit refusal, redirect,
+terminal-URL mismatch, non-200, send exception, and each retry transition.
+Tests assert closure on all of them; "the iterator was not exhausted" is not
+accepted as evidence.
+
+**Where the streaming code lives, and what did not change.** The one
+httpx-originating streaming send is added to `sec_index_transport.py`,
+already the single module allowed to originate SEC network requests, so the
+**repository-wide httpx allowlist stays at three modules** — a new
+top-level importer would have forced widening a security guard to four for
+no benefit. All policy (preflight, chunk bounding, lifetime, spacing/retry
+reuse) lives in the new `sec_document_transport.py`, which imports no HTTP
+library. The document transport declares its **own** contract and identity,
+so its canonical hash necessarily differs from the index one;
+`SEC_LIVE_TRANSPORT_CONTRACT`, its identity, `_httpx_send`, and
+`make_sec_live_transport` are byte-identical, and no index or DERA
+acquisition's recorded provenance changes. `max_document_bytes` is
+plan-owned and per-run, so it is deliberately not part of the contract and
+does not perturb the hash. The runner binds the two by requiring
+`transport_max_bytes` to equal the plan ceiling, refusing the run before any
+request otherwise.
+
+Complete-submission text files carry exhibits and inline XBRL, so whether
+the full run keeps whole submissions or moves to a two-hop primary-document
+strategy is a decision the canary's measured sizes will settle, not one
+taken here.
+
+**Canary selection.** Twelve documents mapping sixteen carrier rows, derived
+deterministically from the carrier run pinned in the plan's provenance
+(`universe-baseline-carrier-frame-v1-20260816`, manifest SHA-256
+`50a2582f…`, freeze record SHA-256 `27eb6d23…`): per form, the lowest-CIK
+regular documents plus the lowest-CIK shared-accession group. Measured
+distribution of shared groups among the 9,916 candidates (139 groups
+covering 336 rows): 10-K 134, 20-F 3, 40-F 2, **10-KT 0** — so the declared
+fallback applies to exactly one form and 10-KT contributes three regular
+documents. Not covered, and stated rather than implied: no tie-broken firm
+falls in the selection, and shared-group behaviour for 10-KT is unobservable
+because no such group exists. The selection also happens to include CIK
+9631, one of the 122 dual-stratum firms, whose 40-F baseline is a different
+accession from its domestic 10-K baseline — so the canary confirms
+per-stratum rows resolve to distinct documents rather than collapsing by
+CIK.
+
+**Failure and resume policy.** All-or-nothing: the first failed document
+ends the run with a write-once failure receipt and no acquisition manifest;
+manifest presence remains the sole mark of an authoritative acquisition.
+There is deliberately **no resume and no batching** here. Batched,
+resumable acquisition of the full candidate cohort is the W3 download-queue
+increment, and the full 9,916-candidate acquisition is not authorized by
+this ADR: it requires canary volume evidence, a projected byte budget, the
+queue, its own derived plan, and its own run authorization.
+
+**Transport.** The committed `sec_live` contract is reused unchanged through
+the existing injected-transport boundary; the universe package still
+contains no network code and the three-module httpx allowlist is untouched.
+Fixture runs write the v0.1 manifest, `sec_live` runs the v0.2 successor
+that additionally pins the embedded transport contract.
+
+**Scope.** Added: the acquisition module, the bounded document transport,
+their v0.1 and v0.2 manifest schemas, the committed canary request plan, the
+synthetic document fixture bundle (plan, two submissions, gold), and the
+acquisition test file. Modified: `sec_index_transport.py` (additive
+streaming send and a corrected module docstring), the pipeline entrypoint
+(seventh mode `acquire-docs`, no new CLI flag, plus the stale
+"four modes" count and the `--request-plan` / `--replay-dir` / `--transport`
+help text that named only `acquire-index`), the live-transport tests
+(no-regression pins), the schema registry (0.28.0 → 0.29.0, 61 → 63 entries)
+with both pinned-hash rebaselines, `REPO_MANIFEST.md` (670 → 680), and the
+three manifest count tests. Both document manifest schemas gained
+`ceiling_enforcement` and per-document `declared_content_length`; because
+both files are new in this increment and uncommitted, that is authoring
+rather than a governed schema change, and no successor version is required.
+`data/runs` untouched; no live request has been made.
+
 ## Open decisions
 
 - Required source packet by firm-year.

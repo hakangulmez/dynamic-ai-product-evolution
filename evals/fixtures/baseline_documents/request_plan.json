@@ -1,0 +1,45 @@
+{
+  "plan_contract": "baseline_document_request_plan@0.1.0",
+  "description": "Synthetic baseline-document request plan for fixture-replay acquisition. Every CIK, accession, and document is invented for methodological testing; no real company data. Two cases: one regular single-filer 10-K, and one shared-accession 20-F whose accession prefix (0002777777) belongs to neither filer -- a filing agent -- so the request directory must be derived from the lowest sharing CIK (1888888), never from the accession prefix. Provenance hashes are synthetic placeholders: this plan documents no real carrier run.",
+  "cohort": "baseline_candidates",
+  "base_url": "https://www.sec.gov/Archives/",
+  "max_document_bytes": 268435456,
+  "provenance": {
+    "carrier_run_id": "synthetic-fixture-carrier",
+    "carrier_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "freeze_record_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "documents": [
+    {
+      "form": "10-K",
+      "kind": "regular",
+      "accession": "0001999999-22-000001",
+      "directory_cik": "0001999999",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0001999999",
+          "sec_filename": "edgar/data/1999999/0001999999-22-000001.txt"
+        }
+      ]
+    },
+    {
+      "form": "20-F",
+      "kind": "shared",
+      "accession": "0002777777-22-000005",
+      "directory_cik": "0001888888",
+      "carrier_rows": [
+        {
+          "stratum": "fpi_extension",
+          "cik": "0001888888",
+          "sec_filename": "edgar/data/1888888/0002777777-22-000005.txt"
+        },
+        {
+          "stratum": "fpi_extension",
+          "cik": "0001999998",
+          "sec_filename": "edgar/data/1999998/0002777777-22-000005.txt"
+        }
+      ]
+    }
+  ]
+}

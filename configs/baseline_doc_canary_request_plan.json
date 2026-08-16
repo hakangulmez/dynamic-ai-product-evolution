@@ -1,0 +1,190 @@
+{
+  "plan_contract": "baseline_document_request_plan@0.1.0",
+  "description": "Canonical 12-document baseline-document canary over frozen FRAME_v1 (ADR-089). Selection rule, applied deterministically to the baseline_candidates cohort of the carrier run named in provenance: per form, the lowest-CIK regular documents plus the lowest-CIK shared-accession group -- 10-K 2 regular + 1 shared, 20-F 2 regular + 1 shared, 40-F 2 regular + 1 shared, and 10-KT 3 regular because the measured candidate cohort contains no shared-accession 10-KT group (134 shared groups exist for 10-K, 3 for 20-F, 2 for 40-F, 0 for 10-KT). Twelve documents map sixteen carrier rows. The 10-K shared group proves the lowest-CIK-directory rule is load-bearing: its accession prefix (1437749) is a filing agent owning no EDGAR directory. The 40-F shared group proves the converse: its prefix (1232384) is a filer, but not the lowest sharing CIK. Possessing this plan does not authorize a live request; the canary run is separately authorized.",
+  "cohort": "baseline_candidates",
+  "base_url": "https://www.sec.gov/Archives/",
+  "max_document_bytes": 268435456,
+  "provenance": {
+    "carrier_run_id": "universe-baseline-carrier-frame-v1-20260816",
+    "carrier_manifest_sha256": "50a2582f9a255c4402151aa4d963ce5d7bd7c952b8e4a5e77f4a7e7ce454521f",
+    "freeze_record_sha256": "27eb6d236b2e3f81a3b52437027f076a52ae04b245694c9645a4bfb6303e342c"
+  },
+  "documents": [
+    {
+      "form": "10-K",
+      "kind": "regular",
+      "accession": "0001104659-22-081498",
+      "directory_cik": "0000001750",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0000001750",
+          "sec_filename": "edgar/data/1750/0001104659-22-081498.txt"
+        }
+      ]
+    },
+    {
+      "form": "10-K",
+      "kind": "regular",
+      "accession": "0001104659-22-025141",
+      "directory_cik": "0000001800",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0000001800",
+          "sec_filename": "edgar/data/1800/0001104659-22-025141.txt"
+        }
+      ]
+    },
+    {
+      "form": "10-K",
+      "kind": "shared",
+      "accession": "0001437749-22-027522",
+      "directory_cik": "0000003146",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0000003146",
+          "sec_filename": "edgar/data/3146/0001437749-22-027522.txt"
+        },
+        {
+          "stratum": "domestic",
+          "cik": "0000057183",
+          "sec_filename": "edgar/data/57183/0001437749-22-027522.txt"
+        },
+        {
+          "stratum": "domestic",
+          "cik": "0001126956",
+          "sec_filename": "edgar/data/1126956/0001437749-22-027522.txt"
+        }
+      ]
+    },
+    {
+      "form": "10-KT",
+      "kind": "regular",
+      "accession": "0001628280-22-024293",
+      "directory_cik": "0000016099",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0000016099",
+          "sec_filename": "edgar/data/16099/0001628280-22-024293.txt"
+        }
+      ]
+    },
+    {
+      "form": "10-KT",
+      "kind": "regular",
+      "accession": "0001493152-22-010080",
+      "directory_cik": "0000066600",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0000066600",
+          "sec_filename": "edgar/data/66600/0001493152-22-010080.txt"
+        }
+      ]
+    },
+    {
+      "form": "10-KT",
+      "kind": "regular",
+      "accession": "0001104659-22-024443",
+      "directory_cik": "0000085535",
+      "carrier_rows": [
+        {
+          "stratum": "domestic",
+          "cik": "0000085535",
+          "sec_filename": "edgar/data/85535/0001104659-22-024443.txt"
+        }
+      ]
+    },
+    {
+      "form": "20-F",
+      "kind": "regular",
+      "accession": "0001410578-22-001109",
+      "directory_cik": "0000016859",
+      "carrier_rows": [
+        {
+          "stratum": "fpi_extension",
+          "cik": "0000016859",
+          "sec_filename": "edgar/data/16859/0001410578-22-001109.txt"
+        }
+      ]
+    },
+    {
+      "form": "20-F",
+      "kind": "regular",
+      "accession": "0001193125-22-088599",
+      "directory_cik": "0000016988",
+      "carrier_rows": [
+        {
+          "stratum": "fpi_extension",
+          "cik": "0000016988",
+          "sec_filename": "edgar/data/16988/0001193125-22-088599.txt"
+        }
+      ]
+    },
+    {
+      "form": "20-F",
+      "kind": "shared",
+      "accession": "0001628280-22-003937",
+      "directory_cik": "0000863064",
+      "carrier_rows": [
+        {
+          "stratum": "fpi_extension",
+          "cik": "0000863064",
+          "sec_filename": "edgar/data/863064/0001628280-22-003937.txt"
+        },
+        {
+          "stratum": "fpi_extension",
+          "cik": "0000887028",
+          "sec_filename": "edgar/data/887028/0001628280-22-003937.txt"
+        }
+      ]
+    },
+    {
+      "form": "40-F",
+      "kind": "regular",
+      "accession": "0001104659-22-037577",
+      "directory_cik": "0000002809",
+      "carrier_rows": [
+        {
+          "stratum": "fpi_extension",
+          "cik": "0000002809",
+          "sec_filename": "edgar/data/2809/0001104659-22-037577.txt"
+        }
+      ]
+    },
+    {
+      "form": "40-F",
+      "kind": "regular",
+      "accession": "0001193125-22-294230",
+      "directory_cik": "0000009631",
+      "carrier_rows": [
+        {
+          "stratum": "fpi_extension",
+          "cik": "0000009631",
+          "sec_filename": "edgar/data/9631/0001193125-22-294230.txt"
+        }
+      ]
+    },
+    {
+      "form": "40-F",
+      "kind": "shared",
+      "accession": "0001232384-22-000014",
+      "directory_cik": "0000099070",
+      "carrier_rows": [
+        {
+          "stratum": "fpi_extension",
+          "cik": "0000099070",
+          "sec_filename": "edgar/data/99070/0001232384-22-000014.txt"
+        },
+        {
+          "stratum": "fpi_extension",
+          "cik": "0001232384",
+          "sec_filename": "edgar/data/1232384/0001232384-22-000014.txt"
+        }
+      ]
+    }
+  ]
+}

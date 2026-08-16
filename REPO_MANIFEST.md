@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **670**
+Total tracked/scaffold files listed: **680**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -44,6 +44,7 @@ Total tracked/scaffold files listed: **670**
 - `apps/research_console/README.md`
 - `apps/research_console/app.py`
 - `artifacts/.gitkeep`
+- `configs/baseline_doc_canary_request_plan.json`
 - `configs/dera_fsds_canary_request_plan.json`
 - `configs/dera_fsds_full_request_plan.json`
 - `configs/dera_validation_adjudications.json`
@@ -145,6 +146,10 @@ Total tracked/scaffold files listed: **670**
 - `evals/fixtures/dera_fsds/fixture_manifest.json`
 - `evals/fixtures/dera_fsds/sub_2022q4.tsv`
 - `evals/fixtures/dera_fsds/sub_2023q1.tsv`
+- `evals/fixtures/baseline_documents/0001999999-22-000001.txt`
+- `evals/fixtures/baseline_documents/0002777777-22-000005.txt`
+- `evals/fixtures/baseline_documents/expected_acquisition.json`
+- `evals/fixtures/baseline_documents/request_plan.json`
 - `evals/fixtures/dera_fsds_archives/dera-2022q4.zip`
 - `evals/fixtures/dera_fsds_archives/dera-2023q1.zip`
 - `evals/fixtures/dera_fsds_archives/request_plan.json`
@@ -279,6 +284,8 @@ Total tracked/scaffold files listed: **670**
 - `pyproject.toml`
 - `schemas/adapter_enablement_record.schema.json`
 - `schemas/adapter_qualification_record.schema.json`
+- `schemas/baseline_document_acquisition_manifest.schema.json`
+- `schemas/baseline_document_acquisition_manifest.v2.schema.json`
 - `schemas/capability_observation.schema.json`
 - `schemas/company.schema.json`
 - `schemas/company_universe_classification.schema.json`
@@ -494,12 +501,14 @@ Total tracked/scaffold files listed: **670**
 - `src/dynamic_ai_products/providers/sdk_factory.py`
 - `src/dynamic_ai_products/providers/vertex_gemini.py`
 - `src/dynamic_ai_products/providers/vertex_gemini_v2.py`
+- `src/dynamic_ai_products/sec_document_transport.py`
 - `src/dynamic_ai_products/sec_index_transport.py`
 - `src/dynamic_ai_products/universe/__init__.py`
 - `src/dynamic_ai_products/universe/audit.py`
 - `src/dynamic_ai_products/universe/baseline_carrier.py`
 - `src/dynamic_ai_products/universe/classification.py`
 - `src/dynamic_ai_products/universe/dera_acquisition.py`
+- `src/dynamic_ai_products/universe/document_acquisition.py`
 - `src/dynamic_ai_products/universe/frame.py`
 - `src/dynamic_ai_products/universe/frame_acquisition.py`
 - `src/dynamic_ai_products/universe/frame_dera_validation.py`
@@ -656,6 +665,7 @@ Total tracked/scaffold files listed: **670**
 - `tests/ui/test_local_ui_scaffold.py`
 - `tests/universe/test_baseline_carrier.py`
 - `tests/universe/test_dera_acquisition.py`
+- `tests/universe/test_document_acquisition.py`
 - `tests/universe/test_evidence_packets.py`
 - `tests/universe/test_frame_acquisition.py`
 - `tests/universe/test_frame_builder.py`

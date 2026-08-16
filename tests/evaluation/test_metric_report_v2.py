@@ -574,7 +574,18 @@ def test_manifest_count():
     # Stage 00B carrier module, its manifest schema, the carrier test
     # file, and the fixture carrier gold. No exclusions are decided at
     # that stage.
-    assert declared == len(paths) == 670
+    # 679 = 670 + the nine W2-B baseline-document acquisition paths
+    # (ADR-089): the acquisition module, its v0.1 and v0.2 manifest
+    # schemas, the committed 12-document canary request plan, the
+    # synthetic document fixture bundle (plan, two submissions, gold),
+    # and the acquisition test file. Documents only: no packet, no
+    # screen, no classification.
+    # 680 = 679 + the bounded document transport (ADR-089 revision):
+    # ceiling enforcement moved from post-download to streaming, so the
+    # policy module joins the tree. It imports no HTTP library; the one
+    # httpx-originating send stays in sec_index_transport.py and the
+    # repository-wide allowlist stays at three modules.
+    assert declared == len(paths) == 680
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

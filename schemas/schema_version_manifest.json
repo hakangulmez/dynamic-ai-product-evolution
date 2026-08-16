@@ -1,8 +1,10 @@
 {
-  "manifest_version": "0.28.0",
+  "manifest_version": "0.29.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
+    "baseline_document_acquisition_manifest": "0.1.0",
+    "baseline_document_acquisition_manifest_v2": "0.2.0",
     "capability_observation": "0.1.0",
     "company": "0.1.0",
     "company_universe_classification": "0.1.0",

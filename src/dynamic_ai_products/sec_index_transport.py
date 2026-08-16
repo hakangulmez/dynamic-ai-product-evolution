@@ -1,9 +1,10 @@
-"""Live SEC EDGAR full-index transport (post-W0 binding; canary scope).
+"""Live SEC EDGAR transport: every httpx-originating SEC send lives here.
 
 Governing documents:
 - specs/SPEC-003-sec-ingestion.md (rate limits, hashing, retry/error records)
 - docs/source_playbooks/SEC_EDGAR.md (descriptive user agent, rate limits)
-- docs/DECISION_LOG.md ADR-077 (W0 unblocks live index acquisition)
+- docs/DECISION_LOG.md ADR-077 (W0 unblocks live index acquisition),
+  ADR-089 (bounded streaming send for filing documents)
 
 This module is the smallest live successor to the fixture-replay transport in
 :mod:`dynamic_ai_products.universe.frame_acquisition`. It lives at the package
@@ -11,6 +12,16 @@ top level on purpose: the universe package imports neither ``collection`` nor
 ``ingestion`` and contains no network code, so the live transport is built
 here and *injected into* the universe acquisition runner as a callable, with
 its identity passed alongside as data (``SEC_LIVE_TRANSPORT_IDENTITY``).
+
+It hosts **two** sends, and hosting both here is why the repository-wide
+httpx allowlist stays at three modules: the whole-response
+``_httpx_send`` used by index and DERA acquisition, and the streaming
+``httpx_streaming_send`` used for filing documents, whose bodies are
+unbounded in principle and must be size-bounded while downloading. The
+document *policy* — ceiling enforcement, preflight, chunk bounding, resource
+lifetime — lives in :mod:`dynamic_ai_products.sec_document_transport`, which
+imports no HTTP library. Index and DERA behaviour, contract, and identity
+below are unchanged by that addition.
 
 Policy, all recorded in the contract below and embedded in every v0.2
 manifest:
@@ -45,8 +56,10 @@ from .universe.frame_acquisition import (
 )
 
 __all__ = [
+    "HttpxStreamingResponse",
     "SEC_LIVE_TRANSPORT_CONTRACT",
     "SEC_LIVE_TRANSPORT_IDENTITY",
+    "httpx_streaming_send",
     "live_transport_contract_hash",
     "make_sec_live_transport",
     "request_headers",
@@ -114,6 +127,68 @@ def _httpx_send(url: str) -> IndexTransportResponse:
         content=response.content,
         location=response.headers.get("location"),
     )
+
+
+class HttpxStreamingResponse:
+    """A live response whose client and body stream stay open until closed.
+
+    The client and the stream context are entered manually and held on the
+    instance: returning an iterator from an exited ``with`` block would hand
+    back either an already-closed stream or a leaked connection. ``close()``
+    unwinds both and is idempotent, so the caller can close it in a
+    ``finally`` on every path without tracking whether it already did.
+    """
+
+    def __init__(self, client, context, response) -> None:
+        self._client = client
+        self._context = context
+        self._response = response
+        self._closed = False
+        self.status_code = response.status_code
+        self.final_url = str(response.url)
+        self.headers = dict(response.headers)
+
+    def iter_chunks(self, chunk_bytes: int):
+        return self._response.iter_bytes(chunk_size=chunk_bytes)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._context.__exit__(None, None, None)
+        finally:
+            self._client.close()
+
+    def __enter__(self) -> "HttpxStreamingResponse":
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
+
+
+def httpx_streaming_send(url: str) -> HttpxStreamingResponse:
+    """The one real streaming network send, for filing documents.
+
+    Headers arrive before the body, so the caller can refuse an oversized
+    declared ``Content-Length`` without consuming a single body chunk. The
+    returned response owns live resources and must be closed by the caller.
+    Never called by the test suite.
+    """
+    import httpx
+
+    client = httpx.Client(
+        follow_redirects=False,
+        timeout=SEC_LIVE_TRANSPORT_CONTRACT["request_timeout_seconds"],
+        headers=request_headers(),
+    )
+    try:
+        context = client.stream("GET", url)
+        response = context.__enter__()
+    except BaseException:
+        client.close()
+        raise
+    return HttpxStreamingResponse(client, context, response)
 
 
 def make_sec_live_transport(

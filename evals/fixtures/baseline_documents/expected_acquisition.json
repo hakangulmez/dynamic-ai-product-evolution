@@ -1,0 +1,62 @@
+{
+  "description": "Gold expectations for fixture-replay acquisition of the baseline_documents bundle (ADR-089). Two planned documents map three carrier rows: the shared 20-F is requested once under the lowest sharing CIK's directory (1888888), never under its filing-agent accession prefix (2777777), and both of its filers appear in firm_document_mapping.",
+  "counts": {
+    "planned_documents": 2,
+    "documents_acquired": 2,
+    "mapped_carrier_rows": 3,
+    "regular_documents": 1,
+    "shared_documents": 1,
+    "documents_by_form": {
+      "10-K": 1,
+      "20-F": 1
+    }
+  },
+  "max_document_bytes": 268435456,
+  "documents": [
+    {
+      "accession": "0001999999-22-000001",
+      "form": "10-K",
+      "kind": "regular",
+      "directory_cik": "0001999999",
+      "url": "https://www.sec.gov/Archives/edgar/data/1999999/000199999922000001/0001999999-22-000001.txt",
+      "document_filename": "0001999999-22-000001.txt",
+      "document_sha256": "2bd61c77cd4a7b5941ba4de9ba2817c28c4470af160d7b9be2cceb3bcf78383c",
+      "byte_count": 722,
+      "mapped_carrier_rows": 1
+    },
+    {
+      "accession": "0002777777-22-000005",
+      "form": "20-F",
+      "kind": "shared",
+      "directory_cik": "0001888888",
+      "url": "https://www.sec.gov/Archives/edgar/data/1888888/000277777722000005/0002777777-22-000005.txt",
+      "document_filename": "0002777777-22-000005.txt",
+      "document_sha256": "bdb355bbe2261e467fec615196d4d3d79a3ed80a640dd253e38620fd2d858f72",
+      "byte_count": 987,
+      "mapped_carrier_rows": 2
+    }
+  ],
+  "firm_document_mapping": [
+    {
+      "stratum": "domestic",
+      "cik": "0001999999",
+      "accession": "0001999999-22-000001",
+      "sec_filename": "edgar/data/1999999/0001999999-22-000001.txt",
+      "document_filename": "0001999999-22-000001.txt"
+    },
+    {
+      "stratum": "fpi_extension",
+      "cik": "0001888888",
+      "accession": "0002777777-22-000005",
+      "sec_filename": "edgar/data/1888888/0002777777-22-000005.txt",
+      "document_filename": "0002777777-22-000005.txt"
+    },
+    {
+      "stratum": "fpi_extension",
+      "cik": "0001999998",
+      "accession": "0002777777-22-000005",
+      "sec_filename": "edgar/data/1999998/0002777777-22-000005.txt",
+      "document_filename": "0002777777-22-000005.txt"
+    }
+  ]
+}

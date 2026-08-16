@@ -1,0 +1,302 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "baseline_document_acquisition_manifest.schema.json",
+  "title": "Baseline filing-document acquisition manifest (fixture replay)",
+  "description": "Immutable record of one fixture-replay acquisition of baseline annual-report documents for baseline-candidate firms (W2-B, ADR-089). Documents only: no section extraction, no packet, no screen, no classification, no tier. sec_filename is provenance and a validation input; every requested URL is derived in code in the SEC filing-directory form. The document unit is the accession: a shared combined filing is requested once and mapped to every carrier row that selected it, and firm_document_mapping carries that mapping in full. max_document_bytes is the plan-declared, enforced per-document ceiling. Live sec_live acquisitions are written under the v0.2 successor schema, never by widening this contract. The ceiling bounds the download, not merely the write: an oversized declared Content-Length (looked up case-insensitively) refuses before any body chunk is read, and the first chunk that would cross the ceiling is never retained. ceiling_enforcement records the mechanism and, for a streaming transport, the exact transport-level upper bound max_document_bytes + stream_chunk_bytes, since one chunk may straddle the limit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "request_plan_sha256",
+    "plan_contract",
+    "cohort",
+    "base_url",
+    "max_document_bytes",
+    "ceiling_enforcement",
+    "carrier_provenance",
+    "transport_kind",
+    "transport_contract_hash",
+    "documents",
+    "firm_document_mapping",
+    "counts",
+    "output_hashes",
+    "run_timestamp",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "request_plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "plan_contract": {
+      "const": "baseline_document_request_plan@0.1.0"
+    },
+    "cohort": {
+      "const": "baseline_candidates"
+    },
+    "base_url": {
+      "const": "https://www.sec.gov/Archives/"
+    },
+    "max_document_bytes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "carrier_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrier_run_id",
+        "carrier_manifest_sha256",
+        "freeze_record_sha256"
+      ],
+      "properties": {
+        "carrier_run_id": {
+          "type": "string"
+        },
+        "carrier_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "freeze_record_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "transport_kind": {
+      "const": "fixture_replay"
+    },
+    "transport_contract_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "documents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "accession",
+          "form",
+          "kind",
+          "directory_cik",
+          "url",
+          "status_code",
+          "document_filename",
+          "document_sha256",
+          "byte_count",
+          "mapped_carrier_rows",
+          "retrieved_at",
+          "declared_content_length"
+        ],
+        "properties": {
+          "accession": {
+            "type": "string",
+            "pattern": "^\\d{10}-\\d{2}-\\d{6}$"
+          },
+          "form": {
+            "enum": [
+              "10-K",
+              "10-KT",
+              "20-F",
+              "40-F"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "regular",
+              "shared"
+            ]
+          },
+          "directory_cik": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https://www\\.sec\\.gov/Archives/edgar/data/\\d{1,10}/\\d{18}/\\d{10}-\\d{2}-\\d{6}\\.txt$"
+          },
+          "status_code": {
+            "const": 200
+          },
+          "document_filename": {
+            "type": "string"
+          },
+          "document_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "byte_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mapped_carrier_rows": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "retrieved_at": {
+            "type": "string"
+          },
+          "declared_content_length": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "firm_document_mapping": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stratum",
+          "cik",
+          "accession",
+          "sec_filename",
+          "document_filename"
+        ],
+        "properties": {
+          "stratum": {
+            "enum": [
+              "domestic",
+              "fpi_extension"
+            ]
+          },
+          "cik": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "accession": {
+            "type": "string",
+            "pattern": "^\\d{10}-\\d{2}-\\d{6}$"
+          },
+          "sec_filename": {
+            "type": "string",
+            "pattern": "^edgar/data/\\d{1,10}/\\d{10}-\\d{2}-\\d{6}\\.txt$"
+          },
+          "document_filename": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planned_documents",
+        "documents_acquired",
+        "mapped_carrier_rows",
+        "regular_documents",
+        "shared_documents",
+        "documents_by_form"
+      ],
+      "properties": {
+        "planned_documents": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "documents_acquired": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mapped_carrier_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "regular_documents": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shared_documents": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "documents_by_form": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseline_document_acquisition_manifest"
+      ],
+      "properties": {
+        "baseline_document_acquisition_manifest": {
+          "type": "string"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "ceiling_enforcement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_document_bytes",
+        "mechanism",
+        "content_length_preflight",
+        "stream_chunk_bytes",
+        "max_transport_bytes"
+      ],
+      "properties": {
+        "max_document_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mechanism": {
+          "enum": [
+            "streaming_chunk_bound",
+            "bounded_local_read"
+          ]
+        },
+        "content_length_preflight": {
+          "type": "boolean"
+        },
+        "stream_chunk_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "max_transport_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

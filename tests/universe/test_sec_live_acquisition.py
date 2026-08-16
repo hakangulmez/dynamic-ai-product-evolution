@@ -481,3 +481,67 @@ def test_cli_other_modes_reject_transport_flag(tmp_path: Path) -> None:
     )
     assert completed.returncode == 2
     assert "--transport" in completed.stderr
+
+
+# --- ADR-089 no-regression: the index contract is untouched -------------------
+
+
+def test_index_transport_contract_and_identity_are_unchanged_by_adr_089() -> None:
+    """The document transport is a separate identity, not a widening.
+
+    ADR-089 added a streaming send to this module for filing documents. The
+    index/DERA contract, identity, and canonical hash must be byte-identical
+    to what every existing live manifest recorded, so no prior acquisition's
+    provenance changes.
+    """
+    assert SEC_LIVE_TRANSPORT_CONTRACT == {
+        "transport_kind": "sec_live",
+        "transport_version": "0.1.0",
+        "user_agent": (
+            "dynamic-ai-product-evolution research hakanzekigulmez@gmail.com"
+        ),
+        "min_request_spacing_seconds": 1.0,
+        "request_timeout_seconds": 30.0,
+        "max_retries_per_url": 2,
+        "retry_backoff_seconds": [5.0, 15.0],
+        "retry_statuses": [429, 500, 502, 503, 504],
+        "follows_redirects": False,
+    }
+    assert "streaming" not in SEC_LIVE_TRANSPORT_CONTRACT
+    assert SEC_LIVE_TRANSPORT_IDENTITY.contract_hash() == (
+        live_transport_contract_hash()
+    )
+
+
+def test_document_transport_identity_differs_from_the_index_identity() -> None:
+    from dynamic_ai_products.sec_document_transport import (
+        SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY,
+    )
+
+    assert (
+        SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY.contract_hash()
+        != SEC_LIVE_TRANSPORT_IDENTITY.contract_hash()
+    )
+    # Same kind, so both write v0.2-shaped manifests; the recorded hash is
+    # what distinguishes a streamed document run from an index run.
+    assert SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY.kind == (
+        SEC_LIVE_TRANSPORT_IDENTITY.kind
+    )
+
+
+def test_whole_response_send_is_still_the_index_default() -> None:
+    """``make_sec_live_transport`` keeps its non-streaming behaviour."""
+    calls: list[str] = []
+
+    def fake_send(url: str) -> IndexTransportResponse:
+        calls.append(url)
+        return IndexTransportResponse(
+            status_code=200, final_url=url, content=b"payload"
+        )
+
+    transport = make_sec_live_transport(
+        send=fake_send, sleeper=lambda s: None, monotonic=lambda: 0.0
+    )
+    response = transport("https://www.sec.gov/Archives/edgar/full-index/x.idx")
+    assert response.content == b"payload"
+    assert calls == ["https://www.sec.gov/Archives/edgar/full-index/x.idx"]

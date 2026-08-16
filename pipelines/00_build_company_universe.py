@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Four mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
+Seven mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
 so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -30,6 +30,13 @@ so every pre-existing invocation is unchanged):
   ``sec_live`` transport, preserves raw ZIPs with receipts, extracts exactly
   one ``sub.txt`` member per archive, and writes a bundle that
   ``dera-validate`` consumes unchanged.
+- ``acquire-docs`` acquires the baseline annual-report documents of planned
+  baseline candidates (ADR-089) through the fixture-replay transport
+  (default) or the committed bounded-streaming ``sec_live`` document
+  transport, which enforces the plan's ``max_document_bytes`` while
+  downloading. ``sec_filename`` is validated provenance; every URL is
+  derived in the SEC filing-directory form. Documents only: no packet, no
+  screen, no classification.
 - ``baseline-carrier`` derives the Stage 00B firm-level baseline carrier
   (W2-A, ADR-088) from a completed FRAME run: hash-verified read-only frame
   consumption, per-stratum CIK grouping, baseline-filing selection against
@@ -90,6 +97,16 @@ from dynamic_ai_products.universe.baseline_carrier import (  # noqa: E402
     CarrierReconciliationError,
     run_baseline_carrier,
 )
+from dynamic_ai_products.universe.document_acquisition import (  # noqa: E402
+    DocumentPlanError,
+    load_document_request_plan,
+    make_document_fixture_replay_transport,
+    run_document_acquisition,
+)
+from dynamic_ai_products.sec_document_transport import (  # noqa: E402
+    SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY,
+    make_sec_live_document_transport,
+)
 from dynamic_ai_products.universe.frame_dera_validation import (  # noqa: E402
     DeraInputError,
     run_dera_validation,
@@ -113,7 +130,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mode", default="sentinel",
         choices=["sentinel", "frame", "acquire-index", "dera-validate",
-                 "acquire-dera", "baseline-carrier"],
+                 "acquire-dera", "baseline-carrier", "acquire-docs"],
         help="Stage 00 sub-pipeline to run (default: sentinel).",
     )
     parser.add_argument(
@@ -174,19 +191,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--request-plan", default=None,
-        help="Acquire-index mode only: path to the declared master.idx "
-             "request plan (see evals/fixtures/edgar_index_request_plan).",
+        help="Acquire-index, acquire-dera, and acquire-docs modes: path to "
+             "the declared request plan — master.idx requests "
+             "(evals/fixtures/edgar_index_request_plan), DERA FSDS release "
+             "archives, or baseline filing documents "
+             "(configs/baseline_doc_canary_request_plan.json).",
     )
     parser.add_argument(
         "--replay-dir", default=None,
-        help="Acquire-index mode with the fixture transport: directory whose "
-             "local files the fixture-replay transport serves.",
+        help="Acquire-index, acquire-dera, and acquire-docs modes with the "
+             "fixture transport: directory whose local files the "
+             "fixture-replay transport serves.",
     )
     parser.add_argument(
         "--transport", default=None, choices=["fixture", "sec-live"],
-        help="Acquire-index mode only: transport binding (default: fixture). "
-             "'sec-live' performs real SEC requests under the committed "
-             "sec_live contract and writes the v0.2 manifest.",
+        help="Acquire-index, acquire-dera, and acquire-docs modes: transport "
+             "binding (default: fixture). 'sec-live' performs real SEC "
+             "requests under the committed sec_live contract and writes the "
+             "v0.2 manifest; acquire-docs uses the bounded streaming "
+             "document transport, which enforces the plan's "
+             "max_document_bytes while downloading.",
     )
     parser.add_argument(
         "--frame-manifest", default=None,
@@ -242,6 +266,28 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         missing = _missing(dera_flags)
         if missing:
             return f"dera-validate mode requires: {', '.join(missing)}"
+        return None
+
+    if args.mode == "acquire-docs":
+        offending = _present(
+            sentinel_flags + frame_flags + dera_flags
+            + (("--config", args.config),)
+        )
+        if offending:
+            return f"acquire-docs mode does not accept: {', '.join(offending)}"
+        if args.request_plan is None:
+            return "acquire-docs mode requires: --request-plan"
+        transport_choice = args.transport or "fixture"
+        if transport_choice == "fixture" and args.replay_dir is None:
+            return (
+                "acquire-docs mode with the fixture transport requires: "
+                "--replay-dir"
+            )
+        if transport_choice == "sec-live" and args.replay_dir is not None:
+            return (
+                "acquire-docs mode with the sec-live transport does not "
+                "accept: --replay-dir"
+            )
         return None
 
     if args.mode == "baseline-carrier":
@@ -612,6 +658,88 @@ def _main_dera_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_acquire_docs(args: argparse.Namespace) -> int:
+    request_plan = Path(args.request_plan)
+    if not request_plan.is_file():
+        print(f"ERROR: request plan not found: {request_plan}", file=sys.stderr)
+        return 2
+    # The ceiling is plan-owned, so the plan is read before the transport is
+    # built; the runner then refuses any transport bound to a different value.
+    try:
+        _, plan_fields, _ = load_document_request_plan(request_plan)
+    except DocumentPlanError as exc:
+        print(f"ERROR: invalid baseline document request plan: {exc}", file=sys.stderr)
+        return 2
+    max_document_bytes = plan_fields["max_document_bytes"]
+    transport_choice = args.transport or "fixture"
+    if transport_choice == "sec-live":
+        transport = make_sec_live_document_transport(
+            max_bytes=max_document_bytes
+        )
+        transport_identity = SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY
+    else:
+        replay_dir = Path(args.replay_dir)
+        if not replay_dir.is_dir():
+            print(f"ERROR: replay directory not found: {replay_dir}", file=sys.stderr)
+            return 2
+        transport = make_document_fixture_replay_transport(
+            replay_dir, max_bytes=max_document_bytes
+        )
+        transport_identity = None  # fixture-replay identity, v0.1 manifest
+    try:
+        result = run_document_acquisition(
+            repo_root=REPO_ROOT,
+            request_plan_path=request_plan,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            transport=transport,
+            transport_max_bytes=max_document_bytes,
+            dry_run=args.dry_run,
+            transport_identity=transport_identity,
+        )
+    except DocumentPlanError as exc:
+        print(f"ERROR: invalid baseline document request plan: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "transport_kind": (
+            transport_identity.kind if transport_identity else "fixture_replay"
+        ),
+        "dry_run": result.dry_run,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "request_plan_sha256": result.request_plan_sha256,
+        "planned_documents": len(result.entries),
+        "documents_acquired": len(result.receipts),
+        "mapped_carrier_rows": sum(
+            len(entry.carrier_rows) for entry in result.entries
+        ),
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+        "failure_reason_code": (
+            result.failure.reason_code if result.failure else None
+        ),
+        "failure_receipt_path": (
+            str(result.failure_receipt_path)
+            if result.failure_receipt_path
+            else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    if result.failure is not None:
+        print(
+            "ERROR: baseline document acquisition failed; see the failure "
+            "receipt. No acquisition manifest was written.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def _main_baseline_carrier(args: argparse.Namespace) -> int:
     frame_manifest = Path(args.frame_manifest)
     config_path = Path(args.config)
@@ -670,6 +798,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_dera_validate(args)
     if args.mode == "baseline-carrier":
         return _main_baseline_carrier(args)
+    if args.mode == "acquire-docs":
+        return _main_acquire_docs(args)
     return _main_sentinel(args)
 
 
