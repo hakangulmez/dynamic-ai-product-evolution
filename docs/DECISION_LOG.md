@@ -5541,6 +5541,126 @@ authorized fallback probe under the same success condition. The first live
 attempt did not pass, so no probe evidence exists yet; the corrected probe
 run is a separate authorization after this correction is reviewed.
 
+## ADR-091 — W2-C-beta: baseline packet contracts
+
+**Status.** Accepted. Fixture-first; no acquisition, no live request, no model
+call. Builds Stage 00C baseline evidence packets from primary documents that
+are already local and hash-verified.
+
+**Where the code lives, and why it must.** `universe` may not import
+`ingestion` (AST-enforced), while `ingestion → universe` is the documented
+direction, and the span/passage machinery this needs — `find_item_one_span`,
+`build_passages_v4` — is in `ingestion/normalize.py`. So extraction lives in
+`ingestion/baseline_packet.py` and the contracts in `universe/models.py`,
+which also gives the builder ingestion's no-network and no-URL-literal guards
+for free: it *cannot* fetch a document.
+
+**Three governed contracts.**
+`baseline_primary_document_bundle@0.1.0` is the builder's input — a local
+directory plus a manifest — and it is governed rather than informal because a
+later acquisition increment must emit exactly it.
+`universe_baseline_packet@0.1.0` is the packet record, and
+`baseline_packet_manifest@0.1.0` the run record. Registry 0.30.0 → 0.31.0,
+65 → 68 entries.
+
+**Route validation is not selection evidence.** The 3/3 filing-index probe
+proved a URL grammar for *its own three accessions*. It is recorded in every
+packet as `route_validation`, carrying a note that says exactly that, and it
+is never allowed to stand for per-firm selection. Per-document evidence is
+`selection_provenance` — filing-index URL and response hash, selected
+document, primary URL — required on every bundle entry, so a packet always
+cites how *its* bytes were chosen. A bundle entry missing any of those fields
+refuses the run.
+
+**End boundary: a priority, not a single item.** `find_item_one_span` ends
+only at Item 1A, so a filing that omits risk factors — smaller reporting
+companies may — was unreadable rather than differently shaped. The successor
+`find_item_one_span_v2` keeps Item 1A as its first tier and falls back in
+filing order to **Item 1B**, then **Item 2**, recording `end_boundary_kind`.
+The v1 function is left byte-identical: its callers must not shift.
+Trustworthiness is not loosened to buy that reach — a candidate must open a
+block (the cross-reference guard that ADR-066 measured, where seven inline
+"see Part I, Item 1A" phrases would have cut a span by 44%) and lie after the
+body heading, and the body heading is the *last* qualifying Item 1 match — so
+when a body heading exists, a table-of-contents entry can never win, because
+the TOC is printed first. **Two surviving candidates in one tier
+are ambiguous and refuse**, rather than taking the earlier one as v1's
+`min()` did: a second block-opening Item 1A after the body is evidence the
+document is not shaped as assumed.
+
+**What a v0.1 packet contains, and what it refuses to guess.** The full
+normalized Item 1 span, every passage classified `ITEM1_OVERVIEW`.
+`COVER_PAGE` is recorded **explicitly missing** and all five issuer flags are
+`unknown` **cohort-wide**: this route retrieves no SGML header and no
+inline-XBRL cover-fact parser exists, and neither is being added here. Silence
+is never evidence, so a flag is `true`/`false` only from a directly observed
+source fact. `PRODUCTS_SERVICES`, `CUSTOMERS`, `SEGMENTS_MATERIALITY` and
+`TECHNOLOGY_DELIVERY` are recorded missing rather than inferred: deterministic
+subsection tagging has not been measured, and a later measured increment may
+add it. Cover-page absence is **not** a packet failure, and no firm is ever
+excluded — a document that cannot yield a packet is recorded as a failure with
+its reason (`missing_item_one`, `ambiguous_end_boundary`, `no_end_boundary`,
+`empty_item_one_span`, `temporal_mismatch`).
+
+**Identity and hashing.** `source_id` is
+`sec-primary:<cik>:<accession>:<selected_document>` — a stable document
+identity, deliberately **not** the mutable raw SHA-256, so passage identity
+survives a re-download of identical content and an unrelated edit elsewhere
+in the document; a test proves that regression is meaningful.
+`source_sha256` travels separately as mandatory provenance. `packet_sha256`
+covers the canonical JSON serialization (`sort_keys`, `(",", ":")`,
+`ensure_ascii=False`, UTF-8) **with the hash field omitted**, and
+`packet_byte_size` measures that serialization with *both* self-referential
+fields omitted, so neither definition is circular.
+
+**No packet cap.** Sizes are recorded — total, max, mean — for the later
+Canary B decision; the raw-document acquisition ceiling (ADR-089) remains the
+only size bound.
+
+**Scope and its consequence.** Domestic `10-K`/`10-KT` only; the bundle
+grammar refuses `20-F`/`40-F` naming the FPI extension cohort as preserved by
+the frame and carrier, neither handled nor excluded. **A later real
+primary-document Canary B must include at least one 10-KT**: the v4 detectors
+were measured by ADR-074 on fifteen 10-K filings from large software filers,
+so 10-KT support is presently fixture-evidenced only.
+
+**A limitation found while building the fixtures, stated precisely.** The
+last-qualifying rule is a defence against the table of contents *only while a
+later body heading exists*. Where a document's **only** qualifying Item 1
+match is its TOC entry, that entry is the last qualifying match, so the span
+is anchored on the TOC rather than refused — the TOC line opens a block like
+any other, and the rule has nothing better to choose. The two statements are
+not in tension: TOC entries lose to a real body heading, and win only when no
+body heading exists at all. No threshold is invented to catch that case — a
+minimum-span heuristic would be unmeasured — so it is recorded here as an
+explicit Canary-B limitation, to be measured against real filings before the
+full cohort runs.
+
+**Input integrity.** A bundle is verified fail-closed before anything is
+parsed, and nothing is ever repaired from what was observed. Filenames must be
+safe leaf names — no absolute path, separator, dot segment, traversal or
+drive/home prefix — checked **before the filesystem is touched**, so a
+traversal target that happens to exist is refused on its name rather than
+opened. ``local_filename`` and ``selected_document`` stay distinct fields and
+are never required to be equal: the document SEC selected and the file this
+bundle stores it as are separate facts, and packet identity follows the
+selected document. Each document's declared ``source_byte_length`` **and**
+``source_sha256`` are both verified against the bytes on disk; a declared
+length that disagrees with the bytes refuses the run even when the hash
+matches.
+
+**Scope.** Added: the packet builder, three schemas, the six-document
+synthetic bundle with its manifest and gold, and the packet test file —
+thirteen paths. Modified: `ingestion/normalize.py` (adds
+`find_item_one_span_v2`; v1 unchanged), `universe/models.py` (three records
+beside the untouched `BaselineEvidencePacket`/`EvidencePassage`/
+`PacketFailure`), the pipeline entrypoint (one mode,
+`build-baseline-packets`, with one new `--bundle-dir` flag), the schema
+registry with both pinned-hash rebaselines, `REPO_MANIFEST.md` (689 → 702),
+the three count tests, and this log — eleven paths. No issuer filtering,
+screening, classification, tier derivation or PCT extraction, and no
+`data/runs` artifact is read or written.
+
 ## Open decisions
 
 - Required source packet by firm-year.

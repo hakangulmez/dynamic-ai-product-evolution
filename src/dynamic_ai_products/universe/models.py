@@ -213,6 +213,88 @@ class BaselineEvidencePacket(StrictModel):
         return None
 
 
+class SourcePassage(StrictModel):
+    """One normalized passage addressed back to raw source bytes.
+
+    Distinct from :class:`EvidencePassage`, which carries a publication date
+    and no byte provenance. ``source_id`` is a stable identity for the
+    document — ``sec-primary:<cik>:<accession>:<selected_document>`` — and
+    deliberately never the raw SHA-256, so a passage identity survives a
+    re-download of identical content and an unrelated edit elsewhere in the
+    document. The raw hash is carried separately on the packet.
+    """
+
+    passage_id: str
+    source_id: str
+    section: str
+    text: str
+    text_hash: str
+    byte_start: int
+    byte_end: int
+    normalizer_version: str
+
+    @field_validator("section")
+    @classmethod
+    def _known_section(cls, value: str) -> str:
+        if value not in taxonomy.PACKET_SECTIONS:
+            raise ValueError(f"Unknown packet section: {value}")
+        return value
+
+
+class UniverseBaselinePacket(StrictModel):
+    """A Stage 00C baseline evidence packet built from a primary document.
+
+    Carries its own provenance: which document it was cut from, the hash of
+    those bytes, how that document was selected, and which route-validation
+    evidence exists — recorded separately, because a passing route probe
+    proves a URL grammar, never that *this* firm's document was chosen
+    correctly.
+
+    ``packet_sha256`` is computed over the canonical JSON serialization of
+    this record with the ``packet_sha256`` field itself omitted:
+    ``json.dumps(payload, sort_keys=True, separators=(",", ":"),
+    ensure_ascii=False).encode("utf-8")``.
+    """
+
+    packet_contract: str
+    cik: str
+    company_id: str
+    stratum: str
+    accession: str
+    form: str
+    baseline_filing_date: date
+    baseline_cutoff: date
+    baseline_cutoff_source: dict
+    source_id: str
+    source_sha256: str
+    source_byte_length: int
+    selection_provenance: dict
+    route_validation: dict
+    item_one_start: int
+    item_one_end: int
+    end_boundary_kind: str
+    passages: list[SourcePassage] = Field(default_factory=list)
+    issuer_status_flags: IssuerStatusFlags = Field(default_factory=IssuerStatusFlags)
+    issuer_status_basis: str
+    missing_sections: list[str] = Field(default_factory=list)
+    parse_status: str
+    normalization_ledger: dict
+    packet_byte_size: int
+    packet_sha256: str
+
+
+class PacketBuildFailure(StrictModel):
+    """A packet that could not be built. Recorded, never an exclusion."""
+
+    cik: str
+    company_id: str
+    accession: str
+    form: str
+    source_id: str
+    reason_code: str
+    detail: str
+
+
 class PacketFailure(StrictModel):
     """A packet that could not be constructed. Never silently dropped."""
 

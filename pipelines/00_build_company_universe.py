@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Eight mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
+Nine mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
 so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -41,6 +41,10 @@ so every pre-existing invocation is unchanged):
   are a deterministic, type-bearing metadata source for a later two-hop
   packet route (ADR-090). Metadata only: it acquires no primary document,
   builds no packet, and authorizes nothing downstream.
+- ``build-baseline-packets`` builds Stage 00C baseline evidence packets from
+  a local, hash-verified primary-document bundle (ADR-091). Fixture-first and
+  offline: it performs no network access, decides no exclusion, and records
+  cover-page evidence and the economic subsections as explicitly missing.
 - ``baseline-carrier`` derives the Stage 00B firm-level baseline carrier
   (W2-A, ADR-088) from a completed FRAME run: hash-verified read-only frame
   consumption, per-stratum CIK grouping, baseline-filing selection against
@@ -71,7 +75,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -111,6 +115,10 @@ from dynamic_ai_products.sec_document_transport import (  # noqa: E402
     SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY,
     make_sec_live_document_transport,
 )
+from dynamic_ai_products.ingestion.baseline_packet import (  # noqa: E402
+    PacketBundleError,
+    run_baseline_packet_build,
+)
 from dynamic_ai_products.universe.filing_index_probe import (  # noqa: E402
     ProbePlanError,
     load_probe_plan,
@@ -141,7 +149,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode", default="sentinel",
         choices=["sentinel", "frame", "acquire-index", "dera-validate",
                  "acquire-dera", "baseline-carrier", "acquire-docs",
-                 "probe-filing-index"],
+                 "probe-filing-index", "build-baseline-packets"],
         help="Stage 00 sub-pipeline to run (default: sentinel).",
     )
     parser.add_argument(
@@ -224,6 +232,12 @@ def build_parser() -> argparse.ArgumentParser:
              "max_document_bytes while downloading.",
     )
     parser.add_argument(
+        "--bundle-dir", default=None,
+        help="Build-baseline-packets mode only: directory holding "
+             "bundle_manifest.json and the local primary documents it "
+             "describes (see evals/fixtures/baseline_packets).",
+    )
+    parser.add_argument(
         "--frame-manifest", default=None,
         help="Dera-validate and baseline-carrier modes: path to a completed "
              "FRAME run's filer_frame_manifest.json.",
@@ -266,6 +280,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         ("--frame-manifest", args.frame_manifest),
         ("--dera-dir", args.dera_dir),
     )
+    packet_flags = (("--bundle-dir", args.bundle_dir),)
 
     if args.mode == "dera-validate":
         offending = _present(
@@ -301,9 +316,25 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             )
         return None
 
+    if args.mode == "build-baseline-packets":
+        offending = _present(
+            sentinel_flags + frame_flags + acquire_flags + dera_flags
+        )
+        if offending:
+            return (
+                "build-baseline-packets mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing(
+            packet_flags + (("--config", args.config),)
+        )
+        if missing:
+            return f"build-baseline-packets mode requires: {', '.join(missing)}"
+        return None
+
     if args.mode == "probe-filing-index":
         offending = _present(
-            sentinel_flags + frame_flags + dera_flags
+            sentinel_flags + frame_flags + dera_flags + packet_flags
             + (("--config", args.config),)
         )
         if offending:
@@ -693,6 +724,49 @@ def _main_dera_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_build_baseline_packets(args: argparse.Namespace) -> int:
+    bundle_dir = Path(args.bundle_dir)
+    config_path = Path(args.config)
+    if not bundle_dir.is_dir():
+        print(f"ERROR: bundle directory not found: {bundle_dir}", file=sys.stderr)
+        return 2
+    if not config_path.is_file():
+        print(f"ERROR: project config not found: {config_path}", file=sys.stderr)
+        return 2
+    try:
+        result = run_baseline_packet_build(
+            repo_root=REPO_ROOT,
+            bundle_dir=bundle_dir,
+            project_config_path=config_path,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            # The ingestion package never reads the clock; the entrypoint owns
+            # identity and injects it.
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except PacketBundleError as exc:
+        print(f"ERROR: invalid baseline packet input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "bundle_manifest_sha256": result.bundle_manifest_sha256,
+        "counts": result.counts,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 def _main_probe_filing_index(args: argparse.Namespace) -> int:
     request_plan = Path(args.request_plan)
     if not request_plan.is_file():
@@ -917,6 +991,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_baseline_carrier(args)
     if args.mode == "acquire-docs":
         return _main_acquire_docs(args)
+    if args.mode == "build-baseline-packets":
+        return _main_build_baseline_packets(args)
     if args.mode == "probe-filing-index":
         return _main_probe_filing_index(args)
     return _main_sentinel(args)

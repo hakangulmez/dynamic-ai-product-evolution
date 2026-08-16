@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **689**
+Total tracked/scaffold files listed: **702**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -143,6 +143,14 @@ Total tracked/scaffold files listed: **689**
 - `evals/change_requests/README.md`
 - `evals/expected/.gitkeep`
 - `evals/fixtures/README.md`
+- `evals/fixtures/baseline_packets/bundle_manifest.json`
+- `evals/fixtures/baseline_packets/expected_packets.json`
+- `evals/fixtures/baseline_packets/primary_10k_ixbrl.htm`
+- `evals/fixtures/baseline_packets/primary_10kt.htm`
+- `evals/fixtures/baseline_packets/primary_ambiguous_headings.htm`
+- `evals/fixtures/baseline_packets/primary_item2_boundary.htm`
+- `evals/fixtures/baseline_packets/primary_missing_item1.htm`
+- `evals/fixtures/baseline_packets/primary_no_boundary.htm`
 - `evals/fixtures/dera_fsds/expected_validation.json`
 - `evals/fixtures/dera_fsds/fixture_manifest.json`
 - `evals/fixtures/dera_fsds/sub_2022q4.tsv`
@@ -291,6 +299,8 @@ Total tracked/scaffold files listed: **689**
 - `schemas/adapter_qualification_record.schema.json`
 - `schemas/baseline_document_acquisition_manifest.schema.json`
 - `schemas/baseline_document_acquisition_manifest.v2.schema.json`
+- `schemas/baseline_packet_manifest.schema.json`
+- `schemas/baseline_primary_document_bundle.schema.json`
 - `schemas/capability_observation.schema.json`
 - `schemas/company.schema.json`
 - `schemas/company_universe_classification.schema.json`
@@ -350,6 +360,7 @@ Total tracked/scaffold files listed: **689**
 - `schemas/task_observation_v2.schema.json`
 - `schemas/task_transition.schema.json`
 - `schemas/universe_baseline_carrier_manifest.schema.json`
+- `schemas/universe_baseline_packet.schema.json`
 - `schemas/universe_run_manifest.schema.json`
 - `schemas/universe_run_manifest.v2.schema.json`
 - `schemas/web_collection_receipt.schema.json`
@@ -489,6 +500,7 @@ Total tracked/scaffold files listed: **689**
 - `src/dynamic_ai_products/extraction/validation.py`
 - `src/dynamic_ai_products/ingestion/__init__.py`
 - `src/dynamic_ai_products/ingestion/adoption.py`
+- `src/dynamic_ai_products/ingestion/baseline_packet.py`
 - `src/dynamic_ai_products/ingestion/errors.py`
 - `src/dynamic_ai_products/ingestion/family_coverage.py`
 - `src/dynamic_ai_products/ingestion/manifests.py`
@@ -644,6 +656,7 @@ Total tracked/scaffold files listed: **689**
 - `tests/extraction/test_validation.py`
 - `tests/ingestion/ingestion_test_helpers.py`
 - `tests/ingestion/test_adoption.py`
+- `tests/ingestion/test_baseline_packet.py`
 - `tests/ingestion/test_family_coverage.py`
 - `tests/ingestion/test_ingestion_boundaries.py`
 - `tests/ingestion/test_normalize.py`

@@ -174,7 +174,12 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-090: manifest_version 0.29.0 -> 0.30.0, 63 -> 65
+    # Rebaselined by ADR-091: manifest_version 0.30.0 -> 0.31.0, 65 -> 68
+    # entries, registering baseline_primary_document_bundle (the packet
+    # builder's governed input), universe_baseline_packet, and
+    # baseline_packet_manifest for W2-C-beta Stage 00C packets.
+    # Before it,
+    # ADR-090: manifest_version 0.29.0 -> 0.30.0, 63 -> 65
     # entries, registering filing_index_probe_manifest and its v2
     # sec_live successor for the W2-C filing-index metadata probe.
     # Before it,
@@ -220,7 +225,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "47d261f8eb798af4535e3bde374440d89bd164b273e73a88b12fcd5db6d6f505"
+    "67ae0e87d8faea87e51a043bf8e213c3a298b4f7ee846b4d5e47d04ac3518be5"
 )
 
 

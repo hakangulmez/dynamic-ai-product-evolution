@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_baseline_packet.schema.json",
+  "title": "Universe baseline evidence packet",
+  "description": "One Stage 00C baseline evidence packet built from a hash-verified primary annual-report document (W2-C-beta, ADR-091). v0.1 carries the full normalized Item 1 span with every passage classified ITEM1_OVERVIEW. COVER_PAGE is explicitly missing and all five issuer flags are unknown: this route retrieves no SGML header and no inline-XBRL cover-fact parser exists, and silence is never evidence. PRODUCTS_SERVICES, CUSTOMERS, SEGMENTS_MATERIALITY and TECHNOLOGY_DELIVERY are recorded missing, never inferred. source_id is a stable document identity (sec-primary:<cik>:<accession>:<selected_document>) and never the mutable raw hash, so passage identity survives re-download; source_sha256 carries the raw bytes separately. packet_sha256 covers the canonical JSON serialization (sort_keys, separators (',',':'), ensure_ascii false, UTF-8) with the packet_sha256 field omitted, and packet_byte_size measures that serialization with both self-referential fields omitted, so neither is circular.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "packet_contract",
+    "cik",
+    "company_id",
+    "stratum",
+    "accession",
+    "form",
+    "baseline_filing_date",
+    "baseline_cutoff",
+    "baseline_cutoff_source",
+    "source_id",
+    "source_sha256",
+    "source_byte_length",
+    "selection_provenance",
+    "route_validation",
+    "item_one_start",
+    "item_one_end",
+    "end_boundary_kind",
+    "passages",
+    "issuer_status_flags",
+    "issuer_status_basis",
+    "missing_sections",
+    "parse_status",
+    "normalization_ledger",
+    "packet_byte_size",
+    "packet_sha256"
+  ],
+  "properties": {
+    "packet_contract": {
+      "const": "universe_baseline_packet@0.1.0"
+    },
+    "cik": {
+      "type": "string",
+      "pattern": "^\\d{10}$"
+    },
+    "company_id": {
+      "type": "string"
+    },
+    "stratum": {
+      "const": "domestic"
+    },
+    "accession": {
+      "type": "string",
+      "pattern": "^\\d{10}-\\d{2}-\\d{6}$"
+    },
+    "form": {
+      "enum": [
+        "10-K",
+        "10-KT"
+      ]
+    },
+    "baseline_filing_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "baseline_cutoff": {
+      "type": "string",
+      "format": "date"
+    },
+    "baseline_cutoff_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "key",
+        "project_config_sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "configs/project.yaml"
+        },
+        "key": {
+          "const": "universe.baseline_cutoff"
+        },
+        "project_config_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^sec-primary:\\d{10}:\\d{10}-\\d{2}-\\d{6}:.+$"
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_byte_length": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "selection_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filing_index_url",
+        "filing_index_response_sha256",
+        "selected_document",
+        "primary_url"
+      ],
+      "properties": {
+        "filing_index_url": {
+          "type": "string"
+        },
+        "filing_index_response_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "selected_document": {
+          "type": "string",
+          "pattern": "(?i)\\.(htm|html)$"
+        },
+        "primary_url": {
+          "type": "string"
+        }
+      }
+    },
+    "route_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "probe_run_id",
+        "probe_manifest_sha256",
+        "covered_accessions",
+        "note"
+      ],
+      "properties": {
+        "probe_run_id": {
+          "type": "string"
+        },
+        "probe_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "covered_accessions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "item_one_start": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "item_one_end": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "end_boundary_kind": {
+      "enum": [
+        "item_1a_risk_factors",
+        "item_1b_unresolved_staff_comments",
+        "item_2_properties"
+      ]
+    },
+    "passages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "passage_id",
+          "source_id",
+          "section",
+          "text",
+          "text_hash",
+          "byte_start",
+          "byte_end",
+          "normalizer_version"
+        ],
+        "properties": {
+          "passage_id": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "section": {
+            "const": "ITEM1_OVERVIEW"
+          },
+          "text": {
+            "type": "string"
+          },
+          "text_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "byte_start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "byte_end": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "normalizer_version": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "issuer_status_flags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "investment_company",
+        "asset_backed_issuer",
+        "non_operating_trust",
+        "shell_company",
+        "blank_check_precombination"
+      ],
+      "properties": {
+        "investment_company": {
+          "type": "null"
+        },
+        "asset_backed_issuer": {
+          "type": "null"
+        },
+        "non_operating_trust": {
+          "type": "null"
+        },
+        "shell_company": {
+          "type": "null"
+        },
+        "blank_check_precombination": {
+          "type": "null"
+        }
+      }
+    },
+    "issuer_status_basis": {
+      "const": "cover_page_evidence_not_yet_observed"
+    },
+    "missing_sections": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "enum": [
+          "COVER_PAGE",
+          "PRODUCTS_SERVICES",
+          "CUSTOMERS",
+          "SEGMENTS_MATERIALITY",
+          "TECHNOLOGY_DELIVERY"
+        ]
+      }
+    },
+    "parse_status": {
+      "enum": [
+        "complete",
+        "partial_recorded"
+      ]
+    },
+    "normalization_ledger": {
+      "type": "object"
+    },
+    "packet_byte_size": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "packet_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

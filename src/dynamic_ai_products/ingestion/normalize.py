@@ -749,6 +749,49 @@ _ITEM_ONE_A_TEXT_RE = re.compile(
 _ENTITY_RE = re.compile(rb"&[#a-zA-Z0-9]{1,8};")
 _ITEM_SPAN_NOT_FOUND = "item_span_not_found"
 
+# --- ADR-091: an end boundary that is not only Item 1A ------------------------
+#
+# ``find_item_one_span`` ends the span at Item 1A and nothing else, which makes
+# a filing that omits risk factors unreadable rather than differently shaped.
+# The successor below keeps that behaviour as its first tier and falls back
+# through the two items that can legitimately follow Item 1, in filing order.
+# The v1 function above is unchanged: its callers must not shift.
+_ITEM_ONE_B_TEXT_RE = re.compile(
+    (r"(?i)Item\s{0,20}(?:1B|IB)\s{0,20}" + _ITEM_SEPARATOR
+     + r"\s{0,20}Unresolved").encode()
+)
+_ITEM_TWO_TEXT_RE = re.compile(
+    (r"(?i)Item\s{0,20}(?:2|II)\s{0,20}" + _ITEM_SEPARATOR
+     + r"\s{0,20}Propert").encode()
+)
+_ITEM_ONE_B_ANCHOR = re.compile(r"(?i)item[_\-]?1b(?:[_\-]unresolved.*)?")
+_ITEM_TWO_ANCHOR = re.compile(r"(?i)item[_\-]?(?:2|ii)(?:[_\-]propert.*)?")
+
+BOUNDARY_ITEM_1A = "item_1a_risk_factors"
+BOUNDARY_ITEM_1B = "item_1b_unresolved_staff_comments"
+BOUNDARY_ITEM_2 = "item_2_properties"
+
+#: End-boundary tiers in filing order. The first tier with exactly one
+#: trustworthy candidate after the body heading wins.
+END_BOUNDARY_PRIORITY: tuple[str, ...] = (
+    BOUNDARY_ITEM_1A,
+    BOUNDARY_ITEM_1B,
+    BOUNDARY_ITEM_2,
+)
+
+_BOUNDARY_TEXT_RES = {
+    BOUNDARY_ITEM_1A: _ITEM_ONE_A_TEXT_RE,
+    BOUNDARY_ITEM_1B: _ITEM_ONE_B_TEXT_RE,
+    BOUNDARY_ITEM_2: _ITEM_TWO_TEXT_RE,
+}
+_BOUNDARY_ANCHOR_RES = {
+    BOUNDARY_ITEM_1A: _ITEM_ONE_A_ANCHOR,
+    BOUNDARY_ITEM_1B: _ITEM_ONE_B_ANCHOR,
+    BOUNDARY_ITEM_2: _ITEM_TWO_ANCHOR,
+}
+_AMBIGUOUS_END_BOUNDARY = "ambiguous_end_boundary"
+_NO_END_BOUNDARY = "no_end_boundary"
+
 
 def _text_offset_map(raw: bytes) -> tuple[bytes, list[int]]:
     """Tag- and entity-free text, plus each byte's raw offset.
@@ -884,3 +927,103 @@ def find_item_one_span(raw: bytes) -> tuple[int, int]:
             reason_code=_ITEM_SPAN_NOT_FOUND,
         )
     return start_offset, end_offset
+
+
+def find_item_one_span_v2(raw: bytes) -> tuple[int, int, str]:
+    """Locate Item 1's byte span and name the boundary that ended it.
+
+    ``find_item_one_span`` ends only at Item 1A, so a filing that omits risk
+    factors — smaller reporting companies may — cannot be read at all. This
+    successor keeps Item 1A as the first tier and then falls back in filing
+    order, returning ``(start_offset, end_offset, end_boundary_kind)`` where
+    the kind is one of :data:`END_BOUNDARY_PRIORITY`.
+
+    Trustworthiness is not loosened to buy that reach. A candidate counts only
+    if it **opens a block** (:func:`_starts_a_block`, the cross-reference
+    guard) and lies **after the body heading**, and the body heading is the
+    *last* qualifying Item 1 match, so a table of contents cannot supply it.
+    Within a tier, two surviving candidates are **ambiguous and refuse** rather
+    than silently taking the earlier one: unlike v1's ``min()``, a second
+    block-opening Item 1A after the body is evidence the document is not
+    shaped as assumed.
+
+    Raises :class:`IngestionError` with ``item_span_not_found`` when Item 1
+    itself cannot be located, ``ambiguous_end_boundary`` when a tier is
+    ambiguous, and ``no_end_boundary`` when no tier yields a candidate.
+    """
+    if not isinstance(raw, (bytes, bytearray)):
+        raise IngestionError(
+            "normalization input must be raw bytes",
+            reason_code="normalize_input_invalid",
+        )
+    raw = bytes(raw)
+
+    # --- anchor path, when the filing carries ids --------------------------
+    anchors = [
+        (match.group(1).decode("utf-8", errors="replace"), match.start())
+        for match in _ITEM_ANCHOR_RE.finditer(raw)
+    ]
+    ones = [pos for name, pos in anchors if _ITEM_ONE_ANCHOR.fullmatch(name)]
+    if len(ones) == 1:
+        for kind in END_BOUNDARY_PRIORITY:
+            pattern = _BOUNDARY_ANCHOR_RES[kind]
+            ends = [pos for name, pos in anchors if pattern.fullmatch(name)]
+            after = [pos for pos in ends if pos > ones[0]]
+            if not after:
+                continue
+            if len(after) > 1:
+                raise IngestionError(
+                    f"{len(after)} {kind} anchors follow Item 1",
+                    reason_code=_AMBIGUOUS_END_BOUNDARY,
+                )
+            opening = raw.find(b">", ones[0])
+            if opening < 0 or opening >= after[0]:
+                raise IngestionError(
+                    "the Item 1 anchor is not closed before its end boundary",
+                    reason_code=_ITEM_SPAN_NOT_FOUND,
+                )
+            return opening, after[0], kind
+
+    # --- heading-text path -------------------------------------------------
+    text, offsets = _text_offset_map(raw)
+    starts = [
+        offsets[m.start()]
+        for m in _ITEM_ONE_TEXT_RE.finditer(text)
+        if _starts_a_block(raw, offsets[m.start()])
+    ]
+    if not starts:
+        raise IngestionError(
+            "no Item 1 heading was found in this document",
+            reason_code=_ITEM_SPAN_NOT_FOUND,
+        )
+    body_start = max(starts)
+
+    for kind in END_BOUNDARY_PRIORITY:
+        candidates = [
+            offsets[m.start()]
+            for m in _BOUNDARY_TEXT_RES[kind].finditer(text)
+            if _starts_a_block(raw, offsets[m.start()])
+        ]
+        after = [end for end in candidates if end > body_start]
+        if not after:
+            continue
+        if len(after) > 1:
+            raise IngestionError(
+                f"{len(after)} block-opening {kind} headings follow Item 1; "
+                "the end boundary is ambiguous",
+                reason_code=_AMBIGUOUS_END_BOUNDARY,
+            )
+        start_offset = raw.rfind(b">", 0, body_start)
+        end_offset = raw.rfind(b"<", 0, after[0])
+        if start_offset < 0 or end_offset <= start_offset:
+            raise IngestionError(
+                "the located Item 1 span is empty or inverted",
+                reason_code=_ITEM_SPAN_NOT_FOUND,
+            )
+        return start_offset, end_offset, kind
+
+    raise IngestionError(
+        "Item 1 is present but no trustworthy Item 1A, Item 1B or Item 2 "
+        "boundary follows it",
+        reason_code=_NO_END_BOUNDARY,
+    )

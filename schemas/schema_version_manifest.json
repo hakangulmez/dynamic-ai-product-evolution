@@ -1,9 +1,11 @@
 {
-  "manifest_version": "0.30.0",
+  "manifest_version": "0.31.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
     "baseline_document_acquisition_manifest": "0.1.0",
+    "baseline_packet_manifest": "0.1.0",
+    "baseline_primary_document_bundle": "0.1.0",
     "baseline_document_acquisition_manifest_v2": "0.2.0",
     "capability_observation": "0.1.0",
     "company": "0.1.0",
@@ -61,6 +63,7 @@
     "task_observation_v2": "0.2.0",
     "task_transition": "0.1.0",
     "universe_baseline_carrier_manifest": "0.1.0",
+    "universe_baseline_packet": "0.1.0",
     "universe_run_manifest": "0.1.0",
     "web_collection_receipt": "0.1.0",
     "web_collection_request_plan": "0.1.0",

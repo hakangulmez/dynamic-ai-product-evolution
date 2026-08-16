@@ -591,7 +591,12 @@ def test_manifest_count():
     # synthetic index-page fixture bundle (plan, two pages, gold), and the
     # probe test file. Metadata grammar only: no primary document is
     # acquired and no packet is built.
-    assert declared == len(paths) == 689
+    # 702 = 689 + the thirteen W2-C-beta baseline-packet paths (ADR-091):
+    # the packet builder, its three governed schemas (bundle input, packet
+    # record, run manifest), the six-document synthetic bundle with its
+    # manifest and gold, and the packet test file. Fixture-first and
+    # offline: no acquisition, no screening, no classification.
+    assert declared == len(paths) == 702
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

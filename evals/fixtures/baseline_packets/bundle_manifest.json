@@ -1,0 +1,103 @@
+{
+  "bundle_contract": "baseline_primary_document_bundle@0.1.0",
+  "description": "Synthetic baseline primary-document bundle for fixture-first packet building. Every CIK, accession, document and hash below is invented for methodological testing; no real filing data. Six cases cover the three end-boundary tiers (Item 1A, Item 1B, Item 2), an ambiguous in-tier boundary, a document with no trustworthy successor, and a document with no Item 1 at all. Provenance and route-validation hashes are synthetic placeholders: this bundle documents no real acquisition.",
+  "provenance": {
+    "carrier_run_id": "synthetic-fixture-carrier",
+    "carrier_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "freeze_record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "acquisition_run_id": "synthetic-fixture-acquisition",
+    "acquisition_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "route_validation": {
+    "probe_run_id": "synthetic-fixture-probe",
+    "probe_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "covered_accessions": 3,
+    "note": "URL-route grammar only, for the probe's own accessions; never selection evidence for any firm in this bundle."
+  },
+  "documents": [
+    {
+      "cik": "0009100001",
+      "accession": "0009100001-22-000001",
+      "form": "10-K",
+      "stratum": "domestic",
+      "baseline_filing_date": "2022-09-15",
+      "local_filename": "primary_10k_ixbrl.htm",
+      "source_sha256": "b5c12b27122672dec0dcf44ebf13e7a8f166e1441af051a8dff74e8825547788",
+      "source_byte_length": 830,
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9100001/000910000122000001/0009100001-22-000001-index.htm",
+      "filing_index_response_sha256": "f737c5023d101f155d12b562a1b18d4f97c897f8e8479f331937263739ab3b22",
+      "selected_document": "primary_10k_ixbrl.htm",
+      "primary_url": "https://www.sec.gov/Archives/edgar/data/9100001/000910000122000001/primary_10k_ixbrl.htm"
+    },
+    {
+      "cik": "0009100002",
+      "accession": "0009100002-22-000002",
+      "form": "10-KT",
+      "stratum": "domestic",
+      "baseline_filing_date": "2022-08-05",
+      "local_filename": "primary_10kt.htm",
+      "source_sha256": "e5481628c0491016d9c651e57ef20331d7456cfca1745a83f12f9212b7842333",
+      "source_byte_length": 503,
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9100002/000910000222000002/0009100002-22-000002-index.htm",
+      "filing_index_response_sha256": "2b2623a8df9080969521d51cd3f0e95ad7ae7e1187ca9d6d81190678db5792c1",
+      "selected_document": "primary_10kt.htm",
+      "primary_url": "https://www.sec.gov/Archives/edgar/data/9100002/000910000222000002/primary_10kt.htm"
+    },
+    {
+      "cik": "0009100003",
+      "accession": "0009100003-22-000003",
+      "form": "10-K",
+      "stratum": "domestic",
+      "baseline_filing_date": "2022-10-01",
+      "local_filename": "primary_item2_boundary.htm",
+      "source_sha256": "b7f4c7c6445fc0146be1be59caebca19f09bd39f725d1a87a9fe0f2018c27b1a",
+      "source_byte_length": 525,
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9100003/000910000322000003/0009100003-22-000003-index.htm",
+      "filing_index_response_sha256": "206bcf3df01560a950015a4ae6c97f3cad4e8ae069e014cfe42de1e81ad6285f",
+      "selected_document": "primary_item2_boundary.htm",
+      "primary_url": "https://www.sec.gov/Archives/edgar/data/9100003/000910000322000003/primary_item2_boundary.htm"
+    },
+    {
+      "cik": "0009100004",
+      "accession": "0009100004-22-000004",
+      "form": "10-K",
+      "stratum": "domestic",
+      "baseline_filing_date": "2022-07-11",
+      "local_filename": "primary_no_boundary.htm",
+      "source_sha256": "27ceba3be4a564cb6e7514790d286145d8e6b1daf9cc8aa8a469ec5f258e686a",
+      "source_byte_length": 418,
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9100004/000910000422000004/0009100004-22-000004-index.htm",
+      "filing_index_response_sha256": "3d7ff72c80bbaa220280f3fddb31dd41b3ad1522636ff81870ad0e3e4a704c16",
+      "selected_document": "primary_no_boundary.htm",
+      "primary_url": "https://www.sec.gov/Archives/edgar/data/9100004/000910000422000004/primary_no_boundary.htm"
+    },
+    {
+      "cik": "0009100005",
+      "accession": "0009100005-22-000005",
+      "form": "10-K",
+      "stratum": "domestic",
+      "baseline_filing_date": "2022-06-30",
+      "local_filename": "primary_ambiguous_headings.htm",
+      "source_sha256": "694511e4699bd90cf4e98fda434f2d323562a78d111f79aaadcb7192b4ab3901",
+      "source_byte_length": 645,
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9100005/000910000522000005/0009100005-22-000005-index.htm",
+      "filing_index_response_sha256": "f15169526530e200e61aa1cf50ec9ea1ef2e8d9d8f6f57414a4fc925aee0cb3b",
+      "selected_document": "primary_ambiguous_headings.htm",
+      "primary_url": "https://www.sec.gov/Archives/edgar/data/9100005/000910000522000005/primary_ambiguous_headings.htm"
+    },
+    {
+      "cik": "0009100006",
+      "accession": "0009100006-22-000006",
+      "form": "10-K",
+      "stratum": "domestic",
+      "baseline_filing_date": "2022-05-20",
+      "local_filename": "primary_missing_item1.htm",
+      "source_sha256": "ff6654660cd1f9f8aff0a4e3f867d250c04353eb5ab37e85bd57b06e4a637686",
+      "source_byte_length": 381,
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9100006/000910000622000006/0009100006-22-000006-index.htm",
+      "filing_index_response_sha256": "7f2c1381619ed39156f1d6ec36d1893400d02d63e75fa22a051149449f942531",
+      "selected_document": "primary_missing_item1.htm",
+      "primary_url": "https://www.sec.gov/Archives/edgar/data/9100006/000910000622000006/primary_missing_item1.htm"
+    }
+  ]
+}

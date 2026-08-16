@@ -877,7 +877,12 @@ def test_repo_manifest_count_and_paths():
     # synthetic index-page fixture bundle (plan, two pages, gold), and the
     # probe test file. Metadata grammar only: no primary document is
     # acquired and no packet is built.
-    assert "Total tracked/scaffold files listed: **689**" in text
+    # 702 = 689 + the thirteen W2-C-beta baseline-packet paths (ADR-091):
+    # the packet builder, its three governed schemas (bundle input, packet
+    # record, run manifest), the six-document synthetic bundle with its
+    # manifest and gold, and the packet test file. Fixture-first and
+    # offline: no acquisition, no screening, no classification.
+    assert "Total tracked/scaffold files listed: **702**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

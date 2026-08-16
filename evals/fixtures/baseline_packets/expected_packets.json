@@ -1,0 +1,108 @@
+{
+  "description": "Gold expectations for fixture-first baseline packet building (W2-C-beta, ADR-091). Six planned documents yield three packets \u2014 one per end-boundary tier \u2014 and three recorded failures; no firm is ever excluded. Item 1A is preferred, Item 1B is used when risk factors are absent, and Item 2 when neither is present. A second block-opening heading of the same tier is ambiguous and refuses, an inline 'see Part I, Item 1A' cross-reference is never a boundary, and a table-of-contents entry never supplies the body heading. Every packet classifies its passages ITEM1_OVERVIEW only: COVER_PAGE is explicitly missing with all five issuer flags unknown, and the four economic subsections are recorded missing rather than inferred. packet_sha256 pins determinism; it covers the canonical serialization with the hash field omitted.",
+  "counts": {
+    "planned_documents": 6,
+    "packets_built": 3,
+    "packet_failures": 3,
+    "firms_excluded": 0,
+    "packets_by_end_boundary": {
+      "item_1a_risk_factors": 1,
+      "item_1b_unresolved_staff_comments": 1,
+      "item_2_properties": 1
+    },
+    "failures_by_reason": {
+      "no_end_boundary": 1,
+      "ambiguous_end_boundary": 1,
+      "missing_item_one": 1
+    },
+    "passages_total": 3,
+    "packet_bytes_total": 8436,
+    "packet_bytes_max": 2889,
+    "packet_bytes_mean": 2812
+  },
+  "packets": [
+    {
+      "accession": "0009100001-22-000001",
+      "form": "10-K",
+      "end_boundary_kind": "item_1a_risk_factors",
+      "item_one_start": 500,
+      "item_one_end": 693,
+      "passage_count": 1,
+      "sections_present": [
+        "ITEM1_OVERVIEW"
+      ],
+      "missing_sections": [
+        "COVER_PAGE",
+        "CUSTOMERS",
+        "PRODUCTS_SERVICES",
+        "SEGMENTS_MATERIALITY",
+        "TECHNOLOGY_DELIVERY"
+      ],
+      "issuer_status_basis": "cover_page_evidence_not_yet_observed",
+      "source_id": "sec-primary:0009100001:0009100001-22-000001:primary_10k_ixbrl.htm",
+      "packet_byte_size": 2889,
+      "packet_sha256": "c0440533453dca7ee1d2b6688cd2770ee94dba7d93730878eb1a9106d3a5bc3a"
+    },
+    {
+      "accession": "0009100002-22-000002",
+      "form": "10-KT",
+      "end_boundary_kind": "item_1b_unresolved_staff_comments",
+      "item_one_start": 301,
+      "item_one_end": 400,
+      "passage_count": 1,
+      "sections_present": [
+        "ITEM1_OVERVIEW"
+      ],
+      "missing_sections": [
+        "COVER_PAGE",
+        "CUSTOMERS",
+        "PRODUCTS_SERVICES",
+        "SEGMENTS_MATERIALITY",
+        "TECHNOLOGY_DELIVERY"
+      ],
+      "issuer_status_basis": "cover_page_evidence_not_yet_observed",
+      "source_id": "sec-primary:0009100002:0009100002-22-000002:primary_10kt.htm",
+      "packet_byte_size": 2763,
+      "packet_sha256": "a44abb98083255c17f8704717da2aea3336b658c934c6dec2b667fb1d11c35c2"
+    },
+    {
+      "accession": "0009100003-22-000003",
+      "form": "10-K",
+      "end_boundary_kind": "item_2_properties",
+      "item_one_start": 317,
+      "item_one_end": 414,
+      "passage_count": 1,
+      "sections_present": [
+        "ITEM1_OVERVIEW"
+      ],
+      "missing_sections": [
+        "COVER_PAGE",
+        "CUSTOMERS",
+        "PRODUCTS_SERVICES",
+        "SEGMENTS_MATERIALITY",
+        "TECHNOLOGY_DELIVERY"
+      ],
+      "issuer_status_basis": "cover_page_evidence_not_yet_observed",
+      "source_id": "sec-primary:0009100003:0009100003-22-000003:primary_item2_boundary.htm",
+      "packet_byte_size": 2784,
+      "packet_sha256": "37f791f7b19f25238124e7a964d97fdeb2a8b7daa8e212f6de24a2c57bca247e"
+    }
+  ],
+  "failures": [
+    {
+      "accession": "0009100004-22-000004",
+      "form": "10-K",
+      "reason_code": "no_end_boundary"
+    },
+    {
+      "accession": "0009100005-22-000005",
+      "form": "10-K",
+      "reason_code": "ambiguous_end_boundary"
+    },
+    {
+      "accession": "0009100006-22-000006",
+      "form": "10-K",
+      "reason_code": "missing_item_one"
+    }
+  ]
+}
