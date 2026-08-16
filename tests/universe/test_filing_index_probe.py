@@ -51,12 +51,29 @@ HEADER_ROW = (
 )
 
 
+ARCHIVE_DIR = "/Archives/edgar/data/9000001/000900000122000001"
+
+
+def _cell(doc, *, href=None, badge=False, text=None) -> str:
+    """Render a Document cell: link target first, presentation second."""
+    if href is None:
+        link = f"{ARCHIVE_DIR}/{doc}"
+    else:
+        link = href
+    shown = doc if text is None else text
+    suffix = '&nbsp;<span class="ixbrl">iXBRL</span>' if badge else ""
+    if link == "":
+        return f"<td>{shown}{suffix}</td>"
+    return f'<td><a href="{link}">{shown}</a>{suffix}</td>'
+
+
 def _table(rows, *, summary="Document Format Files", heading=None,
            header=HEADER_ROW) -> str:
     body = "\n".join(
         f'<tr><td>{i+1}</td><td>{desc}</td>'
-        f'<td><a href="#">{doc}</a></td><td>{typ}</td><td>100</td></tr>'
-        for i, (desc, doc, typ) in enumerate(rows)
+        f'{_cell(doc, **(extra[0] if extra else {}))}'
+        f'<td>{typ}</td><td>100</td></tr>'
+        for i, (desc, doc, typ, *extra) in enumerate(rows)
     )
     lead = f"<p>{heading}</p>" if heading else ""
     attr = f' summary="{summary}"' if summary else ""
@@ -845,3 +862,321 @@ def test_manifest_is_refused_when_the_completeness_identity_fails(tmp_path):
             run_timestamp=FIXED_CLOCK(),
             transport_identity=FIXTURE_REPLAY_TRANSPORT_IDENTITY,
         )
+
+
+# --- href-versus-rendered-text selection (ADR-090 canary finding) ------------
+
+
+LIVE_PRIMARY = "air-20220531x10k.htm"
+LIVE_DIR = "/Archives/edgar/data/1750/000110465922081498"
+
+
+def test_ixbrl_badge_in_rendered_text_does_not_defeat_selection():
+    """Reproduces the exact condition that failed the first live probe.
+
+    The receipt recorded one 10-K row whose visible cell read
+    'air-20220531x10k.htm iXBRL'. The filename must come from the link
+    target, so the badge is presentation the selector never sees.
+    """
+    page = _page([
+        ("10-K", LIVE_PRIMARY, "10-K",
+         {"href": f"{LIVE_DIR}/{LIVE_PRIMARY}", "badge": True}),
+    ])
+    assert b"iXBRL" in page
+    rows = parse_document_format_table(page)
+    assert rows[0].document == LIVE_PRIMARY
+    assert "iXBRL" not in rows[0].document
+    selected, refusal = select_primary_document(rows, "10-K")
+    assert refusal is None
+    assert selected.document == LIVE_PRIMARY
+
+
+def test_inline_xbrl_viewer_href_resolves_to_the_document():
+    """SEC links iXBRL documents through /ix?doc=…; the path tail is 'ix'."""
+    page = _page([
+        ("10-K", LIVE_PRIMARY, "10-K",
+         {"href": f"/ix?doc={LIVE_DIR}/{LIVE_PRIMARY}", "badge": True}),
+    ])
+    rows = parse_document_format_table(page)
+    assert rows[0].document == LIVE_PRIMARY
+    assert rows[0].href.startswith("/ix?doc=")
+    assert select_primary_document(rows, "10-K")[0].document == LIVE_PRIMARY
+
+
+def test_href_basename_helper_handles_both_link_shapes():
+    from dynamic_ai_products.universe.filing_index_probe import (
+        href_document_basename,
+    )
+
+    assert href_document_basename(f"{LIVE_DIR}/{LIVE_PRIMARY}") == LIVE_PRIMARY
+    assert href_document_basename(
+        f"/ix?doc={LIVE_DIR}/{LIVE_PRIMARY}"
+    ) == LIVE_PRIMARY
+    assert href_document_basename(
+        f"https://www.sec.gov{LIVE_DIR}/{LIVE_PRIMARY}"
+    ) == LIVE_PRIMARY
+    for unusable in ("", "   ", "/", "#", None, 12345, "?doc="):
+        assert href_document_basename(unusable) is None, unusable
+
+
+def test_committed_fixture_carries_the_ixbrl_badge_and_viewer_link():
+    """The live condition is permanently exercised by the committed gold."""
+    raw = (FIXTURE_DIR / "0009000001-22-000001-index.htm").read_bytes()
+    assert b"iXBRL" in raw and b"/ix?doc=" in raw
+    rows = parse_document_format_table(raw)
+    primary = [r for r in rows if r.document_type == "10-K"]
+    assert len(primary) == 1
+    assert primary[0].document == "synth-20211231x10k.htm"
+    assert primary[0].href.startswith("/ix?doc=")
+
+
+# --- negative: unusable link, and misleading rendered text ------------------
+
+
+def test_document_cell_without_a_link_is_unparseable():
+    page = _page([("10-K", "primary.htm", "10-K", {"href": ""})])
+    with pytest.raises(ProbePlanError, match="no usable document link"):
+        parse_document_format_table(page)
+
+
+@pytest.mark.parametrize("href", ["#", "   ", "/", "?doc="])
+def test_document_cell_with_an_unusable_href_is_unparseable(href):
+    page = _page([("10-K", "primary.htm", "10-K", {"href": href})])
+    with pytest.raises(ProbePlanError, match="no usable document link"):
+        parse_document_format_table(page)
+
+
+def test_html_looking_rendered_text_cannot_rescue_a_non_html_href():
+    """The visible text says .htm; the link target is a PDF. The link wins."""
+    page = _page([
+        ("10-K", "primary.pdf", "10-K",
+         {"href": f"{LIVE_DIR}/primary.pdf", "text": "primary.htm iXBRL"}),
+    ])
+    rows = parse_document_format_table(page)
+    assert rows[0].document == "primary.pdf"
+    assert select_primary_document(rows, "10-K") == (None, "non_html_primary")
+
+
+def test_rendered_text_naming_another_document_is_ignored():
+    page = _page([
+        ("10-K", "real-10k.htm", "10-K",
+         {"href": f"{LIVE_DIR}/real-10k.htm", "text": "decoy-10k.htm"}),
+    ])
+    rows = parse_document_format_table(page)
+    assert rows[0].document == "real-10k.htm"
+
+
+def test_badge_bearing_expected_filename_is_refused_at_plan_load(tmp_path):
+    """Ground truth is a filename, so rendered text cannot enter the plan.
+
+    A badge-bearing expectation is refused before any request, which is
+    stricter than letting it reach a run-time ground_truth_mismatch.
+    """
+    payload = _plan_payload()
+    payload["entries"][0]["expected_primary_document"] = (
+        "synth-20211231x10k.htm iXBRL"
+    )
+    with pytest.raises(ProbePlanError, match="HTML filename"):
+        load_probe_plan(_write_plan(tmp_path / "p.json", payload))
+
+
+def test_ground_truth_compares_against_the_href_derived_basename(tmp_path):
+    """The comparison operand is the link-derived name, not rendered text.
+
+    A one-entry plan is served a page whose visible cell carries the iXBRL
+    badge. The run succeeds only if the comparison used the clean href
+    basename; comparing rendered text would raise ground_truth_mismatch.
+    """
+    payload = _plan_payload()
+    payload["entries"] = payload["entries"][:1]
+    plan = _write_plan(tmp_path / "one.json", payload)
+    expected = payload["entries"][0]["expected_primary_document"]
+    page = _page([
+        ("10-K", expected, "10-K",
+         {"href": f"/ix?doc={LIVE_DIR}/{expected}", "badge": True}),
+    ])
+    result = _probe(
+        tmp_path, plan, run_id="href-ground-truth",
+        transport=lambda url: DocumentTransportResponse(
+            status_code=200, final_url=url, content=page
+        ),
+    )
+    assert result.failure is None
+    manifest = read_json(result.manifest_path)
+    assert manifest["observations"][0]["selected_document"] == expected
+    assert "iXBRL" not in manifest["observations"][0]["selected_document"]
+    assert manifest["counts"] == {
+        "planned_probes": 1, "probes_resolved": 1, "ground_truth_matches": 1
+    }
+
+
+# --- href parsing is structural, not substring matching ---------------------
+
+
+def _basename(href):
+    from dynamic_ai_products.universe.filing_index_probe import (
+        href_document_basename,
+    )
+
+    return href_document_basename(href)
+
+
+def test_query_doc_parameter_never_overrides_a_direct_archive_path():
+    """A direct link's query is ignored; its parsed path decides."""
+    assert _basename(f"{LIVE_DIR}/actual.htm?doc=wrong.htm") == "actual.htm"
+    assert _basename(f"{LIVE_DIR}/actual.htm#doc=wrong.htm") == "actual.htm"
+    assert _basename(
+        f"{LIVE_DIR}/actual.htm?doc=wrong.htm&x=1#frag"
+    ) == "actual.htm"
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/ix/", "/notix", "/ixviewer", "/other/ix", "/IX/", "/ix/viewer"],
+)
+def test_only_the_exact_ix_path_is_the_viewer_endpoint(path):
+    """A near-miss path is an ordinary link, and so fails the archive rule.
+
+    Nothing resolves through the viewer parameter here: the value must never
+    leak out of a path that is not exactly '/ix'.
+    """
+    viewer_target = f"{LIVE_DIR}/actual.htm"
+    got = _basename(f"{path}?doc={viewer_target}")
+    assert got != "actual.htm", path
+    assert got is None, path
+
+
+def test_the_exact_ix_endpoint_still_resolves():
+    viewer_target = f"{LIVE_DIR}/actual.htm"
+    assert _basename(f"/ix?doc={viewer_target}") == "actual.htm"
+    assert _basename(f"https://www.sec.gov/ix?doc={viewer_target}") == (
+        "actual.htm"
+    )
+    assert _basename(f"https://sec.gov/ix?doc={viewer_target}") == "actual.htm"
+
+
+def test_trailing_slash_viewer_path_does_not_resolve_via_doc():
+    """Direct regression: '/ix/' is not the viewer endpoint."""
+    assert _basename(f"/ix/?doc={LIVE_DIR}/actual.htm") is None
+
+
+# --- direct-archive-link contract ------------------------------------------
+
+
+def test_direct_link_must_address_the_sec_archive():
+    assert _basename(f"{LIVE_DIR}/actual.htm") == "actual.htm"
+    assert _basename(f"https://www.sec.gov{LIVE_DIR}/actual.htm") == "actual.htm"
+    assert _basename(f"https://sec.gov{LIVE_DIR}/actual.htm") == "actual.htm"
+
+
+@pytest.mark.parametrize(
+    "href",
+    [
+        "https://example.invalid/Archives/edgar/data/1750/x/actual.htm",
+        "https://evil.example.com/Archives/actual.htm",
+        "http://sec.gov.example.invalid/Archives/actual.htm",
+    ],
+)
+def test_direct_link_on_another_host_is_refused(href):
+    """An external host is refused even with an archive-shaped path."""
+    assert _basename(href) is None
+
+
+@pytest.mark.parametrize(
+    "href",
+    [
+        "/cgi-bin/actual.htm",
+        "https://www.sec.gov/cgi-bin/browse-edgar/actual.htm",
+        "/other/actual.htm",
+        "/actual.htm",
+    ],
+)
+def test_direct_link_outside_the_archive_is_refused(href):
+    """An SEC-host path outside /Archives/ is not a filing document."""
+    assert _basename(href) is None
+
+
+def test_offsite_link_is_refused_even_when_its_basename_is_the_expected_name():
+    """The basename matching ground truth cannot rescue a bad source."""
+    for href in (
+        f"https://example.invalid{LIVE_DIR}/{LIVE_PRIMARY}",
+        f"https://www.sec.gov/cgi-bin/{LIVE_PRIMARY}",
+    ):
+        assert _basename(href) is None, href
+
+
+def test_viewer_target_on_another_host_is_refused():
+    assert _basename(
+        f"/ix?doc=https://example.invalid{LIVE_DIR}/{LIVE_PRIMARY}"
+    ) is None
+
+
+@pytest.mark.parametrize(
+    "href",
+    [
+        "https://example.invalid/Archives/edgar/data/1750/x/air.htm",
+        "https://www.sec.gov/cgi-bin/air.htm",
+        "/ix/?doc=/Archives/edgar/data/1750/x/air.htm",
+    ],
+)
+def test_table_level_refusal_for_out_of_contract_links(href):
+    """Parser-level refusals surface as metadata_unparseable, never a pick."""
+    page = _page([("10-K", "air.htm", "10-K", {"href": href})])
+    with pytest.raises(ProbePlanError, match="no usable document link"):
+        parse_document_format_table(page)
+
+
+@pytest.mark.parametrize(
+    "href",
+    [
+        "javascript:actual.htm",
+        "javascript:void(0)",
+        "JavaScript:actual.htm",
+        "data:text/html,actual.htm",
+        "mailto:someone@example.invalid/actual.htm",
+    ],
+)
+def test_unsupported_schemes_are_refused(href):
+    assert _basename(href) is None
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "",                                    # /ix with no doc at all
+        "doc=",                                # blank
+        "doc=%20",                             # whitespace only
+        "doc=a.htm&doc=b.htm",                 # duplicated, ambiguous
+        "doc=/notarchive/actual.htm",          # outside the archive
+        "doc=javascript:actual.htm",           # unsupported target scheme
+        "other=/Archives/x/actual.htm",        # wrong parameter name
+    ],
+)
+def test_viewer_link_refuses_unusable_doc_parameters(query):
+    assert _basename(f"/ix?{query}") is None
+
+
+def test_viewer_and_direct_forms_both_survive_in_the_document_table():
+    """Both link shapes still select correctly through the real parser."""
+    for href in (f"{LIVE_DIR}/{LIVE_PRIMARY}",
+                 f"/ix?doc={LIVE_DIR}/{LIVE_PRIMARY}",
+                 f"https://www.sec.gov{LIVE_DIR}/{LIVE_PRIMARY}"):
+        rows = parse_document_format_table(
+            _page([("10-K", LIVE_PRIMARY, "10-K", {"href": href, "badge": True})])
+        )
+        assert rows[0].document == LIVE_PRIMARY, href
+        assert select_primary_document(rows, "10-K")[0].document == LIVE_PRIMARY
+
+
+def test_javascript_href_row_is_unparseable_not_silently_named():
+    page = _page([("10-K", "actual.htm", "10-K",
+                   {"href": "javascript:actual.htm"})])
+    with pytest.raises(ProbePlanError, match="no usable document link"):
+        parse_document_format_table(page)
+
+
+def test_viewer_row_with_duplicate_doc_parameters_is_unparseable():
+    page = _page([("10-K", LIVE_PRIMARY, "10-K",
+                   {"href": f"/ix?doc={LIVE_DIR}/a.htm&doc={LIVE_DIR}/b.htm"})])
+    with pytest.raises(ProbePlanError, match="no usable document link"):
+        parse_document_format_table(page)

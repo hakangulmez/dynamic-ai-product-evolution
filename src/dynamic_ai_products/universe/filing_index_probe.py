@@ -30,7 +30,12 @@ table is identified by its ``summary`` attribute or an explicitly associated
 heading — never by column shape alone, since the same page carries a Data
 Files table with the same Document and Type columns and may place it first —
 and the primary is the single row whose
-declared type equals the planned annual form. Zero matches, more than one
+declared type equals the planned annual form. **A row's filename is read
+from its link target, never from its rendered text**: SEC appends an
+``iXBRL`` badge to the visible Document cell, and the first live probe
+refused on exactly that (``air-20220531x10k.htm iXBRL``). The inline-XBRL
+viewer form ``/ix?doc=/Archives/.../name.htm`` is understood; a cell with no
+usable link is refused rather than reconstructed from text. Zero matches, more than one
 match, a sole match that is not HTML, an unparseable table, or a filename
 that disagrees with the plan's recorded ground truth each refuse with a
 distinct reason code. Nothing is guessed from a filename convention: the
@@ -61,6 +66,7 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Callable, Optional
+from urllib.parse import parse_qs, urlsplit
 
 from jsonschema import Draft202012Validator
 
@@ -96,6 +102,14 @@ _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _WS_RE = re.compile(r"\s+")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
+# The inline-XBRL viewer endpoint whose ``doc`` parameter names the real
+# document. The rule is bound to this exact path: an href merely containing
+# "doc=" is an ordinary link.
+VIEWER_PATH = "/ix"
+_ALLOWED_HREF_SCHEMES = frozenset({"", "http", "https"})
+_SEC_HREF_HOSTS = frozenset({"", "www.sec.gov", "sec.gov"})
+_ARCHIVE_PATH_PREFIX = "/archives/"
+
 
 class ProbePlanError(ValueError):
     """The probe plan is malformed or outside the enforced grammar."""
@@ -123,11 +137,107 @@ def canonical_filing_index_url(directory_cik: str, accession: str) -> str:
 
 @dataclass
 class IndexTableRow:
-    """One parsed row of the Document Format Files table."""
+    """One parsed row of the Document Format Files table.
+
+    ``document`` is derived from the row's link target, never from its
+    rendered text: SEC appends an ``iXBRL`` badge to the visible Document
+    cell, so the rendered text of a real 10-K row reads
+    ``air-20220531x10k.htm iXBRL`` (ADR-090 canary finding). ``href`` is kept
+    as the provenance the filename was derived from.
+    """
 
     document: str
     document_type: str
+    href: str
     size: Optional[int] = None
+
+
+def href_document_basename(href: str) -> Optional[str]:
+    """Return the document filename a Document-cell href addresses.
+
+    The href is parsed structurally, never scanned for substrings. Two link
+    shapes occur on filing index pages:
+
+    - a **direct archive link**, whose filename is the last segment of its
+      parsed *path*. Its query and fragment are ignored entirely, so a
+      ``?doc=`` parameter can never override the path — an href such as
+      ``/Archives/.../actual.htm?doc=wrong.htm`` yields ``actual.htm``. The
+      path must begin ``/Archives/``: a filing document lives nowhere else,
+      so a link outside the archive is refused even when its basename equals
+      the expected primary;
+    - the **inline-XBRL viewer link**, recognized only when the parsed path is
+      **exactly** ``/ix``. Its path tail is ``ix`` rather than a document, so
+      the authoritative target is its ``doc`` query parameter. The rule is
+      bound to that one endpoint, not to any href containing ``doc=`` and not
+      to a near-miss path: ``/ix/``, ``/ixviewer``, ``/other/ix`` and
+      ``/notix`` are ordinary links.
+
+    Every link, in either form, must be relative or on an approved SEC host
+    (``sec.gov`` / ``www.sec.gov``). Refuses (returns ``None``) on an
+    unsupported scheme such as ``javascript:`` or ``data:``, on any other
+    host, on a path outside the archive, on a viewer link whose ``doc``
+    parameter is missing, blank, repeated, or does not address an SEC archive
+    path, and whenever no non-empty basename can be read. The caller refuses
+    rather than inventing a filename from visible text.
+    """
+    if not isinstance(href, str):
+        return None
+    candidate = href.strip()
+    if not candidate:
+        return None
+    try:
+        parts = urlsplit(candidate)
+    except ValueError:
+        return None
+    if parts.scheme.lower() not in _ALLOWED_HREF_SCHEMES:
+        return None
+    if parts.netloc.lower() not in _SEC_HREF_HOSTS:
+        return None  # a document link must be relative or on an SEC host
+    path = parts.path
+
+    # Exact match only. "/ix/", "/ixviewer", "/other/ix" and "/notix" are
+    # ordinary links, not the viewer endpoint, and fall through to the direct
+    # contract below — where they are refused for not addressing the archive.
+    if path.lower() == VIEWER_PATH:
+        values = parse_qs(parts.query, keep_blank_values=True).get("doc", [])
+        if len(values) != 1:
+            return None  # missing, or repeated and therefore ambiguous
+        target = values[0].strip()
+        if not target:
+            return None
+        try:
+            target_parts = urlsplit(target)
+        except ValueError:
+            return None
+        if target_parts.scheme.lower() not in _ALLOWED_HREF_SCHEMES:
+            return None
+        if target_parts.netloc.lower() not in _SEC_HREF_HOSTS:
+            return None
+        target_path = target_parts.path
+        if not target_path.lower().startswith(_ARCHIVE_PATH_PREFIX):
+            return None  # a viewer target outside the archive is not a document
+        return _path_basename(target_path)
+
+    # Direct link contract: the archive is the only place a filing document
+    # lives, so a path outside it is refused even when its basename looks
+    # exactly like the expected primary.
+    if not path.lower().startswith(_ARCHIVE_PATH_PREFIX):
+        return None
+    return _path_basename(path)
+
+
+def _path_basename(path: str) -> Optional[str]:
+    """Last non-empty segment of a URL path, or ``None``."""
+    basename = path.rstrip("/").rsplit("/", 1)[-1].strip()
+    return basename or None
+
+
+@dataclass
+class _CellContent:
+    """One table cell: its rendered text and its first link target."""
+
+    text: str
+    href: str
 
 
 class _ParsedTable:
@@ -136,7 +246,7 @@ class _ParsedTable:
     def __init__(self, summary: str, preceding_heading: str) -> None:
         self.summary = summary
         self.preceding_heading = preceding_heading
-        self.rows: list[list[str]] = []
+        self.rows: list[list[_CellContent]] = []
 
     def is_document_format_table(self) -> bool:
         """True only for the table SEC identifies as Document Format Files.
@@ -168,6 +278,7 @@ class _DocumentTableParser(HTMLParser):
         self._row: list[str] | None = None
         self._cell: list[str] | None = None
         self._anchor: list[str] | None = None
+        self._cell_href: str = ""
         self._recent_text: str = ""
 
     def handle_starttag(self, tag: str, attrs) -> None:
@@ -182,18 +293,26 @@ class _DocumentTableParser(HTMLParser):
         elif tag in ("td", "th") and self._row is not None:
             self._cell = []
             self._anchor = None
+            self._cell_href = ""
         elif tag == "a" and self._cell is not None:
             self._anchor = []
+            if not self._cell_href:
+                for key, value in attrs:
+                    if key.lower() == "href" and value:
+                        self._cell_href = value
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "a" and self._cell is not None and self._anchor is not None:
-            text = "".join(self._anchor).strip()
-            if text:
-                self._cell = [text]
             self._anchor = None
         elif tag in ("td", "th") and self._row is not None and self._cell is not None:
-            self._row.append(_WS_RE.sub(" ", "".join(self._cell)).strip())
+            self._row.append(
+                _CellContent(
+                    text=_WS_RE.sub(" ", "".join(self._cell)).strip(),
+                    href=self._cell_href,
+                )
+            )
             self._cell = None
+            self._cell_href = ""
         elif tag == "tr" and self._table is not None and self._row is not None:
             self._table.rows.append(self._row)
             self._row = None
@@ -205,6 +324,7 @@ class _DocumentTableParser(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self._anchor is not None:
             self._anchor.append(data)
+            self._cell.append(data)  # type: ignore[union-attr]
         elif self._cell is not None:
             self._cell.append(data)
         elif self._table is None:
@@ -248,7 +368,7 @@ def parse_document_format_table(content: bytes) -> list[IndexTableRow]:
         raise ProbePlanError(
             "the Document Format Files table carries no rows."
         )
-    header = [cell.strip().lower() for cell in table.rows[0]]
+    header = [cell.text.strip().lower() for cell in table.rows[0]]
     if "document" not in header or "type" not in header:
         raise ProbePlanError(
             "the Document Format Files table declares no Document and Type "
@@ -260,14 +380,28 @@ def parse_document_format_table(content: bytes) -> list[IndexTableRow]:
     for raw_row in table.rows[1:]:
         if len(raw_row) <= max(doc_at, type_at):
             continue
+        document_cell = raw_row[doc_at]
+        # The filename comes from the link target, never the rendered text:
+        # SEC appends an "iXBRL" badge to the visible cell, so the live 10-K
+        # row read "air-20220531x10k.htm iXBRL" (ADR-090 canary finding). A
+        # cell with no usable link is refused, never reconstructed from text.
+        basename = href_document_basename(document_cell.href)
+        if basename is None:
+            raise ProbePlanError(
+                "a Document Format Files row carries no usable document link "
+                f"(rendered text {document_cell.text!r}, href "
+                f"{document_cell.href!r}); a filename is never inferred from "
+                "visible text."
+            )
         size: Optional[int] = None
         if size_at is not None and len(raw_row) > size_at:
-            digits = raw_row[size_at].replace(",", "").strip()
+            digits = raw_row[size_at].text.replace(",", "").strip()
             size = int(digits) if digits.isdigit() else None
         rows.append(
             IndexTableRow(
-                document=raw_row[doc_at].strip(),
-                document_type=raw_row[type_at].strip(),
+                document=basename,
+                document_type=raw_row[type_at].text.strip(),
+                href=document_cell.href,
                 size=size,
             )
         )
@@ -709,7 +843,7 @@ def run_filing_index_probe(
                         "reported_size": r.size,
                     }
                     for r in rows
-                ],
+                ],  # document is the href-derived basename, not rendered text
                 selected_document=selected.document,
                 expected_primary_document=entry.expected_primary_document,
                 ground_truth_source_sha256=entry.ground_truth_source_sha256,

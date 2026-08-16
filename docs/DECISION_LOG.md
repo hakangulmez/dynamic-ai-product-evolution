@@ -5489,11 +5489,57 @@ deferred Stage 00B limitation. The orchestration boundary stands:
 `ingestion` may import `universe`, `universe` never imports `ingestion`, and
 the Stage-00 CLI wires both without violating either guard.
 
+**Canary finding: the filename comes from the link, not the rendered text.**
+The first authorized live probe (`filing-index-probe-frame-v1-20260816`)
+**failed** on the first of its three URLs, with `non_html_primary`, and its
+immutable failure receipt is retained as evidence. The refusal was
+informative rather than a refutation: the endpoint returned 200, the
+Document Format Files table was correctly identified, and exactly one row
+declared type `10-K` — but the parser read the row's *rendered* cell text,
+which SEC renders as `air-20220531x10k.htm iXBRL`, appending an inline-XBRL
+badge. The trailing badge defeated the HTML-suffix check. The synthetic
+fixtures had carried no badge, which is why they passed while the live page
+did not.
+
+The corrected rule: **a row's filename is derived from the parsed path of its
+Document-cell link target**, never from visible text, which is presentation
+only. The href is parsed structurally with the standard library, never
+scanned for substrings, and both link shapes must be relative or on an
+approved SEC host (`sec.gov` / `www.sec.gov`).
+
+A **direct archive link** yields the last segment of its parsed path, and its
+query and fragment are ignored entirely, so `…/actual.htm?doc=wrong.htm`
+yields `actual.htm`. Its path must begin `/Archives/`: a filing document
+lives nowhere else, so an off-host link or an SEC path outside the archive is
+refused **even when its basename equals the expected primary document** — a
+matching name is not evidence of a legitimate source.
+
+The **inline-XBRL viewer link** is recognized *only* when the parsed path is
+**exactly** `/ix`, because that endpoint's path tail is `ix` rather than a
+document, so its `doc` parameter is authoritative there and nowhere else. The
+rule is bound to that one endpoint, **not to any href containing `doc=`** and
+not to a near-miss path: `/ix/`, `/ixviewer`, `/other/ix` and `/notix` are
+ordinary links, and their `doc` value never resolves. A viewer link whose
+`doc` parameter is missing, blank, repeated, off-host, or outside the archive
+is refused, as is any unsupported scheme such as `javascript:` or `data:`. Fail-closed behaviour is unchanged
+and extended: a Document cell with no usable link, href, or path basename is
+refused as `metadata_unparseable` rather than reconstructed from text;
+selection
+remains exactly one row whose declared type equals the planned form; and the
+href-derived basename must still be HTML and still equal the plan's
+hash-bound expected filename. Rendered text that merely *looks* like an HTML
+filename cannot rescue a non-HTML link target, and a badge-bearing expected
+filename is refused at plan load. Both committed fixture pages now carry
+real hrefs, and page one reproduces the live condition permanently: iXBRL
+badge plus `/ix?doc=` viewer link.
+
 **Decision gate.** A 3/3 pass makes the probe manifest the cited evidence
 for the next increment (packet contracts, then extraction, then
 primary-document acquisition, then a packet mode and its canary). Any
 failure stops the direction here; `index.json` then becomes a separately
-authorized fallback probe under the same success condition.
+authorized fallback probe under the same success condition. The first live
+attempt did not pass, so no probe evidence exists yet; the corrected probe
+run is a separate authorization after this correction is reviewed.
 
 ## Open decisions
 
