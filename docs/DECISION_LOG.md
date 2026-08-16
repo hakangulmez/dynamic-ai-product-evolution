@@ -5174,6 +5174,76 @@ manifest hashes and skips where `data/runs` is absent). Modified:
 schema registry stays at 0.27.0 with 60 entries and no pinned hash is
 rebaselined.
 
+## ADR-088 — W2-A Stage 00B firm-level baseline carrier
+
+**Status.** Accepted. First increment after the FRAME_v1 freeze (ADR-087)
+toward UNIVERSE_v1.
+
+**What the carrier is.** `baseline_carrier.py` derives one row per
+(stratum, CIK) from a completed FRAME run: the firm's baseline filing
+selected against the W0-frozen cutoff, its cohort assignment, and its
+filing-history summary. The frame is consumed read-only through its
+manifest — schema-validated, every output-artifact hash verified before
+parsing — and the committed freeze record is cited so every carrier
+manifest records whether the consumed frame is the frozen FRAME_v1
+(`frame_freeze.frame_is_frozen_frame`). The manifest contract is
+`universe_baseline_carrier_manifest@0.1.0`.
+
+**Baseline selection.** `universe.baseline_cutoff` (2022-11-29, ADR-077) is
+read from `configs/project.yaml`, never CLI-supplied, and must lie inside
+the frame's filing window (refused otherwise). Per firm: the latest annual
+filing with filing date on or before the cutoff → `baseline_candidate`;
+firms whose earliest annual filing postdates the cutoff →
+`post_baseline_entrant`, a retained separate cohort, never dropped and
+never pooled. Same-day ties break deterministically to the highest
+accession number and are flagged `baseline_tie_broken`, visible in counts
+and samples. `no_eligible_filing` is structurally unreachable from FRAME_v1
+and its count is reconciliation-checked to zero.
+
+**Strata are never merged.** Domestic and FPI-extension records group
+within stratum; a CIK appearing in both strata yields two rows flagged
+`dual_stratum`, a surfaced condition, not a resolved one.
+
+**No exclusions, and no issuer_filters call.** The EDGAR full index carries
+no cover-page issuer flags and no SIC, so no deterministic issuer exclusion
+is derivable in this increment; every frame filer is retained with
+`issuer_status: "unknown"` and basis `cover_page_evidence_not_yet_observed`.
+`issuer_filters.py` is deliberately not imported: its decision model
+expects a `company_id` the frame does not carry, and the carrier must not
+fabricate one or create a hidden dependency. Name-pattern signals
+("…ACQUISITION CORP", "…FUND") are not used even as candidate flags — a
+name is wording, not evidence (Rule 2). Real Stage 00B exclusions arrive
+with filing-document cover-page evidence in a later increment, which will
+also settle the `company_id` seam.
+
+**DERA boundary.** DERA FSDS plays no role: the carrier imports no DERA
+module, reads no DERA-derived field, and a test pins the import ban. DERA
+remains a frame validation source only (ADR-081/085/086).
+
+**Reconciliation and immutability.** Six count identities (frame-manifest
+consistency, stratum sums, cohort partition, per-firm filing sums, cutoff
+split, exact filer-key coverage) must all hold or the run is refused with
+nothing written. Run directories are write-once; reruns of an existing
+run-id are refused; `write_bytes_once` carries both outputs.
+
+**Downstream (not this increment).** Stage 00C baseline evidence packets —
+the first live filing-document download, under its own request plan, canary,
+and authorization — then the 00D screen (first prompt use, behind the
+W3/W4 gates), 00E classification, 00F tiers, 00G–00I adjudication, audit,
+and the UNIVERSE_v1 freeze. Product/capability/task extraction, scoring,
+the AI-mechanism measure, and sample construction remain governed by their
+own specs.
+
+**Scope.** Added: the carrier module, its manifest schema, its test file,
+and the fixture carrier gold (`expected_carrier.json`; the committed index
+fixtures already span both cohorts and the combined-filing case, so no
+fixture row changed). Modified: the pipeline entrypoint (sixth mode
+`baseline-carrier`, no new CLI flag), the schema registry (0.27.0 → 0.28.0,
+60 → 61 entries) with both pinned-hash rebaselines, `REPO_MANIFEST.md`
+(666 → 670), and the three manifest count tests. `data/runs` untouched; the
+real carrier run over the frozen FRAME_v1 is a separately authorized
+execution.
+
 ## Open decisions
 
 - Required source packet by firm-year.

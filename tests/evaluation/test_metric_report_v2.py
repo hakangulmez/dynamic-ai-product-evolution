@@ -570,7 +570,11 @@ def test_manifest_count():
     # 666 = 664 + the FRAME_v1 freeze record and its guard-test file
     # (ADR-087): the freeze pins the released frame artifact and its
     # gate-passing validation evidence; data/runs stays unmodified.
-    assert declared == len(paths) == 666
+    # 670 = 666 + the four W2-A baseline-carrier paths (ADR-088): the
+    # Stage 00B carrier module, its manifest schema, the carrier test
+    # file, and the fixture carrier gold. No exclusions are decided at
+    # that stage.
+    assert declared == len(paths) == 670
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

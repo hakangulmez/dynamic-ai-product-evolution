@@ -749,8 +749,10 @@ def test_manifest_declared_total_matches_entry_count_and_lists_new_path():
 def test_no_static_schema_added_and_schema_manifest_unchanged():
     # Evaluation-v2 meaning preserved: run manifest v0.2 still adds no static
     # schema file. Only the global schema-version-manifest baseline is
-    # rebaselined (latest: ADR-082, 0.26.0 -> 0.27.0, registering the DERA
-    # archive acquisition manifest and its v2 sec_live successor; before it
+    # rebaselined (latest: ADR-088, 0.27.0 -> 0.28.0, registering
+    # universe_baseline_carrier_manifest for the Stage 00B firm-level
+    # baseline carrier; before it ADR-082, 0.26.0 -> 0.27.0, registering the
+    # DERA archive acquisition manifest and its v2 sec_live successor; before it
     # ADR-081, 0.25.0 -> 0.26.0, registering
     # frame_dera_validation_manifest for the DERA FSDS validation artifact;
     # before it ADR-078, 0.24.0 -> 0.25.0, registering
@@ -764,7 +766,7 @@ def test_no_static_schema_added_and_schema_manifest_unchanged():
     # successor).
     assert not (ROOT / "schemas" / "evaluation_run_manifest.v2.schema.json").exists()
     got = sha256_bytes((ROOT / "schemas" / "schema_version_manifest.json").read_bytes())
-    assert got == "7959bf84172f7ceb7d80916e2fa9e27cfb1082eff1502c148925dff280004afd"
+    assert got == "2f6987e2d0a372c389504cf88246e86e48c65d82e0296fcbaa18d4d67b9236ed"
 
 
 def test_protected_identities_unchanged():

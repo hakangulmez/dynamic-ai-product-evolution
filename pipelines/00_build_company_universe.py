@@ -30,6 +30,11 @@ so every pre-existing invocation is unchanged):
   ``sec_live`` transport, preserves raw ZIPs with receipts, extracts exactly
   one ``sub.txt`` member per archive, and writes a bundle that
   ``dera-validate`` consumes unchanged.
+- ``baseline-carrier`` derives the Stage 00B firm-level baseline carrier
+  (W2-A, ADR-088) from a completed FRAME run: hash-verified read-only frame
+  consumption, per-stratum CIK grouping, baseline-filing selection against
+  the W0-frozen cutoff in ``configs/project.yaml``. No exclusions, no DERA,
+  no network access.
 
 Examples:
     python pipelines/00_build_company_universe.py \
@@ -80,6 +85,11 @@ from dynamic_ai_products.universe.dera_acquisition import (  # noqa: E402
     make_dera_fixture_replay_transport,
     run_dera_acquisition,
 )
+from dynamic_ai_products.universe.baseline_carrier import (  # noqa: E402
+    CarrierInputError,
+    CarrierReconciliationError,
+    run_baseline_carrier,
+)
 from dynamic_ai_products.universe.frame_dera_validation import (  # noqa: E402
     DeraInputError,
     run_dera_validation,
@@ -103,7 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mode", default="sentinel",
         choices=["sentinel", "frame", "acquire-index", "dera-validate",
-                 "acquire-dera"],
+                 "acquire-dera", "baseline-carrier"],
         help="Stage 00 sub-pipeline to run (default: sentinel).",
     )
     parser.add_argument(
@@ -112,6 +122,8 @@ def build_parser() -> argparse.ArgumentParser:
             "Sentinel mode: the versioned sample-rule config "
             "(configs/universe_sample_rules.yaml). Frame mode: the project "
             "config carrying the universe form scopes (configs/project.yaml). "
+            "Baseline-carrier mode: the project config carrying the "
+            "W0-frozen universe.baseline_cutoff (configs/project.yaml). "
             "Not accepted in acquire-index mode."
         ),
     )
@@ -178,8 +190,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--frame-manifest", default=None,
-        help="Dera-validate mode only: path to a completed FRAME run's "
-             "filer_frame_manifest.json.",
+        help="Dera-validate and baseline-carrier modes: path to a completed "
+             "FRAME run's filer_frame_manifest.json.",
     )
     parser.add_argument(
         "--dera-dir", default=None,
@@ -230,6 +242,25 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         missing = _missing(dera_flags)
         if missing:
             return f"dera-validate mode requires: {', '.join(missing)}"
+        return None
+
+    if args.mode == "baseline-carrier":
+        offending = _present(
+            sentinel_flags + frame_flags + acquire_flags
+            + (("--dera-dir", args.dera_dir),)
+        )
+        if offending:
+            return (
+                f"baseline-carrier mode does not accept: {', '.join(offending)}"
+            )
+        missing = _missing(
+            (
+                ("--frame-manifest", args.frame_manifest),
+                ("--config", args.config),
+            )
+        )
+        if missing:
+            return f"baseline-carrier mode requires: {', '.join(missing)}"
         return None
 
     if args.mode == "acquire-dera":
@@ -581,6 +612,48 @@ def _main_dera_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_baseline_carrier(args: argparse.Namespace) -> int:
+    frame_manifest = Path(args.frame_manifest)
+    config_path = Path(args.config)
+    if not frame_manifest.is_file():
+        print(f"ERROR: frame manifest not found: {frame_manifest}", file=sys.stderr)
+        return 2
+    if not config_path.is_file():
+        print(f"ERROR: project config not found: {config_path}", file=sys.stderr)
+        return 2
+    try:
+        result = run_baseline_carrier(
+            repo_root=REPO_ROOT,
+            project_config_path=config_path,
+            frame_manifest_path=frame_manifest,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            dry_run=args.dry_run,
+        )
+    except CarrierInputError as exc:
+        print(f"ERROR: invalid baseline-carrier input: {exc}", file=sys.stderr)
+        return 2
+    except CarrierReconciliationError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "counts": result.counts,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     error = _reject_cross_mode_flags(args)
@@ -595,6 +668,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_acquire_dera(args)
     if args.mode == "dera-validate":
         return _main_dera_validate(args)
+    if args.mode == "baseline-carrier":
+        return _main_baseline_carrier(args)
     return _main_sentinel(args)
 
 

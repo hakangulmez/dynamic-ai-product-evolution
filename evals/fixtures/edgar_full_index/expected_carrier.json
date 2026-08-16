@@ -1,0 +1,37 @@
+{
+  "description": "Gold expectations for the Stage 00B baseline carrier derived from the edgar_full_index fixture frame (window 2022-08-01..2023-02-28) at the W0-frozen baseline cutoff 2022-11-29 (configs/project.yaml, ADR-077). Five domestic firms: LEDGERWORKS (two annual filings straddling the cutoff; baseline is the 2022-09-15 10-K, not the 2023-01-25 one) and TRANSIT DATA COOP are baseline candidates; the three combined-filing firms (one shared accession, one carrier row each, ADR-080) filed only after the cutoff and are retained post-baseline entrants. Three FPI-extension firms, all baseline candidates, including both filers of the combined 40-F. No ties, no dual-stratum CIKs, no exclusions.",
+  "baseline_cutoff": "2022-11-29",
+  "counts": {
+    "frame_annual_records_domestic": 6,
+    "frame_annual_records_fpi_extension": 3,
+    "frame_annual_records_total": 9,
+    "firms_domestic": 5,
+    "firms_fpi_extension": 3,
+    "firms_total": 8,
+    "baseline_candidates_domestic": 2,
+    "baseline_candidates_fpi_extension": 3,
+    "baseline_candidates_total": 5,
+    "post_baseline_entrants_domestic": 3,
+    "post_baseline_entrants_fpi_extension": 0,
+    "post_baseline_entrants_total": 3,
+    "no_eligible_filing_firms": 0,
+    "baseline_ties_broken": 0,
+    "dual_stratum_firms": 0,
+    "filings_on_or_before_cutoff": 5,
+    "filings_after_cutoff": 4
+  },
+  "baseline_candidates": [
+    ["domestic", "0002000001", "0002000001-22-000010"],
+    ["domestic", "0002000002", "0002000002-22-000004"],
+    ["fpi_extension", "0002000003", "0002000003-22-000007"],
+    ["fpi_extension", "0002000015", "0002000015-22-000003"],
+    ["fpi_extension", "0002000016", "0002000015-22-000003"]
+  ],
+  "post_baseline_entrants": [
+    ["domestic", "0002000012", "2023-02-10"],
+    ["domestic", "0002000013", "2023-02-10"],
+    ["domestic", "0002000014", "2023-02-10"]
+  ],
+  "dual_stratum_ciks": [],
+  "ties_broken": []
+}

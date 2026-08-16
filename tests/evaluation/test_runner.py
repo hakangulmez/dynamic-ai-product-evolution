@@ -1254,7 +1254,11 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # 666 = 664 + the FRAME_v1 freeze record and its guard-test file
     # (ADR-087): the freeze pins the released frame artifact and its
     # gate-passing validation evidence; data/runs stays unmodified.
-    assert declared == len(paths) == 666
+    # 670 = 666 + the four W2-A baseline-carrier paths (ADR-088): the
+    # Stage 00B carrier module, its manifest schema, the carrier test
+    # file, and the fixture carrier gold. No exclusions are decided at
+    # that stage.
+    assert declared == len(paths) == 670
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

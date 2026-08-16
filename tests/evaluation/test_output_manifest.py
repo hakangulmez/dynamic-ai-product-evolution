@@ -856,7 +856,11 @@ def test_repo_manifest_count_and_paths():
     # 666 = 664 + the FRAME_v1 freeze record and its guard-test file
     # (ADR-087): the freeze pins the released frame artifact and its
     # gate-passing validation evidence; data/runs stays unmodified.
-    assert "Total tracked/scaffold files listed: **666**" in text
+    # 670 = 666 + the four W2-A baseline-carrier paths (ADR-088): the
+    # Stage 00B carrier module, its manifest schema, the carrier test
+    # file, and the fixture carrier gold. No exclusions are decided at
+    # that stage.
+    assert "Total tracked/scaffold files listed: **670**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

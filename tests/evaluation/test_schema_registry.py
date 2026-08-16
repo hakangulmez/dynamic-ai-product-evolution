@@ -174,7 +174,10 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-082: manifest_version 0.26.0 -> 0.27.0, 58 -> 60
+    # Rebaselined by ADR-088: manifest_version 0.27.0 -> 0.28.0, 60 -> 61
+    # entries, registering universe_baseline_carrier_manifest for the Stage
+    # 00B firm-level baseline carrier (W2-A). Before it,
+    # ADR-082: manifest_version 0.26.0 -> 0.27.0, 58 -> 60
     # entries, registering dera_fsds_acquisition_manifest (fixture replay)
     # and its v2 sec_live successor for DERA archive acquisition. Before it,
     # ADR-081: manifest_version 0.25.0 -> 0.26.0, 57 -> 58
@@ -209,7 +212,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "7959bf84172f7ceb7d80916e2fa9e27cfb1082eff1502c148925dff280004afd"
+    "2f6987e2d0a372c389504cf88246e86e48c65d82e0296fcbaa18d4d67b9236ed"
 )
 
 

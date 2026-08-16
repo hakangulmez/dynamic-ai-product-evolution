@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **666**
+Total tracked/scaffold files listed: **670**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -148,6 +148,7 @@ Total tracked/scaffold files listed: **666**
 - `evals/fixtures/dera_fsds_archives/dera-2022q4.zip`
 - `evals/fixtures/dera_fsds_archives/dera-2023q1.zip`
 - `evals/fixtures/dera_fsds_archives/request_plan.json`
+- `evals/fixtures/edgar_full_index/expected_carrier.json`
 - `evals/fixtures/edgar_full_index/expected_frame.json`
 - `evals/fixtures/edgar_full_index/fixture_manifest.json`
 - `evals/fixtures/edgar_full_index/master-2022-QTR3.idx`
@@ -334,6 +335,7 @@ Total tracked/scaffold files listed: **666**
 - `schemas/task_observation.schema.json`
 - `schemas/task_observation_v2.schema.json`
 - `schemas/task_transition.schema.json`
+- `schemas/universe_baseline_carrier_manifest.schema.json`
 - `schemas/universe_run_manifest.schema.json`
 - `schemas/universe_run_manifest.v2.schema.json`
 - `schemas/web_collection_receipt.schema.json`
@@ -495,6 +497,7 @@ Total tracked/scaffold files listed: **666**
 - `src/dynamic_ai_products/sec_index_transport.py`
 - `src/dynamic_ai_products/universe/__init__.py`
 - `src/dynamic_ai_products/universe/audit.py`
+- `src/dynamic_ai_products/universe/baseline_carrier.py`
 - `src/dynamic_ai_products/universe/classification.py`
 - `src/dynamic_ai_products/universe/dera_acquisition.py`
 - `src/dynamic_ai_products/universe/frame.py`
@@ -651,6 +654,7 @@ Total tracked/scaffold files listed: **666**
 - `tests/schema/test_schemas_are_valid.py`
 - `tests/temporal/test_temporal_rule.py`
 - `tests/ui/test_local_ui_scaffold.py`
+- `tests/universe/test_baseline_carrier.py`
 - `tests/universe/test_dera_acquisition.py`
 - `tests/universe/test_evidence_packets.py`
 - `tests/universe/test_frame_acquisition.py`

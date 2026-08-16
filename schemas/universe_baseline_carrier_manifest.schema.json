@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_baseline_carrier_manifest.schema.json",
+  "title": "Universe baseline carrier manifest",
+  "description": "Immutable record of one Stage 00B firm-level baseline-carrier derivation from a completed FRAME run (W2-A, ADR-088). The frame is consumed read-only through its hash-verified manifest; the committed FRAME_v1 freeze record is cited and the manifest records whether the consumed frame is the frozen one. No issuer exclusion is decided at this stage: every frame filer is retained, issuer status is unknown pending cover-page evidence, domestic and FPI-extension strata are never merged, and post-baseline entrants are a retained separate cohort. DERA FSDS plays no role in this artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "frame_manifest_sha256",
+    "frame_run_dir",
+    "frame_version",
+    "frame_freeze",
+    "baseline_cutoff",
+    "project_config_hash",
+    "filing_window_start",
+    "filing_window_end",
+    "domestic_forms",
+    "extension_forms",
+    "issuer_status_basis",
+    "counts",
+    "reconciliation",
+    "samples",
+    "output_hashes",
+    "run_timestamp",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "frame_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "frame_run_dir": {
+      "type": "string"
+    },
+    "frame_version": {
+      "type": "string"
+    },
+    "frame_freeze": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "record_sha256",
+        "frozen_version",
+        "frame_is_frozen_frame"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "record_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "frozen_version": {
+          "type": "string"
+        },
+        "frame_is_frozen_frame": {
+          "type": "boolean"
+        }
+      }
+    },
+    "baseline_cutoff": {
+      "type": "string",
+      "format": "date"
+    },
+    "project_config_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "filing_window_start": {
+      "type": "string",
+      "format": "date"
+    },
+    "filing_window_end": {
+      "type": "string",
+      "format": "date"
+    },
+    "domestic_forms": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "extension_forms": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "issuer_status_basis": {
+      "const": "cover_page_evidence_not_yet_observed"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frame_annual_records_domestic",
+        "frame_annual_records_fpi_extension",
+        "frame_annual_records_total",
+        "firms_domestic",
+        "firms_fpi_extension",
+        "firms_total",
+        "baseline_candidates_domestic",
+        "baseline_candidates_fpi_extension",
+        "baseline_candidates_total",
+        "post_baseline_entrants_domestic",
+        "post_baseline_entrants_fpi_extension",
+        "post_baseline_entrants_total",
+        "no_eligible_filing_firms",
+        "baseline_ties_broken",
+        "dual_stratum_firms",
+        "filings_on_or_before_cutoff",
+        "filings_after_cutoff"
+      ],
+      "properties": {
+        "frame_annual_records_domestic": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "frame_annual_records_fpi_extension": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "frame_annual_records_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "firms_domestic": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "firms_fpi_extension": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "firms_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "baseline_candidates_domestic": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "baseline_candidates_fpi_extension": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "baseline_candidates_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "post_baseline_entrants_domestic": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "post_baseline_entrants_fpi_extension": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "post_baseline_entrants_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "no_eligible_filing_firms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 0
+        },
+        "baseline_ties_broken": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dual_stratum_firms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "filings_on_or_before_cutoff": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "filings_after_cutoff": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 6,
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "samples": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array"
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_baseline_carrier.jsonl"
+      ],
+      "properties": {
+        "universe_baseline_carrier.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_baseline_carrier_manifest"
+      ],
+      "properties": {
+        "universe_baseline_carrier_manifest": {
+          "type": "string"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
