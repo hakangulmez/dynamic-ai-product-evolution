@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **663**
+Total tracked/scaffold files listed: **664**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -46,6 +46,7 @@ Total tracked/scaffold files listed: **663**
 - `artifacts/.gitkeep`
 - `configs/dera_fsds_canary_request_plan.json`
 - `configs/dera_fsds_full_request_plan.json`
+- `configs/dera_validation_adjudications.json`
 - `configs/edgar_index_canary_request_plan.json`
 - `configs/edgar_index_full_request_plan.json`
 - `configs/frontier_registry.example.yaml`

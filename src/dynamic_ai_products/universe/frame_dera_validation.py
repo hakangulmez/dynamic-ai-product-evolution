@@ -33,14 +33,31 @@ The gate (``frame_dera_validation_gate_v1``) fails closed on: any
 ``dera_only_unexplained`` annual pair; any annual ``identity_mismatch``; any
 annual non-PARTIAL registrant-set contradiction
 (``frame_filer_not_in_dera_registrants`` or ``dera_registrant_not_in_frame``
-— only the explicitly PARTIAL unresolved class is non-gating); any DERA
+— only the partial/truncated unresolved class is non-gating); any DERA
 parse failure (a malformed row must never yield a passing validation merely
 because it was excluded); any broken reconciliation identity; or zero annual
-matches when both comparable populations are nonempty. ``nciks`` must be a
-positive integer, equal to 1 + declared additional CIKs on non-PARTIAL rows
-and strictly greater than that on PARTIAL rows (PARTIAL means at least one
-co-registrant is omitted). This module performs no network access and calls
-no model.
+matches when both comparable populations are nonempty.
+
+ADR-085 refinements, each measured on the real full-window validation:
+
+- ``nciks`` must be a positive integer. On non-PARTIAL rows, a count below
+  1 + declared additional CIKs is a fatal parse failure, while a count
+  above it is the measured FSDS ``aciks`` field-width truncation —
+  valid, marked ``registrant_set_truncated``, handled like PARTIAL
+  (declared pairs compared, omissions never inferred, non-gating). PARTIAL
+  rows still require ``nciks`` strictly above the declared count.
+- Filed-date drift with matching CIK, accession, and form is the report-only
+  ``filed_date_drift`` category when DERA is later by at most
+  ``FILED_DATE_DRIFT_BOUND_DAYS`` (the EDGAR next-business-day signature);
+  DERA-earlier drift, drift beyond the bound, and any form mismatch remain
+  gating identity mismatches.
+- Replaced-submission contradictions carrying concrete replacement and
+  backdating evidence are reclassified as non-gating adjudicated categories
+  via the committed, append-only, hash-recorded
+  ``configs/dera_validation_adjudications.json``; unadjudicated
+  contradictions still gate.
+
+This module performs no network access and calls no model.
 """
 
 from __future__ import annotations
@@ -64,6 +81,17 @@ from .models import StrictModel
 ANNUAL_BASE_FORMS = ("10-K", "10-KT", "20-F", "40-F")
 PARTIAL_TOKEN = "PARTIAL"
 GATE_RULE_ID = "frame_dera_validation_gate_v1"
+# ADR-085 decision B: filed-date drift with matching CIK, accession, and
+# form is report-only when DERA is later by at most this many days (the
+# measured EDGAR next-business-day signature: +1 weekday, +3 over a
+# weekend). DERA-earlier drift and anything beyond the bound remain gating
+# identity mismatches. Recorded in every validation manifest's counts.
+FILED_DATE_DRIFT_BOUND_DAYS = 3
+# ADR-085 decision C: committed, append-only, evidence-backed adjudications
+# of replaced-submission contradictions. Fixed path; hash recorded in the
+# manifest samples. Unadjudicated contradictions still gate.
+ADJUDICATIONS_RELATIVE_PATH = Path("configs/dera_validation_adjudications.json")
+ADJUDICATIONS_CONTRACT = "dera_validation_adjudications@0.1.0"
 VALIDATION_MANIFEST_FILENAME = "frame_dera_validation_manifest.json"
 VALIDATION_MANIFEST_SCHEMA_RELATIVE_PATH = Path(
     "schemas/frame_dera_validation_manifest.schema.json"
@@ -113,6 +141,10 @@ class DeraSubmission(StrictModel):
     nciks: int
     additional_ciks: list[str] = Field(default_factory=list)
     registrant_set_partial: bool = False
+    # ADR-085 decision A: nciks above the declared count without a PARTIAL
+    # token is the measured FSDS aciks field-width truncation — valid,
+    # marked, non-gating, omissions never inferred.
+    registrant_set_truncated: bool = False
     source_file: str
     source_line: int
 
@@ -242,13 +274,19 @@ def parse_sub_file(text: str, *, source_name: str) -> ParsedSubFile:
             failure("invalid_aciks_cik", str(exc))
             continue
         declared = 1 + len(additional)
-        if not partial and nciks != declared:
-            failure(
-                "nciks_inconsistent",
-                f"nciks={nciks} but 1 + additional CIKs = {declared}",
-            )
-            continue
-        if partial and nciks <= declared:
+        truncated = False
+        if not partial:
+            if nciks < declared:
+                failure(
+                    "nciks_inconsistent",
+                    f"nciks={nciks} below 1 + additional CIKs = {declared}",
+                )
+                continue
+            # nciks above the declared count without PARTIAL: the measured
+            # FSDS aciks field-width truncation (ADR-085 decision A) —
+            # valid, marked; genuinely impossible counts stay fatal above.
+            truncated = nciks > declared
+        elif nciks <= declared:
             failure(
                 "nciks_inconsistent",
                 f"PARTIAL declares at least one omitted co-registrant, so "
@@ -266,6 +304,7 @@ def parse_sub_file(text: str, *, source_name: str) -> ParsedSubFile:
                 nciks=nciks,
                 additional_ciks=additional,
                 registrant_set_partial=partial,
+                registrant_set_truncated=truncated,
                 source_file=source_name,
                 source_line=line_number,
             )
@@ -280,6 +319,64 @@ def parse_sub_file(text: str, *, source_name: str) -> ParsedSubFile:
 
 def _sample(entries: list[dict]) -> list[dict]:
     return entries[:SAMPLE_LIMIT]
+
+
+def load_adjudications(repo_root: Path) -> tuple[dict, str, int]:
+    """Load the committed adjudication file; fail closed on any malformation.
+
+    Returns a lookup keyed by (direction, cik, accession), the file's
+    SHA-256, and the record count. Only exactly-matching contradictions are
+    reclassified; everything else still gates (ADR-085 decisions C/D).
+    """
+    path = repo_root / ADJUDICATIONS_RELATIVE_PATH
+    if not path.is_file():
+        raise DeraInputError(f"Adjudication file not found: {path}")
+    payload = read_json(path)
+    if not isinstance(payload, dict) or payload.get(
+        "adjudications_contract"
+    ) != ADJUDICATIONS_CONTRACT:
+        raise DeraInputError(
+            f"Adjudication file must declare {ADJUDICATIONS_CONTRACT!r}."
+        )
+    required = {
+        "cik", "accession_number", "direction", "reason",
+        "replacement_accession", "backdating_evidence", "adr_reference",
+        "evidence_note",
+    }
+    lookup: dict[tuple[str, str, str], dict] = {}
+    records = payload.get("records")
+    if not isinstance(records, list):
+        raise DeraInputError("Adjudication records must be a list.")
+    for index, record in enumerate(records):
+        if not isinstance(record, dict) or set(record) != required:
+            raise DeraInputError(
+                f"Adjudication record {index} must have exactly the keys "
+                f"{sorted(required)}."
+            )
+        if record["direction"] not in ("dera_only", "filed_date"):
+            raise DeraInputError(
+                f"Adjudication record {index}: unknown direction "
+                f"{record['direction']!r}."
+            )
+        if record["reason"] != "replaced_submission":
+            raise DeraInputError(
+                f"Adjudication record {index}: only replaced_submission is "
+                "an admitted reason (ADR-085 decision C)."
+            )
+        try:
+            cik = normalize_cik(record["cik"])
+            accession = normalize_accession(record["accession_number"])
+        except IdentifierError as exc:
+            raise DeraInputError(
+                f"Adjudication record {index}: {exc}"
+            ) from exc
+        key = (record["direction"], cik, accession)
+        if key in lookup:
+            raise DeraInputError(
+                f"Adjudication record {index}: duplicate key {key}."
+            )
+        lookup[key] = record
+    return lookup, sha256_file(path), len(records)
 
 
 def _frame_record_key(record: dict) -> tuple[str, str]:
@@ -336,6 +433,11 @@ def run_dera_validation(
     domestic_forms = set(frame_manifest["domestic_forms"])
     extension_forms = set(frame_manifest["extension_forms"])
     annual_forms = domestic_forms | extension_forms
+
+    adjudications, adjudications_sha256, adjudication_records = (
+        load_adjudications(root)
+    )
+    applied_adjudications: list[dict] = []
 
     annual_records = [
         r
@@ -400,7 +502,8 @@ def run_dera_validation(
         group = by_adsh[adsh]
         content = {
             (r.cik, r.form, str(r.filed), r.nciks,
-             tuple(r.additional_ciks), r.registrant_set_partial)
+             tuple(r.additional_ciks), r.registrant_set_partial,
+             r.registrant_set_truncated)
             for r in group
         }
         if len(content) > 1:
@@ -447,6 +550,7 @@ def run_dera_validation(
         accession_field: str,
         form_field: str,
         date_field: str,
+        stratum: str,
     ) -> dict:
         pair_to_sub: dict[tuple[str, str], tuple[DeraSubmission, str]] = {}
         adsh_to_subs: dict[str, list[DeraSubmission]] = {}
@@ -458,13 +562,15 @@ def run_dera_validation(
                 pair_to_sub[(cik, adsh)] = (sub, role)
 
         cat: dict[str, list[dict]] = {
-            "matched": [], "identity_mismatch": [], "noncoverage": [],
+            "matched": [], "identity_mismatch": [], "filed_date_drift": [],
+            "identity_adjudicated": [], "noncoverage": [],
             "right_boundary_unobserved": [],
             "unresolved_partial_registrant_set": [],
             "frame_filer_not_in_dera_registrants": [],
         }
         matched_pairs: set[tuple[str, str]] = set()
         matched_under_partial = 0
+        matched_under_truncated = 0
         for record in frame_side:
             key = (record["cik"], record[accession_field])
             entry = {
@@ -486,21 +592,59 @@ def run_dera_validation(
                         f"filed: frame={record[date_field]} dera={sub.filed}"
                     )
                 if mismatches:
-                    cat["identity_mismatch"].append(
-                        {**entry, "mismatches": mismatches}
+                    form_matches = record[form_field] == sub.form
+                    drift_days = (
+                        (sub.filed - date.fromisoformat(str(record[date_field]))).days
+                        if form_matches
+                        else None
                     )
+                    adjudication = adjudications.get(
+                        ("filed_date", key[0], key[1])
+                    )
+                    if (
+                        form_matches
+                        and drift_days is not None
+                        and 0 < drift_days <= FILED_DATE_DRIFT_BOUND_DAYS
+                    ):
+                        # ADR-085 decision B: bounded DERA-later drift is
+                        # report-only; anything else stays gating.
+                        cat["filed_date_drift"].append(
+                            {**entry, "drift_days": drift_days,
+                             "dera_filed": str(sub.filed)}
+                        )
+                    elif form_matches and adjudication is not None:
+                        cat["identity_adjudicated"].append(
+                            {**entry, "mismatches": mismatches,
+                             "reason": adjudication["reason"],
+                             "adr_reference": adjudication["adr_reference"]}
+                        )
+                        applied_adjudications.append(
+                            {**adjudication, "stratum": stratum}
+                        )
+                    else:
+                        cat["identity_mismatch"].append(
+                            {**entry, "mismatches": mismatches}
+                        )
                 else:
                     matched_pairs.add(key)
                     if sub.registrant_set_partial:
                         matched_under_partial += 1
+                    if sub.registrant_set_truncated:
+                        matched_under_truncated += 1
                     cat["matched"].append(
                         {**entry, "role": role,
-                         "dera_registrant_set_partial": sub.registrant_set_partial}
+                         "dera_registrant_set_partial": sub.registrant_set_partial,
+                         "dera_registrant_set_truncated": sub.registrant_set_truncated}
                     )
                 continue
             subs_for_adsh = adsh_to_subs.get(key[1])
             if subs_for_adsh:
-                if any(s.registrant_set_partial for s in subs_for_adsh):
+                # ADR-085 decision A: truncated sets are handled like PARTIAL
+                # — the unlisted filer is unresolved, marked, non-gating.
+                if any(
+                    s.registrant_set_partial or s.registrant_set_truncated
+                    for s in subs_for_adsh
+                ):
                     cat["unresolved_partial_registrant_set"].append(entry)
                 else:
                     cat["frame_filer_not_in_dera_registrants"].append(entry)
@@ -513,6 +657,7 @@ def run_dera_validation(
 
         dera_only_unexplained: list[dict] = []
         dera_only_integrity_excluded: list[dict] = []
+        dera_only_adjudicated: list[dict] = []
         dera_registrant_not_in_frame: list[dict] = []
         dera_matched = 0
         frame_keys = {(r["cik"], r[accession_field]) for r in frame_side}
@@ -527,34 +672,50 @@ def run_dera_validation(
                 if (cik, adsh) in matched_pairs:
                     dera_matched += 1
                 elif (cik, adsh) in frame_keys:
-                    pass  # identity_mismatch, already counted frame-side
+                    pass  # drift/adjudicated/mismatch, counted frame-side
                 elif adsh in frame_adshs:
                     dera_registrant_not_in_frame.append(entry)
                 elif adsh in integrity_accessions:
                     dera_only_integrity_excluded.append(entry)
                 else:
-                    dera_only_unexplained.append(entry)
-        mismatch_pairs = len(cat["identity_mismatch"])
+                    adjudication = adjudications.get(("dera_only", cik, adsh))
+                    if adjudication is not None:
+                        dera_only_adjudicated.append(
+                            {**entry, "reason": adjudication["reason"],
+                             "adr_reference": adjudication["adr_reference"]}
+                        )
+                        applied_adjudications.append(
+                            {**adjudication, "stratum": stratum}
+                        )
+                    else:
+                        dera_only_unexplained.append(entry)
+        frame_side_divergent = (
+            len(cat["identity_mismatch"])
+            + len(cat["filed_date_drift"])
+            + len(cat["identity_adjudicated"])
+        )
         return {
             "categories": cat,
             "matched_under_partial": matched_under_partial,
+            "matched_under_truncated": matched_under_truncated,
             "expanded_pairs": expanded_pairs,
             "dera_matched": dera_matched,
-            "dera_mismatched_pairs": mismatch_pairs,
+            "dera_divergent_pairs": frame_side_divergent,
             "dera_only_unexplained": dera_only_unexplained,
             "dera_only_integrity_excluded": dera_only_integrity_excluded,
+            "dera_only_adjudicated": dera_only_adjudicated,
             "dera_registrant_not_in_frame": dera_registrant_not_in_frame,
         }
 
     annual = classify_stratum(
         annual_records, dera_annual,
         accession_field="accession_number", form_field="form",
-        date_field="filing_date",
+        date_field="filing_date", stratum="annual",
     )
     amendment = classify_stratum(
         amendment_records, dera_amendment,
         accession_field="amendment_accession", form_field="amendment_form",
-        date_field="amendment_filing_date",
+        date_field="amendment_filing_date", stratum="amendment",
     )
 
     # --- noncoverage table: total and per base form (annual stratum) -------
@@ -601,10 +762,22 @@ def run_dera_validation(
         "dera_out_of_scope_form": dera_out_of_scope_form,
         "dera_annual_submissions": len(dera_annual),
         "dera_amendment_submissions": len(dera_amendment),
+        "dera_registrant_set_truncated_submissions": sum(
+            1 for s in unique_submissions if s.registrant_set_truncated
+        ),
+        "filed_date_drift_bound_days": FILED_DATE_DRIFT_BOUND_DAYS,
+        "adjudication_records": adjudication_records,
+        "adjudications_applied": len(applied_adjudications),
         "annual_frame_records": len(annual_records),
         "annual_matched": len(annual["categories"]["matched"]),
         "annual_matched_under_partial": annual["matched_under_partial"],
+        "annual_matched_under_truncated": annual["matched_under_truncated"],
         "annual_identity_mismatch": len(annual["categories"]["identity_mismatch"]),
+        "annual_filed_date_drift": len(annual["categories"]["filed_date_drift"]),
+        "annual_identity_adjudicated": len(
+            annual["categories"]["identity_adjudicated"]
+        ),
+        "annual_dera_only_adjudicated": len(annual["dera_only_adjudicated"]),
         "annual_noncoverage": len(annual["categories"]["noncoverage"]),
         "annual_right_boundary_unobserved": len(
             annual["categories"]["right_boundary_unobserved"]
@@ -626,8 +799,18 @@ def run_dera_validation(
         ),
         "amendment_frame_links": len(amendment_records),
         "amendment_matched": len(amendment["categories"]["matched"]),
+        "amendment_matched_under_truncated": amendment["matched_under_truncated"],
         "amendment_identity_mismatch": len(
             amendment["categories"]["identity_mismatch"]
+        ),
+        "amendment_filed_date_drift": len(
+            amendment["categories"]["filed_date_drift"]
+        ),
+        "amendment_identity_adjudicated": len(
+            amendment["categories"]["identity_adjudicated"]
+        ),
+        "amendment_dera_only_adjudicated": len(
+            amendment["dera_only_adjudicated"]
         ),
         "amendment_noncoverage": len(amendment["categories"]["noncoverage"]),
         "amendment_right_boundary_unobserved": len(
@@ -666,39 +849,45 @@ def run_dera_validation(
             + counts["dera_amendment_submissions"]
             + counts["dera_out_of_scope_form"]
             + counts["dera_out_of_window"],
-        "annual: frame records = matched + mismatch + noncoverage + boundary"
-        " + unresolved_partial + not_in_registrants":
+        "annual: frame records = matched + mismatch + drift + adjudicated"
+        " + noncoverage + boundary + unresolved_partial + not_in_registrants":
             counts["annual_frame_records"]
             == counts["annual_matched"]
             + counts["annual_identity_mismatch"]
+            + counts["annual_filed_date_drift"]
+            + counts["annual_identity_adjudicated"]
             + counts["annual_noncoverage"]
             + counts["annual_right_boundary_unobserved"]
             + counts["annual_unresolved_partial_registrant_set"]
             + counts["annual_frame_filer_not_in_dera_registrants"],
-        "annual: dera pairs = matched + mismatched + registrant_disagreement"
-        " + only_explained + only_unexplained":
+        "annual: dera pairs = matched + divergent + registrant_disagreement"
+        " + only_explained + only_adjudicated + only_unexplained":
             counts["annual_dera_expanded_pairs"]
             == counts["annual_dera_matched_pairs"]
-            + annual["dera_mismatched_pairs"]
+            + annual["dera_divergent_pairs"]
             + counts["annual_dera_registrant_not_in_frame"]
             + counts["annual_dera_only_integrity_excluded"]
+            + counts["annual_dera_only_adjudicated"]
             + counts["annual_dera_only_unexplained"],
-        "amendment: frame links = matched + mismatch + noncoverage + boundary"
-        " + unresolved_partial + not_in_registrants":
+        "amendment: frame links = matched + mismatch + drift + adjudicated"
+        " + noncoverage + boundary + unresolved_partial + not_in_registrants":
             counts["amendment_frame_links"]
             == counts["amendment_matched"]
             + counts["amendment_identity_mismatch"]
+            + counts["amendment_filed_date_drift"]
+            + counts["amendment_identity_adjudicated"]
             + counts["amendment_noncoverage"]
             + counts["amendment_right_boundary_unobserved"]
             + counts["amendment_unresolved_partial_registrant_set"]
             + counts["amendment_frame_filer_not_in_dera_registrants"],
-        "amendment: dera pairs = matched + mismatched + registrant_disagreement"
-        " + only_explained + only_unexplained":
+        "amendment: dera pairs = matched + divergent + registrant_disagreement"
+        " + only_explained + only_adjudicated + only_unexplained":
             counts["amendment_dera_expanded_pairs"]
             == counts["amendment_dera_matched_pairs"]
-            + amendment["dera_mismatched_pairs"]
+            + amendment["dera_divergent_pairs"]
             + counts["amendment_dera_registrant_not_in_frame"]
             + counts["amendment_dera_only_integrity_excluded"]
+            + counts["amendment_dera_only_adjudicated"]
             + counts["amendment_dera_only_unexplained"],
     }
 
@@ -750,9 +939,21 @@ def run_dera_validation(
     samples["annual_dera_only_unexplained"] = _sample(
         annual["dera_only_unexplained"]
     )
+    samples["annual_dera_only_adjudicated"] = _sample(
+        annual["dera_only_adjudicated"]
+    )
     samples["annual_dera_registrant_not_in_frame"] = _sample(
         annual["dera_registrant_not_in_frame"]
     )
+    samples["adjudications_file"] = [
+        {
+            "path": str(ADJUDICATIONS_RELATIVE_PATH),
+            "sha256": adjudications_sha256,
+            "records": adjudication_records,
+            "applied": len(applied_adjudications),
+        }
+    ]
+    samples["adjudications_applied"] = _sample(applied_adjudications)
     samples.update(
         {
             f"amendment_{name}": _sample(entries)

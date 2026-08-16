@@ -1,0 +1,36 @@
+{
+  "adjudications_contract": "dera_validation_adjudications@0.1.0",
+  "description": "Append-only, evidence-backed adjudications of FRAME-versus-DERA contradictions (ADR-085). Consumed by the dera-validate mode: an exactly-matching contradiction is reclassified into a non-gating adjudicated category and recorded, with this file's SHA-256, in the validation manifest samples. Only replaced-submission events with concrete replacement/backdating evidence may be recorded here (ADR-085 decisions C and D); events without such evidence remain gating and unresolved. Two known unresolved events are deliberately NOT recorded: Vodafone (0000839923, 0001104659-22-116238), a deleted late-filed FY2018 20-F with no replacement accession, and CASI Pharmaceuticals (0000895051, 0001558370-23-006754), a 20-F filed after the entity's Form 15-12G deregistration of 2023-03-22 with succession under a different CIK. DERA remains an independent FRAME validation source only.",
+  "records": [
+    {
+      "cik": "0001108524",
+      "accession_number": "0001108524-21-000014",
+      "direction": "dera_only",
+      "reason": "replaced_submission",
+      "replacement_accession": "0001108524-22-000008",
+      "backdating_evidence": "The regenerated EDGAR full index lists the replacement 0001108524-22-000008 backdated to 2021-03-17, the original's own FSDS filed date; the point-in-time FSDS 2021q1 dataset retains the deleted original (accepted 2021-03-17 16:51) and 2022q1 carries the resubmission (accepted 2022-02-24 16:14).",
+      "adr_reference": "ADR-085",
+      "evidence_note": "Salesforce FY2021 10-K deleted and re-filed under a new accession; DERA-only original."
+    },
+    {
+      "cik": "0001108524",
+      "accession_number": "0001108524-22-000008",
+      "direction": "filed_date",
+      "reason": "replaced_submission",
+      "replacement_accession": "0001108524-22-000008",
+      "backdating_evidence": "FSDS filed 2022-02-24 is the resubmission's actual acceptance date; the regenerated index backdates this accession to the original submission's 2021-03-17 filing date (+344 days).",
+      "adr_reference": "ADR-085",
+      "evidence_note": "Resubmission side of the same Salesforce FY2021 replacement event."
+    },
+    {
+      "cik": "0001747079",
+      "accession_number": "0001747079-22-000107",
+      "direction": "filed_date",
+      "reason": "replaced_submission",
+      "replacement_accession": "0001747079-22-000107",
+      "backdating_evidence": "FSDS records prevrpt=1 with accepted 2022-08-08 16:09 against the index filing date 2022-03-01 (+160 days): the same accession was re-accepted after amendment or reprocessing, and the index keeps the original date.",
+      "adr_reference": "ADR-085",
+      "evidence_note": "Bally's FY2021 10-K re-accepted under the same accession; FSDS previous-report flag set."
+    }
+  ]
+}

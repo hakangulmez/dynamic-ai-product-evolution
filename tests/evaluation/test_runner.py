@@ -1248,7 +1248,10 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # 663 = 662 + the canonical full-range DERA request plan (ADR-083): 26
     # releases covering the frozen FRAME window at the canary-verified URL
     # template; possessing the plan does not authorize a live request.
-    assert declared == len(paths) == 663
+    # 664 = 663 + the committed DERA validation adjudication file (ADR-085):
+    # three evidence-backed replaced-submission records; unadjudicated
+    # contradictions still gate.
+    assert declared == len(paths) == 664
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

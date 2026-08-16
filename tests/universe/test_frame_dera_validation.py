@@ -298,13 +298,14 @@ def test_partial_unresolved_is_nongating_and_outside_rates(gold_run) -> None:
 def test_amendment_stratum_reconciles_but_never_gates(
     fixture_frame, tmp_path: Path
 ) -> None:
-    # Mutate the amendment row's filed date: an amendment identity mismatch
-    # appears and reconciles, and the annual gate still passes.
+    # Mutate the amendment row's filed date to a DERA-earlier value (never
+    # drift): an amendment identity mismatch appears and reconciles, and the
+    # annual gate still passes.
     bundle = _mutated_bundle(
         tmp_path,
         replace_rows={4: _sub_line("0002000001-22-000015", "2000001",
                                    "SYNTHETIC LEDGERWORKS INC", "10-K/A",
-                                   "20221121", "1", "")},
+                                   "20221119", "1", "")},
     )
     result = _validate(fixture_frame, bundle, tmp_path / "out", "amendment-mismatch")
     assert result.counts["amendment_identity_mismatch"] == 1
@@ -367,12 +368,13 @@ def test_parse_failure_alone_fails_the_gate_with_manifest_written(
     fixture_frame, tmp_path: Path
 ) -> None:
     # A malformed/inconsistent DERA annual row must not yield a passing
-    # validation merely because it was excluded from comparison.
+    # validation merely because it was excluded from comparison. nciks BELOW
+    # the declared count is genuinely impossible and stays fatal (ADR-085).
     bundle = _mutated_bundle(
         tmp_path,
         extra_rows=(_sub_line("0002000098-22-000001", "2000098",
                               "SYNTHETIC BADCARD CORP", "10-K", "20221001",
-                              "2", ""),),  # nciks inconsistent, non-PARTIAL
+                              "1", "2000096 2000095"),),
     )
     result = _validate(fixture_frame, bundle, tmp_path / "out", "parse-failure-gate")
     assert result.counts["dera_parse_failures"] == 1
@@ -382,6 +384,131 @@ def test_parse_failure_alone_fails_the_gate_with_manifest_written(
     # Every comparison category is otherwise clean; the parse failure alone gates.
     assert result.counts["annual_dera_only_unexplained"] == 0
     assert result.counts["annual_identity_mismatch"] == 0
+
+
+# --- ADR-085 decision A: truncated registrant sets ----------------------------
+
+
+def test_truncated_aciks_parses_valid_and_marked() -> None:
+    parsed = parse_sub_file(
+        _sub_text(_sub_line("0002000012-23-000004", "2000012", "X", "10-K",
+                            "20230210", "30", "2000013 2000014")),
+        source_name="trunc.tsv",
+    )
+    assert not parsed.parse_failures
+    sub = parsed.rows[0]
+    assert sub.registrant_set_truncated is True
+    assert sub.registrant_set_partial is False
+    assert sub.additional_ciks == ["0002000013", "0002000014"]  # never inferred
+
+
+def test_truncated_set_is_nongating_like_partial(
+    fixture_frame, tmp_path: Path
+) -> None:
+    # The combined 10-K's DERA set declares one co-registrant with a
+    # truncation signature (nciks above declared, no PARTIAL): declared
+    # pairs match and are marked; the unlisted FRAME co-filer is unresolved,
+    # non-gating — not a registrant contradiction.
+    bundle = _bundle_with_combined_row(
+        tmp_path,
+        _sub_line("0002000012-23-000004", "2000012",
+                  "SYNTHETIC COMBINED PARENT CORP", "10-K", "20230210",
+                  "9", "2000013"),
+    )
+    result = _validate(fixture_frame, bundle, tmp_path / "out", "truncated-set")
+    assert result.counts["dera_parse_failures"] == 0
+    # Two truncated submissions: the committed out-of-scope S-4 fixture row
+    # plus this mutated in-scope combined 10-K.
+    assert result.counts["dera_registrant_set_truncated_submissions"] == 2
+    assert result.counts["annual_matched_under_truncated"] == 2
+    assert result.counts["annual_unresolved_partial_registrant_set"] == 2
+    assert result.counts["annual_frame_filer_not_in_dera_registrants"] == 0
+    assert all(result.reconciliation.values())
+    assert result.gate_status == "pass"
+
+
+# --- ADR-085 decision C: committed adjudications -------------------------------
+
+
+def test_gold_run_records_adjudication_file_hash(gold_run) -> None:
+    manifest = read_json(gold_run.manifest_path)
+    entry = manifest["samples"]["adjudications_file"][0]
+    assert entry["path"] == "configs/dera_validation_adjudications.json"
+    assert entry["sha256"] == sha256_file(
+        ROOT / "configs" / "dera_validation_adjudications.json"
+    )
+    assert entry["records"] == 3
+    assert entry["applied"] == 0  # committed records match no synthetic case
+    assert manifest["samples"]["adjudications_applied"] == []
+
+
+def test_adjudicated_dera_only_is_nongating_and_recorded(
+    fixture_frame, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import dynamic_ai_products.universe.frame_dera_validation as fdv
+
+    adjudications = {
+        "adjudications_contract": "dera_validation_adjudications@0.1.0",
+        "description": "test adjudications",
+        "records": [{
+            "cik": "2000099",
+            "accession_number": "0002000099-22-000001",
+            "direction": "dera_only",
+            "reason": "replaced_submission",
+            "replacement_accession": "0002000099-22-000002",
+            "backdating_evidence": "synthetic evidence",
+            "adr_reference": "ADR-085",
+            "evidence_note": "synthetic replaced-submission event",
+        }],
+    }
+    adj_path = tmp_path / "adjudications.json"
+    adj_path.write_text(json.dumps(adjudications) + "\n", encoding="utf-8")
+    # An absolute override path: `root / absolute` resolves to the absolute
+    # path, so the fixed-path contract is exercised without a fake repo root.
+    monkeypatch.setattr(fdv, "ADJUDICATIONS_RELATIVE_PATH", adj_path)
+
+    bundle = _mutated_bundle(
+        tmp_path,
+        extra_rows=(_sub_line("0002000099-22-000001", "2000099",
+                              "SYNTHETIC GHOST FILER CORP", "10-K",
+                              "20221001", "1", ""),),
+    )
+    result = run_dera_validation(
+        repo_root=ROOT,
+        frame_manifest_path=fixture_frame,
+        dera_dir=bundle,
+        output_dir=tmp_path / "out",
+        run_id="adjudicated",
+        clock=FIXED_CLOCK,
+    )
+    assert result.counts["annual_dera_only_adjudicated"] == 1
+    assert result.counts["annual_dera_only_unexplained"] == 0
+    assert result.counts["adjudications_applied"] == 1
+    assert all(result.reconciliation.values())
+    assert result.gate_status == "pass"
+    manifest = read_json(result.manifest_path)
+    assert manifest["samples"]["adjudications_applied"][0]["cik"] == "2000099"
+
+
+def test_malformed_adjudication_file_is_refused(
+    fixture_frame, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import dynamic_ai_products.universe.frame_dera_validation as fdv
+
+    bad = tmp_path / "adjudications.json"
+    bad.write_text(json.dumps({
+        "adjudications_contract": "dera_validation_adjudications@0.1.0",
+        "records": [{"cik": "2000099", "direction": "dera_only"}],
+    }) + "\n", encoding="utf-8")
+    monkeypatch.setattr(fdv, "ADJUDICATIONS_RELATIVE_PATH", bad)
+    with pytest.raises(DeraInputError, match="exactly the keys"):
+        run_dera_validation(
+            repo_root=ROOT,
+            frame_manifest_path=fixture_frame,
+            dera_dir=DERA_FIXTURE_DIR,
+            output_dir=tmp_path / "out",
+            run_id="bad-adjudications",
+        )
 
 
 # --- gate failures (annual stratum, fail closed) ------------------------------
@@ -414,15 +541,42 @@ def test_form_mismatch_fails_the_gate(fixture_frame, tmp_path: Path) -> None:
     assert "annual_identity_mismatch > 0" in result.failed_conditions
 
 
-def test_filed_date_mismatch_fails_the_gate(fixture_frame, tmp_path: Path) -> None:
-    # Literal date comparison: no timing-rollover exception exists.
+def test_bounded_dera_later_drift_is_report_only(
+    fixture_frame, tmp_path: Path
+) -> None:
+    # ADR-085 decision B: DERA later by <= 3 days with matching CIK,
+    # accession, and form is the report-only filed_date_drift category.
     bundle = _mutated_bundle(
         tmp_path,
         replace_rows={1: _sub_line("0002000001-22-000010", "2000001",
                                    "SYNTHETIC LEDGERWORKS INC", "10-K",
                                    "20220916", "1", "")},
     )
-    result = _validate(fixture_frame, bundle, tmp_path / "out", "date-mismatch")
+    result = _validate(fixture_frame, bundle, tmp_path / "out", "drift-in-bound")
+    assert result.counts["annual_filed_date_drift"] == 1
+    assert result.counts["annual_identity_mismatch"] == 0
+    assert result.counts["filed_date_drift_bound_days"] == 3
+    assert all(result.reconciliation.values())
+    assert result.gate_status == "pass"
+
+
+@pytest.mark.parametrize(
+    ("filed", "label"),
+    [("20220914", "dera-earlier"), ("20220920", "beyond-bound")],
+)
+def test_unbounded_or_dera_earlier_drift_fails_the_gate(
+    fixture_frame, tmp_path: Path, filed: str, label: str
+) -> None:
+    # DERA-earlier drift and drift beyond the 3-day bound remain gating
+    # identity mismatches (ADR-085 decision B).
+    bundle = _mutated_bundle(
+        tmp_path,
+        replace_rows={1: _sub_line("0002000001-22-000010", "2000001",
+                                   "SYNTHETIC LEDGERWORKS INC", "10-K",
+                                   filed, "1", "")},
+    )
+    result = _validate(fixture_frame, bundle, tmp_path / "out", f"drift-{label}")
+    assert result.counts["annual_filed_date_drift"] == 0
     assert result.gate_status == "fail"
     assert "annual_identity_mismatch > 0" in result.failed_conditions
 

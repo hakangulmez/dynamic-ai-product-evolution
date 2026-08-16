@@ -850,7 +850,10 @@ def test_repo_manifest_count_and_paths():
     # 663 = 662 + the canonical full-range DERA request plan (ADR-083): 26
     # releases covering the frozen FRAME window at the canary-verified URL
     # template; possessing the plan does not authorize a live request.
-    assert "Total tracked/scaffold files listed: **663**" in text
+    # 664 = 663 + the committed DERA validation adjudication file (ADR-085):
+    # three evidence-backed replaced-submission records; unadjudicated
+    # contradictions still gate.
+    assert "Total tracked/scaffold files listed: **664**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

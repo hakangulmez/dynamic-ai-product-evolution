@@ -564,7 +564,10 @@ def test_manifest_count():
     # 663 = 662 + the canonical full-range DERA request plan (ADR-083): 26
     # releases covering the frozen FRAME window at the canary-verified URL
     # template; possessing the plan does not authorize a live request.
-    assert declared == len(paths) == 663
+    # 664 = 663 + the committed DERA validation adjudication file (ADR-085):
+    # three evidence-backed replaced-submission records; unadjudicated
+    # contradictions still gate.
+    assert declared == len(paths) == 664
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

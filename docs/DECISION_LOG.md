@@ -4960,6 +4960,91 @@ paragraphs. No new files, no code, no schema, no registry bump, no
 REPO_MANIFEST or count-test change, no pinned-hash rebaseline, and no
 deletion or reuse of any `data/runs` artifact.
 
+## ADR-085 — The real validation refines the gate: truncation, drift, and adjudication (ADR-081, ADR-084)
+
+**The measurement that forces this entry.** The first real FRAME-versus-DERA
+validation (run `frame-dera-validation-full-v11-2020q1-2026q1-20260816`,
+manifest sha256
+`d9f950ceac54e4ca922e8799f2ecd0cc38e1ed7c480f5f9cf7ea5e90816ef796`) failed
+its gate on 45 anomalous rows out of roughly 220,000 inputs, with 47,535
+exact matches, zero registrant contradictions across 47,573 expanded pairs,
+and all six reconciliation identities true. Read-only characterization
+resolved the 45 rows into three classes:
+
+- **Truncation (7 parse failures).** FSDS hard-truncates `aciks` at ~120
+  characters without a PARTIAL token (one CIK severed mid-token), while
+  `nciks` keeps the true count — all seven on out-of-scope registration
+  forms here, but possible in scope in principle.
+- **Timing drift (33 mismatches).** Filed-date drift of exactly +1 day (30
+  cases) or +3 days (3 cases, Friday→Monday), always DERA-later, never
+  DERA-earlier, never a form mismatch — the EDGAR next-business-day
+  signature. This is the evidence ADR-081 reserved judgment for.
+- **Replaced submissions (2 mismatch outliers + 3 DERA-only orphans).**
+  EDGAR submissions deleted and re-filed: the point-in-time FSDS retains
+  the original while the regenerated index carries only the replacement,
+  backdated to the original date. Proven end-to-end for Salesforce's FY2021
+  10-K (original `0001108524-21-000014` deleted; replacement
+  `0001108524-22-000008` backdated to 2021-03-17; DERA carries both) and
+  for Bally's FY2021 10-K (same accession re-accepted 2022-08-08 with FSDS
+  `prevrpt=1` against index date 2022-03-01).
+
+**Decision A — truncation is implicit partial.** A non-PARTIAL row with
+`nciks > 1 + declared` parses as valid, marked
+`registrant_set_truncated`, and is handled like PARTIAL: declared pairs
+compared, omissions never inferred, affected comparisons non-gating and
+excluded from noncoverage rates, all counted. Genuinely impossible counts
+stay fatal: `nciks < 1` and `nciks < 1 + declared` remain parse failures,
+and `dera_parse_failures > 0` still gates real malformation.
+
+**Decision B — bounded drift is report-only.** With matching CIK,
+accession, and form, DERA-later drift of at most
+`FILED_DATE_DRIFT_BOUND_DAYS = 3` days is the report-only
+`filed_date_drift` category; the bound is recorded in every validation
+manifest's counts. DERA-earlier drift, drift beyond the bound, and any form
+mismatch remain gating identity mismatches.
+
+**Decision C — evidence-backed adjudication.** The committed, append-only
+`configs/dera_validation_adjudications.json` records replaced-submission
+events only, each with CIK, accession, direction, reason, replacement
+accession, backdating evidence, ADR reference, and an evidence note. The
+validator loads it fail-closed from its fixed path, reclassifies
+exactly-matching contradictions into the non-gating
+`dera_only_adjudicated` / `identity_adjudicated` categories, and records
+the file's SHA-256, record count, and every applied record in the manifest
+samples. Three records are committed: Salesforce's two event sides and
+Bally's re-acceptance. **The samples surface is a bounded bridge**: with
+five or fewer records it fits the existing ≤10-item sample arrays, and if
+adjudications ever exceed that cap or become a regular surface, a schema
+successor is required rather than further bridging.
+
+**Decision D — no evidence, no adjudication.** Two measured events are
+deliberately NOT adjudicated and remain gating, reported unresolved:
+Vodafone (`0000839923`, `0001104659-22-116238`), a deleted late-filed
+FY2018 20-F (period 2018-03-31) with no replacement accession, and CASI
+Pharmaceuticals (`0000895051`, `0001558370-23-006754`), a 20-F filed after
+the entity's Form 15-12G deregistration of 2023-03-22 with succession under
+a different CIK. The post-ADR-085 validation rerun is therefore expected to
+fail its gate with `annual_dera_only_unexplained = 2` until those two
+receive their own reviewed decision — that is the gate working, not a
+defect.
+
+**Boundaries.** DERA remains an independent FRAME validation source only,
+never eligibility or universe input. Every existing `data/runs` artifact —
+both DERA acquisitions, the failed 26-release run, the FRAME runs, and the
+failed validation itself — remains immutable and ignored.
+
+**Scope.** New: `configs/dera_validation_adjudications.json`. Modified:
+`frame_dera_validation.py` (truncation rule, drift category and bound,
+adjudication consumption and hash recording), its test file, the
+`dera_fsds` fixture bundle (one committed truncated out-of-scope SUB row
+and the regenerated gold) plus the regenerated
+`evals/fixtures/dera_fsds_archives/dera-2022q4.zip` whose `sub.txt` member
+must stay byte-identical to the committed TSV, `REPO_MANIFEST.md`
+(663 → 664) and its three count regression tests. No schema change, no
+registry bump, no pinned-hash rebaseline. Deferred: the validation rerun
+under a new run-id and the FRAME_v1 freeze decision, each separately
+authorized.
+
 ## Open decisions
 
 - Required source packet by firm-year.
