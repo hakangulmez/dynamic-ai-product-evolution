@@ -1,5 +1,5 @@
 {
-  "description": "Gold expectations for validating the edgar_full_index fixture frame (window 2022-08-01..2023-02-28) against the dera_fsds fixture bundle (observed_through 2022-12-31). Gate passes: noncoverage, the right-boundary absence, the PARTIAL-set unresolved filer, and the truncated-registrant-set out-of-scope row (ADR-085) are reported, never contradictions. The committed adjudication file (3 records, ADR-085) applies to none of the synthetic cases.",
+  "description": "Gold expectations for validating the edgar_full_index fixture frame (window 2022-08-01..2023-02-28) against the dera_fsds fixture bundle (observed_through 2022-12-31). Gate passes: noncoverage, the right-boundary absence, the PARTIAL-set unresolved filer, and the truncated-registrant-set out-of-scope row (ADR-085) are reported, never contradictions. The committed adjudication file (5 records, ADR-085/ADR-086) applies to none of the synthetic cases.",
   "gate_status": "pass",
   "counts": {
     "dera_input_files": 2,
@@ -14,7 +14,7 @@
     "dera_amendment_submissions": 1,
     "dera_registrant_set_truncated_submissions": 1,
     "filed_date_drift_bound_days": 3,
-    "adjudication_records": 3,
+    "adjudication_records": 5,
     "adjudications_applied": 0,
     "annual_frame_records": 9,
     "annual_matched": 6,

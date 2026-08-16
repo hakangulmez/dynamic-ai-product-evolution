@@ -5045,6 +5045,73 @@ registry bump, no pinned-hash rebaseline. Deferred: the validation rerun
 under a new run-id and the FRAME_v1 freeze decision, each separately
 authorized.
 
+## ADR-086 — The last two residuals close: a succession replacement and an evidenced deletion (ADR-085)
+
+The ADR-085 validation rerun
+(`frame-dera-validation-full-v11-2020q1-2026q1-adr085-20260816`, manifest
+sha256
+`d789aaebd71aac2b9c61ce6be5d542e8a4824f92a1ca853416650217a60163df`) failed
+on exactly one condition — `annual_dera_only_unexplained = 2` — with
+47,535 matches, 33 report-only drift cases, 3 applied adjudications, zero
+identity mismatches, zero parse failures, and every reconciliation identity
+true. This entry closes those two rows.
+
+**CASI Pharmaceuticals (0000895051, 0001558370-23-006754) — a replaced
+submission across a CIK succession, adjudicated under the existing ADR-085
+reason.** Read-only index evidence: the same-day replacement
+`0001558370-23-006757` (20-F, filed 2023-04-26, same filing agent, three
+accessions later) exists under successor CIK 1962738 — the Cayman entity
+CASI redomiciled into — while the old Delaware CIK's Form 15-12G
+deregistration of 2023-03-22 (`0001104659-23-035268`) is index-confirmed
+and no current index row carries the old accession. **Nothing is missing
+from the FRAME denominator**: the FY2022 20-F is in the frame at
+`(1962738, 0001558370-23-006757)`.
+
+**Vodafone (0000839923, 0001104659-22-116238) — an evidenced deletion,
+requiring the one new reason `deleted_submission`.** The row exists in
+point-in-time FSDS 2022q4 (accepted 2022-11-09, period 2018-03-31, fy
+2017 — a late-filed historical annual report) and is absent from all 26
+current-regeneration index files while every neighboring Vodafone filing is
+present; no replacement accession exists anywhere. The construct rationale:
+the FRAME denominator is the **current authoritative index**, and a deleted
+filing's absence from it is correctness, not omission — an evidenced
+deletion is a DERA-side point-in-time artifact, so explaining it is not a
+waiver. The reason carries a strict per-reason rule enforced fail-closed:
+`replaced_submission` requires a non-null, normalizable
+`replacement_accession`; `deleted_submission` requires
+`replacement_accession` null. Its content period predating the study window
+means no in-window frame observation is affected either way.
+
+**Materiality.** The two rows are 0.0036% of 56,271 FRAME annual records
+and 0.0042% of 47,573 DERA expanded pairs, and neither corresponds to a
+missing in-window frame observation.
+
+**Bridge bound reached.** The adjudication file now carries **five
+records — exactly the bounded-bridge cap ADR-085 recorded.** The next
+adjudication, whatever its merits, requires the schema successor for the
+validation manifest's adjudication surface; no further bridging is
+permitted. A committed test pins the five records' exact keys and both
+reasons.
+
+**Expected rerun outcome.** With deterministic inputs, the next separately
+authorized validation rerun must pass its gate: `annual_dera_only_unexplained
+= 0`, `annual_dera_only_adjudicated = 3`, `annual_identity_adjudicated =
+2`, `adjudications_applied = 5`, all reconciliation identities true. The
+FRAME_v1 freeze then cites a gate-passing validation manifest.
+
+**Boundaries.** DERA remains an independent FRAME validation source only,
+never eligibility or universe input; every `data/runs` artifact remains
+immutable and ignored.
+
+**Scope.** Modified only: `configs/dera_validation_adjudications.json`
+(two records appended; description updated),
+`frame_dera_validation.py` (reason admission and the per-reason replacement
+rule; docstring), its test file, and the fixture gold's adjudication-record
+count. No new files, no schema change, no registry bump, no REPO_MANIFEST
+or count-test change, no pinned-hash rebaseline. Deferred: the gate-passing
+validation rerun and the FRAME_v1 freeze decision, each separately
+authorized.
+
 ## Open decisions
 
 - Required source packet by firm-year.

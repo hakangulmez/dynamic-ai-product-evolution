@@ -1,6 +1,6 @@
 {
   "adjudications_contract": "dera_validation_adjudications@0.1.0",
-  "description": "Append-only, evidence-backed adjudications of FRAME-versus-DERA contradictions (ADR-085). Consumed by the dera-validate mode: an exactly-matching contradiction is reclassified into a non-gating adjudicated category and recorded, with this file's SHA-256, in the validation manifest samples. Only replaced-submission events with concrete replacement/backdating evidence may be recorded here (ADR-085 decisions C and D); events without such evidence remain gating and unresolved. Two known unresolved events are deliberately NOT recorded: Vodafone (0000839923, 0001104659-22-116238), a deleted late-filed FY2018 20-F with no replacement accession, and CASI Pharmaceuticals (0000895051, 0001558370-23-006754), a 20-F filed after the entity's Form 15-12G deregistration of 2023-03-22 with succession under a different CIK. DERA remains an independent FRAME validation source only.",
+  "description": "Append-only, evidence-backed adjudications of FRAME-versus-DERA contradictions (ADR-085, ADR-086). Consumed by the dera-validate mode: an exactly-matching contradiction is reclassified into a non-gating adjudicated category and recorded, with this file's SHA-256, in the validation manifest samples. Two reasons are admitted: replaced_submission (requires a concrete replacement accession with backdating evidence) and deleted_submission (requires replacement_accession null with concrete deletion evidence: present in point-in-time FSDS, absent from the current-regeneration index). Events without such evidence remain gating and unresolved (ADR-085 decision D). This file stands at the five-record bounded-bridge cap recorded in ADR-085/ADR-086: the next adjudication requires a schema successor, not further bridging. DERA remains an independent FRAME validation source only.",
   "records": [
     {
       "cik": "0001108524",
@@ -31,6 +31,26 @@
       "backdating_evidence": "FSDS records prevrpt=1 with accepted 2022-08-08 16:09 against the index filing date 2022-03-01 (+160 days): the same accession was re-accepted after amendment or reprocessing, and the index keeps the original date.",
       "adr_reference": "ADR-085",
       "evidence_note": "Bally's FY2021 10-K re-accepted under the same accession; FSDS previous-report flag set."
+    },
+    {
+      "cik": "0000895051",
+      "accession_number": "0001558370-23-006754",
+      "direction": "dera_only",
+      "reason": "replaced_submission",
+      "replacement_accession": "0001558370-23-006757",
+      "backdating_evidence": "The regenerated index carries the same-day replacement 0001558370-23-006757 (20-F, filed 2023-04-26, same filing agent, three accessions later) under successor CIK 1962738; the old Delaware entity's Form 15-12G deregistration of 2023-03-22 (accession 0001104659-23-035268) is index-confirmed, and no row for 0001558370-23-006754 exists in any current index file.",
+      "adr_reference": "ADR-086",
+      "evidence_note": "CASI Pharmaceuticals FY2022 20-F re-filed under the Cayman successor CIK after redomiciliation; the FRAME denominator carries it at (1962738, 0001558370-23-006757)."
+    },
+    {
+      "cik": "0000839923",
+      "accession_number": "0001104659-22-116238",
+      "direction": "dera_only",
+      "reason": "deleted_submission",
+      "replacement_accession": null,
+      "backdating_evidence": "Present in point-in-time FSDS 2022q4 (accepted 2022-11-09 09:09, period 2018-03-31, fy 2017) and absent from all 26 current-regeneration index files, while every neighboring Vodafone filing is present; no replacement accession exists anywhere in the index.",
+      "adr_reference": "ADR-086",
+      "evidence_note": "Vodafone late-filed FY2018-period 20-F deleted from EDGAR without replacement; its content period predates the study window, so no in-window frame observation is affected."
     }
   ]
 }

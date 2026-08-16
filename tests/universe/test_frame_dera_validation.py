@@ -437,9 +437,116 @@ def test_gold_run_records_adjudication_file_hash(gold_run) -> None:
     assert entry["sha256"] == sha256_file(
         ROOT / "configs" / "dera_validation_adjudications.json"
     )
-    assert entry["records"] == 3
+    assert entry["records"] == 5
     assert entry["applied"] == 0  # committed records match no synthetic case
     assert manifest["samples"]["adjudications_applied"] == []
+
+
+def test_committed_adjudications_cover_the_measured_residuals() -> None:
+    # Pins the expected real-rerun outcome: the three measured DERA-only
+    # orphans and the two drift outliers are all covered, so the rerun's
+    # annual_dera_only_unexplained and annual_identity_mismatch must be 0.
+    payload = read_json(ROOT / "configs" / "dera_validation_adjudications.json")
+    records = payload["records"]
+    assert len(records) == 5  # the ADR-085/086 bounded-bridge cap
+    keys = {(r["direction"], r["cik"], r["accession_number"]) for r in records}
+    assert keys == {
+        ("dera_only", "0001108524", "0001108524-21-000014"),   # Salesforce
+        ("filed_date", "0001108524", "0001108524-22-000008"),  # Salesforce
+        ("filed_date", "0001747079", "0001747079-22-000107"),  # Bally's
+        ("dera_only", "0000895051", "0001558370-23-006754"),   # CASI
+        ("dera_only", "0000839923", "0001104659-22-116238"),   # Vodafone
+    }
+    reasons = {r["reason"] for r in records}
+    assert reasons == {"replaced_submission", "deleted_submission"}
+    for r in records:
+        if r["reason"] == "replaced_submission":
+            assert isinstance(r["replacement_accession"], str)
+        else:
+            assert r["replacement_accession"] is None
+
+
+def test_per_reason_replacement_rules_fail_closed(
+    fixture_frame, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import dynamic_ai_products.universe.frame_dera_validation as fdv
+
+    base = {
+        "cik": "2000099",
+        "accession_number": "0002000099-22-000001",
+        "direction": "dera_only",
+        "backdating_evidence": "x",
+        "adr_reference": "ADR-086",
+        "evidence_note": "x",
+    }
+    cases = [
+        ({**base, "reason": "replaced_submission",
+          "replacement_accession": None}, "non-null replacement"),
+        ({**base, "reason": "deleted_submission",
+          "replacement_accession": "0002000099-22-000002"},
+         "replacement_accession null"),
+        ({**base, "reason": "withdrawn_submission",
+          "replacement_accession": None}, "admitted reasons"),
+    ]
+    for record, match in cases:
+        bad = tmp_path / "adjudications.json"
+        bad.write_text(json.dumps({
+            "adjudications_contract": "dera_validation_adjudications@0.1.0",
+            "description": "test",
+            "records": [record],
+        }) + "\n", encoding="utf-8")
+        monkeypatch.setattr(fdv, "ADJUDICATIONS_RELATIVE_PATH", bad)
+        with pytest.raises(DeraInputError, match=match):
+            run_dera_validation(
+                repo_root=ROOT,
+                frame_manifest_path=fixture_frame,
+                dera_dir=DERA_FIXTURE_DIR,
+                output_dir=tmp_path / f"out-{match[:8]}",
+                run_id=f"bad-{abs(hash(match)) % 10_000}",
+            )
+        bad.unlink()
+
+
+def test_synthetic_deleted_submission_applies_nongating(
+    fixture_frame, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import dynamic_ai_products.universe.frame_dera_validation as fdv
+
+    adjudications = {
+        "adjudications_contract": "dera_validation_adjudications@0.1.0",
+        "description": "test adjudications",
+        "records": [{
+            "cik": "2000099",
+            "accession_number": "0002000099-22-000001",
+            "direction": "dera_only",
+            "reason": "deleted_submission",
+            "replacement_accession": None,
+            "backdating_evidence": "synthetic deletion evidence",
+            "adr_reference": "ADR-086",
+            "evidence_note": "synthetic deleted-submission event",
+        }],
+    }
+    adj_path = tmp_path / "adjudications.json"
+    adj_path.write_text(json.dumps(adjudications) + "\n", encoding="utf-8")
+    monkeypatch.setattr(fdv, "ADJUDICATIONS_RELATIVE_PATH", adj_path)
+
+    bundle = _mutated_bundle(
+        tmp_path,
+        extra_rows=(_sub_line("0002000099-22-000001", "2000099",
+                              "SYNTHETIC GHOST FILER CORP", "10-K",
+                              "20221001", "1", ""),),
+    )
+    result = run_dera_validation(
+        repo_root=ROOT,
+        frame_manifest_path=fixture_frame,
+        dera_dir=bundle,
+        output_dir=tmp_path / "out",
+        run_id="deleted-adjudicated",
+        clock=FIXED_CLOCK,
+    )
+    assert result.counts["annual_dera_only_adjudicated"] == 1
+    assert result.counts["annual_dera_only_unexplained"] == 0
+    assert result.gate_status == "pass"
 
 
 def test_adjudicated_dera_only_is_nongating_and_recorded(

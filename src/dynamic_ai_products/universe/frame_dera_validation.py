@@ -51,9 +51,11 @@ ADR-085 refinements, each measured on the real full-window validation:
   ``FILED_DATE_DRIFT_BOUND_DAYS`` (the EDGAR next-business-day signature);
   DERA-earlier drift, drift beyond the bound, and any form mismatch remain
   gating identity mismatches.
-- Replaced-submission contradictions carrying concrete replacement and
-  backdating evidence are reclassified as non-gating adjudicated categories
-  via the committed, append-only, hash-recorded
+- Contradictions carrying concrete evidence — a replaced submission with
+  its replacement accession and backdating, or a deleted submission
+  (present in point-in-time FSDS, absent from the current-regeneration
+  index, no replacement anywhere; ADR-086) — are reclassified as non-gating
+  adjudicated categories via the committed, append-only, hash-recorded
   ``configs/dera_validation_adjudications.json``; unadjudicated
   contradictions still gate.
 
@@ -358,10 +360,30 @@ def load_adjudications(repo_root: Path) -> tuple[dict, str, int]:
                 f"Adjudication record {index}: unknown direction "
                 f"{record['direction']!r}."
             )
-        if record["reason"] != "replaced_submission":
+        if record["reason"] not in ("replaced_submission", "deleted_submission"):
             raise DeraInputError(
-                f"Adjudication record {index}: only replaced_submission is "
-                "an admitted reason (ADR-085 decision C)."
+                f"Adjudication record {index}: only replaced_submission and "
+                "deleted_submission are admitted reasons (ADR-085/ADR-086)."
+            )
+        replacement = record["replacement_accession"]
+        if record["reason"] == "replaced_submission":
+            # A replacement claim requires a concrete, normalizable accession.
+            if not isinstance(replacement, str):
+                raise DeraInputError(
+                    f"Adjudication record {index}: replaced_submission "
+                    "requires a non-null replacement_accession."
+                )
+            try:
+                normalize_accession(replacement)
+            except IdentifierError as exc:
+                raise DeraInputError(
+                    f"Adjudication record {index}: {exc}"
+                ) from exc
+        elif replacement is not None:
+            # An evidenced deletion has, by definition, no replacement.
+            raise DeraInputError(
+                f"Adjudication record {index}: deleted_submission requires "
+                "replacement_accession null."
             )
         try:
             cik = normalize_cik(record["cik"])
