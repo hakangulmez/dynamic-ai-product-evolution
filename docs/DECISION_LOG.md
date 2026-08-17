@@ -5915,6 +5915,113 @@ count tests, and this log — nine paths. The 20-row candidate roster remains a
 own primary document proves the label, and the 24-request validation canary
 is not run here.
 
+### Planned shell-validation canary — pre-registration only
+
+**Status of this subsection.** It records a **pre-registered validation plan**.
+It is **not gold data and not an executed run**. No request has been made, no
+bundle exists, and no label below except the three marked *observed* has ever
+been measured. Authorization for the acquisition run and for the local
+determination run remains separate and is not implied by this entry or by
+possession of the committed request plan.
+
+**The 20-row roster referred to above was never enumerated anywhere in this
+repository**, so it is unavailable as evidence. The cohort below was selected
+fresh from the frozen carrier and is not a reconstruction of it.
+
+**Cohort.** `configs/shell_validation_canary_request_plan.json`, under the
+committed `primary_document_request_plan@0.1.0` contract: twelve unique
+domestic accessions, 23 complete carrier rows, 24 requests, 23 bundle entries.
+Three combined filings carry complete groups of three, seven and four rows.
+The CMBS trust `0001888524-22-003211` is **retained inside this same canary**
+rather than replaced or split off: its plausible no-fact outcome is the only
+live exercise of the `no_shell_fact_in_document` branch, which the ordinary
+operating-filer controls cannot reach. Only Spire records ground truth.
+
+**Three layers, kept separate.**
+
+*Observed labels* — three rows already measured on real bytes in
+`primary-document-canary-frame-v1-20260816`: `0001126956` false
+(`boolballotbox_empty_box`, 3 facts / 1 assignable); `0000003146` and
+`0000057183` unknown (`no_fact_assignable_to_this_cik`, 3 facts / 0
+assignable). These are measurements, not predictions.
+
+*Hypotheses* — H1 (combined filings): a filing's unmembered context carries
+one identifier CIK, so at most one row per combined filing binds and every
+other row resolves unknown; support is one observation, and H1 does not say
+*which* row binds. H2 (blank-check structure): `filings_count = 1` with first
+filing = last filing, plus a **provisional** `ACQUISITION|CAPITAL CORP` name
+pattern that carries no weight alone. H3 (continuous filer): `filings_count =
+7`, first filing on or before 2020, still filing in 2026. H4 (asset-backed
+tagging): a Reg AB mortgage-trust 10-K carries an HTML primary but no
+inline-XBRL cover-page tagging — the weakest hypothesis in the set.
+
+*Predictions* — one entry per `(CIK, accession)` row. Where a hypothesis
+yields a compound uncertainty the row is recorded `no_prediction` rather than
+guessed.
+
+| # | CIK | Accession | Prediction | Basis |
+| --- | --- | --- | --- | --- |
+| 1 | 0000003146 | 0001437749-22-027522 | unknown | observation |
+| 2 | 0000057183 | 0001437749-22-027522 | unknown | observation |
+| 3 | 0001126956 | 0001437749-22-027522 | false | observation |
+| 4 | 0000020947 | 0001578443-22-000007 | unknown | H1 |
+| 5 | 0000073960 | 0001578443-22-000007 | unknown | H1 |
+| 6 | 0000352049 | 0001578443-22-000007 | unknown | H1 |
+| 7 | 0001573279 | 0001578443-22-000007 | unknown | H1 |
+| 8 | 0001573334 | 0001578443-22-000007 | unknown | H1 |
+| 9 | 0001573352 | 0001578443-22-000007 | unknown | H1 |
+| 10 | 0001578443 | 0001578443-22-000007 | no_prediction | compound |
+| 11 | 0000922358 | 0001558370-22-014733 | no_prediction | compound |
+| 12 | 0000922359 | 0001558370-22-014733 | unknown | H1 |
+| 13 | 0000922360 | 0001558370-22-014733 | unknown | H1 |
+| 14 | 0001012493 | 0001558370-22-014733 | unknown | H1 |
+| 15 | 0001833909 | 0001213900-22-020143 | true | H2 |
+| 16 | 0001829558 | 0001193125-22-091842 | true | H2 |
+| 17 | 0001844840 | 0001104659-22-030631 | true | H2 |
+| 18 | 0001841867 | 0001410578-22-000778 | true | H2 |
+| 19 | 0000002488 | 0000002488-22-000016 | false | H3 |
+| 20 | 0000009092 | 0001564590-22-006284 | false | H3 |
+| 21 | 0000007431 | 0000950170-22-001531 | false | H3 |
+| 22 | 0001558546 | 0001888524-22-003211 | unknown | H4 |
+| 23 | 0001227654 | 0001227654-21-000309 | false | H3 |
+
+Row 10's accession prefix equals its own CIK, so that trust submitted the
+filing; if it binds it could resolve either way under Rule 12b-2, and if it
+does not bind it is unknown — three live outcomes, no directional basis. The
+group has **no parent in the carrier**, so the Spire shape does not transfer.
+Row 11 is the top-level partnership, structurally like the Spire parent: false
+if it binds, unknown if it does not, with no basis to choose.
+
+**Reconciliation — four categories totalling exactly 23.** Predicted true: 4
+(rows 15–18). Predicted false: 5 (rows 3, 19, 20, 21, 23). Predicted unknown:
+12 (rows 1, 2, 4–9, 12–14, 22). `no_prediction`: 2 (rows 10, 11). 4 + 5 + 12 +
+2 = 23. The Spire parent appears **once**, under predicted false; its observed
+label is the same row, recorded as the measurement generating the prediction,
+not as a second unit. The twelve predicted-unknown rows decompose exactly as
+9 + 1 + 2: nine from H1 (rows 4–9 and 12–14), one from H4 (row 22), and two
+observed Spire reproduction unknowns (rows 1–2).
+
+**`no_prediction` is a pre-registration category, not a determination
+outcome.** The determination contract emits only `true`, `false` or `unknown`;
+all three are represented in the register. Rows 10 and 11 will each return one
+of those three, and the register simply declines to say which, so those two
+rows confirm and refute nothing by construction.
+
+**H1 falsification rule.** H1 permits at most one determinate row per shared
+accession, so a **single** `true` or `false` anywhere within an accession group
+is **consistent** with H1 — it means only that the binding row is not the one
+the notes nominate. H1 is falsified in exactly two ways: **two or more carrier
+rows of the same accession return determinate `true`/`false` results**, or
+**the implementation assigns a fact without the required CIK-binding
+evidence** — a determinate result on a row whose only candidate contexts carry
+a `dei:LegalEntityAxis` member, or whose identifier scheme is not the SEC CIK
+scheme. The second form is the failure the context-membership correction
+closed, so the three combined filings are also a live regression check;
+`facts_in_document`, `assignable_facts` and `detail` are what distinguish the
+two cases and must be read before any group is judged. Zero `true` across rows
+15–18 falsifies H2 and would mean no observed shell exclusion exists in this
+slice. A resolved fact at row 22 falsifies H4.
+
 ## Open decisions
 
 - Required source packet by firm-year.

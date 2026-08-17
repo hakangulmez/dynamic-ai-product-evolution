@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **734**
+Total tracked/scaffold files listed: **735**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -57,6 +57,7 @@ Total tracked/scaffold files listed: **734**
 - `configs/model_routes.example.yaml`
 - `configs/pipeline_stages.yaml`
 - `configs/primary_document_canary_request_plan.json`
+- `configs/shell_validation_canary_request_plan.json`
 - `configs/project.yaml`
 - `configs/source_types.yaml`
 - `configs/universe_sample_rules.yaml`

@@ -50,6 +50,8 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = ROOT / "evals" / "fixtures" / "primary_documents"
 FIXTURE_PLAN = FIXTURE_DIR / "request_plan.json"
 CANARY_PLAN = ROOT / "configs" / "primary_document_canary_request_plan.json"
+SHELL_PLAN = ROOT / "configs" / "shell_validation_canary_request_plan.json"
+DECISION_LOG = ROOT / "docs" / "DECISION_LOG.md"
 BUNDLE_SCHEMA = ROOT / "schemas" / "baseline_primary_document_bundle.schema.json"
 ACQ_SCHEMA = ROOT / "schemas" / "primary_document_acquisition_manifest.schema.json"
 ACQ_V2_SCHEMA = (
@@ -877,16 +879,8 @@ CARRIER_RUN = (
 )
 
 
-@pytest.mark.skipif(
-    not CARRIER_RUN.exists(),
-    reason="local carrier run absent; Canary B rows not re-derivable",
-)
-def test_canary_b_rows_match_the_local_carrier_exactly():
-    """Read-only: every planned row is a real baseline candidate.
-
-    Also proves each directory_cik is the minimum CIK of the *complete*
-    accession group in the carrier, not merely of the rows the plan lists.
-    """
+def _local_baseline_candidates() -> tuple[dict[tuple[str, str], dict], dict[str, set[str]]]:
+    """Read the frozen carrier read-only, indexed by row and by accession."""
     candidates: dict[tuple[str, str], dict] = {}
     by_accession: dict[str, set[str]] = {}
     for line in CARRIER_RUN.read_text(encoding="utf-8").splitlines():
@@ -900,7 +894,20 @@ def test_canary_b_rows_match_the_local_carrier_exactly():
         key = (row["cik"], row["baseline_accession"])
         candidates[key] = row
         by_accession.setdefault(row["baseline_accession"], set()).add(row["cik"])
+    return candidates, by_accession
 
+
+@pytest.mark.skipif(
+    not CARRIER_RUN.exists(),
+    reason="local carrier run absent; Canary B rows not re-derivable",
+)
+def test_canary_b_rows_match_the_local_carrier_exactly():
+    """Read-only: every planned row is a real baseline candidate.
+
+    Also proves each directory_cik is the minimum CIK of the *complete*
+    accession group in the carrier, not merely of the rows the plan lists.
+    """
+    candidates, by_accession = _local_baseline_candidates()
     planned, _, _ = load_request_plan(CANARY_PLAN)
     for entry in planned:
         for planned_row in entry.carrier_rows:
@@ -919,6 +926,152 @@ def test_committed_canary_plan_request_accounting():
     planned, _, _ = load_request_plan(CANARY_PLAN)
     assert 2 * len(planned) == 12
     assert len({p.accession for p in planned}) == 6
+
+
+# --- committed shell-validation canary plan (planned, never executed) -------
+
+
+def test_shell_validation_plan_cohort_and_request_accounting():
+    planned, fields, _ = load_request_plan(SHELL_PLAN)
+    assert len(planned) == 12
+    assert len({p.accession for p in planned}) == 12
+    assert sum(len(p.carrier_rows) for p in planned) == 23
+    assert 2 * len(planned) == 24
+    assert fields["max_metadata_bytes"] == 8388608
+    assert fields["max_document_bytes"] == 268435456
+
+
+def test_shell_validation_plan_shared_groups_and_forms():
+    planned, _, _ = load_request_plan(SHELL_PLAN)
+    shared = sorted(len(p.carrier_rows) for p in planned if len(p.carrier_rows) > 1)
+    assert shared == [3, 4, 7]
+    forms = [p.form for p in planned]
+    assert forms.count("10-KT") == 1
+    assert forms.count("10-K") == 11
+    # The three combined filings supply 14 of the 23 rows for 6 of 24 requests.
+    assert sum(shared) == 14
+
+
+def test_shell_validation_plan_asserts_ground_truth_for_spire_alone():
+    """Eleven accessions assert neither field; none is invented."""
+    planned, _, _ = load_request_plan(SHELL_PLAN)
+    with_truth = [p for p in planned if p.expected_primary_document is not None]
+    assert len(with_truth) == 1
+    spire = with_truth[0]
+    assert spire.accession == "0001437749-22-027522"
+    assert spire.expected_primary_document == "spre20220930_10k.htm"
+    assert spire.ground_truth_source_sha256 == (
+        "5ade73ed9050f0c5dec5c7f08a7b128511f5a4b5b71d2100ae56a78b099cbc21"
+    )
+    for entry in planned:
+        if entry is spire:
+            continue
+        assert entry.expected_primary_document is None
+        assert entry.ground_truth_source_sha256 is None
+
+
+def test_shell_validation_plan_binds_the_same_upstream_evidence():
+    _, fields, _ = load_request_plan(SHELL_PLAN)
+    _, canary_fields, _ = load_request_plan(CANARY_PLAN)
+    assert fields["provenance"] == canary_fields["provenance"]
+    assert fields["route_validation"] == canary_fields["route_validation"]
+    assert "never selection evidence" in fields["route_validation"]["note"]
+
+
+def test_shell_validation_plan_does_not_authorize_a_request():
+    payload = read_json(SHELL_PLAN)
+    assert "does not authorize a live request" in payload["description"]
+
+
+@pytest.mark.skipif(
+    not CARRIER_RUN.exists(),
+    reason="local carrier run absent; planned rows not re-derivable",
+)
+def test_shell_validation_rows_match_the_local_carrier_exactly():
+    """Read-only: every planned row is a real domestic baseline candidate.
+
+    Reuses the Canary-B rederivation: each listed group must be the *complete*
+    carrier group for its accession, and each directory_cik the group minimum.
+    """
+    candidates, by_accession = _local_baseline_candidates()
+    planned, _, _ = load_request_plan(SHELL_PLAN)
+    for entry in planned:
+        for planned_row in entry.carrier_rows:
+            row = candidates.get((planned_row.cik, entry.accession))
+            assert row is not None, (planned_row.cik, entry.accession)
+            assert row["baseline_form"] == entry.form
+            assert row["stratum"] == planned_row.stratum == "domestic"
+            assert row["baseline_filing_date"] == planned_row.baseline_filing_date
+        group = by_accession[entry.accession]
+        assert {r.cik for r in entry.carrier_rows} == group, entry.accession
+        assert entry.directory_cik == min(group), entry.accession
+
+
+# --- ADR-094 pre-registration ------------------------------------------------
+
+
+def _adr_094_preregistration() -> str:
+    text = DECISION_LOG.read_text(encoding="utf-8")
+    start = text.index("### Planned shell-validation canary")
+    return text[start:text.index("## Open decisions", start)]
+
+
+def _adr_094_prose() -> str:
+    """The same section with runs of whitespace collapsed.
+
+    Phrase assertions must survive markdown line wrapping, which is a
+    formatting choice and not part of what the entry claims.
+    """
+    return " ".join(_adr_094_preregistration().split())
+
+
+def test_adr_094_preregistration_covers_every_planned_row():
+    """The stored register is row-level and matches the committed plan."""
+    section = _adr_094_preregistration()
+    planned, _, _ = load_request_plan(SHELL_PLAN)
+    rows = [
+        line for line in section.splitlines()
+        if line.startswith("| ") and "| 00" in line
+    ]
+    assert len(rows) == 23
+    registered = {
+        (cells[2].strip(), cells[3].strip())
+        for cells in (line.split("|") for line in rows)
+    }
+    assert registered == {
+        (row.cik, entry.accession)
+        for entry in planned for row in entry.carrier_rows
+    }
+    verdicts = [line.split("|")[4].strip() for line in rows]
+    assert verdicts.count("true") == 4
+    assert verdicts.count("false") == 5
+    assert verdicts.count("unknown") == 12
+    assert verdicts.count("no_prediction") == 2
+    assert len(verdicts) == 4 + 5 + 12 + 2 == 23
+
+
+def test_adr_094_preregistration_states_its_totals_and_status():
+    prose = _adr_094_prose()
+    assert "4 + 5 + 12 + 2 = 23" in prose
+    assert "9 + 1 + 2" in prose
+    assert "not gold data and not an executed run" in prose
+    assert "pre-registration category, not a determination outcome" in prose
+    # The three layers are named and kept apart.
+    for layer in ("*Observed labels*", "*Hypotheses*", "*Predictions*"):
+        assert layer in prose
+    # #11 is retained in this same canary rather than replaced or split off.
+    assert "0001888524-22-003211" in prose
+    assert "retained inside this same canary" in prose
+
+
+def test_adr_094_records_the_corrected_h1_falsification_rule():
+    prose = _adr_094_prose()
+    assert "H1 falsification rule" in prose
+    assert "is **consistent** with H1" in prose
+    assert "two or more carrier rows of the same accession return determinate" in prose
+    assert "without the required CIK-binding evidence" in prose
+    # The superseded reading must not reappear.
+    assert "would contradict H1" not in prose
 
 
 # --- boundaries -------------------------------------------------------------

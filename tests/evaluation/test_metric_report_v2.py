@@ -611,7 +611,11 @@ def test_manifest_count():
     # twelve-document synthetic bundle with its manifest and gold, and the
     # determination test file. Exactly one issuer fact is set; the five-flag
     # issuer_filters contract is untouched.
-    assert declared == len(paths) == 734
+    # 735 = 734 + the committed shell-validation canary request plan
+    # (ADR-094 pre-registration): one data file under the existing
+    # primary_document_request_plan@0.1.0 contract. No new production code,
+    # schema, registry entry or fixture; possessing it authorizes no request.
+    assert declared == len(paths) == 735
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

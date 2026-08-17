@@ -1,0 +1,129 @@
+{
+  "plan_contract": "primary_document_request_plan@0.1.0",
+  "description": "Planned 00B-S shell-validation canary: two-hop primary-document acquisition over twelve domestic baseline candidates from frozen FRAME_v1, sized to feed one local shell-company determination run (ADR-094). Twelve accessions yield twenty-four requests — one filing-index page and one primary document each — and twenty-three bundle entries, because three combined filings are fetched once and mapped to their complete carrier groups of three (Spire), seven (FirstEnergy Ohio PIRB) and four (Ferrellgas) rows. One 10-KT is included (Compass Minerals, 2021-11-30), the only non-2022 baseline date in the plan. Every accession's index page is fetched by this run, including Spire's, which the completed primary-document canary already covered: route validation proves a URL grammar, never per-firm selection, so every document carries its own filing-index response hash. Only Spire records ground truth — expected_primary_document and ground_truth_source_sha256 both come from the completed primary-document canary's own bundle entry for this accession, so re-acquiring it is a byte-level reproducibility check. The other eleven accessions assert neither field and will record ground_truth_basis 'none': no filename or hash for them has ever been observed, and none is invented here. The twenty-three-row prediction register that makes this a test rather than a search is pre-registered in ADR-094, not in this plan. href_form is measured, not assumed. Possessing this plan does not authorize a live request.",
+  "base_url": "https://www.sec.gov/Archives/",
+  "max_metadata_bytes": 8388608,
+  "max_document_bytes": 268435456,
+  "provenance": {
+    "carrier_run_id": "universe-baseline-carrier-frame-v1-20260816",
+    "carrier_manifest_sha256": "50a2582f9a255c4402151aa4d963ce5d7bd7c952b8e4a5e77f4a7e7ce454521f",
+    "freeze_record_sha256": "27eb6d236b2e3f81a3b52437027f076a52ae04b245694c9645a4bfb6303e342c"
+  },
+  "route_validation": {
+    "probe_run_id": "filing-index-probe-frame-v1-20260816-r2",
+    "probe_manifest_sha256": "7aa16a0ee076800634f4185ba9af47588f084fc9d0ed7a754cbeca81f258e270",
+    "covered_accessions": 3,
+    "note": "URL-route grammar only, proven for the probe's own three accessions; never selection evidence for any firm in this plan."
+  },
+  "documents": [
+    {
+      "accession": "0001437749-22-027522",
+      "form": "10-K",
+      "directory_cik": "0000003146",
+      "carrier_rows": [
+        {"stratum": "domestic", "cik": "0000003146", "baseline_filing_date": "2022-11-16"},
+        {"stratum": "domestic", "cik": "0000057183", "baseline_filing_date": "2022-11-16"},
+        {"stratum": "domestic", "cik": "0001126956", "baseline_filing_date": "2022-11-16"}
+      ],
+      "expected_primary_document": "spre20220930_10k.htm",
+      "ground_truth_source_sha256": "5ade73ed9050f0c5dec5c7f08a7b128511f5a4b5b71d2100ae56a78b099cbc21"
+    },
+    {
+      "accession": "0001578443-22-000007",
+      "form": "10-K",
+      "directory_cik": "0000020947",
+      "carrier_rows": [
+        {"stratum": "domestic", "cik": "0000020947", "baseline_filing_date": "2022-03-25"},
+        {"stratum": "domestic", "cik": "0000073960", "baseline_filing_date": "2022-03-25"},
+        {"stratum": "domestic", "cik": "0000352049", "baseline_filing_date": "2022-03-25"},
+        {"stratum": "domestic", "cik": "0001573279", "baseline_filing_date": "2022-03-25"},
+        {"stratum": "domestic", "cik": "0001573334", "baseline_filing_date": "2022-03-25"},
+        {"stratum": "domestic", "cik": "0001573352", "baseline_filing_date": "2022-03-25"},
+        {"stratum": "domestic", "cik": "0001578443", "baseline_filing_date": "2022-03-25"}
+      ]
+    },
+    {
+      "accession": "0001558370-22-014733",
+      "form": "10-K",
+      "directory_cik": "0000922358",
+      "carrier_rows": [
+        {"stratum": "domestic", "cik": "0000922358", "baseline_filing_date": "2022-09-30"},
+        {"stratum": "domestic", "cik": "0000922359", "baseline_filing_date": "2022-09-30"},
+        {"stratum": "domestic", "cik": "0000922360", "baseline_filing_date": "2022-09-30"},
+        {"stratum": "domestic", "cik": "0001012493", "baseline_filing_date": "2022-09-30"}
+      ]
+    },
+    {
+      "accession": "0001213900-22-020143",
+      "form": "10-K",
+      "directory_cik": "0001833909",
+      "carrier_rows": [
+        {"stratum": "domestic", "cik": "0001833909", "baseline_filing_date": "2022-04-15"}
+      ]
+    },
+    {
+      "accession": "0001193125-22-091842",
+      "form": "10-K",
+      "directory_cik": "0001829558",
+      "carrier_rows": [
+        {"stratum": "domestic", "cik": "0001829558", "baseline_filing_date": "2022-03-31"}
+      ]
+    },
+    {
+      "accession": "0001104659-22-030631",
+      "form": "10-K",
+      "directory_cik": "0001844840",
+      "carrier_rows": [
+        {"stratum": "domestic", "cik": "0001844840", "baseline_filing_date": "2022-03-04"}
+      ]
+    },
+    {
+      "accession": "0001410578-22-000778",
+      "form": "10-K",
+      "directory_cik": "0001841867",
+      "carrier_rows": [
+        {"stratum": "domestic", "cik": "0001841867", "baseline_filing_date": "2022-03-31"}
+      ]
+    },
+    {
+      "accession": "0000002488-22-000016",
+      "form": "10-K",
+      "directory_cik": "0000002488",
+      "carrier_rows": [
+        {"stratum": "domestic", "cik": "0000002488", "baseline_filing_date": "2022-02-03"}
+      ]
+    },
+    {
+      "accession": "0001564590-22-006284",
+      "form": "10-K",
+      "directory_cik": "0000009092",
+      "carrier_rows": [
+        {"stratum": "domestic", "cik": "0000009092", "baseline_filing_date": "2022-02-23"}
+      ]
+    },
+    {
+      "accession": "0000950170-22-001531",
+      "form": "10-K",
+      "directory_cik": "0000007431",
+      "carrier_rows": [
+        {"stratum": "domestic", "cik": "0000007431", "baseline_filing_date": "2022-02-22"}
+      ]
+    },
+    {
+      "accession": "0001888524-22-003211",
+      "form": "10-K",
+      "directory_cik": "0001558546",
+      "carrier_rows": [
+        {"stratum": "domestic", "cik": "0001558546", "baseline_filing_date": "2022-03-21"}
+      ]
+    },
+    {
+      "accession": "0001227654-21-000309",
+      "form": "10-KT",
+      "directory_cik": "0001227654",
+      "carrier_rows": [
+        {"stratum": "domestic", "cik": "0001227654", "baseline_filing_date": "2021-11-30"}
+      ]
+    }
+  ]
+}
