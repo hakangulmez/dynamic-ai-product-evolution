@@ -8,6 +8,11 @@ from __future__ import annotations
 
 import re
 
+#: The only identifier scheme that binds an XBRL context to a CIK. Held here
+#: because CIK identity lives in this module and the ingestion package may not
+#: name a URL (tests/ingestion/test_ingestion_boundaries.py).
+SEC_CIK_IDENTIFIER_SCHEME = "http://www.sec.gov/CIK"
+
 _CIK_RE = re.compile(r"^\d{1,10}$")
 _ACCESSION_DIGITS_RE = re.compile(r"^\d{18}$")
 

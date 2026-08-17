@@ -1290,7 +1290,12 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # schema (ADR-093): live runs record each hop's parsed Content-Length
     # for byte planning. v0.1 and v0.2 are byte-unchanged and the completed
     # Canary B artifact remains a valid v0.2 record; nothing migrates.
-    assert declared == len(paths) == 716
+    # 734 = 716 + the 18 Stage 00B-S shell-company paths (ADR-094):
+    # the determination module, its record and run-manifest schemas, the
+    # twelve-document synthetic bundle with its manifest and gold, and the
+    # determination test file. Exactly one issuer fact is set; the five-flag
+    # issuer_filters contract is untouched.
+    assert declared == len(paths) == 734
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

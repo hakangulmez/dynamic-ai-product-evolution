@@ -5837,6 +5837,84 @@ request-plan grammar, `bundle_manifest.json` and the bundle schema,
 failed-run receipt format. **No new acquisition capability or policy is
 introduced.**
 
+## ADR-094 — Stage 00B-S: deterministic shell-company determination, alone
+
+**Status.** Accepted. Fixture-first; no live request, no candidate-validation
+canary, no model call, and no `data/runs` write.
+
+**Exactly one fact, deliberately.** This increment reads
+`dei:EntityShellCompany` and sets `shell_company` only. The four other Stage
+00B flags — `investment_company`, `asset_backed_issuer`,
+`non_operating_trust`, `blank_check_precombination` — are neither read, set,
+inferred, nor represented, `issuer_filters.py` is not imported, and its
+five-flag contract is unchanged. That separation is not tidiness: the measured
+cohort contains a **liquidating trust that declares shell = false**, and a
+five-flag path invites conflating `non_operating_trust` with `shell_company`
+when only the latter has a governed source fact. `run_issuer_filters` could
+not simply be called — it iterates all five flags and would have to fabricate
+positions on four of them, and it consumes a `HistoricalAnnualFiler` keyed on
+a `company_id` the frame does not carry (ADR-088).
+
+**Outcomes.** `true` is a deterministic hard exclusion carrying dated
+evidence. `false` means the firm is **retained** and asserts nothing about
+software, product, or general eligibility. `unknown` is retained. Nothing is
+ever excluded on absent or ambiguous evidence.
+
+**Boolean evaluation is a transform-application contract.** The declared
+transform alone does not decide the value: one measured AAR filing yields
+both outcomes under `ixt-sec:boolballotbox` — `dei:DocumentAnnualReport` with
+U+2612 ☒ is true while `dei:EntityShellCompany` with U+2610 ☐ is false in the
+same document. Decoded content is therefore evaluated *under* its transform.
+Supported in v0.1, and only these, because only these were observed in real
+filings: `ixt-sec:boolballotbox` (☐ ⇒ false, ☒ ⇒ true, any other content ⇒
+unknown), `ixt:booleanfalse` ⇒ false, and `ixt:fixed-false` ⇒ false — the
+fixed transforms ignoring their content, so `fixed-false` rendered with ☒
+still returns false. **`ixt:booleantrue` and `ixt:fixed-true` are
+unsupported**: never observed, and no canonical versioned registry is cited
+here for them, so an uncited transform claim does not enter the contract.
+U+2611 ☑ was likewise never observed and is not admitted. Entity decoding is
+mandatory: `&#9744;` and `&#x2610;` are the same codepoint and both occur.
+
+**Context resolution, and why it is strict.** Every fact resolves through its
+`contextRef`; the identifier scheme must be exactly `http://www.sec.gov/CIK`,
+and an unmembered context binds only when its identifier equals the carrier
+row's CIK. A context carrying a `dei:LegalEntityAxis` member is
+**unassignable** unless the filing itself maps that member to the row CIK.
+The measured evidence is decisive: the real Spire combined filing carries
+**three** `EntityShellCompany` facts whose contexts **all bear the parent's
+CIK 0001126956**, distinguishing registrants only by filer-defined
+`sr:SpireMissouriMember` / `sr:SpireAlabamaIncMember` tokens that carry no
+CIK. So that filing yields **false for the parent and unknown for both
+subsidiary rows** — not false for three firms. A member token is never
+resolved by name resemblance.
+
+**Fail-closed multiplicity.** Missing, malformed, unsupported, conflicting,
+unassignable, or more than one assignable fact all yield `unknown`. In v0.1
+even *agreeing* duplicates yield `unknown` rather than being collapsed:
+agreement is not evidence that the duplication was intended.
+
+**Provenance.** Each determination retains CIK, accession, form, baseline
+filing date, `source_sha256`, the transform and decoded-content observations,
+`fact_byte_start`, `fact_byte_end`, `fact_element_sha256`, and the bundle and
+carrier provenance. Byte ranges are **half-open** `[start, end)` and
+`fact_element_sha256` covers exactly `raw[start:end]` — the complete raw
+`ix:nonNumeric` element, unnormalized and undecoded.
+
+**Input.** It consumes the committed `baseline_primary_document_bundle@0.1.0`
+unchanged, reusing `load_bundle` read-only, so it introduces no acquisition
+format and fetches nothing. `baseline_packet.py`, the bundle schema,
+primary-document acquisition, and the document transport are untouched.
+
+**Scope.** Added: the determination module, its record and run-manifest
+schemas, a twelve-document synthetic bundle with manifest and gold, and the
+test file — eighteen paths. Modified: the pipeline entrypoint (one mode,
+`determine-shell-company`), the schema registry (0.33.0 → 0.34.0, 71 → 73)
+with both pinned-hash rebaselines, `REPO_MANIFEST.md` (716 → 734), the three
+count tests, and this log — nine paths. The 20-row candidate roster remains a
+**roster, not gold**: every name-pattern selection is provisional until its
+own primary document proves the label, and the 24-request validation canary
+is not run here.
+
 ## Open decisions
 
 - Required source packet by firm-year.

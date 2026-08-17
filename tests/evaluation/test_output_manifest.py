@@ -892,7 +892,12 @@ def test_repo_manifest_count_and_paths():
     # schema (ADR-093): live runs record each hop's parsed Content-Length
     # for byte planning. v0.1 and v0.2 are byte-unchanged and the completed
     # Canary B artifact remains a valid v0.2 record; nothing migrates.
-    assert "Total tracked/scaffold files listed: **716**" in text
+    # 734 = 716 + the 18 Stage 00B-S shell-company paths (ADR-094):
+    # the determination module, its record and run-manifest schemas, the
+    # twelve-document synthetic bundle with its manifest and gold, and the
+    # determination test file. Exactly one issuer fact is set; the five-flag
+    # issuer_filters contract is untouched.
+    assert "Total tracked/scaffold files listed: **734**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

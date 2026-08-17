@@ -606,7 +606,12 @@ def test_manifest_count():
     # schema (ADR-093): live runs record each hop's parsed Content-Length
     # for byte planning. v0.1 and v0.2 are byte-unchanged and the completed
     # Canary B artifact remains a valid v0.2 record; nothing migrates.
-    assert declared == len(paths) == 716
+    # 734 = 716 + the 18 Stage 00B-S shell-company paths (ADR-094):
+    # the determination module, its record and run-manifest schemas, the
+    # twelve-document synthetic bundle with its manifest and gold, and the
+    # determination test file. Exactly one issuer fact is set; the five-flag
+    # issuer_filters contract is untouched.
+    assert declared == len(paths) == 734
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

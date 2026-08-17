@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "shell_company_determination.schema.json",
+  "title": "Shell-company determination",
+  "description": "One deterministic Stage 00B-S determination of dei:EntityShellCompany for one carrier row (ADR-094). Exactly one fact is set: shell_company. The four other Stage 00B flags are neither read, set nor inferred, and the five-flag issuer_filters contract is untouched. true is a deterministic hard exclusion carrying dated evidence; false means the firm is retained and asserts nothing about software, product or general eligibility; unknown is retained. Boolean evaluation is a transform-application contract: decoded content is evaluated under its declared transform, because the transform alone does not decide a ballot-box outcome. Byte ranges are half-open [fact_byte_start, fact_byte_end) and fact_element_sha256 covers exactly raw[start:end], the complete raw ix:nonNumeric element, unnormalized. Missing, malformed, unsupported, conflicting, unassignable or multiple assignable facts yield unknown, and agreeing duplicates are never collapsed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "determination_contract",
+    "cik",
+    "company_id",
+    "accession",
+    "form",
+    "baseline_filing_date",
+    "source_sha256",
+    "shell_company",
+    "basis",
+    "detail",
+    "facts_in_document",
+    "assignable_facts",
+    "transform_observed",
+    "decoded_content_observed",
+    "context_ref_observed",
+    "fact_byte_start",
+    "fact_byte_end",
+    "fact_element_sha256",
+    "bundle_manifest_sha256",
+    "carrier_provenance"
+  ],
+  "properties": {
+    "determination_contract": {
+      "const": "shell_company_determination@0.1.0"
+    },
+    "cik": {
+      "type": "string",
+      "pattern": "^\\d{10}$"
+    },
+    "company_id": {
+      "type": "string"
+    },
+    "accession": {
+      "type": "string",
+      "pattern": "^\\d{10}-\\d{2}-\\d{6}$"
+    },
+    "form": {
+      "enum": [
+        "10-K",
+        "10-KT"
+      ]
+    },
+    "baseline_filing_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "shell_company": {
+      "enum": [
+        "true",
+        "false",
+        "unknown"
+      ]
+    },
+    "basis": {
+      "type": "string"
+    },
+    "detail": {
+      "type": "string"
+    },
+    "facts_in_document": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "assignable_facts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "transform_observed": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "decoded_content_observed": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "context_ref_observed": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fact_byte_start": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "fact_byte_end": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "fact_element_sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "bundle_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "carrier_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrier_run_id",
+        "carrier_manifest_sha256",
+        "freeze_record_sha256"
+      ],
+      "properties": {
+        "carrier_run_id": {
+          "type": "string"
+        },
+        "carrier_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "freeze_record_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,164 @@
+{
+  "description": "Gold expectations for Stage 00B-S shell-company determination over the synthetic bundle (ADR-094). Exactly one fact is set per row. Boolean evaluation applies the declared transform to decoded content: under ixt-sec:boolballotbox the same transform yields false for U+2610 and true for U+2612, and both entity encodings of U+2610 decode identically. ixt:fixed-false returns false even when its rendered glyph contradicts it. Unsupported and absent transforms, an absent fact, and duplicate assignable facts \u2014 conflicting or agreeing \u2014 all yield unknown and are retained. The combined filing carries three facts whose contexts all bear the parent CIK: the unmembered context binds the parent to false, and the two membered contexts are unassignable, so both subsidiary rows are unknown rather than false.",
+  "counts": {
+    "rows_considered": 14,
+    "determinations": 14,
+    "shell_true": 1,
+    "shell_false": 6,
+    "shell_unknown": 7,
+    "firms_excluded": 1,
+    "by_basis": {
+      "boolballotbox_empty_box": 3,
+      "boolballotbox_crossed_box": 1,
+      "boolean_false_transform": 1,
+      "fixed_false_transform": 2,
+      "no_shell_fact_in_document": 1,
+      "unsupported_transform": 1,
+      "absent_transform": 1,
+      "multiple_assignable_facts": 2,
+      "no_fact_assignable_to_this_cik": 2
+    }
+  },
+  "determinations": [
+    {
+      "cik": "0009300001",
+      "form": "10-K",
+      "shell_company": "false",
+      "basis": "boolballotbox_empty_box",
+      "facts_in_document": 1,
+      "assignable_facts": 1,
+      "transform_observed": "ixt-sec:boolballotbox",
+      "decoded_content_observed": "\u2610"
+    },
+    {
+      "cik": "0009300002",
+      "form": "10-K",
+      "shell_company": "true",
+      "basis": "boolballotbox_crossed_box",
+      "facts_in_document": 1,
+      "assignable_facts": 1,
+      "transform_observed": "ixt-sec:boolballotbox",
+      "decoded_content_observed": "\u2612"
+    },
+    {
+      "cik": "0009300003",
+      "form": "10-K",
+      "shell_company": "false",
+      "basis": "boolballotbox_empty_box",
+      "facts_in_document": 1,
+      "assignable_facts": 1,
+      "transform_observed": "ixt-sec:boolballotbox",
+      "decoded_content_observed": "\u2610"
+    },
+    {
+      "cik": "0009300004",
+      "form": "10-KT",
+      "shell_company": "false",
+      "basis": "boolean_false_transform",
+      "facts_in_document": 1,
+      "assignable_facts": 1,
+      "transform_observed": "ixt:booleanfalse",
+      "decoded_content_observed": "No"
+    },
+    {
+      "cik": "0009300005",
+      "form": "10-KT",
+      "shell_company": "false",
+      "basis": "fixed_false_transform",
+      "facts_in_document": 1,
+      "assignable_facts": 1,
+      "transform_observed": "ixt:fixed-false",
+      "decoded_content_observed": "\u2610"
+    },
+    {
+      "cik": "0009300006",
+      "form": "10-K",
+      "shell_company": "false",
+      "basis": "fixed_false_transform",
+      "facts_in_document": 1,
+      "assignable_facts": 1,
+      "transform_observed": "ixt:fixed-false",
+      "decoded_content_observed": "\u2612"
+    },
+    {
+      "cik": "0009300007",
+      "form": "10-K",
+      "shell_company": "unknown",
+      "basis": "no_shell_fact_in_document",
+      "facts_in_document": 0,
+      "assignable_facts": 0,
+      "transform_observed": null,
+      "decoded_content_observed": null
+    },
+    {
+      "cik": "0009300008",
+      "form": "10-K",
+      "shell_company": "unknown",
+      "basis": "unsupported_transform",
+      "facts_in_document": 1,
+      "assignable_facts": 1,
+      "transform_observed": "ixt:booleantrue",
+      "decoded_content_observed": "\u2610"
+    },
+    {
+      "cik": "0009300009",
+      "form": "10-K",
+      "shell_company": "unknown",
+      "basis": "absent_transform",
+      "facts_in_document": 1,
+      "assignable_facts": 1,
+      "transform_observed": null,
+      "decoded_content_observed": "\u2610"
+    },
+    {
+      "cik": "0009300010",
+      "form": "10-K",
+      "shell_company": "unknown",
+      "basis": "multiple_assignable_facts",
+      "facts_in_document": 2,
+      "assignable_facts": 2,
+      "transform_observed": null,
+      "decoded_content_observed": null
+    },
+    {
+      "cik": "0009300011",
+      "form": "10-K",
+      "shell_company": "unknown",
+      "basis": "multiple_assignable_facts",
+      "facts_in_document": 2,
+      "assignable_facts": 2,
+      "transform_observed": null,
+      "decoded_content_observed": null
+    },
+    {
+      "cik": "0009300012",
+      "form": "10-K",
+      "shell_company": "false",
+      "basis": "boolballotbox_empty_box",
+      "facts_in_document": 3,
+      "assignable_facts": 1,
+      "transform_observed": "ixt-sec:boolballotbox",
+      "decoded_content_observed": "\u2610"
+    },
+    {
+      "cik": "0009300013",
+      "form": "10-K",
+      "shell_company": "unknown",
+      "basis": "no_fact_assignable_to_this_cik",
+      "facts_in_document": 3,
+      "assignable_facts": 0,
+      "transform_observed": null,
+      "decoded_content_observed": null
+    },
+    {
+      "cik": "0009300014",
+      "form": "10-K",
+      "shell_company": "unknown",
+      "basis": "no_fact_assignable_to_this_cik",
+      "facts_in_document": 3,
+      "assignable_facts": 0,
+      "transform_observed": null,
+      "decoded_content_observed": null
+    }
+  ]
+}

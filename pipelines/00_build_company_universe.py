@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Ten mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
+Eleven mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
 so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -49,6 +49,11 @@ so every pre-existing invocation is unchanged):
   a local, hash-verified primary-document bundle (ADR-091). Fixture-first and
   offline: it performs no network access, decides no exclusion, and records
   cover-page evidence and the economic subsections as explicitly missing.
+- ``determine-shell-company`` reads exactly one cover-page fact,
+  ``dei:EntityShellCompany``, from a local hash-verified primary-document
+  bundle and emits one governed determination per carrier row (ADR-094). It
+  sets no other issuer flag, fetches nothing, and excludes only on a true
+  determination.
 - ``baseline-carrier`` derives the Stage 00B firm-level baseline carrier
   (W2-A, ADR-088) from a completed FRAME run: hash-verified read-only frame
   consumption, per-stratum CIK grouping, baseline-filing selection against
@@ -123,6 +128,10 @@ from dynamic_ai_products.ingestion.baseline_packet import (  # noqa: E402
     PacketBundleError,
     run_baseline_packet_build,
 )
+from dynamic_ai_products.ingestion.shell_company_determination import (  # noqa: E402
+    ShellDeterminationError,
+    run_shell_company_determination,
+)
 from dynamic_ai_products.universe.primary_document_acquisition import (  # noqa: E402
     PrimaryDocumentPlanError,
     load_request_plan as load_primary_document_plan,
@@ -160,7 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["sentinel", "frame", "acquire-index", "dera-validate",
                  "acquire-dera", "baseline-carrier", "acquire-docs",
                  "probe-filing-index", "build-baseline-packets",
-                 "acquire-primary-docs"],
+                 "acquire-primary-docs", "determine-shell-company"],
         help="Stage 00 sub-pipeline to run (default: sentinel).",
     )
     parser.add_argument(
@@ -325,6 +334,20 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                 "acquire-docs mode with the sec-live transport does not "
                 "accept: --replay-dir"
             )
+        return None
+
+    if args.mode == "determine-shell-company":
+        offending = _present(
+            sentinel_flags + frame_flags + acquire_flags + dera_flags
+            + (("--config", args.config),)
+        )
+        if offending:
+            return (
+                "determine-shell-company mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        if args.bundle_dir is None:
+            return "determine-shell-company mode requires: --bundle-dir"
         return None
 
     if args.mode == "build-baseline-packets":
@@ -854,6 +877,44 @@ def _main_acquire_primary_docs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_determine_shell_company(args: argparse.Namespace) -> int:
+    bundle_dir = Path(args.bundle_dir)
+    if not bundle_dir.is_dir():
+        print(f"ERROR: bundle directory not found: {bundle_dir}", file=sys.stderr)
+        return 2
+    try:
+        result = run_shell_company_determination(
+            repo_root=REPO_ROOT,
+            bundle_dir=bundle_dir,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            # The ingestion package never reads the clock; the entrypoint owns
+            # identity and injects it.
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except (ShellDeterminationError, PacketBundleError) as exc:
+        print(f"ERROR: invalid shell determination input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "bundle_manifest_sha256": result.bundle_manifest_sha256,
+        "counts": result.counts,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 def _main_build_baseline_packets(args: argparse.Namespace) -> int:
     bundle_dir = Path(args.bundle_dir)
     config_path = Path(args.config)
@@ -1125,6 +1186,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_build_baseline_packets(args)
     if args.mode == "acquire-primary-docs":
         return _main_acquire_primary_docs(args)
+    if args.mode == "determine-shell-company":
+        return _main_determine_shell_company(args)
     if args.mode == "probe-filing-index":
         return _main_probe_filing_index(args)
     return _main_sentinel(args)

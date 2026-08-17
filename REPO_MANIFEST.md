@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **716**
+Total tracked/scaffold files listed: **734**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -226,6 +226,20 @@ Total tracked/scaffold files listed: **716**
 - `evals/fixtures/primary_documents/request_plan.json`
 - `evals/fixtures/primary_documents/shared-10k.htm`
 - `evals/fixtures/primary_documents/synth-a-20211231x10k.htm`
+- `evals/fixtures/shell_company/bundle_manifest.json`
+- `evals/fixtures/shell_company/expected_determinations.json`
+- `evals/fixtures/shell_company/shell_absent_fact.html`
+- `evals/fixtures/shell_company/shell_absent_transform.html`
+- `evals/fixtures/shell_company/shell_agreeing_duplicates.html`
+- `evals/fixtures/shell_company/shell_conflicting_duplicates.html`
+- `evals/fixtures/shell_company/shell_false_ballotbox_decimal.html`
+- `evals/fixtures/shell_company/shell_false_ballotbox_hex.html`
+- `evals/fixtures/shell_company/shell_false_booleanfalse.html`
+- `evals/fixtures/shell_company/shell_false_fixedfalse.html`
+- `evals/fixtures/shell_company/shell_fixedfalse_contradicting_content.html`
+- `evals/fixtures/shell_company/shell_multi_registrant.html`
+- `evals/fixtures/shell_company/shell_true_ballotbox.html`
+- `evals/fixtures/shell_company/shell_unsupported_transform.html`
 - `evals/fixtures/universe_sentinel/adjudications.json`
 - `evals/fixtures/universe_sentinel/classification_outputs.json`
 - `evals/fixtures/universe_sentinel/evidence_packets.json`
@@ -362,6 +376,8 @@ Total tracked/scaffold files listed: **716**
 - `schemas/prompt_qualification_record.schema.json`
 - `schemas/schema_version_manifest.json`
 - `schemas/sec_source_candidate.schema.json`
+- `schemas/shell_company_determination.schema.json`
+- `schemas/shell_company_determination_manifest.schema.json`
 - `schemas/snapshot_manifest.schema.json`
 - `schemas/source_document.schema.json`
 - `schemas/source_family_coverage.schema.json`
@@ -520,6 +536,7 @@ Total tracked/scaffold files listed: **716**
 - `src/dynamic_ai_products/ingestion/parquet_io.py`
 - `src/dynamic_ai_products/ingestion/preflight.py`
 - `src/dynamic_ai_products/ingestion/publication.py`
+- `src/dynamic_ai_products/ingestion/shell_company_determination.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/providers/__init__.py`
 - `src/dynamic_ai_products/providers/authorization.py`
@@ -676,6 +693,7 @@ Total tracked/scaffold files listed: **716**
 - `tests/ingestion/test_parquet_determinism.py`
 - `tests/ingestion/test_preflight.py`
 - `tests/ingestion/test_publication_atomicity.py`
+- `tests/ingestion/test_shell_company_determination.py`
 - `tests/notebook/test_master_notebook.py`
 - `tests/provenance/test_write_bytes_once.py`
 - `tests/providers/test_authorization.py`

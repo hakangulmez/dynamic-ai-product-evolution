@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.33.0",
+  "manifest_version": "0.34.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -57,6 +57,8 @@
     "prompt_qualification_record": "0.1.0",
     "sec_source_candidate": "0.1.0",
     "snapshot_manifest": "0.1.0",
+    "shell_company_determination": "0.1.0",
+    "shell_company_determination_manifest": "0.1.0",
     "source_document": "0.1.0",
     "source_family_coverage": "0.1.0",
     "source_family_coverage_v2": "0.2.0",
