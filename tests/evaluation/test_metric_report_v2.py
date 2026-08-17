@@ -634,7 +634,14 @@ def test_manifest_count():
     # v0.2, packet manifest v0.2, acquisition manifest v0.6, queue definition
     # v0.2), a text-admitting domestic queue definition, and the text fixture
     # set. Every predecessor schema and committed definition is unchanged.
-    assert declared == len(paths) == 775
+    # 777 = 775 + the two PCT_Dev30_v0 cohort-manifest paths: the persisted
+    # 30-firm roster registry (evals/registries/) and its guard-test module.
+    # No schemas/ entry and no schema-registry change -- the manifest follows
+    # the frame_v1_freeze.json pattern, a contract-declaring config validated
+    # by tests. This addition authorizes no PCT extraction prompt, model
+    # call, or Dev30 score; not tied to a numbered ADR because none was
+    # authorized for this narrowly-scoped increment.
+    assert declared == len(paths) == 777
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

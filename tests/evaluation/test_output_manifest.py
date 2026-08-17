@@ -920,7 +920,14 @@ def test_repo_manifest_count_and_paths():
     # v0.2, packet manifest v0.2, acquisition manifest v0.6, queue definition
     # v0.2), a text-admitting domestic queue definition, and the text fixture
     # set. Every predecessor schema and committed definition is unchanged.
-    assert "Total tracked/scaffold files listed: **775**" in text
+    # 777 = 775 + the two PCT_Dev30_v0 cohort-manifest paths: the persisted
+    # 30-firm roster registry (evals/registries/) and its guard-test module.
+    # No schemas/ entry and no schema-registry change -- the manifest follows
+    # the frame_v1_freeze.json pattern, a contract-declaring config validated
+    # by tests. This addition authorizes no PCT extraction prompt, model
+    # call, or Dev30 score; not tied to a numbered ADR because none was
+    # authorized for this narrowly-scoped increment.
+    assert "Total tracked/scaffold files listed: **777**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

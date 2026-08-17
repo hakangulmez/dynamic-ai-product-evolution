@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **775**
+Total tracked/scaffold files listed: **777**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -282,6 +282,7 @@ Total tracked/scaffold files listed: **775**
 - `evals/gold/draft/README.md`
 - `evals/gold/draft/_reading_instruction_opus.md`
 - `evals/registries/hubs_target_registry_v1.json`
+- `evals/registries/pct_dev30_v0_manifest.json`
 - `evals/regression/README.md`
 - `evals/reports/.gitkeep`
 - `evals/rubrics/MATCHING_RUBRIC.md`
@@ -667,6 +668,7 @@ Total tracked/scaffold files listed: **775**
 - `tests/evaluation/test_output_manifest.py`
 - `tests/evaluation/test_output_manifest_v2.py`
 - `tests/evaluation/test_parent_observation_snapshot.py`
+- `tests/evaluation/test_pct_dev30_v0_manifest.py`
 - `tests/evaluation/test_prediction_content.py`
 - `tests/evaluation/test_references.py`
 - `tests/evaluation/test_resolution_decisions.py`
