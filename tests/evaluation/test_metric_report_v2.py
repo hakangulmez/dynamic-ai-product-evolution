@@ -615,7 +615,12 @@ def test_manifest_count():
     # (ADR-094 pre-registration): one data file under the existing
     # primary_document_request_plan@0.1.0 contract. No new production code,
     # schema, registry entry or fixture; possessing it authorizes no request.
-    assert declared == len(paths) == 735
+    # 737 = 735 + the two v0.2 shell-company determination schemas: the
+    # record and run-manifest successors registering ixt:booleantrue and
+    # ixt:fixed-true on XBRL Transformation Registry authority. The v0.1
+    # files are retained byte-unchanged and stay the only validators for the
+    # completed v0.1 canary artifacts; nothing migrates.
+    assert declared == len(paths) == 737
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

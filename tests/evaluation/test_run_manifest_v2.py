@@ -749,7 +749,12 @@ def test_manifest_declared_total_matches_entry_count_and_lists_new_path():
 def test_no_static_schema_added_and_schema_manifest_unchanged():
     # Evaluation-v2 meaning preserved: run manifest v0.2 still adds no static
     # schema file. Only the global schema-version-manifest baseline is
-    # rebaselined (latest: ADR-094, 0.33.0 -> 0.34.0, registering the
+    # rebaselined (latest: the ADR-094 transform correction, 0.34.0 ->
+    # 0.35.0, 73 -> 75 entries, registering the v2 shell-company
+    # determination record and run-manifest successors at 0.2.0 for
+    # ixt:booleantrue and ixt:fixed-true, with the v0.1 pair retained
+    # unchanged at 0.1.0;
+    # before it ADR-094, 0.33.0 -> 0.34.0, registering the
     # shell-company determination record and its run manifest; before it
     # ADR-093, 0.32.0 -> 0.33.0, registering the v3 observational
     # sec_live successor for primary-document acquisition;
@@ -777,7 +782,7 @@ def test_no_static_schema_added_and_schema_manifest_unchanged():
     # successor).
     assert not (ROOT / "schemas" / "evaluation_run_manifest.v2.schema.json").exists()
     got = sha256_bytes((ROOT / "schemas" / "schema_version_manifest.json").read_bytes())
-    assert got == "064925831028260092974ccd6942636523afb8566d3b89a1d83c4aeb29cd9617"
+    assert got == "6f9687fbc6897d5871fb918d277c7fa5f5550a7a9dc8a719d9adb725e8039ef1"
 
 
 def test_protected_identities_unchanged():

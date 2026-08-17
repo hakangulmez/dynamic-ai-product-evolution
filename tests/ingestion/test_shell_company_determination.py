@@ -18,10 +18,12 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from dynamic_ai_products.ingestion.shell_company_determination import (
+    CONTENT_INDEPENDENT_TRANSFORMS,
     DETERMINATIONS_FILENAME,
     MANIFEST_FILENAME,
     SUPPORTED_TRANSFORMS,
     ShellDeterminationError,
+    ShellFact,
     determine_for_row,
     evaluate_fact,
     extract_contexts,
@@ -32,9 +34,13 @@ from dynamic_ai_products.universe.io_utils import read_json
 
 ROOT = Path(__file__).resolve().parents[2]
 BUNDLE_DIR = ROOT / "evals" / "fixtures" / "shell_company"
-DET_SCHEMA = ROOT / "schemas" / "shell_company_determination.schema.json"
-MANIFEST_SCHEMA = (
+DET_V1_SCHEMA = ROOT / "schemas" / "shell_company_determination.schema.json"
+MANIFEST_V1_SCHEMA = (
     ROOT / "schemas" / "shell_company_determination_manifest.schema.json"
+)
+DET_SCHEMA = ROOT / "schemas" / "shell_company_determination.v2.schema.json"
+MANIFEST_SCHEMA = (
+    ROOT / "schemas" / "shell_company_determination_manifest.v2.schema.json"
 )
 CLI = ROOT / "pipelines" / "00_build_company_universe.py"
 EXPECTED = read_json(BUNDLE_DIR / "expected_determinations.json")
@@ -130,21 +136,100 @@ def test_fixed_false_wins_over_contradicting_content(tmp_path):
     assert row["basis"] == "fixed_false_transform"
 
 
-def test_only_observed_transforms_are_supported():
+def test_the_five_registry_transforms_are_supported():
     assert SUPPORTED_TRANSFORMS == (
         "ixt-sec:boolballotbox", "ixt:booleanfalse", "ixt:fixed-false",
+        "ixt:booleantrue", "ixt:fixed-true",
     )
-    assert "ixt:booleantrue" not in SUPPORTED_TRANSFORMS
-    assert "ixt:fixed-true" not in SUPPORTED_TRANSFORMS
+    # boolballotbox is the ONLY content-dependent transform.
+    assert set(CONTENT_INDEPENDENT_TRANSFORMS) == set(SUPPORTED_TRANSFORMS) - {
+        "ixt-sec:boolballotbox"
+    }
+    assert CONTENT_INDEPENDENT_TRANSFORMS["ixt:booleantrue"][0] == "true"
+    assert CONTENT_INDEPENDENT_TRANSFORMS["ixt:fixed-true"][0] == "true"
+    assert CONTENT_INDEPENDENT_TRANSFORMS["ixt:booleanfalse"][0] == "false"
+    assert CONTENT_INDEPENDENT_TRANSFORMS["ixt:fixed-false"][0] == "false"
 
 
-def test_unsupported_and_absent_transforms_are_unknown(tmp_path):
+def test_boolean_true_wins_over_contradicting_content(tmp_path):
+    """The fixture declares ixt:booleantrue but renders an EMPTY box.
+
+    Its filename still reads ``shell_unsupported_transform.html`` from when
+    the transform was unsupported; the bytes are unchanged and now exercise
+    the registry rule against a contradicting glyph.
+    """
     rows = _by_cik(_run(tmp_path))
-    assert rows["0009300008"]["shell_company"] == "unknown"
-    assert rows["0009300008"]["basis"] == "unsupported_transform"
-    assert rows["0009300008"]["transform_observed"] == "ixt:booleantrue"
+    row = rows["0009300008"]
+    assert row["transform_observed"] == "ixt:booleantrue"
+    assert b"&#9744;" in (
+        BUNDLE_DIR / "shell_unsupported_transform.html"
+    ).read_bytes()
+    assert row["decoded_content_observed"] == "\u2610"   # the empty box, ignored
+    assert row["shell_company"] == "true"
+    assert row["basis"] == "boolean_true_transform"
+
+
+def test_fixed_true_wins_over_contradicting_content():
+    """The mirror of fixed-false: an empty box does not make it false."""
+    for content in ("&#9744;", "&#x2610;", "", "no"):
+        raw = _one_fact_document(b"ixt:fixed-true", content.encode())
+        record = determine_for_row(_ROW, raw)
+        assert record["shell_company"] == "true", content
+        assert record["basis"] == "fixed_true_transform"
+
+
+def test_both_true_transforms_ignore_every_rendered_content():
+    for transform, basis in (("ixt:booleantrue", "boolean_true_transform"),
+                             ("ixt:fixed-true", "fixed_true_transform")):
+        for content in ("\u2612", "\u2610", "true", "false", ""):
+            fact = ShellFact(context_ref="c", transform=transform,
+                             decoded_content=content, byte_start=0, byte_end=1,
+                             element_sha256="0" * 64)
+            assert evaluate_fact(fact) == ("true", basis), (transform, content)
+
+
+def test_a_still_unsupported_transform_is_unknown():
+    """A real registry transform that is not a boolean one earns nothing."""
+    raw = _one_fact_document(b"ixt:numdotdecimal", b"&#9746;")
+    record = determine_for_row(_ROW, raw)
+    assert record["shell_company"] == "unknown"
+    assert record["basis"] == "unsupported_transform"
+    assert record["transform_observed"] == "ixt:numdotdecimal"
+
+
+def test_absent_transform_is_unknown(tmp_path):
+    rows = _by_cik(_run(tmp_path))
     assert rows["0009300009"]["shell_company"] == "unknown"
     assert rows["0009300009"]["basis"] == "absent_transform"
+
+
+def test_a_true_transform_still_obeys_the_cik_binding_safeguards():
+    """The new transforms may not bypass context resolution.
+
+    A crossed-box glyph is absent here, so only the transform could produce
+    true — and it must not, because the context is unassignable.
+    """
+    membered = (
+        b'<xbrldi:explicitMember dimension="dei:LegalEntityAxis">'
+        b"sy:SubsidiaryMember</xbrldi:explicitMember>"
+    )
+    for transform in (b"ixt:booleantrue", b"ixt:fixed-true"):
+        raw = _one_fact_document(transform, b"&#9744;", members=membered)
+        record = determine_for_row(_ROW, raw)
+        assert record["shell_company"] == "unknown", transform
+        assert record["basis"] == "no_fact_assignable_to_this_cik"
+        assert record["assignable_facts"] == 0
+    # A non-SEC identifier scheme is equally disqualifying.
+    for transform in (b"ixt:booleantrue", b"ixt:fixed-true"):
+        raw = _one_fact_document(transform, b"&#9744;",
+                                 scheme=b"http://example.invalid/OTHER")
+        record = determine_for_row(_ROW, raw)
+        assert record["shell_company"] == "unknown", transform
+    # Two agreeing true facts still fail closed.
+    raw = _one_fact_document(b"ixt:booleantrue", b"&#9744;", duplicate=True)
+    record = determine_for_row(_ROW, raw)
+    assert record["shell_company"] == "unknown"
+    assert record["basis"] == "multiple_assignable_facts"
 
 
 def test_unresolved_ballotbox_content_is_unknown():
@@ -237,18 +322,33 @@ def test_context_reference_that_resolves_to_nothing_is_unknown():
     assert "resolves to no context" in record["detail"]
 
 
-def _one_context_document(members: bytes, cik: bytes = b"0009300099") -> bytes:
-    """A document whose single crossed-ballot-box fact points at one context."""
+def _one_fact_document(
+    transform: bytes = b"ixt-sec:boolballotbox",
+    content: bytes = b"&#9746;",
+    *,
+    members: bytes = b"",
+    scheme: bytes = b"http://www.sec.gov/CIK",
+    cik: bytes = b"0009300099",
+    duplicate: bool = False,
+) -> bytes:
+    """A minimal document with one shell fact bound to one context."""
+    segment = (b"<xbrli:segment>" + members + b"</xbrli:segment>") if members else b""
+    fact = (b'<ix:nonNumeric contextRef="c1" format="' + transform +
+            b'" name="dei:EntityShellCompany">' + content + b"</ix:nonNumeric>")
     return (
         b'<html><body><div style="display:none">'
         b'<xbrli:context id="c1"><xbrli:entity>'
-        b'<xbrli:identifier scheme="http://www.sec.gov/CIK">' + cik +
-        b"</xbrli:identifier><xbrli:segment>" + members +
-        b"</xbrli:segment></xbrli:entity></xbrli:context></div>"
-        b'<ix:nonNumeric contextRef="c1" format="ixt-sec:boolballotbox" '
-        b'name="dei:EntityShellCompany">&#9746;</ix:nonNumeric>'
+        b'<xbrli:identifier scheme="' + scheme + b'">' + cik +
+        b"</xbrli:identifier>" + segment +
+        b"</xbrli:entity></xbrli:context></div>" +
+        fact + (fact if duplicate else b"") +
         b"</body></html>"
     )
+
+
+def _one_context_document(members: bytes, cik: bytes = b"0009300099") -> bytes:
+    """A crossed-ballot-box fact on a context carrying the given members."""
+    return _one_fact_document(members=members, cik=cik)
 
 
 _ROW = {"cik": "0009300099", "accession": "0009300099-22-000001",
@@ -404,8 +504,8 @@ def test_module_does_not_import_issuer_filters_or_reach_a_network():
 def test_true_is_the_only_exclusion_and_unknown_is_retained(tmp_path):
     result = _run(tmp_path)
     manifest = read_json(result.manifest_path)
-    assert manifest["counts"]["firms_excluded"] == manifest["counts"]["shell_true"] == 1
-    assert manifest["counts"]["shell_unknown"] == 7
+    assert manifest["counts"]["firms_excluded"] == manifest["counts"]["shell_true"] == 2
+    assert manifest["counts"]["shell_unknown"] == 6
     # Every row still has a determination: nothing is dropped.
     assert manifest["counts"]["determinations"] == manifest["counts"]["rows_considered"]
 
@@ -486,6 +586,89 @@ def test_cli_rejects_cross_mode_flags(tmp_path):
     assert "does not accept" in completed.stderr
 
 
+# --- schema succession: v0.1 retained, v0.2 its explicit successor ---------
+
+
+V1_CANARY_MANIFEST = (
+    ROOT / "data" / "runs" / "shell-company-determination"
+    / "shell-company-determination-canary-frame-v1-20260817"
+    / MANIFEST_FILENAME
+)
+
+
+def _errors(schema_path: Path, payload: dict) -> list:
+    return list(Draft202012Validator(read_json(schema_path)).iter_errors(payload))
+
+
+def test_the_two_v1_schemas_are_untouched_and_still_declare_0_1_0():
+    """The predecessors keep their own contract; nothing was widened."""
+    for path in (DET_V1_SCHEMA, MANIFEST_V1_SCHEMA):
+        schema = read_json(path)
+        assert schema["properties"]["determination_contract"]["const"] == (
+            "shell_company_determination@0.1.0"
+        )
+    v1 = read_json(MANIFEST_V1_SCHEMA)["properties"]["supported_transforms"]
+    assert v1["minItems"] == v1["maxItems"] == 3
+    assert len(v1["items"]["enum"]) == 3
+
+
+def test_the_v2_schemas_declare_0_2_0_and_require_exactly_five_transforms():
+    """The successor is not permissive: it admits no v0.1 artefact."""
+    for path in (DET_SCHEMA, MANIFEST_SCHEMA):
+        schema = read_json(path)
+        assert schema["properties"]["determination_contract"]["const"] == (
+            "shell_company_determination@0.2.0"
+        )
+    v2 = read_json(MANIFEST_SCHEMA)["properties"]["supported_transforms"]
+    assert v2["minItems"] == v2["maxItems"] == 5
+    assert set(v2["items"]["enum"]) == set(SUPPORTED_TRANSFORMS)
+
+
+@pytest.mark.skipif(
+    not V1_CANARY_MANIFEST.exists(),
+    reason="completed v0.1 determination run absent; succession not checkable",
+)
+def test_the_completed_v1_manifest_validates_under_v1_and_is_rejected_by_v2():
+    """Past evidence keeps validating against the schema it was written under."""
+    manifest = read_json(V1_CANARY_MANIFEST)
+    assert manifest["determination_contract"] == "shell_company_determination@0.1.0"
+    assert len(manifest["supported_transforms"]) == 3
+    assert _errors(MANIFEST_V1_SCHEMA, manifest) == []
+    rejected = _errors(MANIFEST_SCHEMA, manifest)
+    assert rejected, "a v0.1 manifest must not validate against v2"
+    messages = " ".join(e.message for e in rejected)
+    assert "shell_company_determination@0.2.0" in messages
+
+
+def test_a_v2_manifest_validates_under_v2_and_is_rejected_by_v1(tmp_path):
+    """And the reverse: the successor's output is not a v0.1 artefact."""
+    result = _run(tmp_path, run_id="succession-v2")
+    manifest = read_json(result.manifest_path)
+    assert manifest["determination_contract"] == "shell_company_determination@0.2.0"
+    assert len(manifest["supported_transforms"]) == 5
+    assert set(manifest["schema_versions"]) == {
+        "shell_company_determination_v2",
+        "shell_company_determination_manifest_v2",
+    }
+    assert _errors(MANIFEST_SCHEMA, manifest) == []
+    rejected = _errors(MANIFEST_V1_SCHEMA, manifest)
+    assert rejected, "a v0.2 manifest must not validate against v0.1"
+    messages = " ".join(e.message for e in rejected)
+    assert "shell_company_determination@0.1.0" in messages
+    # Records too, not only the run manifest.
+    record = result.determinations[0]
+    assert _errors(DET_SCHEMA, record) == []
+    assert _errors(DET_V1_SCHEMA, record)
+
+
+def test_the_registry_carries_both_generations():
+    registry = read_json(ROOT / "schemas" / "schema_version_manifest.json")["schemas"]
+    assert registry["shell_company_determination"] == "0.1.0"
+    assert registry["shell_company_determination_manifest"] == "0.1.0"
+    assert registry["shell_company_determination_v2"] == "0.2.0"
+    assert registry["shell_company_determination_manifest_v2"] == "0.2.0"
+
+
 # --- the real combined filing, when it is present --------------------------
 
 
@@ -513,3 +696,62 @@ def test_real_combined_filing_splits_parent_from_subsidiaries(tmp_path):
     # Every other real filing resolves to false, and none is excluded.
     assert result.counts["shell_true"] == 0
     assert result.counts["firms_excluded"] == 0
+
+
+SHELL_CANARY_BUNDLE = (
+    ROOT / "data" / "runs" / "shell-validation-canary"
+    / "shell-validation-canary-frame-v1-20260817"
+)
+
+#: The three rows the executed canary returned unknown under the v0.1
+#: three-transform set, each carrying one assignable fact whose declared
+#: transform was ixt:booleantrue or ixt:fixed-true.
+LIVE_TRUE_TRANSFORM_ROWS = {
+    "0001833909": ("ixt:fixed-true", "fixed_true_transform"),
+    "0001829558": ("ixt:booleantrue", "boolean_true_transform"),
+    "0001844840": ("ixt:booleantrue", "boolean_true_transform"),
+}
+
+
+@pytest.mark.skipif(
+    not (SHELL_CANARY_BUNDLE / "bundle_manifest.json").exists(),
+    reason="local shell-validation bundle absent; live rows not checkable",
+)
+def test_the_three_live_unsupported_rows_now_resolve_true(tmp_path):
+    """Read-only over already-acquired bytes: no request, no re-acquisition.
+
+    Under v0.1 these three returned unknown/unsupported_transform. The
+    registry, not their crossed-box glyphs, is what now resolves them.
+    """
+    rows = _by_cik(_run(tmp_path, run_id="shell-live", bundle=SHELL_CANARY_BUNDLE))
+    for cik, (transform, basis) in LIVE_TRUE_TRANSFORM_ROWS.items():
+        row = rows[cik]
+        assert row["transform_observed"] == transform, cik
+        assert row["assignable_facts"] == 1, cik
+        assert row["shell_company"] == "true", cik
+        assert row["basis"] == basis, cik
+    # The one row already true under boolballotbox is unchanged.
+    assert rows["0001841867"]["shell_company"] == "true"
+    assert rows["0001841867"]["basis"] == "boolballotbox_crossed_box"
+
+
+@pytest.mark.skipif(
+    not (SHELL_CANARY_BUNDLE / "bundle_manifest.json").exists(),
+    reason="local shell-validation bundle absent; live rows not checkable",
+)
+def test_corrected_logic_moves_only_the_three_transform_rows(tmp_path):
+    """1 true / 6 false / 16 unknown becomes 4 / 6 / 13 — nothing else moves."""
+    result = _run(tmp_path, run_id="shell-live-counts", bundle=SHELL_CANARY_BUNDLE)
+    counts = result.counts
+    assert counts["determinations"] == counts["rows_considered"] == 23
+    assert counts["shell_true"] == 4
+    assert counts["shell_false"] == 6
+    assert counts["shell_unknown"] == 13
+    assert counts["firms_excluded"] == counts["shell_true"] == 4
+    assert counts["by_basis"].get("unsupported_transform", 0) == 0
+    assert counts["by_basis"]["boolean_true_transform"] == 2
+    assert counts["by_basis"]["fixed_true_transform"] == 1
+    # The context-binding outcomes are untouched by the transform change.
+    assert counts["by_basis"]["no_fact_assignable_to_this_cik"] == 5
+    assert counts["by_basis"]["no_shell_fact_in_document"] == 8
+    assert all(result.reconciliation.values())

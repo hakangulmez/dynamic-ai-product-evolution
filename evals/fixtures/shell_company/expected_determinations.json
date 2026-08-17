@@ -3,20 +3,20 @@
   "counts": {
     "rows_considered": 14,
     "determinations": 14,
-    "shell_true": 1,
+    "shell_true": 2,
     "shell_false": 6,
-    "shell_unknown": 7,
-    "firms_excluded": 1,
+    "shell_unknown": 6,
+    "firms_excluded": 2,
     "by_basis": {
       "boolballotbox_empty_box": 3,
       "boolballotbox_crossed_box": 1,
       "boolean_false_transform": 1,
       "fixed_false_transform": 2,
       "no_shell_fact_in_document": 1,
-      "unsupported_transform": 1,
       "absent_transform": 1,
       "multiple_assignable_facts": 2,
-      "no_fact_assignable_to_this_cik": 2
+      "no_fact_assignable_to_this_cik": 2,
+      "boolean_true_transform": 1
     }
   },
   "determinations": [
@@ -93,8 +93,8 @@
     {
       "cik": "0009300008",
       "form": "10-K",
-      "shell_company": "unknown",
-      "basis": "unsupported_transform",
+      "shell_company": "true",
+      "basis": "boolean_true_transform",
       "facts_in_document": 1,
       "assignable_facts": 1,
       "transform_observed": "ixt:booleantrue",

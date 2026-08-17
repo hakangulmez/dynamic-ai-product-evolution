@@ -901,7 +901,12 @@ def test_repo_manifest_count_and_paths():
     # (ADR-094 pre-registration): one data file under the existing
     # primary_document_request_plan@0.1.0 contract. No new production code,
     # schema, registry entry or fixture; possessing it authorizes no request.
-    assert "Total tracked/scaffold files listed: **735**" in text
+    # 737 = 735 + the two v0.2 shell-company determination schemas: the
+    # record and run-manifest successors registering ixt:booleantrue and
+    # ixt:fixed-true on XBRL Transformation Registry authority. The v0.1
+    # files are retained byte-unchanged and stay the only validators for the
+    # completed v0.1 canary artifacts; nothing migrates.
+    assert "Total tracked/scaffold files listed: **737**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

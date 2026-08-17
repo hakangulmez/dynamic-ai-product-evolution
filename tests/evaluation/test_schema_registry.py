@@ -174,7 +174,15 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-094: manifest_version 0.33.0 -> 0.34.0, 71 -> 73
+    # Rebaselined by the ADR-094 transform correction: manifest_version
+    # 0.34.0 -> 0.35.0, 73 -> 75 entries, registering
+    # shell_company_determination_v2 and its run manifest at 0.2.0 for
+    # ixt:booleantrue and ixt:fixed-true on XBRL Transformation Registry
+    # authority. The v0.1 entries stay at 0.1.0 and their schema files are
+    # byte-unchanged: v0.1 artifacts validate only there, v0.2 only against
+    # the successors, and neither validates the other.
+    # Before it,
+    # ADR-094: manifest_version 0.33.0 -> 0.34.0, 71 -> 73
     # entries, registering shell_company_determination and its run
     # manifest for the isolated Stage 00B-S shell-only determination.
     # Before it,
@@ -237,7 +245,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "064925831028260092974ccd6942636523afb8566d3b89a1d83c4aeb29cd9617"
+    "6f9687fbc6897d5871fb918d277c7fa5f5550a7a9dc8a719d9adb725e8039ef1"
 )
 
 

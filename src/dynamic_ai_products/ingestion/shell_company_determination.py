@@ -31,10 +31,17 @@ transform alone does not decide the value: one measured filing yields both
 outcomes under ``ixt-sec:boolballotbox`` — ``dei:DocumentAnnualReport`` with
 U+2612 is true while ``dei:EntityShellCompany`` with U+2610 is false in the
 same document. Decoded content is therefore evaluated *under* its transform.
-Only transforms observed in real filings are supported in v0.1;
-``ixt:booleantrue`` and ``ixt:fixed-true`` were never observed and no
-canonical versioned registry is cited for them, so they are unsupported and
-yield ``unknown``.
+``ixt-sec:boolballotbox`` is the **only** content-dependent transform. The
+four fixed and boolean transforms are content-**independent**: the XBRL
+Transformation Registry defines their output, so ``ixt:booleanfalse`` and
+``ixt:fixed-false`` yield false and ``ixt:booleantrue`` and ``ixt:fixed-true``
+yield true, each regardless of what the element renders. A checkbox glyph is
+never consulted for them, in either direction — a ``fixed-true`` element
+rendering U+2610 is still true, exactly as a ``fixed-false`` element rendering
+U+2612 is still false. ``ixt:booleantrue`` and ``ixt:fixed-true`` were added
+in v0.2 after three real filings declared them; the registry, not the
+observation, is the authority for what they mean. Any other transform stays
+unsupported and yields ``unknown``.
 
 **Context resolution.** Every fact is resolved through its ``contextRef``. The
 context identifier scheme must be exactly the SEC CIK scheme, and an
@@ -79,14 +86,27 @@ from ..universe.identifiers import (
 from ..universe.io_utils import read_json
 from .baseline_packet import PacketBundleError, load_bundle
 
-DETERMINATION_CONTRACT = "shell_company_determination@0.1.0"
+DETERMINATION_CONTRACT = "shell_company_determination@0.2.0"
 DETERMINATIONS_FILENAME = "shell_company_determinations.jsonl"
 MANIFEST_FILENAME = "shell_company_determination_manifest.json"
-DETERMINATION_SCHEMA_RELATIVE_PATH = Path(
+#: v0.1 schemas, retained unchanged. They remain the only validators for
+#: artefacts written under ``shell_company_determination@0.1.0``; this module
+#: no longer writes that contract and never validates against them.
+DETERMINATION_V1_SCHEMA_RELATIVE_PATH = Path(
     "schemas/shell_company_determination.schema.json"
 )
-MANIFEST_SCHEMA_RELATIVE_PATH = Path(
+MANIFEST_V1_SCHEMA_RELATIVE_PATH = Path(
     "schemas/shell_company_determination_manifest.schema.json"
+)
+#: v0.2 successors, which this module writes and validates against. A v0.1
+#: artefact is rejected here, and a v0.2 artefact is rejected by v0.1: the
+#: ``determination_contract`` const differs, and the successor requires
+#: exactly the five supported transforms.
+DETERMINATION_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/shell_company_determination.v2.schema.json"
+)
+MANIFEST_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/shell_company_determination_manifest.v2.schema.json"
 )
 
 #: The one fact this module reads. No other cover-page fact is consulted.
@@ -101,13 +121,18 @@ BALLOT_BOX_X = "☒"          # ☒  crossed
 TRANSFORM_BALLOTBOX = "ixt-sec:boolballotbox"
 TRANSFORM_BOOLEAN_FALSE = "ixt:booleanfalse"
 TRANSFORM_FIXED_FALSE = "ixt:fixed-false"
-#: Observed in real filings, and only these. ixt:booleantrue and
-#: ixt:fixed-true are deliberately absent: never observed, and no canonical
-#: versioned registry is cited for them here.
+TRANSFORM_BOOLEAN_TRUE = "ixt:booleantrue"
+TRANSFORM_FIXED_TRUE = "ixt:fixed-true"
+#: The five transforms this module resolves. The four fixed and boolean
+#: transforms take their meaning from the XBRL Transformation Registry, not
+#: from what any filing renders; ixt-sec:boolballotbox is the only one whose
+#: decoded content is read. Anything else yields unknown.
 SUPPORTED_TRANSFORMS = (
     TRANSFORM_BALLOTBOX,
     TRANSFORM_BOOLEAN_FALSE,
     TRANSFORM_FIXED_FALSE,
+    TRANSFORM_BOOLEAN_TRUE,
+    TRANSFORM_FIXED_TRUE,
 )
 
 SHELL_TRUE = "true"
@@ -118,6 +143,8 @@ BASIS_BALLOTBOX_EMPTY = "boolballotbox_empty_box"
 BASIS_BALLOTBOX_X = "boolballotbox_crossed_box"
 BASIS_FIXED_FALSE = "fixed_false_transform"
 BASIS_BOOLEAN_FALSE = "boolean_false_transform"
+BASIS_FIXED_TRUE = "fixed_true_transform"
+BASIS_BOOLEAN_TRUE = "boolean_true_transform"
 BASIS_NO_FACT = "no_shell_fact_in_document"
 BASIS_NO_ASSIGNABLE = "no_fact_assignable_to_this_cik"
 BASIS_MULTIPLE_ASSIGNABLE = "multiple_assignable_facts"
@@ -267,22 +294,35 @@ def extract_contexts(raw: bytes) -> dict[str, XbrlContext]:
     return contexts
 
 
+#: Transforms whose output the XBRL Transformation Registry fixes, mapped to
+#: that output and the basis naming it. Rendered content is never consulted
+#: for these; ``ixt-sec:boolballotbox`` is the only content-dependent case.
+CONTENT_INDEPENDENT_TRANSFORMS = {
+    TRANSFORM_BOOLEAN_FALSE: (SHELL_FALSE, BASIS_BOOLEAN_FALSE),
+    TRANSFORM_FIXED_FALSE: (SHELL_FALSE, BASIS_FIXED_FALSE),
+    TRANSFORM_BOOLEAN_TRUE: (SHELL_TRUE, BASIS_BOOLEAN_TRUE),
+    TRANSFORM_FIXED_TRUE: (SHELL_TRUE, BASIS_FIXED_TRUE),
+}
+
+
 def evaluate_fact(fact: ShellFact) -> tuple[str, str]:
     """Apply the declared transform to the decoded content.
 
-    Returns ``(shell_company, basis)``. The transform alone never decides a
-    ballot-box outcome: the decoded content is evaluated under it.
+    Returns ``(shell_company, basis)``. Only ``ixt-sec:boolballotbox`` reads
+    the decoded content. The four fixed and boolean transforms return the
+    output the XBRL Transformation Registry defines for them, whatever the
+    element renders — this function must never infer either direction from a
+    checkbox glyph for those four.
     """
     if fact.transform is None:
         return SHELL_UNKNOWN, BASIS_ABSENT_TRANSFORM
     if fact.transform not in SUPPORTED_TRANSFORMS:
         return SHELL_UNKNOWN, BASIS_UNSUPPORTED_TRANSFORM
-    if fact.transform == TRANSFORM_FIXED_FALSE:
-        # A fixed transform ignores its content by definition, even when the
-        # rendered glyph contradicts it.
-        return SHELL_FALSE, BASIS_FIXED_FALSE
-    if fact.transform == TRANSFORM_BOOLEAN_FALSE:
-        return SHELL_FALSE, BASIS_BOOLEAN_FALSE
+    fixed = CONTENT_INDEPENDENT_TRANSFORMS.get(fact.transform)
+    if fixed is not None:
+        # Returned before decoded_content is read at all, so a contradicting
+        # glyph cannot reach a branch in either direction.
+        return fixed
     content = fact.decoded_content
     if content == BALLOT_BOX_EMPTY:
         return SHELL_FALSE, BASIS_BALLOTBOX_EMPTY
@@ -507,11 +547,11 @@ def run_shell_company_determination(
         "output_hashes": {DETERMINATIONS_FILENAME: sha256(payload).hexdigest()},
         "run_timestamp": clock().isoformat(),
         "schema_versions": {
-            "shell_company_determination": schema_versions[
-                "shell_company_determination"
+            "shell_company_determination_v2": schema_versions[
+                "shell_company_determination_v2"
             ],
-            "shell_company_determination_manifest": schema_versions[
-                "shell_company_determination_manifest"
+            "shell_company_determination_manifest_v2": schema_versions[
+                "shell_company_determination_manifest_v2"
             ],
         },
         "limitations": [
@@ -521,11 +561,12 @@ def run_shell_company_determination(
             "true is a deterministic hard exclusion with dated evidence; "
             "false means retained and asserts nothing about software, product "
             "or general eligibility; unknown is retained.",
-            "Only transforms observed in real filings are supported: "
-            "ixt-sec:boolballotbox, ixt:booleanfalse and ixt:fixed-false. "
-            "ixt:booleantrue and ixt:fixed-true were never observed and no "
-            "canonical versioned registry is cited for them, so they are "
-            "unsupported and yield unknown.",
+            "Five transforms are resolved: ixt-sec:boolballotbox, whose "
+            "decoded content is read, and ixt:booleanfalse, ixt:fixed-false, "
+            "ixt:booleantrue and ixt:fixed-true, whose outputs the XBRL "
+            "Transformation Registry fixes regardless of rendered content. No "
+            "checkbox glyph is consulted for those four in either direction. "
+            "Any other transform, and an absent one, yield unknown.",
             "A context carrying a dei:LegalEntityAxis member is unassignable "
             "unless the filing maps that member to the row CIK; a "
             "filer-defined member token is never resolved by name "

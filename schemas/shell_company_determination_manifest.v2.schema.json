@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "shell_company_determination_manifest.v2.schema.json",
+  "title": "Shell-company determination run manifest (v0.2)",
+  "description": "Immutable record of one Stage 00B-S shell-company determination run over a local, hash-verified primary-document bundle (ADR-094). Fixture-first: the module performs no network access and no model call. It consumes the committed baseline_primary_document_bundle unchanged and introduces no acquisition format. firms_excluded equals exactly the count of true determinations; unknown and false are retained. Version 0.2.0 successor: ixt:booleantrue and ixt:fixed-true are resolved on the authority of the XBRL Transformation Registry 4 (Transformation Registry 4, namespace http://www.xbrl.org/inlineXBRL/transformation/2020-02-12, elements booleantrue and fixed-true), which fixes their output independently of rendered content. The 0.1.0 schema is retained unchanged and remains the only validator for artefacts written under that contract; this file never validates a 0.1.0 record, and 0.1.0 never validates a 0.2.0 one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "determination_contract",
+    "bundle_manifest_sha256",
+    "carrier_provenance",
+    "supported_transforms",
+    "counts",
+    "reconciliation",
+    "output_hashes",
+    "run_timestamp",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "determination_contract": {
+      "const": "shell_company_determination@0.2.0"
+    },
+    "bundle_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "carrier_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrier_run_id",
+        "carrier_manifest_sha256",
+        "freeze_record_sha256"
+      ],
+      "properties": {
+        "carrier_run_id": {
+          "type": "string"
+        },
+        "carrier_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "freeze_record_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "supported_transforms": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "enum": [
+          "ixt-sec:boolballotbox",
+          "ixt:booleanfalse",
+          "ixt:fixed-false",
+          "ixt:booleantrue",
+          "ixt:fixed-true"
+        ]
+      },
+      "description": "Exactly the five transforms a v0.2 run resolves. A v0.1 manifest listing three is rejected here by design and stays valid under the unchanged v0.1 schema."
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rows_considered",
+        "determinations",
+        "shell_true",
+        "shell_false",
+        "shell_unknown",
+        "firms_excluded",
+        "by_basis"
+      ],
+      "properties": {
+        "rows_considered": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "determinations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "shell_true": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shell_false": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shell_unknown": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "firms_excluded": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_basis": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 5,
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shell_company_determinations.jsonl"
+      ],
+      "properties": {
+        "shell_company_determinations.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shell_company_determination_v2",
+        "shell_company_determination_manifest_v2"
+      ],
+      "properties": {
+        "shell_company_determination_v2": {
+          "type": "string"
+        },
+        "shell_company_determination_manifest_v2": {
+          "type": "string"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

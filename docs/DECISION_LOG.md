@@ -5865,15 +5865,67 @@ transform alone does not decide the value: one measured AAR filing yields
 both outcomes under `ixt-sec:boolballotbox` — `dei:DocumentAnnualReport` with
 U+2612 ☒ is true while `dei:EntityShellCompany` with U+2610 ☐ is false in the
 same document. Decoded content is therefore evaluated *under* its transform.
-Supported in v0.1, and only these, because only these were observed in real
-filings: `ixt-sec:boolballotbox` (☐ ⇒ false, ☒ ⇒ true, any other content ⇒
-unknown), `ixt:booleanfalse` ⇒ false, and `ixt:fixed-false` ⇒ false — the
-fixed transforms ignoring their content, so `fixed-false` rendered with ☒
-still returns false. **`ixt:booleantrue` and `ixt:fixed-true` are
-unsupported**: never observed, and no canonical versioned registry is cited
-here for them, so an uncited transform claim does not enter the contract.
-U+2611 ☑ was likewise never observed and is not admitted. Entity decoding is
-mandatory: `&#9744;` and `&#x2610;` are the same codepoint and both occur.
+`ixt-sec:boolballotbox` is the **only** content-dependent transform (☐ ⇒
+false, ☒ ⇒ true, any other content ⇒ unknown). Four transforms are
+content-**independent**, taking their output from the XBRL Transformation
+Registry rather than from anything a filing renders: `ixt:booleanfalse` ⇒
+false, `ixt:fixed-false` ⇒ false, `ixt:booleantrue` ⇒ true, `ixt:fixed-true`
+⇒ true. No checkbox glyph is consulted for those four in either direction —
+`fixed-false` rendered with ☒ still returns false, and `booleantrue` rendered
+with ☐ still returns true. U+2611 ☑ was never observed and is not admitted.
+Entity decoding is mandatory: `&#9744;` and `&#x2610;` are the same codepoint
+and both occur. Any transform outside these five, and an absent one, yield
+unknown.
+
+**Correction, v0.1 → v0.2 (`ixt:booleantrue`, `ixt:fixed-true`).** v0.1
+excluded both on the stated ground that neither had been observed and no
+canonical registry was cited here for them. The executed shell-validation
+canary then observed both — `ixt:booleantrue` twice and `ixt:fixed-true`
+once — on three real 10-K cover pages, each carrying exactly one assignable
+fact.
+
+**Cited authority.** The mapping comes from the **XBRL Inline Transformation
+Registry 4 (TR4)**, namespace
+`http://www.xbrl.org/inlineXBRL/transformation/2020-02-12`, prefix `ixt`,
+which defines `booleantrue` as producing the boolean value *true* and
+`fixed-true` as producing the fixed value *true*, each independently of the
+element's rendered content — the exact mirror of `booleanfalse` and
+`fixed-false` in the same registry, which v0.1 already supported on that same
+authority. The registry defines the meaning; the three observations only
+prompted citing it, and are not themselves the warrant.
+
+Under v0.1 those three rows returned `unknown` / `unsupported_transform`
+although their glyph was ☒; the v0.1 rule was refusing to resolve a
+registry-defined transform, not guarding against one. **This is a correction
+of an under-supported transform set, not a relaxation of evidence
+standards**: inference from checkbox glyphs remains forbidden for all four
+fixed and boolean transforms, in both directions, and every context and
+CIK-binding safeguard is unchanged.
+
+**Schema succession, not schema mutation.** An earlier draft of this entry
+claimed that widening `supported_transforms` in place preserved v0.1
+validity. **That claim was wrong and is withdrawn**: both v0.1 schemas pin
+`determination_contract` as a `const` of
+`shell_company_determination@0.1.0`, so no widening of the transform array
+could have admitted a v0.1 artefact under a v0.2 contract, and mutating the
+files would have left the completed v0.1 canary manifest validated by nothing.
+The repository's versioned-successor pattern applies instead. Both v0.1
+schema files are **retained byte-unchanged** and remain the only validators
+for artefacts written under that contract. Two explicit successors are added
+— `shell_company_determination.v2.schema.json` and
+`shell_company_determination_manifest.v2.schema.json` — declaring
+`@0.2.0` and requiring **exactly the five** supported transforms. The
+successor is deliberately **not** permissive: a v0.1 manifest is rejected by
+v2, and a v0.2 manifest is rejected by v0.1, in both cases on the contract
+const. New v0.2 runs validate against the successors and report
+`shell_company_determination_v2` and
+`shell_company_determination_manifest_v2`; the registry carries all four
+entries, 0.1.0 and 0.2.0 side by side, and nothing migrates. The synthetic
+fixture keeps the filename
+`shell_unsupported_transform.html` and its bytes are unchanged; it now
+exercises `ixt:booleantrue` against a contradicting empty box, and its gold
+outcome moves from `unknown` to `true`. Its name is a residue of v0.1 and is
+not a claim about the transform.
 
 **Context resolution, and why it is strict.** Every fact resolves through its
 `contextRef`; the identifier scheme must be exactly `http://www.sec.gov/CIK`,

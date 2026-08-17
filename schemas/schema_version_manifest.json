@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.34.0",
+  "manifest_version": "0.35.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -73,6 +73,8 @@
     "web_collection_receipt": "0.1.0",
     "web_collection_request_plan": "0.1.0",
     "web_discovery_manifest": "0.1.0",
-    "web_snapshot_manifest": "0.1.0"
+    "web_snapshot_manifest": "0.1.0",
+    "shell_company_determination_v2": "0.2.0",
+    "shell_company_determination_manifest_v2": "0.2.0"
   }
 }
