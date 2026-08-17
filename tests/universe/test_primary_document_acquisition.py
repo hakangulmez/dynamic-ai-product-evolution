@@ -928,6 +928,98 @@ def test_committed_canary_plan_request_accounting():
     assert len({p.accession for p in planned}) == 6
 
 
+# --- same-form PDF companion, end to end (ADR-096) --------------------------
+
+
+PDF_COMPANION_ACCESSION = "0009200007-22-000007"
+PDF_COMPANION_HTML = "synth-pdfcompanion-20211231.htm"
+PDF_COMPANION_PDF = "synth-pdfcompanion20211231x10k.pdf"
+
+
+def _pdf_companion_plan(tmp_path: Path) -> Path:
+    """A one-accession plan over the committed HTML-plus-PDF fixture."""
+    payload = _plan_payload()
+    payload["documents"] = [{
+        "accession": PDF_COMPANION_ACCESSION,
+        "form": "10-K",
+        "directory_cik": "0009200007",
+        "carrier_rows": [{"stratum": "domestic", "cik": "0009200007",
+                          "baseline_filing_date": "2022-03-01"}],
+    }]
+    return _write_plan(tmp_path / "pdf-companion-plan.json", payload)
+
+
+def _recording_transports(recorded: list[str]):
+    """Fixture transports that log every URL they are asked for."""
+    index = make_filing_index_fixture_replay_transport(
+        FIXTURE_DIR, max_bytes=METADATA_CEILING)
+    primary = make_primary_document_fixture_replay_transport(
+        FIXTURE_DIR, max_bytes=DOCUMENT_CEILING)
+
+    def metadata(url: str):
+        recorded.append(url)
+        return index(url)
+
+    def document(url: str):
+        recorded.append(url)
+        return primary(url)
+
+    return metadata, document
+
+
+def test_html_primary_is_selected_beside_a_same_form_pdf(tmp_path):
+    recorded: list[str] = []
+    metadata, document = _recording_transports(recorded)
+    result = _acquire(tmp_path, plan=_pdf_companion_plan(tmp_path),
+                      metadata_transport=metadata, primary_transport=document)
+    assert result.counts["accessions_acquired"] == 1
+    acquired = result.acquired[0]
+    assert acquired.selected_document == PDF_COMPANION_HTML
+    assert acquired.primary_url.endswith(PDF_COMPANION_HTML)
+    assert acquired.href_form == "direct"
+
+
+def test_the_pdf_companion_is_never_requested(tmp_path):
+    """Not merely unselected: no request is made for it at any hop."""
+    recorded: list[str] = []
+    metadata, document = _recording_transports(recorded)
+    _acquire(tmp_path, plan=_pdf_companion_plan(tmp_path),
+             metadata_transport=metadata, primary_transport=document)
+    assert len(recorded) == 2, recorded
+    assert not any(PDF_COMPANION_PDF in url for url in recorded)
+    assert not any(url.lower().endswith(".pdf") for url in recorded)
+    assert recorded[0].endswith(f"{PDF_COMPANION_ACCESSION}-index.htm")
+    assert recorded[1].endswith(PDF_COMPANION_HTML)
+
+
+def test_the_pdf_companion_is_never_retained(tmp_path):
+    recorded: list[str] = []
+    metadata, document = _recording_transports(recorded)
+    result = _acquire(tmp_path, plan=_pdf_companion_plan(tmp_path),
+                      metadata_transport=metadata, primary_transport=document)
+    written = sorted(p.name for p in result.run_dir.iterdir() if p.is_file())
+    assert not any(name.lower().endswith(".pdf") for name in written)
+    bundle = read_json(result.bundle_manifest_path)
+    assert bundle["documents"][0]["selected_document"] == PDF_COMPANION_HTML
+    manifest = read_json(result.acquisition_manifest_path)
+    assert manifest["counts"]["total_requests"] == 2
+    assert manifest["acquisitions"][0]["selected_document"] == PDF_COMPANION_HTML
+
+
+def test_ground_truth_still_binds_on_the_html_row(tmp_path):
+    """The ground-truth rule is unchanged: a wrong expectation still refuses."""
+    payload = json.loads(_pdf_companion_plan(tmp_path).read_text())
+    payload["documents"][0]["expected_primary_document"] = PDF_COMPANION_PDF
+    plan = _write_plan(tmp_path / "wrong-ground-truth.json", payload)
+    with pytest.raises(PrimaryDocumentPlanError, match="HTML filename"):
+        load_request_plan(plan)
+    payload["documents"][0]["expected_primary_document"] = "some-other.htm"
+    plan = _write_plan(tmp_path / "mismatched.json", payload)
+    result = _acquire(tmp_path, plan=plan, run_id="gt-mismatch")
+    receipt = read_json(result.run_dir / FAILURE_RECEIPT_FILENAME)
+    assert receipt["reason_code"] == "ground_truth_mismatch"
+
+
 # --- the four-way contract matrix (plan v0.1/v0.2 x fixture/sec_live) -------
 
 

@@ -625,7 +625,11 @@ def test_manifest_count():
     # acquisition-manifest successors (fixture v0.4 and sec_live v0.5), the
     # full and restricted-canary queue definitions, and four queue fixtures.
     # The historical v0.1, v0.2 and v0.3 manifest schemas are byte-unchanged.
-    assert declared == len(paths) == 751
+    # 754 = 751 + the three ADR-096 selection fixtures: an index page whose
+    # Document Format Files table declares the planned form for both an .htm
+    # and a .pdf, plus both documents. Eligibility is decided before
+    # cardinality, so a same-form PDF companion is not a rival candidate.
+    assert declared == len(paths) == 754
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

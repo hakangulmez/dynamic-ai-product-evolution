@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **751**
+Total tracked/scaffold files listed: **754**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -228,11 +228,14 @@ Total tracked/scaffold files listed: **751**
 - `evals/fixtures/primary_documents/0009200001-22-000001-index.htm`
 - `evals/fixtures/primary_documents/0009200002-22-000002-index.htm`
 - `evals/fixtures/primary_documents/0009200003-22-000003-index.htm`
+- `evals/fixtures/primary_documents/0009200007-22-000007-index.htm`
 - `evals/fixtures/primary_documents/expected_acquisition.json`
 - `evals/fixtures/primary_documents/form10-kt.htm`
 - `evals/fixtures/primary_documents/request_plan.json`
 - `evals/fixtures/primary_documents/shared-10k.htm`
 - `evals/fixtures/primary_documents/synth-a-20211231x10k.htm`
+- `evals/fixtures/primary_documents/synth-pdfcompanion-20211231.htm`
+- `evals/fixtures/primary_documents/synth-pdfcompanion20211231x10k.pdf`
 - `evals/fixtures/shell_company/bundle_manifest.json`
 - `evals/fixtures/shell_company/expected_determinations.json`
 - `evals/fixtures/shell_company/shell_absent_fact.html`

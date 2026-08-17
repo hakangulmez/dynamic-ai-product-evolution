@@ -416,16 +416,35 @@ def parse_document_format_table(content: bytes) -> list[IndexTableRow]:
 def select_primary_document(
     rows: list[IndexTableRow], form: str
 ) -> tuple[Optional[IndexTableRow], Optional[str]]:
-    """Return ``(selected row, None)`` or ``(None, refusal reason code)``."""
+    """Return ``(selected row, None)`` or ``(None, refusal reason code)``.
+
+    Eligibility is decided **before** cardinality, in this order: the declared
+    Type equals the planned form, then the document is HTML, and only then is
+    uniqueness required. A filing may carry a same-Type PDF rendering beside
+    its HTML primary — measured on accession 0000007332-22-000009, whose
+    Document Format Files table declares Type 10-K for both
+    ``swn-20211231.htm`` and ``swn20211231x10k.pdf``. Counting that PDF as a
+    rival candidate refused a filing that is not actually ambiguous, so
+    non-HTML same-form companions are **not eligible primary candidates** at
+    all rather than being tie-broken away.
+
+    Eligibility still rests on the declared Type and the HTML suffix alone.
+    Nothing here reads document order, sequence number, size, description or
+    rendered text, so two HTML rows of the same Type remain genuinely
+    ambiguous and are still refused.
+    """
     matches = [row for row in rows if row.document_type.upper() == form.upper()]
     if not matches:
         return None, "no_primary_candidate"
-    if len(matches) > 1:
-        return None, "ambiguous_primary_candidate"
-    selected = matches[0]
-    if not selected.document.lower().endswith(HTML_SUFFIXES):
+    html = [
+        row for row in matches
+        if row.document.lower().endswith(HTML_SUFFIXES)
+    ]
+    if not html:
         return None, "non_html_primary"
-    return selected, None
+    if len(html) > 1:
+        return None, "ambiguous_primary_candidate"
+    return html[0], None
 
 
 # --- plan -------------------------------------------------------------------

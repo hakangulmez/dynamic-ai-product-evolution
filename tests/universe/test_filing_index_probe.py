@@ -182,6 +182,83 @@ def test_non_html_sole_match_refuses():
     assert select_primary_document(rows, "10-K") == (None, "non_html_primary")
 
 
+def test_matching_form_rows_with_no_html_refuse_even_when_several():
+    """Cardinality is evaluated among HTML candidates, so zero is not ambiguity."""
+    rows = parse_document_format_table(
+        _page([("10-K", "a.pdf", "10-K"), ("10-K", "b.txt", "10-K")])
+    )
+    assert select_primary_document(rows, "10-K") == (None, "non_html_primary")
+
+
+# --- same-form non-HTML companions (ADR-096, measured on the failed shard) ---
+
+
+def test_a_same_form_pdf_companion_does_not_make_a_filing_ambiguous():
+    """The exact shape measured on accession 0000007332-22-000009.
+
+    Its Document Format Files table declares Type 10-K for both
+    ``swn-20211231.htm`` and ``swn20211231x10k.pdf``.
+    """
+    rows = parse_document_format_table(_page([
+        ("10-K", "swn-20211231.htm", "10-K"),
+        ("10-K", "swn20211231x10k.pdf", "10-K"),
+    ]))
+    selected, refusal = select_primary_document(rows, "10-K")
+    assert refusal is None
+    assert selected.document == "swn-20211231.htm"
+
+
+def test_selection_does_not_depend_on_document_order():
+    """Eligibility, not position: the PDF listed first changes nothing."""
+    rows = parse_document_format_table(_page([
+        ("10-K", "swn20211231x10k.pdf", "10-K"),
+        ("10-K", "swn-20211231.htm", "10-K"),
+    ]))
+    selected, _ = select_primary_document(rows, "10-K")
+    assert selected.document == "swn-20211231.htm"
+
+
+def test_several_non_html_companions_still_leave_one_html_candidate():
+    rows = parse_document_format_table(_page([
+        ("10-K", "a.pdf", "10-K"), ("10-K", "a.htm", "10-K"),
+        ("10-K", "a.txt", "10-K"), ("10-K", "a.xml", "10-K"),
+    ]))
+    selected, refusal = select_primary_document(rows, "10-K")
+    assert refusal is None
+    assert selected.document == "a.htm"
+
+
+def test_two_html_rows_are_still_ambiguous_even_beside_a_pdf():
+    """The correction narrows eligibility; it does not tie-break real ambiguity."""
+    rows = parse_document_format_table(_page([
+        ("10-K", "a.htm", "10-K"), ("10-K", "b.html", "10-K"),
+        ("10-K", "a.pdf", "10-K"),
+    ]))
+    assert select_primary_document(rows, "10-K") == (
+        None, "ambiguous_primary_candidate",
+    )
+
+
+def test_eligibility_ignores_size_description_and_sequence():
+    """A larger, earlier, better-described PDF still loses to the HTML row."""
+    page = (
+        '<html><body><table summary="Document Format Files">'
+        "<tr><th>Seq</th><th>Description</th><th>Document</th><th>Type</th>"
+        "<th>Size</th></tr>"
+        '<tr><td>1</td><td>COMPLETE ANNUAL REPORT</td>'
+        '<td><a href="/Archives/edgar/data/1/2/big.pdf">big.pdf</a></td>'
+        "<td>10-K</td><td>99999999</td></tr>"
+        '<tr><td>7</td><td>x</td>'
+        '<td><a href="/Archives/edgar/data/1/2/small.htm">small.htm</a></td>'
+        "<td>10-K</td><td>1</td></tr>"
+        "</table></body></html>"
+    ).encode("utf-8")
+    selected, refusal = select_primary_document(
+        parse_document_format_table(page), "10-K")
+    assert refusal is None
+    assert selected.document == "small.htm"
+
+
 def test_identified_table_without_document_and_type_headers_is_unparseable():
     page = (
         '<html><body><table summary="Document Format Files">'

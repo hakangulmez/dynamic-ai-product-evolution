@@ -5436,11 +5436,16 @@ the identical two columns, nothing guarantees it appears second, and a
 shape-only parser would select a plausible annual-form row out of it. A page
 where no table claims the identity, or where more than one does, or where the
 identified table lacks those columns, is refused as `metadata_unparseable`.
-The primary is then the single row of that table whose declared type equals
-the planned annual form. **Filename
+The primary is then the single **HTML** row of that table whose declared type
+equals the planned annual form. Eligibility is decided before cardinality:
+declared Type first, then the HTML suffix, and uniqueness is required **among
+the form-matching HTML candidates only**. A same-form non-HTML companion — a
+PDF rendering of the very same filing — is **not an eligible primary
+candidate** and therefore cannot make a filing ambiguous. Superseded by
+ADR-096, which records the measurement that forced this ordering. **Filename
 convention is never used**: the measured corpus contains `form10-kt.htm` and
 `lub-20220531.htm`, which no ticker-and-date pattern matches. Zero matches,
-more than one match, a sole non-HTML match, an unparseable page, a
+more than one **HTML** match, no HTML among the matches, an unparseable page, a
 transport-level failure, a ceiling refusal, or a filename disagreeing with
 the plan's recorded ground truth each refuse with a distinct reason code and
 end the run with a write-once receipt and no manifest. `index.json` is a
@@ -6222,6 +6227,62 @@ queue fixtures — fourteen paths. Modified: the acquisition runner (plan v0.2,
 the pre-write budget check, the v4/v5 branches, one reason code), the pipeline
 entrypoint (three modes), the schema registry (0.35.0 → 0.36.0, 75 → 81),
 `REPO_MANIFEST.md` (737 → 751), the count and pinned-hash tests, and this log.
+
+## ADR-096 — Filing-index selection: eligibility before cardinality
+
+**Status.** Accepted. Fixture-first correction; no live request, no retry of
+the failed shard, no new queue plan, and no historical schema or plan touched.
+
+**Measurement.** The first controlled W3 domestic shard failed closed on its
+21st accession. Its immutable receipt records the cause exactly: accession
+`0000007332-22-000009` declares Type `10-K` for **two** rows of its Document
+Format Files table — `swn-20211231.htm` and `swn20211231x10k.pdf`. The
+selector counted matches by declared Type first and refused
+`ambiguous_primary_candidate` before ever considering the HTML rule, so a
+filing carrying a PDF rendering of the same document was treated as having
+two rival primaries.
+
+**The filing was never ambiguous.** A PDF cannot be a primary document under
+this route: the acquisition contract admits `.htm`/`.html` only, and the
+downstream packet and determination stages parse HTML. The PDF was never a
+candidate, so counting it as one refused a filing whose primary is uniquely
+determined. Because a same-form PDF companion is common in EDGAR, this rule
+would have refused many of the remaining 85 shards.
+
+**Decision: eligibility is decided before cardinality.** Selection is now
+ordered — declared Type equals the planned form, **then** the document is
+HTML, **then** uniqueness is required among those HTML-eligible rows.
+Consequently: one matching HTML beside any number of matching non-HTML
+companions selects the single HTML; **two or more matching HTML rows still
+refuse `ambiguous_primary_candidate`**; matching rows with no HTML among them
+refuse `non_html_primary`; and zero matching rows refuse
+`no_primary_candidate`.
+
+**This narrows eligibility; it does not tie-break.** Nothing reads document
+order, sequence number, size, description or rendered text. A larger,
+earlier, better-described PDF still loses to the HTML row because it was
+never eligible, not because it lost a comparison, and two HTML rows of the
+same Type remain genuinely ambiguous and are still refused. Table identity by
+`summary`/heading, href-derived filenames, the viewer and direct link forms,
+both byte ceilings, and the ground-truth rules are all unchanged.
+
+**Evidence.** A committed fixture reproduces the measured shape — an index
+page declaring Type `10-K` for both an `.htm` and a `.pdf`, with both
+documents present in the replay directory. End-to-end acquisition over it
+proves the selected URL is the HTML row, that **exactly two requests are
+made** and neither addresses the PDF, and that no `.pdf` byte is retained.
+Order-independence, multiple companions, and the still-ambiguous two-HTML
+case are pinned separately.
+
+**Not done here.** The failed shard directory is untouched and stays
+non-authoritative; shard 0 is not retried and no new queue plan is created.
+Whether to re-plan the domestic queue under the corrected selector is a
+separate decision.
+
+**Scope.** Added: three fixture files (the index page, its HTML primary, its
+PDF companion). Modified: `select_primary_document`, the probe and
+primary-acquisition test files, `REPO_MANIFEST.md` with its count tests, and
+this log. No schema, no registry entry, and no plan contract changes.
 
 ## Open decisions
 
