@@ -1,0 +1,20 @@
+<DOCUMENT>
+<TYPE>10-K
+<SEQUENCE>1
+<FILENAME>item2.txt
+<DESCRIPTION>ANNUAL REPORT
+<TEXT>
+Synthetic plain-text filing fixture; every CIK, accession, company and
+document is invented for methodological testing. No real filing data.
+
+FORM 10-K
+
+Item 1. Business.
+
+We manufacture industrial fasteners at four plants.
+
+Item 2. Properties.
+
+Our plants are held in fee.
+</TEXT>
+</DOCUMENT>

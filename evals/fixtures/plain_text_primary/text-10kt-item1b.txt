@@ -1,0 +1,20 @@
+<DOCUMENT>
+<TYPE>10-KT
+<SEQUENCE>1
+<FILENAME>10kt2021.txt
+<DESCRIPTION>ANNUAL REPORT
+<TEXT>
+Synthetic plain-text filing fixture; every CIK, accession, company and
+document is invented for methodological testing. No real filing data.
+
+FORM 10-KT
+
+Item 1. Business.
+
+We operate a single reportable segment following the transition period.
+
+Item 1B. Unresolved Staff Comments.
+
+None.
+</TEXT>
+</DOCUMENT>

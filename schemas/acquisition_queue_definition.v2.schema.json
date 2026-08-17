@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "acquisition_queue_definition.v2.schema.json",
+  "title": "Acquisition queue definition (v0.2, text-admitting)",
+  "description": "A committed, immutable queue definition (ADR-095). Naming it is what makes shard membership reproducible: shards are a pure function of the carrier bytes, these filters, the shard size and the index. Possessing a definition or a plan authorizes no request. Version 0.2.0 (ADR-097): the definition states whether its planner emits primary_document_request_plan@0.3.0, which may select a plain-text primary. A v0.2 definition has a different sha256 from any v0.1 one, so its shard plans form a separate lineage that never mixes with v0.2-plan artefacts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "queue_contract",
+    "queue_id",
+    "description",
+    "carrier",
+    "selection",
+    "shard_size",
+    "per_accession_allowance_bytes",
+    "max_metadata_bytes",
+    "max_document_bytes",
+    "base_url",
+    "route_validation",
+    "deferred_cohorts",
+    "admit_plain_text"
+  ],
+  "properties": {
+    "queue_contract": {
+      "const": "acquisition_queue_definition@0.2.0"
+    },
+    "queue_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "carrier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relative_path",
+        "carrier_run_id",
+        "carrier_manifest_sha256",
+        "freeze_record_sha256"
+      ],
+      "properties": {
+        "relative_path": {
+          "type": "string"
+        },
+        "carrier_run_id": {
+          "type": "string"
+        },
+        "carrier_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "freeze_record_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stratum",
+        "forms"
+      ],
+      "properties": {
+        "stratum": {
+          "const": "domestic"
+        },
+        "forms": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "10-K",
+              "10-KT"
+            ]
+          }
+        },
+        "restricted_accessions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^\\d{10}-\\d{2}-\\d{6}$"
+          },
+          "description": "When present, the queue is restricted to exactly these accessions and every one must exist in the carrier."
+        }
+      }
+    },
+    "shard_size": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "per_accession_allowance_bytes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "max_metadata_bytes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "max_document_bytes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "base_url": {
+      "type": "string"
+    },
+    "route_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "probe_run_id",
+        "probe_manifest_sha256",
+        "covered_accessions",
+        "note"
+      ],
+      "properties": {
+        "probe_run_id": {
+          "type": "string"
+        },
+        "probe_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "covered_accessions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "deferred_cohorts": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "admit_plain_text": {
+      "const": true,
+      "description": "Must be exactly true; a definition admitting no plain text is v0.1."
+    }
+  }
+}

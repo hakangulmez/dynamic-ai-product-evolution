@@ -1011,7 +1011,7 @@ def test_ground_truth_still_binds_on_the_html_row(tmp_path):
     payload = json.loads(_pdf_companion_plan(tmp_path).read_text())
     payload["documents"][0]["expected_primary_document"] = PDF_COMPANION_PDF
     plan = _write_plan(tmp_path / "wrong-ground-truth.json", payload)
-    with pytest.raises(PrimaryDocumentPlanError, match="HTML filename"):
+    with pytest.raises(PrimaryDocumentPlanError, match="must end in"):
         load_request_plan(plan)
     payload["documents"][0]["expected_primary_document"] = "some-other.htm"
     plan = _write_plan(tmp_path / "mismatched.json", payload)

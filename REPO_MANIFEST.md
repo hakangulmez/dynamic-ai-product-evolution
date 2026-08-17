@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **754**
+Total tracked/scaffold files listed: **775**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -49,6 +49,7 @@ Total tracked/scaffold files listed: **754**
 - `configs/dera_fsds_full_request_plan.json`
 - `configs/dera_validation_adjudications.json`
 - `configs/domestic_primary_document_queue.json`
+- `configs/domestic_primary_document_queue_text.json`
 - `configs/edgar_index_canary_request_plan.json`
 - `configs/edgar_index_full_request_plan.json`
 - `configs/filing_index_probe_plan.json`
@@ -225,10 +226,23 @@ Total tracked/scaffold files listed: **754**
 - `evals/fixtures/filing_index_probe/0009000002-22-000002-index.htm`
 - `evals/fixtures/filing_index_probe/expected_probe.json`
 - `evals/fixtures/filing_index_probe/request_plan.json`
+- `evals/fixtures/plain_text_primary/bundle_manifest.json`
+- `evals/fixtures/plain_text_primary/expected_packets.json`
+- `evals/fixtures/plain_text_primary/text-10k-item1a.txt`
+- `evals/fixtures/plain_text_primary/text-10kt-item1b.txt`
+- `evals/fixtures/plain_text_primary/text-bare-no-wrapper.txt`
+- `evals/fixtures/plain_text_primary/text-duplicate-boundaries.txt`
+- `evals/fixtures/plain_text_primary/text-inline-1a-reference.txt`
+- `evals/fixtures/plain_text_primary/text-item2-fallback.txt`
+- `evals/fixtures/plain_text_primary/text-multi-document-submission.txt`
+- `evals/fixtures/plain_text_primary/text-no-item-one.txt`
+- `evals/fixtures/plain_text_primary/text-toc-only.txt`
 - `evals/fixtures/primary_documents/0009200001-22-000001-index.htm`
 - `evals/fixtures/primary_documents/0009200002-22-000002-index.htm`
 - `evals/fixtures/primary_documents/0009200003-22-000003-index.htm`
 - `evals/fixtures/primary_documents/0009200007-22-000007-index.htm`
+- `evals/fixtures/primary_documents/0009200009-22-000009-index.htm`
+- `evals/fixtures/primary_documents/10k2021.txt`
 - `evals/fixtures/primary_documents/expected_acquisition.json`
 - `evals/fixtures/primary_documents/form10-kt.htm`
 - `evals/fixtures/primary_documents/request_plan.json`
@@ -330,6 +344,7 @@ Total tracked/scaffold files listed: **754**
 - `pyproject.toml`
 - `schemas/acquisition_queue_aggregate_manifest.schema.json`
 - `schemas/acquisition_queue_definition.schema.json`
+- `schemas/acquisition_queue_definition.v2.schema.json`
 - `schemas/acquisition_queue_execution_manifest.schema.json`
 - `schemas/acquisition_queue_plan_manifest.schema.json`
 - `schemas/adapter_enablement_record.schema.json`
@@ -337,7 +352,9 @@ Total tracked/scaffold files listed: **754**
 - `schemas/baseline_document_acquisition_manifest.schema.json`
 - `schemas/baseline_document_acquisition_manifest.v2.schema.json`
 - `schemas/baseline_packet_manifest.schema.json`
+- `schemas/baseline_packet_manifest.v2.schema.json`
 - `schemas/baseline_primary_document_bundle.schema.json`
+- `schemas/baseline_primary_document_bundle.v2.schema.json`
 - `schemas/capability_observation.schema.json`
 - `schemas/company.schema.json`
 - `schemas/company_universe_classification.schema.json`
@@ -385,6 +402,7 @@ Total tracked/scaffold files listed: **754**
 - `schemas/primary_document_acquisition_manifest.v3.schema.json`
 - `schemas/primary_document_acquisition_manifest.v4.schema.json`
 - `schemas/primary_document_acquisition_manifest.v5.schema.json`
+- `schemas/primary_document_acquisition_manifest.v6.schema.json`
 - `schemas/product_candidate_availability_vocabulary.schema.json`
 - `schemas/product_consolidated_universe.schema.json`
 - `schemas/product_consolidation_output.schema.json`
@@ -407,6 +425,7 @@ Total tracked/scaffold files listed: **754**
 - `schemas/task_transition.schema.json`
 - `schemas/universe_baseline_carrier_manifest.schema.json`
 - `schemas/universe_baseline_packet.schema.json`
+- `schemas/universe_baseline_packet.v2.schema.json`
 - `schemas/universe_run_manifest.schema.json`
 - `schemas/universe_run_manifest.v2.schema.json`
 - `schemas/web_collection_receipt.schema.json`
@@ -587,6 +606,7 @@ Total tracked/scaffold files listed: **754**
 - `src/dynamic_ai_products/universe/models.py`
 - `src/dynamic_ai_products/universe/packets.py`
 - `src/dynamic_ai_products/universe/pilot_packet.py`
+- `src/dynamic_ai_products/universe/plain_text_primary.py`
 - `src/dynamic_ai_products/universe/primary_document_acquisition.py`
 - `src/dynamic_ai_products/universe/review.py`
 - `src/dynamic_ai_products/universe/rules.py`
@@ -747,6 +767,7 @@ Total tracked/scaffold files listed: **754**
 - `tests/universe/test_identifiers.py`
 - `tests/universe/test_issuer_filters.py`
 - `tests/universe/test_pilot_packet.py`
+- `tests/universe/test_plain_text_primary.py`
 - `tests/universe/test_primary_document_acquisition.py`
 - `tests/universe/test_repo_hygiene.py`
 - `tests/universe/test_review_and_audit.py`

@@ -174,6 +174,12 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-097 (plain-text primaries): manifest_version
+    # 0.36.0 -> 0.37.0, 81 -> 86 entries, registering the bundle, packet,
+    # packet-manifest and queue-definition v0.2 successors plus the v0.6
+    # acquisition manifest. Every predecessor schema is byte-unchanged and
+    # none of them admits a .txt document.
+    # Before it,
     # Rebaselined by ADR-095 (W3 acquisition queue): manifest_version
     # 0.35.0 -> 0.36.0, 75 -> 81 entries, registering the four queue schemas
     # plus the two budgeted acquisition-manifest successors. The fixture
@@ -251,7 +257,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "e9ebf6e537cab77853952e7cd3a6ff2455932829a6feacf70161181e87cfec6b"
+    "1aafb1bb7310d3358eb4b97996ccb92fe4e87ed302bfafaf86dfde173042b678"
 )
 
 

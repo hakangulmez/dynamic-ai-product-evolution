@@ -1,0 +1,14 @@
+Synthetic plain-text filing fixture; every CIK, accession, company and
+document is invented for methodological testing. No real filing data.
+
+FORM 10-K
+
+Item 1. Business.
+
+We own and operate regulated distribution assets in three states.
+
+Our customers are residential and commercial end users.
+
+Item 1A. Risk Factors.
+
+Weather variability affects demand.

@@ -1,0 +1,124 @@
+{
+  "description": "Gold outcomes for the synthetic plain-text bundle (ADR-097). Every text packet carries exactly one passage: the normalizer is reused unchanged and its block segmentation is HTML-driven, so a text span normalizes to a single block. Recorded, not fixed here.",
+  "counts": {
+    "planned_documents": 8,
+    "packets_built": 6,
+    "packet_failures": 2,
+    "firms_excluded": 0,
+    "packets_by_end_boundary": {
+      "item_1a_risk_factors": 3,
+      "item_1b_unresolved_staff_comments": 1,
+      "item_2_properties": 2
+    },
+    "failures_by_reason": {
+      "ambiguous_end_boundary": 1,
+      "missing_item_one": 1
+    },
+    "passages_total": 6,
+    "packet_bytes_total": 17531,
+    "packet_bytes_max": 2961,
+    "packet_bytes_mean": 2921
+  },
+  "packets": [
+    {
+      "cik": "0009300101",
+      "form": "10-K",
+      "packet_contract": "universe_baseline_packet@0.2.0",
+      "representation": "plain_text",
+      "text_structure": {
+        "admission": "single_sgml_document",
+        "document_blocks": 1,
+        "declared_type": "10-K",
+        "declared_filename": "10k2021.txt"
+      },
+      "end_boundary_kind": "item_1a_risk_factors",
+      "source_id": "sec-primary:0009300101:0009300101-22-000001:10k2021.txt",
+      "passages": 1
+    },
+    {
+      "cik": "0009300102",
+      "form": "10-KT",
+      "packet_contract": "universe_baseline_packet@0.2.0",
+      "representation": "plain_text",
+      "text_structure": {
+        "admission": "single_sgml_document",
+        "document_blocks": 1,
+        "declared_type": "10-KT",
+        "declared_filename": "10kt2021.txt"
+      },
+      "end_boundary_kind": "item_1b_unresolved_staff_comments",
+      "source_id": "sec-primary:0009300102:0009300102-22-000002:10kt2021.txt",
+      "passages": 1
+    },
+    {
+      "cik": "0009300103",
+      "form": "10-K",
+      "packet_contract": "universe_baseline_packet@0.2.0",
+      "representation": "plain_text",
+      "text_structure": {
+        "admission": "single_sgml_document",
+        "document_blocks": 1,
+        "declared_type": "10-K",
+        "declared_filename": "item2.txt"
+      },
+      "end_boundary_kind": "item_2_properties",
+      "source_id": "sec-primary:0009300103:0009300103-22-000003:item2.txt",
+      "passages": 1
+    },
+    {
+      "cik": "0009300104",
+      "form": "10-K",
+      "packet_contract": "universe_baseline_packet@0.2.0",
+      "representation": "plain_text",
+      "text_structure": {
+        "admission": "single_sgml_document",
+        "document_blocks": 1,
+        "declared_type": "10-K",
+        "declared_filename": "toconly.txt"
+      },
+      "end_boundary_kind": "item_1a_risk_factors",
+      "source_id": "sec-primary:0009300104:0009300104-22-000004:toconly.txt",
+      "passages": 1
+    },
+    {
+      "cik": "0009300105",
+      "form": "10-K",
+      "packet_contract": "universe_baseline_packet@0.2.0",
+      "representation": "plain_text",
+      "text_structure": {
+        "admission": "single_sgml_document",
+        "document_blocks": 1,
+        "declared_type": "10-K",
+        "declared_filename": "inline1a.txt"
+      },
+      "end_boundary_kind": "item_2_properties",
+      "source_id": "sec-primary:0009300105:0009300105-22-000005:inline1a.txt",
+      "passages": 1
+    },
+    {
+      "cik": "0009300108",
+      "form": "10-K",
+      "packet_contract": "universe_baseline_packet@0.2.0",
+      "representation": "plain_text",
+      "text_structure": {
+        "admission": "bare_text",
+        "document_blocks": 0,
+        "declared_type": null,
+        "declared_filename": null
+      },
+      "end_boundary_kind": "item_1a_risk_factors",
+      "source_id": "sec-primary:0009300108:0009300108-22-000008:bare2021.txt",
+      "passages": 1
+    }
+  ],
+  "failures": [
+    {
+      "cik": "0009300106",
+      "reason_code": "ambiguous_end_boundary"
+    },
+    {
+      "cik": "0009300107",
+      "reason_code": "missing_item_one"
+    }
+  ]
+}

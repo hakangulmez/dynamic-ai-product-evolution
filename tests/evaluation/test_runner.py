@@ -1313,7 +1313,12 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # Document Format Files table declares the planned form for both an .htm
     # and a .pdf, plus both documents. Eligibility is decided before
     # cardinality, so a same-form PDF companion is not a rival candidate.
-    assert declared == len(paths) == 754
+    # 775 = 754 + the 21 ADR-097 plain-text paths: the admission
+    # module and its test file, five successor schemas (bundle v0.2, packet
+    # v0.2, packet manifest v0.2, acquisition manifest v0.6, queue definition
+    # v0.2), a text-admitting domestic queue definition, and the text fixture
+    # set. Every predecessor schema and committed definition is unchanged.
+    assert declared == len(paths) == 775
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

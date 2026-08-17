@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import model_serializer, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .identifiers import company_id_for_cik, normalize_accession, normalize_cik
 from . import taxonomy
@@ -257,6 +257,11 @@ class UniverseBaselinePacket(StrictModel):
     """
 
     packet_contract: str
+    #: ADR-097. ``text_structure`` is the bundle's admission evidence
+    #: forwarded verbatim, never re-derived from the raw bytes here, and is
+    #: None for the html representation.
+    representation: str = "html"
+    text_structure: Optional[dict] = None
     cik: str
     company_id: str
     stratum: str
@@ -281,6 +286,21 @@ class UniverseBaselinePacket(StrictModel):
     normalization_ledger: dict
     packet_byte_size: int
     packet_sha256: str
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler):
+        """A v0.1 packet serializes without the two v0.2 fields.
+
+        Enforced here rather than at each call site: both fields are inside
+        ``packet_sha256``, so a v0.1 packet that emitted them would carry a
+        hash no historical packet can reproduce. Doing it in the model means
+        ``model_dump`` is correct for every caller, including tests.
+        """
+        record = handler(self)
+        if record.get("packet_contract") != "universe_baseline_packet@0.2.0":
+            record.pop("representation", None)
+            record.pop("text_structure", None)
+        return record
 
 
 class PacketBuildFailure(StrictModel):

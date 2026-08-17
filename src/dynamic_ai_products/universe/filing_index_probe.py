@@ -86,6 +86,8 @@ DOCUMENT_FORMAT_TABLE_IDENTITY = "document format files"
 CANONICAL_BASE_URL = "https://www.sec.gov/Archives/"
 ADMITTED_FORMS = ("10-K", "10-KT")
 HTML_SUFFIXES = (".htm", ".html")
+#: The plain-text tier's suffix, admitted only when a plan opts in (ADR-097).
+TEXT_SUFFIXES = (".txt",)
 
 PROBE_MANIFEST_FILENAME = "filing_index_probe_manifest.json"
 PROBE_FAILURE_RECEIPT_FILENAME = "filing_index_probe_failure_receipt.json"
@@ -414,7 +416,7 @@ def parse_document_format_table(content: bytes) -> list[IndexTableRow]:
 
 
 def select_primary_document(
-    rows: list[IndexTableRow], form: str
+    rows: list[IndexTableRow], form: str, *, admit_plain_text: bool = False
 ) -> tuple[Optional[IndexTableRow], Optional[str]]:
     """Return ``(selected row, None)`` or ``(None, refusal reason code)``.
 
@@ -428,7 +430,12 @@ def select_primary_document(
     non-HTML same-form companions are **not eligible primary candidates** at
     all rather than being tie-broken away.
 
-    Eligibility still rests on the declared Type and the HTML suffix alone.
+    ``admit_plain_text`` adds one further tier **below** HTML, never beside
+    it: when the form-matching rows contain no HTML at all, a single ``.txt``
+    row may be selected as a separate plain-text representation. The default
+    is ``False``, so every existing caller keeps today's behaviour exactly.
+
+    Eligibility still rests on the declared Type and the suffix alone.
     Nothing here reads document order, sequence number, size, description or
     rendered text, so two HTML rows of the same Type remain genuinely
     ambiguous and are still refused.
@@ -440,11 +447,26 @@ def select_primary_document(
         row for row in matches
         if row.document.lower().endswith(HTML_SUFFIXES)
     ]
-    if not html:
+    if html:
+        if len(html) > 1:
+            return None, "ambiguous_primary_candidate"
+        return html[0], None
+    if not admit_plain_text:
         return None, "non_html_primary"
-    if len(html) > 1:
+    # ADR-097: a plain-text tier, reached only when the HTML tier is empty and
+    # only when the caller's plan admits it. HTML always wins where both
+    # exist, so no existing route changes; and this decides eligibility only.
+    # Whether the bytes are a standalone annual report is settled after the
+    # fetch, by plain_text_primary.inspect_plain_text_primary.
+    text = [
+        row for row in matches
+        if row.document.lower().endswith(TEXT_SUFFIXES)
+    ]
+    if not text:
+        return None, "non_html_primary"
+    if len(text) > 1:
         return None, "ambiguous_primary_candidate"
-    return html[0], None
+    return text[0], None
 
 
 # --- plan -------------------------------------------------------------------

@@ -497,7 +497,7 @@ def test_entry_missing_selection_provenance_refuses(tmp_path):
         payload = _bundle_payload(bundle)
         del payload["documents"][0][field]
         _write_bundle(bundle, payload)
-        with pytest.raises(PacketBundleError, match="canonical schema"):
+        with pytest.raises(PacketBundleError, match="violates baseline_primary_document_bundle"):
             load_bundle(ROOT, bundle)
 
 
@@ -506,7 +506,7 @@ def test_fpi_form_is_refused_with_the_preserved_message(tmp_path):
     payload = _bundle_payload(bundle)
     payload["documents"][0]["form"] = "20-F"
     _write_bundle(bundle, payload)
-    with pytest.raises(PacketBundleError, match="canonical schema"):
+    with pytest.raises(PacketBundleError, match="violates baseline_primary_document_bundle"):
         load_bundle(ROOT, bundle)
 
 

@@ -1,0 +1,24 @@
+<DOCUMENT>
+<TYPE>10-K
+<SEQUENCE>1
+<FILENAME>dup1a.txt
+<DESCRIPTION>ANNUAL REPORT
+<TEXT>
+Synthetic plain-text filing fixture; every CIK, accession, company and
+document is invented for methodological testing. No real filing data.
+
+FORM 10-K
+
+Item 1. Business.
+
+We operate one segment.
+
+Item 1A. Risk Factors.
+
+First risk discussion.
+
+Item 1A. Risk Factors.
+
+A second block-opening heading of the same tier.
+</TEXT>
+</DOCUMENT>

@@ -66,12 +66,21 @@ from .primary_document_acquisition import (
     BUNDLE_MANIFEST_FILENAME,
     FAILURE_RECEIPT_FILENAME,
     PLAN_CONTRACT_V2,
+    PLAN_CONTRACT_V3,
     PrimaryAcquisitionResult,
     PrimaryDocumentPlanError,
     run_primary_document_acquisition,
 )
 
 QUEUE_DEFINITION_CONTRACT = "acquisition_queue_definition@0.1.0"
+#: v0.2 states that its planner emits primary_document_request_plan@0.3.0, so
+#: its shards may select a plain-text primary. A v0.2 definition has a
+#: different sha256 from any v0.1 one, so its shard plans form a separate
+#: lineage that never mixes with v0.2-plan artefacts (ADR-097).
+QUEUE_DEFINITION_CONTRACT_V2 = "acquisition_queue_definition@0.2.0"
+QUEUE_DEFINITION_V2_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/acquisition_queue_definition.v2.schema.json"
+)
 PLAN_MANIFEST_CONTRACT = "acquisition_queue_plan_manifest@0.1.0"
 EXECUTION_MANIFEST_CONTRACT = "acquisition_queue_execution_manifest@0.1.0"
 AGGREGATE_MANIFEST_CONTRACT = "acquisition_queue_aggregate_manifest@0.1.0"
@@ -96,6 +105,9 @@ ACQUISITION_V4_SCHEMA_RELATIVE_PATH = Path(
 )
 ACQUISITION_V5_SCHEMA_RELATIVE_PATH = Path(
     "schemas/primary_document_acquisition_manifest.v5.schema.json"
+)
+ACQUISITION_V6_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/primary_document_acquisition_manifest.v6.schema.json"
 )
 TRANSPORT_KIND_SEC_LIVE = "sec_live"
 
@@ -160,6 +172,7 @@ class QueueDefinition:
     route_validation: dict
     deferred_cohorts: tuple[dict, ...]
     definition_sha256: str
+    admit_plain_text: bool = False
 
 
 @dataclass
@@ -224,9 +237,24 @@ def validate_queue_definition(payload: object, definition_sha256: str) -> QueueD
     """Validate a queue definition; nothing here is defaulted."""
     if not isinstance(payload, dict):
         raise AcquisitionQueueError("Queue definition must be a JSON object.")
-    if payload.get("queue_contract") != QUEUE_DEFINITION_CONTRACT:
+    queue_contract = payload.get("queue_contract")
+    if queue_contract not in (QUEUE_DEFINITION_CONTRACT,
+                              QUEUE_DEFINITION_CONTRACT_V2):
         raise AcquisitionQueueError(
-            f"Queue definition must declare {QUEUE_DEFINITION_CONTRACT!r}."
+            "Queue definition must declare one of "
+            f"{[QUEUE_DEFINITION_CONTRACT, QUEUE_DEFINITION_CONTRACT_V2]!r}."
+        )
+    admit_plain_text = payload.get("admit_plain_text")
+    if queue_contract == QUEUE_DEFINITION_CONTRACT_V2:
+        if admit_plain_text is not True:
+            raise AcquisitionQueueError(
+                f"{QUEUE_DEFINITION_CONTRACT_V2} requires admit_plain_text to "
+                "be exactly true; a definition admitting no plain text is "
+                f"{QUEUE_DEFINITION_CONTRACT}."
+            )
+    elif admit_plain_text is not None:
+        raise AcquisitionQueueError(
+            f"admit_plain_text is a {QUEUE_DEFINITION_CONTRACT_V2} field."
         )
     for key in ("queue_id", "description", "carrier", "selection", "shard_size",
                 "per_accession_allowance_bytes", "max_metadata_bytes",
@@ -337,6 +365,7 @@ def validate_queue_definition(payload: object, definition_sha256: str) -> QueueD
         route_validation=dict(route),
         deferred_cohorts=tuple(deferred),
         definition_sha256=definition_sha256,
+        admit_plain_text=queue_contract == QUEUE_DEFINITION_CONTRACT_V2,
     )
 
 
@@ -438,7 +467,10 @@ def build_shard_plans(
             })
         budget = len(window) * definition.per_accession_allowance_bytes
         payload = {
-            "plan_contract": PLAN_CONTRACT_V2,
+            "plan_contract": (
+                PLAN_CONTRACT_V3 if definition.admit_plain_text
+                else PLAN_CONTRACT_V2
+            ),
             "description": (
                 f"Shard {index} of queue {definition.queue_id!r}: "
                 f"{len(window)} accession(s) serving {rows_total} carrier "
@@ -450,6 +482,7 @@ def build_shard_plans(
             "max_metadata_bytes": definition.max_metadata_bytes,
             "max_document_bytes": definition.max_document_bytes,
             "max_retained_bytes": budget,
+            **({"admit_plain_text": True} if definition.admit_plain_text else {}),
             "queue_id": definition.queue_id,
             "queue_definition_sha256": definition.definition_sha256,
             "shard_index": index,
@@ -1110,17 +1143,20 @@ def _bind_shard_manifest(root: Path, run_dir: Path, shard: ShardPlan) -> dict:
             f"Shard {shard.shard_index}: {bundle_path} is not valid JSON: {exc}"
         ) from exc
 
-    if manifest.get("plan_contract") != PLAN_CONTRACT_V2:
+    if manifest.get("plan_contract") not in (PLAN_CONTRACT_V2, PLAN_CONTRACT_V3):
         raise ShardIntegrityError(
             f"Shard {shard.shard_index}: acquisition manifest declares "
             f"{manifest.get('plan_contract')!r}; every queue shard is planned "
-            f"under {PLAN_CONTRACT_V2}."
+            f"under {PLAN_CONTRACT_V2} or {PLAN_CONTRACT_V3}."
         )
-    schema = (
-        ACQUISITION_V5_SCHEMA_RELATIVE_PATH
-        if manifest.get("transport_kind") == TRANSPORT_KIND_SEC_LIVE
-        else ACQUISITION_V4_SCHEMA_RELATIVE_PATH
-    )
+    # A plan v0.3 shard is described by v0.6 for either transport; only the
+    # v0.2 generation still splits by transport kind.
+    if manifest.get("plan_contract") == PLAN_CONTRACT_V3:
+        schema = ACQUISITION_V6_SCHEMA_RELATIVE_PATH
+    elif manifest.get("transport_kind") == TRANSPORT_KIND_SEC_LIVE:
+        schema = ACQUISITION_V5_SCHEMA_RELATIVE_PATH
+    else:
+        schema = ACQUISITION_V4_SCHEMA_RELATIVE_PATH
     errors = sorted(
         Draft202012Validator(read_json(root / schema)).iter_errors(manifest),
         key=lambda e: e.json_path,

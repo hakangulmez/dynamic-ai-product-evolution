@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "baseline_packet_manifest.v2.schema.json",
+  "title": "Baseline packet run manifest (v0.2, text-capable bundle)",
+  "description": "Immutable record of one Stage 00C baseline packet build from a local, hash-verified bundle (W2-C-beta, ADR-091). Fixture-first: the builder performs no network access, and acquisition with its canary is a separate increment. No firm is ever excluded \u2014 a document that cannot yield a packet is recorded as a failure with its reason. Packet sizes are recorded, not capped: the raw-document acquisition ceiling remains the only size bound. Version 0.2.0 successor (ADR-097): carries the plain-text representation and forwards the acquisition-time admission evidence verbatim. text_structure is never re-derived from the raw bytes here; the bundle is its only source. Predecessors are retained byte-unchanged and neither generation validates the other.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "bundle_contract",
+    "bundle_manifest_sha256",
+    "bundle_provenance",
+    "route_validation",
+    "baseline_cutoff",
+    "baseline_cutoff_source",
+    "counts",
+    "reconciliation",
+    "output_hashes",
+    "run_timestamp",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "bundle_contract": {
+      "const": "baseline_primary_document_bundle@0.2.0"
+    },
+    "bundle_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "bundle_provenance": {
+      "type": "object"
+    },
+    "route_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "probe_run_id",
+        "probe_manifest_sha256",
+        "covered_accessions",
+        "note"
+      ],
+      "properties": {
+        "probe_run_id": {
+          "type": "string"
+        },
+        "probe_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "covered_accessions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "baseline_cutoff": {
+      "type": "string",
+      "format": "date"
+    },
+    "baseline_cutoff_source": {
+      "type": "object"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planned_documents",
+        "packets_built",
+        "packet_failures",
+        "firms_excluded",
+        "packets_by_end_boundary",
+        "failures_by_reason",
+        "passages_total",
+        "packet_bytes_total",
+        "packet_bytes_max",
+        "packet_bytes_mean"
+      ],
+      "properties": {
+        "planned_documents": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "packets_built": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "packet_failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "firms_excluded": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 0
+        },
+        "packets_by_end_boundary": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "failures_by_reason": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "passages_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "packet_bytes_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "packet_bytes_max": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "packet_bytes_mean": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 7,
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "minProperties": 2,
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_baseline_packet_v2",
+        "baseline_packet_manifest_v2"
+      ],
+      "properties": {
+        "universe_baseline_packet_v2": {
+          "type": "string"
+        },
+        "baseline_packet_manifest_v2": {
+          "type": "string"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

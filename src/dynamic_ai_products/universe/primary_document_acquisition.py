@@ -85,6 +85,11 @@ from .filing_index_probe import (
     parse_document_format_table,
     select_primary_document,
 )
+from .plain_text_primary import (
+    ADMISSIONS,
+    inspect_plain_text_primary,
+    is_plain_text_document,
+)
 from .frame_acquisition import (
     FIXTURE_REPLAY_TRANSPORT_IDENTITY,
     TRANSPORT_KIND_SEC_LIVE,
@@ -100,13 +105,32 @@ from .io_utils import read_json, sha256_bytes
 #: unaffected and keep producing v0.1/v0.3 manifests.
 PLAN_CONTRACT_V1 = "primary_document_request_plan@0.1.0"
 PLAN_CONTRACT_V2 = "primary_document_request_plan@0.2.0"
-ACCEPTED_PLAN_CONTRACTS = (PLAN_CONTRACT_V1, PLAN_CONTRACT_V2)
+#: v0.3 adds one semantic: a plain-text primary may be selected and, if its
+#: bytes prove a standalone annual report, admitted as a separate
+#: representation. It is a contract change rather than a flag on v0.2 because
+#: it changes what a shard may acquire (ADR-097).
+PLAN_CONTRACT_V3 = "primary_document_request_plan@0.3.0"
+ACCEPTED_PLAN_CONTRACTS = (PLAN_CONTRACT_V1, PLAN_CONTRACT_V2, PLAN_CONTRACT_V3)
 #: Retained for importers that predate the budgeted contract.
 PLAN_CONTRACT = PLAN_CONTRACT_V1
 BUNDLE_CONTRACT = "baseline_primary_document_bundle@0.1.0"
+#: Emitted by **every** successful ``primary_document_request_plan@0.3.0``
+#: run, alongside acquisition manifest v0.6, whether that run's documents turn
+#: out to be HTML-only or to include plain text. The plan contract decides the
+#: generation, never the content: a v0.3 shard that happens to acquire no text
+#: is still a v0.3 shard, and letting content decide would leave an ordinary
+#: HTML-only v0.3 run with no schema able to describe it. A v0.1/v0.2 plan is
+#: unaffected and still emits the v0.1 bundle exactly as before.
+BUNDLE_CONTRACT_V2 = "baseline_primary_document_bundle@0.2.0"
+BUNDLE_V2_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/baseline_primary_document_bundle.v2.schema.json"
+)
+REPRESENTATION_HTML = "html"
+REPRESENTATION_PLAIN_TEXT = "plain_text"
 ADMITTED_FORMS = ("10-K", "10-KT")
 ADMITTED_STRATA = ("domestic",)
 HTML_SUFFIXES = (".htm", ".html")
+TEXT_SUFFIXES = (".txt",)
 
 BUNDLE_MANIFEST_FILENAME = "bundle_manifest.json"
 ACQUISITION_MANIFEST_FILENAME = "primary_document_acquisition_manifest.json"
@@ -136,6 +160,12 @@ ACQUISITION_V4_SCHEMA_RELATIVE_PATH = Path(
 )
 ACQUISITION_V5_SCHEMA_RELATIVE_PATH = Path(
     "schemas/primary_document_acquisition_manifest.v5.schema.json"
+)
+#: v0.6 is the first record that can describe a plain-text acquisition: v0.5
+#: hard-requires an HTML selected_document and a .html local_filename, so it
+#: cannot express one at all.
+ACQUISITION_V6_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/primary_document_acquisition_manifest.v6.schema.json"
 )
 
 GROUND_TRUTH_NONE = "none"
@@ -182,14 +212,22 @@ def canonical_primary_document_url(
     )
 
 
-def local_filename_for(accession: str) -> str:
+def local_filename_for(
+    accession: str, representation: str = REPRESENTATION_HTML
+) -> str:
     """The bundle's storage name for one accession's primary document.
 
     Deliberately not the SEC basename: the file this bundle stores and the
     document SEC selected are separate facts, and the bundle contract keeps
     both. One shared accession yields exactly one stored file.
+
+    The extension tracks the representation. Text bytes are stored as
+    ``.txt`` and never disguised as ``.html``: the stored name is evidence
+    about the bytes, so a lying extension would be a silent conversion.
     """
-    return f"primary-{normalize_accession(accession).replace('-', '')}.html"
+    suffix = ".txt" if representation == REPRESENTATION_PLAIN_TEXT else ".html"
+    digits = normalize_accession(accession).replace("-", "")
+    return f"primary-{digits}{suffix}"
 
 
 def href_form_of(href: str) -> str:
@@ -219,7 +257,8 @@ class PlannedAccession:
     directory_cik: str
     carrier_rows: list[PlannedCarrierRow]
     filing_index_url: str
-    local_filename: str
+    #: No local_filename here: the stored name follows the representation,
+    #: which is not known until the document has been fetched and admitted.
     expected_primary_document: Optional[str] = None
     ground_truth_source_sha256: Optional[str] = None
 
@@ -245,6 +284,12 @@ class AcquiredAccession:
     primary_final_url: str
     primary_status: int
     local_filename: str
+    #: ADR-097 provenance, written once here and forwarded downstream.
+    representation: str
+    admission: Optional[str]
+    document_blocks: Optional[int]
+    declared_type: Optional[str]
+    declared_filename: Optional[str]
     primary_declared_content_length: Optional[int]
     source_sha256: str
     source_byte_length: int
@@ -320,10 +365,13 @@ def validate_request_plan(payload: object) -> tuple[list[PlannedAccession], dict
     # forbidden under v0.1, so a plan's contract alone says whether a run is
     # budgeted; there is no defaulting and no silent unbounded v0.2.
     max_retained_bytes = payload.get("max_retained_bytes")
-    if plan_contract == PLAN_CONTRACT_V2:
+    # v0.3 inherits the cumulative bound; it adds a representation, not a
+    # relaxation.
+    budgeted_contracts = (PLAN_CONTRACT_V2, PLAN_CONTRACT_V3)
+    if plan_contract in budgeted_contracts:
         if max_retained_bytes is None:
             raise PrimaryDocumentPlanError(
-                f"{PLAN_CONTRACT_V2} requires max_retained_bytes: the "
+                f"{plan_contract} requires max_retained_bytes: the "
                 "cumulative retained-byte bound is plan-owned and never "
                 "defaulted."
             )
@@ -339,6 +387,22 @@ def validate_request_plan(payload: object) -> tuple[list[PlannedAccession], dict
         raise PrimaryDocumentPlanError(
             f"max_retained_bytes is a {PLAN_CONTRACT_V2} field; "
             f"{PLAN_CONTRACT_V1} declares no cumulative bound."
+        )
+    # v0.3 must say so explicitly. A false value is refused rather than
+    # accepted as a v0.2 equivalent: there is already a contract for that, and
+    # two spellings of one meaning is how contracts drift.
+    admit_plain_text = payload.get("admit_plain_text")
+    if plan_contract == PLAN_CONTRACT_V3:
+        if admit_plain_text is not True:
+            raise PrimaryDocumentPlanError(
+                f"{PLAN_CONTRACT_V3} requires admit_plain_text to be exactly "
+                f"true; {admit_plain_text!r} is not. A plan that admits no "
+                f"plain text is a {PLAN_CONTRACT_V2} plan."
+            )
+    elif admit_plain_text is not None:
+        raise PrimaryDocumentPlanError(
+            f"admit_plain_text is a {PLAN_CONTRACT_V3} field; "
+            f"{plan_contract} admits HTML primaries only."
         )
     provenance = payload["provenance"]
     if not isinstance(provenance, dict):
@@ -445,12 +509,16 @@ def validate_request_plan(payload: object) -> tuple[list[PlannedAccession], dict
 
         expected = raw.get("expected_primary_document")
         if expected is not None:
+            admitted_suffixes = (
+                HTML_SUFFIXES + TEXT_SUFFIXES
+                if plan_contract == PLAN_CONTRACT_V3 else HTML_SUFFIXES
+            )
             if not isinstance(expected, str) or not expected.lower().endswith(
-                HTML_SUFFIXES
+                admitted_suffixes
             ):
                 raise PrimaryDocumentPlanError(
-                    f"{where}: expected_primary_document must be an HTML "
-                    "filename when present."
+                    f"{where}: expected_primary_document must end in "
+                    f"{list(admitted_suffixes)!r} under {plan_contract}."
                 )
         ground_truth = raw.get("ground_truth_source_sha256")
         if ground_truth is not None and (
@@ -487,7 +555,6 @@ def validate_request_plan(payload: object) -> tuple[list[PlannedAccession], dict
                 filing_index_url=canonical_filing_index_url(
                     directory_cik, accession
                 ),
-                local_filename=local_filename_for(accession),
                 expected_primary_document=expected,
                 ground_truth_source_sha256=ground_truth,
             )
@@ -495,6 +562,7 @@ def validate_request_plan(payload: object) -> tuple[list[PlannedAccession], dict
     fields = {
         "plan_contract": plan_contract,
         "max_retained_bytes": max_retained_bytes,
+        "admit_plain_text": plan_contract == PLAN_CONTRACT_V3,
         "description": str(payload["description"]),
         "base_url": CANONICAL_BASE_URL,
         "max_metadata_bytes": payload["max_metadata_bytes"],
@@ -749,7 +817,9 @@ def run_primary_document_acquisition(
             rows = parse_document_format_table(index_response.content)
         except Exception as exc:  # noqa: BLE001 - parser refusals are recorded
             return fail(entry, HOP_FILING_INDEX, "metadata_unparseable", str(exc))
-        selected, refusal = select_primary_document(rows, entry.form)
+        selected, refusal = select_primary_document(
+            rows, entry.form, admit_plain_text=fields["admit_plain_text"]
+        )
         if refusal is not None:
             matched = [r.document for r in rows
                        if r.document_type.upper() == entry.form.upper()]
@@ -784,6 +854,28 @@ def run_primary_document_acquisition(
         )
         if refused is not None:
             return refused
+        # ADR-097: structural admission runs after the response and *before*
+        # write_bytes_once, so a text file that is not a standalone annual
+        # report is never retained. Only documents completed before it remain
+        # in the failed run directory.
+        representation = (
+            REPRESENTATION_PLAIN_TEXT
+            if is_plain_text_document(selected.document)
+            else REPRESENTATION_HTML
+        )
+        admission = None
+        if representation == REPRESENTATION_PLAIN_TEXT:
+            admission = inspect_plain_text_primary(
+                primary_response.content, form=entry.form,
+                selected_document=selected.document,
+            )
+            if not admission.admitted:
+                return fail(
+                    entry, HOP_PRIMARY_DOCUMENT, admission.reason_code,
+                    f"{primary_url}: {admission.detail}",
+                )
+        local_filename = local_filename_for(entry.accession, representation)
+
         # The cumulative bound is checked here, against the materialised body
         # length and never against Content-Length, which understates retained
         # bytes by 7.8x-21.4x in measured live runs and is sometimes absent.
@@ -801,12 +893,12 @@ def run_primary_document_acquisition(
             )
         try:
             source_sha = write_bytes_once(
-                run_dir / entry.local_filename, primary_response.content,
-                what=f"raw primary document {entry.local_filename}",
+                run_dir / local_filename, primary_response.content,
+                what=f"raw primary document {local_filename}",
             )
         except WriteOnceError as exc:
             return fail(entry, HOP_PRIMARY_DOCUMENT, "write_once_refused", str(exc))
-        retained.append(entry.local_filename)
+        retained.append(local_filename)
         retained_bytes_total += incoming
         if (
             entry.ground_truth_source_sha256 is not None
@@ -836,7 +928,14 @@ def run_primary_document_acquisition(
                 primary_url=primary_url,
                 primary_final_url=primary_response.final_url,
                 primary_status=primary_response.status_code,
-                local_filename=entry.local_filename,
+                local_filename=local_filename,
+                representation=representation,
+                admission=admission.admission if admission else None,
+                document_blocks=admission.document_blocks if admission else None,
+                declared_type=admission.declared_type if admission else None,
+                declared_filename=(
+                    admission.declared_filename if admission else None
+                ),
                 primary_declared_content_length=(
                     primary_response.declared_content_length
                 ),
@@ -861,7 +960,12 @@ def run_primary_document_acquisition(
     bundle = build_bundle_manifest(
         run_id=run_id, fields=fields, planned=planned, acquired=result.acquired
     )
-    schema = read_json(root / BUNDLE_SCHEMA_RELATIVE_PATH)
+    bundle_schema_path = (
+        BUNDLE_V2_SCHEMA_RELATIVE_PATH
+        if bundle["bundle_contract"] == BUNDLE_CONTRACT_V2
+        else BUNDLE_SCHEMA_RELATIVE_PATH
+    )
+    schema = read_json(root / bundle_schema_path)
     errors = sorted(
         Draft202012Validator(schema).iter_errors(bundle),
         key=lambda e: e.json_path,
@@ -869,7 +973,7 @@ def run_primary_document_acquisition(
     if errors:
         details = "; ".join(f"{e.json_path}: {e.message}" for e in errors[:5])
         raise ValueError(
-            f"Produced bundle violates the committed bundle schema: {details}"
+            f"Produced bundle violates {bundle_schema_path.name}: {details}"
         )
     bundle_payload = (json.dumps(bundle, indent=2, sort_keys=True) + "\n").encode(
         "utf-8"
@@ -918,6 +1022,11 @@ def build_bundle_manifest(
     manifest's hash: provenance runs one way.
     """
     by_accession = {a.accession: a for a in acquired}
+    # The **plan contract** decides the generation, never the content. A v0.3
+    # shard that happens to acquire only HTML is still a v0.3 shard: making
+    # this depend on whether any text turned up would leave an ordinary
+    # HTML-only v0.3 run with no schema that can describe it.
+    v3_plan = fields["plan_contract"] == PLAN_CONTRACT_V3
     documents: list[dict] = []
     for entry in planned:
         acquisition = by_accession[entry.accession]
@@ -939,9 +1048,19 @@ def build_bundle_manifest(
                     "primary_url": acquisition.primary_url,
                 }
             )
+            if v3_plan:
+                # Present on every entry of a v0.3 bundle, so a null is
+                # "this row is html", never "this field does not apply".
+                documents[-1].update({
+                    "representation": acquisition.representation,
+                    "admission": acquisition.admission,
+                    "document_blocks": acquisition.document_blocks,
+                    "declared_type": acquisition.declared_type,
+                    "declared_filename": acquisition.declared_filename,
+                })
     documents.sort(key=lambda d: (d["stratum"], d["cik"], d["accession"]))
     return {
-        "bundle_contract": BUNDLE_CONTRACT,
+        "bundle_contract": BUNDLE_CONTRACT_V2 if v3_plan else BUNDLE_CONTRACT,
         "description": (
             "Baseline primary-document bundle produced by two-hop acquisition "
             f"run {run_id} (ADR-092). One entry per carrier row: a shared "
@@ -1081,6 +1200,20 @@ def build_acquisition_manifest(
         ],
     }
     budgeted = fields["max_retained_bytes"] is not None
+    # v0.6 describes every plan v0.3 run, text-bearing or not, and names the
+    # bundle contract this run actually emitted so the two artefacts can never
+    # disagree about which generation they belong to.
+    v3_plan = fields["plan_contract"] == PLAN_CONTRACT_V3
+    if v3_plan:
+        manifest["emitted_bundle_contract"] = BUNDLE_CONTRACT_V2
+        for record, item in zip(manifest["acquisitions"], acquired):
+            record.update({
+                "representation": item.representation,
+                "admission": item.admission,
+                "document_blocks": item.document_blocks,
+                "declared_type": item.declared_type,
+                "declared_filename": item.declared_filename,
+            })
     if budgeted:
         # Recorded in authoritative evidence, so a completed shard states the
         # bound it honoured and the bytes it actually kept. bounds="disk" is
@@ -1104,15 +1237,13 @@ def build_acquisition_manifest(
             record["primary_declared_content_length"] = (
                 item.primary_declared_content_length
             )
-        key = (
-            "primary_document_acquisition_manifest_v5" if budgeted
-            else "primary_document_acquisition_manifest_v3"
-        )
+        if budgeted:
+            key = "primary_document_acquisition_manifest_v5"
+            schema_path = ACQUISITION_V5_SCHEMA_RELATIVE_PATH
+        else:
+            key = "primary_document_acquisition_manifest_v3"
+            schema_path = ACQUISITION_V3_SCHEMA_RELATIVE_PATH
         manifest["schema_versions"] = {key: schema_versions[key]}
-        schema_path = (
-            ACQUISITION_V5_SCHEMA_RELATIVE_PATH if budgeted
-            else ACQUISITION_V3_SCHEMA_RELATIVE_PATH
-        )
     else:
         key = (
             "primary_document_acquisition_manifest_v4" if budgeted
@@ -1128,6 +1259,10 @@ def build_acquisition_manifest(
             ACQUISITION_V4_SCHEMA_RELATIVE_PATH if budgeted
             else ACQUISITION_SCHEMA_RELATIVE_PATH
         )
+    if v3_plan:
+        key = "primary_document_acquisition_manifest_v6"
+        manifest["schema_versions"] = {key: schema_versions[key]}
+        schema_path = ACQUISITION_V6_SCHEMA_RELATIVE_PATH
     schema = read_json(root / schema_path)
     errors = sorted(
         Draft202012Validator(schema).iter_errors(manifest),
@@ -1136,6 +1271,6 @@ def build_acquisition_manifest(
     if errors:
         details = "; ".join(f"{e.json_path}: {e.message}" for e in errors[:5])
         raise ValueError(
-            f"Acquisition manifest violates the canonical schema: {details}"
+            f"Acquisition manifest violates {schema_path.name}: {details}"
         )
     return manifest

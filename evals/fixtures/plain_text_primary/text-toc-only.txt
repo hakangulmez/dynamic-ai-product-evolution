@@ -1,0 +1,21 @@
+<DOCUMENT>
+<TYPE>10-K
+<SEQUENCE>1
+<FILENAME>toconly.txt
+<DESCRIPTION>ANNUAL REPORT
+<TEXT>
+Synthetic plain-text filing fixture; every CIK, accession, company and
+document is invented for methodological testing. No real filing data.
+
+FORM 10-K
+
+TABLE OF CONTENTS
+
+Item 1. Business.....................................3
+Item 1A. Risk Factors................................9
+
+PART I
+
+Summary of operations follows in the pages hereafter.
+</TEXT>
+</DOCUMENT>

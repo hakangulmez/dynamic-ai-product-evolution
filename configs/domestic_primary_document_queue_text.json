@@ -1,0 +1,43 @@
+{
+  "queue_contract": "acquisition_queue_definition@0.2.0",
+  "queue_id": "domestic-primary-documents-text",
+  "description": "Domestic 10-K/10-KT acquisition queue over frozen FRAME_v1, admitting plain-text primaries (ADR-097). Same carrier, filters, shard size and per-accession allowance as domestic-primary-documents, so the shard membership is identical: 8,718 carrier rows over 8,526 unique accessions, 17,052 requests, 86 shards. It differs in one semantic \u2014 its planner emits primary_document_request_plan@0.3.0, so a shard may select a single .txt row when the form-matching rows contain no HTML, and admit it only if its bytes prove a standalone annual report. Because this definition hashes differently, its shard plans form a SEPARATE LINEAGE: artefacts produced under the v0.1 definition do not bind against these plans and the two are never mixed in one aggregate. Possessing this definition authorizes no request.",
+  "carrier": {
+    "relative_path": "data/runs/universe-baseline-carrier/universe-baseline-carrier-frame-v1-20260816/universe_baseline_carrier.jsonl",
+    "carrier_run_id": "universe-baseline-carrier-frame-v1-20260816",
+    "carrier_manifest_sha256": "50a2582f9a255c4402151aa4d963ce5d7bd7c952b8e4a5e77f4a7e7ce454521f",
+    "freeze_record_sha256": "27eb6d236b2e3f81a3b52437027f076a52ae04b245694c9645a4bfb6303e342c"
+  },
+  "selection": {
+    "stratum": "domestic",
+    "forms": [
+      "10-K",
+      "10-KT"
+    ]
+  },
+  "shard_size": 100,
+  "per_accession_allowance_bytes": 12582912,
+  "max_metadata_bytes": 8388608,
+  "max_document_bytes": 268435456,
+  "base_url": "https://www.sec.gov/Archives/",
+  "route_validation": {
+    "probe_run_id": "filing-index-probe-frame-v1-20260816-r2",
+    "probe_manifest_sha256": "7aa16a0ee076800634f4185ba9af47588f084fc9d0ed7a754cbeca81f258e270",
+    "covered_accessions": 3,
+    "note": "URL-route grammar only, proven for the probe's own three accessions; never selection evidence for any firm in this queue."
+  },
+  "deferred_cohorts": [
+    {
+      "stratum": "fpi_extension",
+      "forms": [
+        "20-F",
+        "40-F"
+      ],
+      "rows": 1198,
+      "accessions": 1193,
+      "requests_if_acquired": 2386,
+      "reason": "Preserved by frozen FRAME_v1 and the carrier, and deliberately deferred: the acquisition form enum admits 10-K/10-KT only and FPI cover-page structure has never been measured here. Deferred, not excluded."
+    }
+  ],
+  "admit_plain_text": true
+}

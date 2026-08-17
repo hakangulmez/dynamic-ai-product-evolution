@@ -72,10 +72,23 @@ from ..universe.models import (
 )
 from ..universe.taxonomy import PACKET_SECTIONS
 from .errors import IngestionError
-from .normalize import build_passages_v4, find_item_one_span_v2
+from .normalize import (
+    build_passages_v4,
+    find_item_one_span_text,
+    find_item_one_span_v2,
+)
 
 BUNDLE_CONTRACT = "baseline_primary_document_bundle@0.1.0"
 PACKET_CONTRACT = "universe_baseline_packet@0.1.0"
+#: ADR-097 successors, emitted only for a v0.2 bundle. An all-HTML bundle
+#: still produces exactly the v0.1 artefacts it produces today.
+BUNDLE_CONTRACT_V2 = "baseline_primary_document_bundle@0.2.0"
+PACKET_CONTRACT_V2 = "universe_baseline_packet@0.2.0"
+REPRESENTATION_HTML = "html"
+REPRESENTATION_PLAIN_TEXT = "plain_text"
+ADMISSION_EVIDENCE_FIELDS = (
+    "admission", "document_blocks", "declared_type", "declared_filename",
+)
 BUNDLE_MANIFEST_FILENAME = "bundle_manifest.json"
 PACKET_MANIFEST_FILENAME = "baseline_packet_manifest.json"
 PACKETS_FILENAME = "universe_baseline_packets.jsonl"
@@ -85,6 +98,15 @@ BUNDLE_SCHEMA_RELATIVE_PATH = Path(
     "schemas/baseline_primary_document_bundle.schema.json"
 )
 PACKET_SCHEMA_RELATIVE_PATH = Path("schemas/universe_baseline_packet.schema.json")
+BUNDLE_V2_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/baseline_primary_document_bundle.v2.schema.json"
+)
+PACKET_V2_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/universe_baseline_packet.v2.schema.json"
+)
+PACKET_MANIFEST_V2_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/baseline_packet_manifest.v2.schema.json"
+)
 PACKET_MANIFEST_SCHEMA_RELATIVE_PATH = Path(
     "schemas/baseline_packet_manifest.schema.json"
 )
@@ -213,7 +235,17 @@ def load_bundle(repo_root: Path, bundle_dir: Path) -> tuple[dict, list[dict], st
         manifest = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise PacketBundleError(f"Bundle manifest is not valid JSON: {exc}") from exc
-    schema = read_json(repo_root / BUNDLE_SCHEMA_RELATIVE_PATH)
+    declared = manifest.get("bundle_contract")
+    if declared not in (BUNDLE_CONTRACT, BUNDLE_CONTRACT_V2):
+        raise PacketBundleError(
+            f"Bundle must declare one of "
+            f"{[BUNDLE_CONTRACT, BUNDLE_CONTRACT_V2]!r}."
+        )
+    schema_path = (
+        BUNDLE_V2_SCHEMA_RELATIVE_PATH if declared == BUNDLE_CONTRACT_V2
+        else BUNDLE_SCHEMA_RELATIVE_PATH
+    )
+    schema = read_json(repo_root / schema_path)
     errors = sorted(
         Draft202012Validator(schema).iter_errors(manifest),
         key=lambda e: e.json_path,
@@ -221,10 +253,8 @@ def load_bundle(repo_root: Path, bundle_dir: Path) -> tuple[dict, list[dict], st
     if errors:
         details = "; ".join(f"{e.json_path}: {e.message}" for e in errors[:5])
         raise PacketBundleError(
-            f"Bundle manifest violates its canonical schema: {details}"
+            f"Bundle manifest violates {schema_path.name}: {details}"
         )
-    if manifest.get("bundle_contract") != BUNDLE_CONTRACT:
-        raise PacketBundleError(f"Bundle must declare {BUNDLE_CONTRACT!r}.")
 
     entries: list[dict] = []
     seen: set[tuple[str, str]] = set()
@@ -291,6 +321,7 @@ def build_packet(
     baseline_cutoff: date,
     baseline_cutoff_source: dict,
     route_validation: dict,
+    packet_contract: str = PACKET_CONTRACT,
 ) -> UniverseBaselinePacket | PacketBuildFailure:
     """Build one packet, or return the recorded reason it could not be built."""
     cik, accession = entry["cik"], entry["accession"]
@@ -314,8 +345,23 @@ def build_packet(
         )
 
     raw = entry["path"].read_bytes()
+    # ADR-097: the representation and its admission evidence are read from the
+    # governed bundle, never re-derived here. This module deliberately does
+    # not import the acquisition-side admission code: re-deciding admission
+    # from the bytes would make the packet a second, drifting record of why a
+    # text source was accepted.
+    representation = entry.get("representation", REPRESENTATION_HTML)
+    text_structure = (
+        {field: entry.get(field) for field in ADMISSION_EVIDENCE_FIELDS}
+        if representation == REPRESENTATION_PLAIN_TEXT else None
+    )
+    locate = (
+        find_item_one_span_text
+        if representation == REPRESENTATION_PLAIN_TEXT
+        else find_item_one_span_v2
+    )
     try:
-        start, end, boundary_kind = find_item_one_span_v2(raw)
+        start, end, boundary_kind = locate(raw)
     except IngestionError as exc:
         mapping = {
             "item_span_not_found": "missing_item_one",
@@ -351,7 +397,7 @@ def build_packet(
     # is explicitly missing.
     missing = sorted(set(PACKET_SECTIONS) - {ITEM_ONE_SECTION})
     payload = {
-        "packet_contract": PACKET_CONTRACT,
+        "packet_contract": packet_contract,
         "cik": cik,
         "company_id": company_id,
         "stratum": entry["stratum"],
@@ -382,6 +428,13 @@ def build_packet(
         "packet_byte_size": 0,
         "packet_sha256": "",
     }
+    if packet_contract == PACKET_CONTRACT_V2:
+        # Only a v0.2 packet carries these. A v0.1 packet must stay
+        # byte-identical to what it has always been, and packet_byte_size and
+        # packet_sha256 cover the payload, so adding a field to every packet
+        # would silently rewrite every historical hash.
+        payload["representation"] = representation
+        payload["text_structure"] = text_structure
     payload["packet_byte_size"] = len(
         canonical_packet_bytes(payload, omit=_SIZE_OMITS)
     )
@@ -413,6 +466,11 @@ def run_baseline_packet_build(
             "are allowed (no path separators)."
         )
     manifest, entries, bundle_sha = load_bundle(root, Path(bundle_dir))
+    # The packet generation follows the bundle's, not any single document's:
+    # a v0.2 bundle may carry html rows too, and they are v0.2 packets whose
+    # text_structure is null.
+    textual_bundle = manifest["bundle_contract"] == BUNDLE_CONTRACT_V2
+    packet_contract = PACKET_CONTRACT_V2 if textual_bundle else PACKET_CONTRACT
 
     config_path = Path(project_config_path)
     if not config_path.is_file():
@@ -448,6 +506,7 @@ def run_baseline_packet_build(
             baseline_cutoff=cutoff,
             baseline_cutoff_source=cutoff_source,
             route_validation=route_validation,
+            packet_contract=packet_contract,
         )
         if isinstance(built, UniverseBaselinePacket):
             result.packets.append(built)
@@ -550,7 +609,7 @@ def run_baseline_packet_build(
     )["schemas"]
     run_manifest = {
         "run_id": run_id,
-        "bundle_contract": BUNDLE_CONTRACT,
+        "bundle_contract": manifest["bundle_contract"],
         "bundle_manifest_sha256": bundle_sha,
         "bundle_provenance": dict(manifest["provenance"]),
         "route_validation": route_validation,
@@ -563,17 +622,26 @@ def run_baseline_packet_build(
             FAILURES_FILENAME: sha256(failures_payload).hexdigest(),
         },
         "run_timestamp": now().isoformat(),
-        "schema_versions": {
-            "universe_baseline_packet": schema_versions[
-                "universe_baseline_packet"
-            ],
-            "baseline_packet_manifest": schema_versions[
-                "baseline_packet_manifest"
-            ],
-            "baseline_primary_document_bundle": schema_versions[
-                "baseline_primary_document_bundle"
-            ],
-        },
+        "schema_versions": (
+            {
+                "universe_baseline_packet_v2": schema_versions[
+                    "universe_baseline_packet_v2"
+                ],
+                "baseline_packet_manifest_v2": schema_versions[
+                    "baseline_packet_manifest_v2"
+                ],
+            } if textual_bundle else {
+                "universe_baseline_packet": schema_versions[
+                    "universe_baseline_packet"
+                ],
+                "baseline_packet_manifest": schema_versions[
+                    "baseline_packet_manifest"
+                ],
+                "baseline_primary_document_bundle": schema_versions[
+                    "baseline_primary_document_bundle"
+                ],
+            }
+        ),
         "limitations": [
             "Fixture-first: packets are built only from locally supplied, "
             "hash-verified primary documents. This module performs no network "
@@ -595,7 +663,10 @@ def run_baseline_packet_build(
             "acquisition ceiling remains the only size bound.",
         ],
     }
-    schema = read_json(root / PACKET_MANIFEST_SCHEMA_RELATIVE_PATH)
+    schema = read_json(root / (
+        PACKET_MANIFEST_V2_SCHEMA_RELATIVE_PATH if textual_bundle
+        else PACKET_MANIFEST_SCHEMA_RELATIVE_PATH
+    ))
     errors = sorted(
         Draft202012Validator(schema).iter_errors(run_manifest),
         key=lambda e: e.json_path,
@@ -614,9 +685,18 @@ def run_baseline_packet_build(
     return result
 
 
+def packet_schema_path_for(packet: dict) -> Path:
+    """Which packet generation validates this record."""
+    return (
+        PACKET_V2_SCHEMA_RELATIVE_PATH
+        if packet.get("packet_contract") == PACKET_CONTRACT_V2
+        else PACKET_SCHEMA_RELATIVE_PATH
+    )
+
+
 def validate_packet_against_schema(repo_root: str | Path, packet: dict) -> None:
     """Raise if a packet record violates its canonical schema."""
-    schema = read_json(Path(repo_root) / PACKET_SCHEMA_RELATIVE_PATH)
+    schema = read_json(Path(repo_root) / packet_schema_path_for(packet))
     errors = sorted(
         Draft202012Validator(schema).iter_errors(packet),
         key=lambda e: e.json_path,

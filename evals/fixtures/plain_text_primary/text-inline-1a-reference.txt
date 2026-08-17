@@ -1,0 +1,21 @@
+<DOCUMENT>
+<TYPE>10-K
+<SEQUENCE>1
+<FILENAME>inline1a.txt
+<DESCRIPTION>ANNUAL REPORT
+<TEXT>
+Synthetic plain-text filing fixture; every CIK, accession, company and
+document is invented for methodological testing. No real filing data.
+
+FORM 10-K
+
+Item 1. Business.
+
+We operate two segments. See Item 1A. Risk Factors for a discussion
+of the risks affecting these segments.
+
+Item 2. Properties.
+
+Leased offices in two cities.
+</TEXT>
+</DOCUMENT>

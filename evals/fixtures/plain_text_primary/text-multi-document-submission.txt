@@ -1,0 +1,37 @@
+<SEC-DOCUMENT>0000074925-22-000002.txt
+<SEC-HEADER>synthetic
+</SEC-HEADER>
+<DOCUMENT>
+<TYPE>10-K
+<SEQUENCE>1
+<FILENAME>10k2021.txt
+<DESCRIPTION>ANNUAL REPORT
+<TEXT>
+Synthetic plain-text filing fixture; every CIK, accession, company and
+document is invented for methodological testing. No real filing data.
+
+FORM 10-K
+
+Item 1. Business.
+
+We own and operate regulated distribution assets in three states.
+
+Our customers are residential and commercial end users.
+
+Item 1A. Risk Factors.
+
+Weather variability affects demand.
+</TEXT>
+</DOCUMENT>
+<DOCUMENT>
+<TYPE>EX-21.1
+<SEQUENCE>2
+<FILENAME>ex21.txt
+<TEXT>
+Synthetic plain-text filing fixture; every CIK, accession, company and
+document is invented for methodological testing. No real filing data.
+
+Subsidiaries of the registrant.
+</TEXT>
+</DOCUMENT>
+</SEC-DOCUMENT>

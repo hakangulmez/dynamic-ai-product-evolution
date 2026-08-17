@@ -6284,6 +6284,98 @@ PDF companion). Modified: `select_primary_document`, the probe and
 primary-acquisition test files, `REPO_MANIFEST.md` with its count tests, and
 this log. No schema, no registry entry, and no plan contract changes.
 
+## ADR-097 — Plain-text primaries: a separate representation, not a disguise
+
+**Status.** Accepted. Fixture-first; no live request, no v0.3 plan created, no
+shard retried, no aggregate, no packet built from a live run.
+
+**Measurement.** The first controlled W3 domestic batch stopped on shard 2 at
+accession `0000074925-22-000002`, whose Document Format Files table declares
+Type `10-K` for exactly one row: `10k2021.txt`. The HTML route refused it
+`non_html_primary`, correctly — a `.txt` is not HTML — but a genuine annual
+report was therefore unreachable.
+
+**Decision: admit text as its own representation, never as pretend HTML.** A
+`.txt` may be selected only when the form-matching rows contain **no HTML at
+all** and only when the plan opts in. HTML always wins where both exist, so
+the existing route is unchanged. Text bytes are stored as
+`primary-<18-digit-accession>.txt`, never rewritten, renamed, or converted:
+`local_filename_for` is representation-aware, because a `.html` name on text
+bytes would be a silent conversion.
+
+**Admission is positive evidence, decided before any byte is retained.** Two
+shapes and nothing else. `single_sgml_document`: exactly one `<DOCUMENT>`
+whose `<TYPE>` equals the planned form and whose `<FILENAME>` equals the
+selected document. `bare_text`: no wrapper, but a **line-start** `FORM 10-K`
+or `FORM 10-KT` matching the planned form **and** a line-start Item 1 heading.
+A file is never admitted merely for lacking a wrapper. Multi-document
+submissions, ambiguous embedded documents, type or filename disagreement, and
+unsupported structure are recorded refusals. The check runs after the hop-2
+response and **before `write_bytes_once`**, so a rejected candidate leaves no
+byte on disk and only previously completed documents appear in the receipt.
+
+**Item 1 in text.** `find_item_one_span_text` reuses the existing heading and
+boundary patterns and the same end priority — Item 1A, then 1B, then Item 2 —
+replacing the HTML block guard with a line guard, because `_starts_a_block`
+measures bytes since the previous block close and so rejects every candidate
+in tagless prose. In-tier ambiguity refuses. `find_item_one_span` and
+`find_item_one_span_v2` are **byte-identical**.
+
+**The TOC-only limitation is preserved, not replaced.** The last-qualifying-
+match rule defeats a contents entry only when a real body heading follows it.
+Measured on the fixture: when the contents entry is the only qualifying match
+the finder takes it and returns a degenerate span of the contents line itself.
+That is the ADR-091 limitation carried forward and recorded, not a new
+unmeasured refusal threshold.
+
+**Passage granularity, stated as a limitation.** The normalizer is reused
+unchanged, and its block segmentation is HTML-driven, so a text Item 1 span
+normalizes to **exactly one passage** — measured on all six fixture packets.
+Recorded here, not fixed: blank-line segmentation would change what a passage
+means per representation, which is a measurement decision of its own and
+feeds the open packet-granularity question.
+
+**Provenance: written once, forwarded thereafter.** The four admission-
+evidence fields — `admission`, `document_blocks`, `declared_type`,
+`declared_filename` — are written at acquisition time into **both** the v0.2
+bundle document entry and the v0.6 acquisition manifest, present-and-null on
+HTML rows so absence can never be read as "not text". The v0.2 packet
+forwards them verbatim as `text_structure`; `baseline_packet.py` does not
+import the admission module, and a test proves forwarding by giving the
+bundle evidence that disagrees with the bytes and asserting the packet
+mirrors the bundle.
+
+**Succession, not widening.** Predecessors are retained byte-unchanged:
+bundle v0.1, packet v0.1, packet manifest v0.1, queue definition v0.1, and
+acquisition manifest v0.1/v0.2/v0.3/v0.4/v0.5 — none of which admits a `.txt`.
+Successors: `baseline_primary_document_bundle@0.2.0`,
+`universe_baseline_packet@0.2.0`, `baseline_packet_manifest@0.2.0`,
+`acquisition_queue_definition@0.2.0`, and
+`primary_document_acquisition_manifest@0.6.0`. `primary_document_request_plan`
+gains a code-governed `@0.3.0` requiring `admit_plain_text` to be exactly
+`true`; a plan admitting no plain text is a `@0.2.0` plan. The bundle advances
+to v0.2 only when a shard actually admits text, so an all-HTML shard emits
+exactly what it emits today. A v0.1 packet omits the two v0.2 fields entirely
+— enforced in the model serializer, because both are inside `packet_sha256`
+and emitting them would rewrite every historical packet hash. Registry 0.36.0
+→ 0.37.0, 81 → 86.
+
+**Lineage.** `configs/domestic_primary_document_queue_text.json` is a new
+committed v0.2 definition; the v0.1 one is byte-unchanged. Same carrier,
+filters, shard size and allowance, so membership is identical — 8,718 rows,
+8,526 accessions, 86 shards, 17,052 requests — but its definition hash
+differs, so **every shard plan hash differs** and v0.2-lineage artefacts do
+not bind against v0.3 plans. Shards 0 and 1 remain authoritative under the
+v0.2 lineage and are retained immutable; shard 2 requires a fresh v0.3
+planner run and **cannot reuse the v0.2 plan directory**. The settled retry
+sequence is: publish this increment, plan v0.3, re-run shard 0, re-run shard
+1, then retry shard 2, and aggregate only within the v0.3 lineage. None of
+that is done here.
+
+**Scope.** Item 1 acquisition and normalization only. No cover-page, DEI or
+XBRL parsing, no shell determination for text filings, no screening,
+classification or PCT extraction, and no third fetch.
+
 ## Open decisions
 
 - Required source packet by firm-year.

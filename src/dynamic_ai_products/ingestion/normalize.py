@@ -1027,3 +1027,82 @@ def find_item_one_span_v2(raw: bytes) -> tuple[int, int, str]:
         "boundary follows it",
         reason_code=_NO_END_BOUNDARY,
     )
+
+
+def _starts_a_text_line(raw: bytes, position: int) -> bool:
+    """Does this match begin a line, or sit inside a sentence?
+
+    The plain-text counterpart of :func:`_starts_a_block`. That guard measures
+    the bytes since the previous HTML block close, so in a document with no
+    tags the whole 4,000-byte window is prose and every candidate is rejected;
+    a text filing is therefore unreadable by the HTML path, not merely
+    awkward. Here the same job is done by the line: only whitespace may sit
+    between the preceding newline and the match, which is what separates a
+    heading from an inline ``see Item 1A`` cross-reference.
+    """
+    line_start = raw.rfind(b"\n", 0, position) + 1
+    return raw[line_start:position].strip() == b""
+
+
+def find_item_one_span_text(raw: bytes) -> tuple[int, int, str]:
+    """Locate Item 1 in a **plain-text** filing, naming its end boundary.
+
+    Same contract and same end-boundary priority as
+    :func:`find_item_one_span_v2` — Item 1A, then Item 1B, then Item 2 — and
+    the same heading and boundary patterns, so the two implementations cannot
+    disagree about what a heading is. Only the block guard differs, because
+    plain text has no blocks to open.
+
+    The body heading is the **last** qualifying Item 1 line, so a table of
+    contents followed by a real heading resolves to the real one. When the
+    only qualifying match *is* the contents entry there is nothing later to
+    prefer, and the span is taken from it: that is the **ADR-091 TOC-only
+    limitation**, preserved here rather than replaced by an unmeasured
+    refusal threshold.
+
+    Raises :class:`IngestionError` with ``item_span_not_found``,
+    ``ambiguous_end_boundary`` or ``no_end_boundary``, exactly as the HTML
+    finders do.
+    """
+    if not isinstance(raw, (bytes, bytearray)):
+        raise IngestionError(
+            "normalization input must be raw bytes",
+            reason_code="normalize_input_invalid",
+        )
+    raw = bytes(raw)
+    starts = [
+        m.start() for m in _ITEM_ONE_TEXT_RE.finditer(raw)
+        if _starts_a_text_line(raw, m.start())
+    ]
+    if not starts:
+        raise IngestionError(
+            "no line-start Item 1 heading was found in this text document",
+            reason_code=_ITEM_SPAN_NOT_FOUND,
+        )
+    body_start = max(starts)
+
+    for kind in END_BOUNDARY_PRIORITY:
+        after = [
+            m.start() for m in _BOUNDARY_TEXT_RES[kind].finditer(raw)
+            if m.start() > body_start and _starts_a_text_line(raw, m.start())
+        ]
+        if not after:
+            continue
+        if len(after) > 1:
+            raise IngestionError(
+                f"{len(after)} line-start {kind} headings follow Item 1; "
+                "the end boundary is ambiguous",
+                reason_code=_AMBIGUOUS_END_BOUNDARY,
+            )
+        if after[0] <= body_start:
+            raise IngestionError(
+                "the located Item 1 span is empty or inverted",
+                reason_code=_ITEM_SPAN_NOT_FOUND,
+            )
+        return body_start, after[0], kind
+
+    raise IngestionError(
+        "Item 1 is present but no line-start Item 1A, Item 1B or Item 2 "
+        "boundary follows it",
+        reason_code=_NO_END_BOUNDARY,
+    )
