@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "acquisition_queue_plan_manifest.schema.json",
+  "title": "Acquisition queue plan manifest",
+  "description": "Immutable record of one queue-planning run (ADR-095). Plans only: the run makes no request, downloads nothing and authorizes nothing. Shard membership is a pure function of the carrier bytes, the selection filters, the shard size and the index, so replanning is byte-identical. output_hashes covers every persisted shard plan and never this manifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "plan_manifest_contract",
+    "run_id",
+    "queue_id",
+    "queue_definition_sha256",
+    "carrier_provenance",
+    "selection",
+    "shards",
+    "counts",
+    "deferred_cohorts",
+    "output_hashes",
+    "run_timestamp",
+    "limitations"
+  ],
+  "properties": {
+    "plan_manifest_contract": {
+      "const": "acquisition_queue_plan_manifest@0.1.0"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "queue_id": {
+      "type": "string"
+    },
+    "queue_definition_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "carrier_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrier_run_id",
+        "carrier_manifest_sha256",
+        "freeze_record_sha256"
+      ],
+      "properties": {
+        "carrier_run_id": {
+          "type": "string"
+        },
+        "carrier_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "freeze_record_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stratum",
+        "forms",
+        "restricted",
+        "restricted_accessions"
+      ],
+      "properties": {
+        "stratum": {
+          "const": "domestic"
+        },
+        "forms": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "10-K",
+              "10-KT"
+            ]
+          }
+        },
+        "restricted": {
+          "type": "boolean"
+        },
+        "restricted_accessions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "shards": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shard_index",
+          "plan_filename",
+          "shard_plan_sha256",
+          "accessions",
+          "carrier_rows",
+          "planned_requests",
+          "max_retained_bytes"
+        ],
+        "properties": {
+          "shard_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "plan_filename": {
+            "type": "string"
+          },
+          "shard_plan_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "accessions": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "carrier_rows": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "planned_requests": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "max_retained_bytes": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrier_rows",
+        "unique_accessions",
+        "shards",
+        "shard_size",
+        "planned_requests",
+        "declared_retained_byte_budget"
+      ],
+      "properties": {
+        "carrier_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "unique_accessions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "shards": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "shard_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "planned_requests": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "declared_retained_byte_budget": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "deferred_cohorts": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "description": "Cohorts the frame and carrier preserve but this queue does not acquire."
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "description": "Every persisted shard plan. Never this manifest."
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

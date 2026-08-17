@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "acquisition_queue_execution_manifest.schema.json",
+  "title": "Acquisition queue execution manifest",
+  "description": "Immutable record of one queue-execution run (ADR-095). It authorizes exactly the shard indices it lists, at the request count the operator declared, and confers nothing on any other index, on aggregation, on determination or on packets. A shard is authoritative only when its run directory holds both a bundle manifest and an acquisition manifest; receipt presence is diagnostic and never decides authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "execution_manifest_contract",
+    "run_id",
+    "queue_id",
+    "queue_definition_sha256",
+    "plan_dir",
+    "authorized_shard_indices",
+    "on_shard_failure",
+    "stopped_at_shard_index",
+    "shards",
+    "counts",
+    "run_timestamp",
+    "limitations"
+  ],
+  "properties": {
+    "execution_manifest_contract": {
+      "const": "acquisition_queue_execution_manifest@0.1.0"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "queue_id": {
+      "type": "string"
+    },
+    "queue_definition_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "plan_dir": {
+      "type": "string"
+    },
+    "authorized_shard_indices": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "uniqueItems": true,
+      "description": "Enumerated by the operator. No value expands to the whole queue."
+    },
+    "on_shard_failure": {
+      "enum": [
+        "stop",
+        "continue"
+      ]
+    },
+    "stopped_at_shard_index": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "shards": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shard_index",
+          "shard_run_id",
+          "outcome",
+          "run_dir",
+          "shard_plan_sha256",
+          "acquisition_manifest_sha256",
+          "bundle_manifest_sha256",
+          "retained_bytes_total",
+          "failure_reason_code",
+          "receipt_present"
+        ],
+        "properties": {
+          "shard_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "shard_run_id": {
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "authoritative",
+              "failed",
+              "not_attempted"
+            ]
+          },
+          "run_dir": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "shard_plan_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "acquisition_manifest_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bundle_manifest_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retained_bytes_total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "failure_reason_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "receipt_present": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shards_requested",
+        "shards_authoritative",
+        "shards_failed",
+        "shards_not_attempted",
+        "expected_request_count",
+        "requests_authorized"
+      ],
+      "properties": {
+        "shards_requested": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "shards_authoritative": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shards_failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shards_not_attempted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_request_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "requests_authorized": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

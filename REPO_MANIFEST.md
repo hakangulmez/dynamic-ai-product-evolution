@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **737**
+Total tracked/scaffold files listed: **751**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -48,6 +48,7 @@ Total tracked/scaffold files listed: **737**
 - `configs/dera_fsds_canary_request_plan.json`
 - `configs/dera_fsds_full_request_plan.json`
 - `configs/dera_validation_adjudications.json`
+- `configs/domestic_primary_document_queue.json`
 - `configs/edgar_index_canary_request_plan.json`
 - `configs/edgar_index_full_request_plan.json`
 - `configs/filing_index_probe_plan.json`
@@ -57,19 +58,20 @@ Total tracked/scaffold files listed: **737**
 - `configs/model_routes.example.yaml`
 - `configs/pipeline_stages.yaml`
 - `configs/primary_document_canary_request_plan.json`
-- `configs/shell_validation_canary_request_plan.json`
 - `configs/project.yaml`
+- `configs/queue_canary_definition.json`
+- `configs/shell_validation_canary_request_plan.json`
 - `configs/source_types.yaml`
 - `configs/universe_sample_rules.yaml`
 - `configs/universe_taxonomy.yaml`
 - `data/README.md`
-- `data/registry/documentation_evidence_validation_vertex_ai_gemini_2_5_flash_v1.json`
 - `data/interim/.gitkeep`
 - `data/manifests/.gitkeep`
 - `data/normalized/.gitkeep`
 - `data/processed/.gitkeep`
 - `data/raw/.gitkeep`
 - `data/registry/.gitkeep`
+- `data/registry/documentation_evidence_validation_vertex_ai_gemini_2_5_flash_v1.json`
 - `data/registry/pilot_universe_packet_CIK0001404655.json`
 - `data/runs/.gitkeep`
 - `data/snapshots/.gitkeep`
@@ -145,6 +147,14 @@ Total tracked/scaffold files listed: **737**
 - `evals/change_requests/README.md`
 - `evals/expected/.gitkeep`
 - `evals/fixtures/README.md`
+- `evals/fixtures/acquisition_queue/carrier.jsonl`
+- `evals/fixtures/acquisition_queue/queue_definition.json`
+- `evals/fixtures/acquisition_queue/queue_definition_restricted.json`
+- `evals/fixtures/acquisition_queue/queue_definition_tight_budget.json`
+- `evals/fixtures/baseline_documents/0001999999-22-000001.txt`
+- `evals/fixtures/baseline_documents/0002777777-22-000005.txt`
+- `evals/fixtures/baseline_documents/expected_acquisition.json`
+- `evals/fixtures/baseline_documents/request_plan.json`
 - `evals/fixtures/baseline_packets/bundle_manifest.json`
 - `evals/fixtures/baseline_packets/expected_packets.json`
 - `evals/fixtures/baseline_packets/primary_10k_ixbrl.htm`
@@ -157,14 +167,6 @@ Total tracked/scaffold files listed: **737**
 - `evals/fixtures/dera_fsds/fixture_manifest.json`
 - `evals/fixtures/dera_fsds/sub_2022q4.tsv`
 - `evals/fixtures/dera_fsds/sub_2023q1.tsv`
-- `evals/fixtures/baseline_documents/0001999999-22-000001.txt`
-- `evals/fixtures/baseline_documents/0002777777-22-000005.txt`
-- `evals/fixtures/baseline_documents/expected_acquisition.json`
-- `evals/fixtures/baseline_documents/request_plan.json`
-- `evals/fixtures/filing_index_probe/0009000001-22-000001-index.htm`
-- `evals/fixtures/filing_index_probe/0009000002-22-000002-index.htm`
-- `evals/fixtures/filing_index_probe/expected_probe.json`
-- `evals/fixtures/filing_index_probe/request_plan.json`
 - `evals/fixtures/dera_fsds_archives/dera-2022q4.zip`
 - `evals/fixtures/dera_fsds_archives/dera-2023q1.zip`
 - `evals/fixtures/dera_fsds_archives/request_plan.json`
@@ -219,6 +221,10 @@ Total tracked/scaffold files listed: **737**
 - `evals/fixtures/evaluation_harness/validator_bundle_v2/validator_bundle_artifact.v2.json`
 - `evals/fixtures/evaluation_harness/validator_parameters/validator_rule_parameters.json`
 - `evals/fixtures/evaluation_harness/validator_parameters_v2/validator_rule_parameters.v2.json`
+- `evals/fixtures/filing_index_probe/0009000001-22-000001-index.htm`
+- `evals/fixtures/filing_index_probe/0009000002-22-000002-index.htm`
+- `evals/fixtures/filing_index_probe/expected_probe.json`
+- `evals/fixtures/filing_index_probe/request_plan.json`
 - `evals/fixtures/primary_documents/0009200001-22-000001-index.htm`
 - `evals/fixtures/primary_documents/0009200002-22-000002-index.htm`
 - `evals/fixtures/primary_documents/0009200003-22-000003-index.htm`
@@ -258,8 +264,8 @@ Total tracked/scaffold files listed: **737**
 - `evals/gold/draft/HUBS_NOW_reading_executor.md`
 - `evals/gold/draft/README.md`
 - `evals/gold/draft/_reading_instruction_opus.md`
-- `evals/regression/README.md`
 - `evals/registries/hubs_target_registry_v1.json`
+- `evals/regression/README.md`
 - `evals/reports/.gitkeep`
 - `evals/rubrics/MATCHING_RUBRIC.md`
 - `evals/rubrics/MEASUREMENT_RUBRIC.md`
@@ -319,6 +325,10 @@ Total tracked/scaffold files listed: **737**
 - `prompts/measurement/frontier_replicability.md`
 - `prompts/measurement/task_defensibility.md`
 - `pyproject.toml`
+- `schemas/acquisition_queue_aggregate_manifest.schema.json`
+- `schemas/acquisition_queue_definition.schema.json`
+- `schemas/acquisition_queue_execution_manifest.schema.json`
+- `schemas/acquisition_queue_plan_manifest.schema.json`
 - `schemas/adapter_enablement_record.schema.json`
 - `schemas/adapter_qualification_record.schema.json`
 - `schemas/baseline_document_acquisition_manifest.schema.json`
@@ -330,10 +340,6 @@ Total tracked/scaffold files listed: **737**
 - `schemas/company_universe_classification.schema.json`
 - `schemas/dera_fsds_acquisition_manifest.schema.json`
 - `schemas/dera_fsds_acquisition_manifest.v2.schema.json`
-- `schemas/evaluation_case.schema.json`
-- `schemas/evaluation_result.schema.json`
-- `schemas/evaluation_result.v2.schema.json`
-- `schemas/extraction_candidate_collection.schema.json`
 - `schemas/documentation_collection_receipt.schema.json`
 - `schemas/documentation_collection_receipt.v2.schema.json`
 - `schemas/documentation_collection_receipt.v3.schema.json`
@@ -342,6 +348,10 @@ Total tracked/scaffold files listed: **737**
 - `schemas/documentation_evidence_validation.schema.json`
 - `schemas/edgar_index_acquisition_manifest.schema.json`
 - `schemas/edgar_index_acquisition_manifest.v2.schema.json`
+- `schemas/evaluation_case.schema.json`
+- `schemas/evaluation_result.schema.json`
+- `schemas/evaluation_result.v2.schema.json`
+- `schemas/extraction_candidate_collection.schema.json`
 - `schemas/extraction_execution_outcome.schema.json`
 - `schemas/extraction_input_packet.schema.json`
 - `schemas/extraction_input_packet.v2.schema.json`
@@ -358,9 +368,9 @@ Total tracked/scaffold files listed: **737**
 - `schemas/filer_frame_manifest.schema.json`
 - `schemas/filing_index_probe_manifest.schema.json`
 - `schemas/filing_index_probe_manifest.v2.schema.json`
-- `schemas/frame_dera_validation_manifest.schema.json`
 - `schemas/firm_lineage.schema.json`
 - `schemas/firm_year_eligibility.schema.json`
+- `schemas/frame_dera_validation_manifest.schema.json`
 - `schemas/frontier_baseline.schema.json`
 - `schemas/ingestion_preflight_manifest.schema.json`
 - `schemas/live_call_authorization.schema.json`
@@ -370,6 +380,8 @@ Total tracked/scaffold files listed: **737**
 - `schemas/primary_document_acquisition_manifest.schema.json`
 - `schemas/primary_document_acquisition_manifest.v2.schema.json`
 - `schemas/primary_document_acquisition_manifest.v3.schema.json`
+- `schemas/primary_document_acquisition_manifest.v4.schema.json`
+- `schemas/primary_document_acquisition_manifest.v5.schema.json`
 - `schemas/product_candidate_availability_vocabulary.schema.json`
 - `schemas/product_consolidated_universe.schema.json`
 - `schemas/product_consolidation_output.schema.json`
@@ -448,19 +460,19 @@ Total tracked/scaffold files listed: **737**
 - `src/dynamic_ai_products/collection/__init__.py`
 - `src/dynamic_ai_products/collection/canonical_url.py`
 - `src/dynamic_ai_products/collection/coverage_v2.py`
-- `src/dynamic_ai_products/collection/documentation_policy.py`
+- `src/dynamic_ai_products/collection/discovery.py`
 - `src/dynamic_ai_products/collection/documentation_evidence_validation.py`
+- `src/dynamic_ai_products/collection/documentation_policy.py`
+- `src/dynamic_ai_products/collection/documentation_policy_v4.py`
+- `src/dynamic_ai_products/collection/documentation_policy_v5.py`
 - `src/dynamic_ai_products/collection/documentation_receipt.py`
 - `src/dynamic_ai_products/collection/documentation_receipt_v2.py`
 - `src/dynamic_ai_products/collection/documentation_receipt_v3.py`
 - `src/dynamic_ai_products/collection/documentation_receipt_v4.py`
 - `src/dynamic_ai_products/collection/documentation_receipt_v5.py`
-- `src/dynamic_ai_products/collection/documentation_policy_v4.py`
-- `src/dynamic_ai_products/collection/documentation_policy_v5.py`
 - `src/dynamic_ai_products/collection/documentation_routes.py`
 - `src/dynamic_ai_products/collection/documentation_routes_v4.py`
 - `src/dynamic_ai_products/collection/documentation_routes_v5.py`
-- `src/dynamic_ai_products/collection/discovery.py`
 - `src/dynamic_ai_products/collection/domains.py`
 - `src/dynamic_ai_products/collection/errors.py`
 - `src/dynamic_ai_products/collection/http_adapter.py`
@@ -511,6 +523,8 @@ Total tracked/scaffold files listed: **737**
 - `src/dynamic_ai_products/extraction/availability_vocabulary.py`
 - `src/dynamic_ai_products/extraction/budget_session.py`
 - `src/dynamic_ai_products/extraction/candidates.py`
+- `src/dynamic_ai_products/extraction/consolidation.py`
+- `src/dynamic_ai_products/extraction/contents_renderer.py`
 - `src/dynamic_ai_products/extraction/count_reconciliation.py`
 - `src/dynamic_ai_products/extraction/errors.py`
 - `src/dynamic_ai_products/extraction/execution_outcome.py`
@@ -521,8 +535,6 @@ Total tracked/scaffold files listed: **737**
 - `src/dynamic_ai_products/extraction/prediction_manifest.py`
 - `src/dynamic_ai_products/extraction/prompt_qualification.py`
 - `src/dynamic_ai_products/extraction/prompts.py`
-- `src/dynamic_ai_products/extraction/contents_renderer.py`
-- `src/dynamic_ai_products/extraction/consolidation.py`
 - `src/dynamic_ai_products/extraction/provider_adapter.py`
 - `src/dynamic_ai_products/extraction/raw_artifacts.py`
 - `src/dynamic_ai_products/extraction/routing_contract.py`
@@ -555,6 +567,7 @@ Total tracked/scaffold files listed: **737**
 - `src/dynamic_ai_products/sec_document_transport.py`
 - `src/dynamic_ai_products/sec_index_transport.py`
 - `src/dynamic_ai_products/universe/__init__.py`
+- `src/dynamic_ai_products/universe/acquisition_queue.py`
 - `src/dynamic_ai_products/universe/audit.py`
 - `src/dynamic_ai_products/universe/baseline_carrier.py`
 - `src/dynamic_ai_products/universe/classification.py`
@@ -588,7 +601,7 @@ Total tracked/scaffold files listed: **737**
 - `tests/collection/test_collection_publication_atomicity.py`
 - `tests/collection/test_coverage_v2.py`
 - `tests/collection/test_discovery.py`
-- `tests/collection/test_domains.py`
+- `tests/collection/test_documentation_evidence_validation.py`
 - `tests/collection/test_documentation_observation_recording.py`
 - `tests/collection/test_documentation_observation_recording_v4.py`
 - `tests/collection/test_documentation_observation_recording_v5.py`
@@ -600,10 +613,10 @@ Total tracked/scaffold files listed: **737**
 - `tests/collection/test_documentation_receipt_v3.py`
 - `tests/collection/test_documentation_receipt_v4.py`
 - `tests/collection/test_documentation_receipt_v5.py`
-- `tests/collection/test_documentation_evidence_validation.py`
 - `tests/collection/test_documentation_redirect_grammar.py`
 - `tests/collection/test_documentation_redirect_grammar_v4.py`
 - `tests/collection/test_documentation_redirect_grammar_v5.py`
+- `tests/collection/test_domains.py`
 - `tests/collection/test_http_adapter.py`
 - `tests/collection/test_manifests.py`
 - `tests/collection/test_no_supported_case.py`
@@ -653,12 +666,12 @@ Total tracked/scaffold files listed: **737**
 - `tests/evaluation/test_validators.py`
 - `tests/extraction/test_availability_vocabulary.py`
 - `tests/extraction/test_boundaries.py`
+- `tests/extraction/test_budget_session.py`
 - `tests/extraction/test_candidate_conformance.py`
+- `tests/extraction/test_candidates.py`
 - `tests/extraction/test_company_identity_binding.py`
 - `tests/extraction/test_consolidation.py`
 - `tests/extraction/test_contents_renderer.py`
-- `tests/extraction/test_budget_session.py`
-- `tests/extraction/test_candidates.py`
 - `tests/extraction/test_contract_pins.py`
 - `tests/extraction/test_count_reconciliation.py`
 - `tests/extraction/test_em_route_matrix.py`
@@ -702,6 +715,7 @@ Total tracked/scaffold files listed: **737**
 - `tests/providers/test_authorization.py`
 - `tests/providers/test_client_contract.py`
 - `tests/providers/test_client_contract_v2.py`
+- `tests/providers/test_contents_transmission.py`
 - `tests/providers/test_credential_non_disclosure.py`
 - `tests/providers/test_endpoint_grammar_v2.py`
 - `tests/providers/test_error_translation_seam.py`
@@ -710,7 +724,6 @@ Total tracked/scaffold files listed: **737**
 - `tests/providers/test_provider_boundaries.py`
 - `tests/providers/test_real_sdk_compatibility.py`
 - `tests/providers/test_request_config_mapping.py`
-- `tests/providers/test_contents_transmission.py`
 - `tests/providers/test_response_capture.py`
 - `tests/providers/test_retry_and_timeout_policy.py`
 - `tests/providers/test_sdk_factory.py`
@@ -718,6 +731,7 @@ Total tracked/scaffold files listed: **737**
 - `tests/schema/test_schemas_are_valid.py`
 - `tests/temporal/test_temporal_rule.py`
 - `tests/ui/test_local_ui_scaffold.py`
+- `tests/universe/test_acquisition_queue.py`
 - `tests/universe/test_baseline_carrier.py`
 - `tests/universe/test_dera_acquisition.py`
 - `tests/universe/test_document_acquisition.py`

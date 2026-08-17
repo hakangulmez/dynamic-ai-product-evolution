@@ -1,0 +1,41 @@
+{
+  "queue_contract": "acquisition_queue_definition@0.1.0",
+  "queue_id": "fixture-queue",
+  "description": "Synthetic queue definition for fixture-replay planning and execution. Every CIK, accession and document is invented for methodological testing; no real filing data. Three in-scope accessions shard 2+1; one FPI row and one post-baseline row must be filtered out. Possessing this definition authorizes no request.",
+  "carrier": {
+    "relative_path": "evals/fixtures/acquisition_queue/carrier.jsonl",
+    "carrier_run_id": "synthetic-fixture-carrier",
+    "carrier_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "freeze_record_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "selection": {
+    "stratum": "domestic",
+    "forms": [
+      "10-K",
+      "10-KT"
+    ]
+  },
+  "shard_size": 2,
+  "per_accession_allowance_bytes": 1048576,
+  "max_metadata_bytes": 8388608,
+  "max_document_bytes": 268435456,
+  "base_url": "https://www.sec.gov/Archives/",
+  "route_validation": {
+    "probe_run_id": "synthetic-fixture-probe",
+    "probe_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "covered_accessions": 3,
+    "note": "URL-route grammar only, for the probe's own accessions; never selection evidence for any firm in this queue."
+  },
+  "deferred_cohorts": [
+    {
+      "stratum": "fpi_extension",
+      "forms": [
+        "20-F",
+        "40-F"
+      ],
+      "rows": 1,
+      "accessions": 1,
+      "reason": "preserved by the carrier; form enum admits 10-K/10-KT only"
+    }
+  ]
+}

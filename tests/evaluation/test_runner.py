@@ -1304,7 +1304,12 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # ixt:fixed-true on XBRL Transformation Registry authority. The v0.1
     # files are retained byte-unchanged and stay the only validators for the
     # completed v0.1 canary artifacts; nothing migrates.
-    assert declared == len(paths) == 737
+    # 751 = 737 + the 14 W3 acquisition-queue paths (ADR-095): the queue
+    # module and its test file, four queue schemas, the two budgeted
+    # acquisition-manifest successors (fixture v0.4 and sec_live v0.5), the
+    # full and restricted-canary queue definitions, and four queue fixtures.
+    # The historical v0.1, v0.2 and v0.3 manifest schemas are byte-unchanged.
+    assert declared == len(paths) == 751
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

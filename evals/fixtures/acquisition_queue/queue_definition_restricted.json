@@ -1,0 +1,45 @@
+{
+  "queue_contract": "acquisition_queue_definition@0.1.0",
+  "queue_id": "fixture-queue-restricted",
+  "description": "Restricted synthetic cohort naming exactly two accessions. Shard indices are relative to this definition only and are not shards of any wider queue.",
+  "carrier": {
+    "relative_path": "evals/fixtures/acquisition_queue/carrier.jsonl",
+    "carrier_run_id": "synthetic-fixture-carrier",
+    "carrier_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "freeze_record_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "selection": {
+    "stratum": "domestic",
+    "forms": [
+      "10-K",
+      "10-KT"
+    ],
+    "restricted_accessions": [
+      "0009200002-22-000002",
+      "0009200003-22-000003"
+    ]
+  },
+  "shard_size": 1,
+  "per_accession_allowance_bytes": 1048576,
+  "max_metadata_bytes": 8388608,
+  "max_document_bytes": 268435456,
+  "base_url": "https://www.sec.gov/Archives/",
+  "route_validation": {
+    "probe_run_id": "synthetic-fixture-probe",
+    "probe_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "covered_accessions": 3,
+    "note": "URL-route grammar only, for the probe's own accessions; never selection evidence for any firm in this queue."
+  },
+  "deferred_cohorts": [
+    {
+      "stratum": "fpi_extension",
+      "forms": [
+        "20-F",
+        "40-F"
+      ],
+      "rows": 1,
+      "accessions": 1,
+      "reason": "preserved by the carrier; form enum admits 10-K/10-KT only"
+    }
+  ]
+}

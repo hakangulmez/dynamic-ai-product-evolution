@@ -1,0 +1,6 @@
+{"cik": "0009200001", "baseline_accession": "0009200001-22-000001", "baseline_form": "10-K", "baseline_filing_date": "2022-09-15", "stratum": "domestic", "baseline_status": "baseline_candidate"}
+{"cik": "0009200002", "baseline_accession": "0009200002-22-000002", "baseline_form": "10-KT", "baseline_filing_date": "2022-08-05", "stratum": "domestic", "baseline_status": "baseline_candidate"}
+{"cik": "0009200004", "baseline_accession": "0009200003-22-000003", "baseline_form": "10-K", "baseline_filing_date": "2022-10-01", "stratum": "domestic", "baseline_status": "baseline_candidate"}
+{"cik": "0009200003", "baseline_accession": "0009200003-22-000003", "baseline_form": "10-K", "baseline_filing_date": "2022-10-01", "stratum": "domestic", "baseline_status": "baseline_candidate"}
+{"cik": "0009200005", "baseline_accession": "0009200005-22-000005", "baseline_form": "20-F", "baseline_filing_date": "2022-05-05", "stratum": "fpi_extension", "baseline_status": "baseline_candidate"}
+{"cik": "0009200006", "baseline_accession": null, "baseline_form": null, "baseline_filing_date": null, "stratum": "domestic", "baseline_status": "post_baseline_entrant"}

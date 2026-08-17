@@ -928,6 +928,179 @@ def test_committed_canary_plan_request_accounting():
     assert len({p.accession for p in planned}) == 6
 
 
+# --- the four-way contract matrix (plan v0.1/v0.2 x fixture/sec_live) -------
+
+
+ACQ_V4_SCHEMA = (
+    ROOT / "schemas" / "primary_document_acquisition_manifest.v4.schema.json"
+)
+ACQ_V5_SCHEMA = (
+    ROOT / "schemas" / "primary_document_acquisition_manifest.v5.schema.json"
+)
+
+
+def _budgeted_payload(budget: int) -> dict:
+    payload = _plan_payload()
+    payload["plan_contract"] = "primary_document_request_plan@0.2.0"
+    payload["max_retained_bytes"] = budget
+    return payload
+
+
+def _errs(schema_path: Path, payload: dict) -> list:
+    return list(Draft202012Validator(read_json(schema_path)).iter_errors(payload))
+
+
+def test_historical_schemas_are_byte_unchanged():
+    """v0.1, v0.2 and v0.3 keep their own contract; nothing was widened."""
+    for path, contract in (
+        (ACQ_SCHEMA, "primary_document_request_plan@0.1.0"),
+        (ACQ_V2_SCHEMA, "primary_document_request_plan@0.1.0"),
+        (ACQ_V3_SCHEMA, "primary_document_request_plan@0.1.0"),
+    ):
+        schema = read_json(path)
+        assert schema["properties"]["plan_contract"]["const"] == contract
+        assert "retained_byte_budget" not in schema["properties"]
+        assert schema["additionalProperties"] is False
+
+
+def test_v4_and_v5_declare_plan_v02_and_require_the_budget_fields():
+    for path, key in ((ACQ_V4_SCHEMA, "primary_document_acquisition_manifest_v4"),
+                      (ACQ_V5_SCHEMA, "primary_document_acquisition_manifest_v5")):
+        schema = read_json(path)
+        assert schema["properties"]["plan_contract"]["const"] == (
+            "primary_document_request_plan@0.2.0"
+        )
+        for field in ("retained_byte_budget", "retained_bytes_total",
+                      "budget_enforcement"):
+            assert field in schema["required"], (path.name, field)
+        assert schema["properties"]["schema_versions"]["required"] == [key]
+        assert schema["additionalProperties"] is False
+    # The successors differ by transport lineage, not only by the budget.
+    assert "transport_contract" in read_json(ACQ_V5_SCHEMA)["required"]
+    assert "transport_contract" not in read_json(ACQ_V4_SCHEMA)["required"]
+
+
+def test_fixture_v02_run_validates_against_v4_and_is_rejected_by_v01(tmp_path):
+    plan = _write_plan(tmp_path / "p.json", _budgeted_payload(10_000_000))
+    result = _acquire(tmp_path, plan=plan)
+    manifest = read_json(result.run_dir / ACQUISITION_MANIFEST_FILENAME)
+    assert manifest["plan_contract"] == "primary_document_request_plan@0.2.0"
+    assert set(manifest["schema_versions"]) == {
+        "primary_document_acquisition_manifest_v4"
+    }
+    assert manifest["retained_byte_budget"] == 10_000_000
+    assert manifest["retained_bytes_total"] == sum(
+        a["source_byte_length"] for a in manifest["acquisitions"]
+    )
+    assert _errs(ACQ_V4_SCHEMA, manifest) == []
+    assert _errs(ACQ_SCHEMA, manifest), "a v0.2 fixture manifest is not a v0.1 one"
+    assert _errs(ACQ_V5_SCHEMA, manifest), "fixture and sec_live must not mix"
+
+
+def test_fixture_v01_run_still_validates_against_the_unchanged_v01(tmp_path):
+    result = _acquire(tmp_path)
+    manifest = read_json(result.run_dir / ACQUISITION_MANIFEST_FILENAME)
+    assert manifest["plan_contract"] == "primary_document_request_plan@0.1.0"
+    assert set(manifest["schema_versions"]) == {
+        "primary_document_acquisition_manifest"
+    }
+    assert "retained_byte_budget" not in manifest
+    assert _errs(ACQ_SCHEMA, manifest) == []
+    assert _errs(ACQ_V4_SCHEMA, manifest), "v0.1 must not validate as v0.4"
+
+
+def test_live_v02_run_validates_against_v5_and_is_rejected_by_v3(tmp_path):
+    plan = _write_plan(tmp_path / "p.json", _budgeted_payload(10_000_000))
+    result = _acquire(tmp_path, plan=plan,
+                      transport_identity=SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY)
+    manifest = read_json(result.run_dir / ACQUISITION_MANIFEST_FILENAME)
+    assert manifest["transport_kind"] == "sec_live"
+    assert set(manifest["schema_versions"]) == {
+        "primary_document_acquisition_manifest_v5"
+    }
+    assert _errs(ACQ_V5_SCHEMA, manifest) == []
+    assert _errs(ACQ_V3_SCHEMA, manifest), "a v0.2 live manifest is not a v0.3 one"
+    assert _errs(ACQ_V4_SCHEMA, manifest), "sec_live and fixture must not mix"
+
+
+def test_live_v01_run_still_validates_against_the_unchanged_v3(tmp_path):
+    result = _acquire(tmp_path, transport_identity=SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY)
+    manifest = read_json(result.run_dir / ACQUISITION_MANIFEST_FILENAME)
+    assert set(manifest["schema_versions"]) == {
+        "primary_document_acquisition_manifest_v3"
+    }
+    assert _errs(ACQ_V3_SCHEMA, manifest) == []
+    assert _errs(ACQ_V5_SCHEMA, manifest), "v0.3 must not validate as v0.5"
+
+
+def test_budget_refusal_writes_no_authoritative_manifest(tmp_path):
+    """Checked against retained bytes, and the refused document is not written."""
+    plan = _write_plan(tmp_path / "p.json", _budgeted_payload(1))
+    result = _acquire(tmp_path, plan=plan)
+    assert not (result.run_dir / ACQUISITION_MANIFEST_FILENAME).exists()
+    assert not (result.run_dir / BUNDLE_MANIFEST_FILENAME).exists()
+    receipt = read_json(result.run_dir / FAILURE_RECEIPT_FILENAME)
+    assert receipt["reason_code"] == "shard_retained_byte_budget_exhausted"
+    assert receipt["retained_raw_filenames"] == []
+    assert not list(result.run_dir.glob("primary-*.html"))
+    assert "max_retained_bytes 1" in receipt["detail"]
+
+
+def test_budget_is_not_read_from_content_length(tmp_path):
+    """A declared length far below the body must not buy extra headroom."""
+    payload = _budgeted_payload(600)
+    plan = _write_plan(tmp_path / "p.json", payload)
+
+    def lying_primary(url: str):
+        real = make_primary_document_fixture_replay_transport(
+            FIXTURE_DIR, max_bytes=268435456)(url)
+        return DocumentTransportResponse(
+            status_code=real.status_code, final_url=real.final_url,
+            content=real.content, declared_content_length=1,
+            bytes_received=real.bytes_received,
+        )
+
+    result = _acquire(tmp_path, plan=plan, primary_transport=lying_primary)
+    receipt = read_json(result.run_dir / FAILURE_RECEIPT_FILENAME)
+    assert receipt["reason_code"] == "shard_retained_byte_budget_exhausted"
+
+
+def test_plan_v01_may_not_declare_a_budget(tmp_path):
+    payload = _plan_payload()
+    payload["max_retained_bytes"] = 1000
+    with pytest.raises(PrimaryDocumentPlanError, match="0.2.0 field"):
+        load_request_plan(_write_plan(tmp_path / "p.json", payload))
+
+
+def test_plan_v02_must_declare_a_budget(tmp_path):
+    payload = _plan_payload()
+    payload["plan_contract"] = "primary_document_request_plan@0.2.0"
+    with pytest.raises(PrimaryDocumentPlanError, match="requires max_retained_bytes"):
+        load_request_plan(_write_plan(tmp_path / "p.json", payload))
+
+
+@pytest.mark.parametrize("value", [0, -1, "1000", 1.5, True])
+def test_budget_must_be_a_positive_integer(tmp_path, value):
+    payload = _budgeted_payload(1)
+    payload["max_retained_bytes"] = value
+    with pytest.raises(PrimaryDocumentPlanError, match="positive integer"):
+        load_request_plan(_write_plan(tmp_path / "p.json", payload))
+
+
+def test_an_unknown_plan_contract_is_refused(tmp_path):
+    payload = _plan_payload()
+    payload["plan_contract"] = "primary_document_request_plan@9.9.9"
+    with pytest.raises(PrimaryDocumentPlanError, match="must declare one of"):
+        load_request_plan(_write_plan(tmp_path / "p.json", payload))
+
+
+def test_both_committed_v01_plans_are_unchanged_and_still_load():
+    for path in (CANARY_PLAN, SHELL_PLAN):
+        _, fields, _ = load_request_plan(path)
+        assert fields["plan_contract"] == "primary_document_request_plan@0.1.0"
+        assert fields["max_retained_bytes"] is None
+
+
 # --- committed shell-validation canary plan (planned, never executed) -------
 
 

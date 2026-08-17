@@ -906,7 +906,12 @@ def test_repo_manifest_count_and_paths():
     # ixt:fixed-true on XBRL Transformation Registry authority. The v0.1
     # files are retained byte-unchanged and stay the only validators for the
     # completed v0.1 canary artifacts; nothing migrates.
-    assert "Total tracked/scaffold files listed: **737**" in text
+    # 751 = 737 + the 14 W3 acquisition-queue paths (ADR-095): the queue
+    # module and its test file, four queue schemas, the two budgeted
+    # acquisition-manifest successors (fixture v0.4 and sec_live v0.5), the
+    # full and restricted-canary queue definitions, and four queue fixtures.
+    # The historical v0.1, v0.2 and v0.3 manifest schemas are byte-unchanged.
+    assert "Total tracked/scaffold files listed: **751**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

@@ -6074,6 +6074,155 @@ two cases and must be read before any group is judged. Zero `true` across rows
 15–18 falsifies H2 and would mean no observed shell exclusion exists in this
 slice. A resolved fact at row 22 falsifies H4.
 
+## ADR-095 — W3: batch primary-document acquisition queue, fixture-first
+
+**Status.** Accepted. Fixture-first; no live request, no download, neither
+canary rerun, and no cohort-scale run authorized here.
+
+**Problem.** The committed two-hop acquisition runner acquires a plan. It has
+no way to cover a cohort: nothing derives plans from the frozen carrier,
+nothing bounds how much a run may retain, and nothing distinguishes a
+completed batch from an abandoned one.
+
+**Scope, stated separately.** In scope is the **domestic 10-K/10-KT** queue,
+derived from `universe-baseline-carrier-frame-v1-20260816`: **8,718 carrier
+rows over 8,526 unique accessions**, so **17,052 requests** at two per
+accession, and 86 shards at `shard_size` 100. Dedup is real — 134 shared
+accessions cover 326 rows, so 8,526 fetches serve 8,718 rows. The **FPI
+extension** (1,198 rows, 1,193 accessions, 1,014 20-F and 184 40-F) is
+**preserved and deferred, not excluded**: it is recorded in every queue
+definition's `deferred_cohorts`, because the acquisition form enum admits
+10-K/10-KT only and FPI cover-page structure has never been measured here.
+**The four shell-canary exclusions do not reduce this queue**: determinations
+exist for 23 rows only, and none can exist before acquisition, because
+determination reads the document this queue fetches.
+
+**Three separately gated stages.** A **planner** derives shard plans, an
+**executor** runs an operator-named allowlist, and an **aggregator** reports
+coverage. Each writes its own governed manifest, and each is a separate
+command.
+
+**Shard plans are artefacts, not arguments.** The planner writes every plan
+write-once and hashes each into a plan manifest. **Before any run directory or
+transport exists**, the executor loads and schema-validates that planner
+manifest from the plan directory and verifies, for every requested shard, that
+the manifest's `queue_definition_sha256` equals the named definition, that it
+**enumerates** the shard index under its exact plan filename, that its
+`output_hashes` **records that artefact** and the bytes on disk hash to the
+recorded value, and that the recorded `shard_plan_sha256` equals the plan
+regenerated from the definition. Only then does it compare the artefact **byte
+for byte** and execute the persisted file. A directory holding a byte-identical
+shard plan but no valid planner manifest is not a plan directory and carries no
+authority. Because the whole allowlist is verified first, a missing, corrupt,
+mismatched or unenumerated artefact leaves **no execution run directory**
+behind. The executor never runs an ephemeral or hand-supplied plan, and
+`--request-plan` is refused outright in queue mode.
+
+**Determinism.** Membership is a pure function of (carrier bytes, filters,
+shard size, index): accessions are sorted lexicographically and sliced. No
+clock, no randomness, no cursor. Complete carrier groups cannot straddle a
+boundary, because shards partition accessions and each accession carries its
+whole row group.
+
+**The byte budget is enforced inside the runner, not around it.** A planner or
+aggregator wrapped around the runner cannot bound disk: the runner writes each
+primary itself, and `primary_document_request_plan@0.1.0` declares only
+per-document ceilings, so a post-hoc check would observe an overrun that had
+already happened. `@0.2.0` therefore adds a required `max_retained_bytes`, and
+the runner checks `retained + len(content) > budget` **immediately before**
+`write_bytes_once`, against the materialised body length and never against
+Content-Length, which understates retained bytes by 7.8x-21.4x in measured
+live runs and is sometimes absent entirely. Disk never exceeds the budget, not
+even by one document: the over-budget document is discarded unwritten and the
+receipt carries `shard_retained_byte_budget_exhausted`. **Transient memory is
+not bounded by this** — it stays bounded by the per-document ceiling, because
+the transport materialises a body before the runner sees its length. Making
+the *download* stop early would need a per-document effective bound and would
+collide with the runner's fail-closed invariant that the transport's bound
+equals the plan's `max_document_bytes`; that is the known follow-up and is
+deliberately out of scope.
+
+**The complete contract matrix.** The runner selects its output schema by
+transport kind, so a budgeted **fixture** run needed a successor just as much
+as a live one. Flat numbering is not an invention here: the lineage already
+interleaves transports — v0.1 is the fixture schema, v0.2 and v0.3 are
+sec_live — so v0.4 continues the fixture lineage and v0.5 the sec_live one.
+
+| Transport | Plan | Manifest schema | Version |
+| --- | --- | --- | --- |
+| fixture | v0.1 | `…manifest.schema.json` **unchanged** | 0.1.0 |
+| sec_live | v0.1 | `…manifest.v3.schema.json` **unchanged** | 0.3.0 |
+| fixture | v0.2 | **new** `…manifest.v4.schema.json` | 0.4.0 |
+| sec_live | v0.2 | **new** `…manifest.v5.schema.json` | 0.5.0 |
+
+**No schema is permissive.** Every schema in the lineage sets
+`additionalProperties: false` and requires exactly its own `schema_versions`
+key, so a v0.2 fixture manifest is rejected by v0.1, a v0.2 live manifest is
+rejected by v0.3, and v0.4 and v0.5 reject each other. v0.1, v0.2 and v0.3 are
+retained **byte-unchanged**, and both committed v0.1 plans still load and
+still produce their historical manifests.
+
+**Candidacy, authority, and the two failure shapes.** A run directory holding
+**both** a bundle manifest and an acquisition manifest is a **candidate for
+admission** — presence, and nothing more. Two files with the right names are
+not evidence. **Executor and aggregator alike admit a candidate as
+authoritative only after its content binds**: the acquisition manifest must
+validate against the applicable budgeted successor (v0.5 for `sec_live`, v0.4
+for fixture replay), declare `primary_document_request_plan@0.2.0`, carry a
+`plan_sha256` equal to the regenerated shard plan hash, report accession,
+carrier-row, bundle-entry and request counts consistent with that shard, record
+`retained_bytes_total` no greater than the shard budget, and hold an output
+hash for `bundle_manifest.json` matching the bundle bytes on disk. A candidate
+that fails any of these raises `ShardIntegrityError` and is **never recorded as
+authoritative**: no execution manifest may label it so, no aggregate is
+written, and it is not downgraded to ordinary partial coverage, because corrupt
+or mismatched evidence is an integrity error rather than an incomplete shard.
+The same binding decides whether an earlier run counts as completed work that
+blocks re-execution. A **handled** failure also writes a receipt; an
+**interrupted or crashed** shard may write nothing at all. Receipt presence
+stays **diagnostic only** — never read as success when missing, never the sole
+failure marker when present — and both shapes remain non-authoritative and
+ineligible for aggregation.
+
+**Authorization boundary.** The executor requires an enumerated
+`--shard-indices` allowlist and an `--expected-request-count` that must equal
+the computed total, so the scale being authorized is stated rather than
+discovered. There is no value that expands to the whole queue: `all`, ranges
+and empty segments are all refused. `--on-shard-failure` is operator-declared
+with no default. An index that already has an authoritative run is refused, so
+resume means naming the non-authoritative indices. The executor writes no
+aggregate.
+
+**The live canary is a cohort, not two shards of the full queue.**
+`configs/queue_canary_definition.json` enumerates six accessions explicitly
+and shards them 3 + 3; **its indices 0 and 1 are relative only to those six**,
+and the full queue's shard 0 contains entirely different accessions. It plans
+to 12 requests and 14 bundle rows, and covers two shared accessions (3 and 7
+carrier rows), two 10-KT filings, both measured href forms, and the Spire
+filename-plus-source-hash reproducibility control. Its rederivation test
+proves every selected accession carries its **complete** carrier group. The
+canary is **not run here**.
+
+**Budget evidence.** Measured over 18 accessions in two completed live runs:
+primaries total 53,746,436 bytes, mean 2,985,913, median 2,624,373, max
+6,499,830. The 12 MiB per-accession allowance is roughly twice the observed
+maximum and is a **bound, not a prediction**; a shard that legitimately
+exceeds it fails closed and must be re-planned under a new plan hash.
+Extrapolating the mean to 8,526 accessions gives ~25.6 GB and the maximum
+~55.6 GB, but that is extrapolation from n=18, not a measurement.
+
+**Gates.** Queue fixture tests → review → 12-request live queue canary →
+review → controlled batch authorization for an explicit shard list → per
+completed authoritative shard, local shell determination and packet build →
+later 00D high-recall screen. Each arrow is a separate authorization.
+
+**Scope.** Added: the queue module and its test file, four queue schemas, the
+two budgeted manifest successors, two committed queue definitions and four
+queue fixtures — fourteen paths. Modified: the acquisition runner (plan v0.2,
+the pre-write budget check, the v4/v5 branches, one reason code), the pipeline
+entrypoint (three modes), the schema registry (0.35.0 → 0.36.0, 75 → 81),
+`REPO_MANIFEST.md` (737 → 751), the count and pinned-hash tests, and this log.
+
 ## Open decisions
 
 - Required source packet by firm-year.

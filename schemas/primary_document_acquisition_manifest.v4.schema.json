@@ -1,0 +1,440 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "primary_document_acquisition_manifest.v4.schema.json",
+  "title": "Primary-document acquisition manifest (fixture replay, budgeted v0.4)",
+  "description": "Immutable run record of one two-hop primary annual-report acquisition (W2-C, ADR-092): the filing index page, then the type-selected primary HTML document, each under its own plan-owned ceiling. bundle_manifest.json is the governed input marker that build-baseline-packets consumes; this manifest together with that bundle evidences a complete successful acquisition run, which is operational policy rather than a requirement the packet builder imposes. output_hashes covers the bundle manifest and every raw primary and never this manifest itself: the bundle names its producing run by id without hashing it back, so provenance is a directed graph with no cycle. One active transport kind is recorded, with the two hops recorded separately because their plan-owned ceilings differ while their contract hashes are equal \u2014 the byte bound is deliberately not part of the transport contract. Live sec_live runs are written under the v0.2 successor schema; transport_kind here is fixture_replay only and no embedded transport contract is admitted. directory_cik is required to equal the lowest carrier-row CIK sharing the accession and is enforced at plan load, before any URL is derived. ground_truth_basis states exactly what the plan supplied and the run then checked \u2014 none, expected_filename_only, or expected_filename_and_source_sha256 \u2014 and never claims source-byte ground truth that was not supplied; a source hash may not appear without an expected filename, so the three states are exhaustive. Version 0.4.0/0.5.0 records the shard-owned cumulative retained-byte bound introduced by primary_document_request_plan@0.2.0. The historical v0.1, v0.2 and v0.3 schemas are retained byte-unchanged and remain the only validators for artefacts written under plan v0.1; no schema in this lineage admits two histories, because each requires its own schema_versions key under additionalProperties=false.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "plan_contract",
+    "plan_sha256",
+    "base_url",
+    "transport_kind",
+    "metadata_hop",
+    "primary_document_hop",
+    "carrier_provenance",
+    "route_validation",
+    "acquisitions",
+    "counts",
+    "reconciliation",
+    "output_hashes",
+    "run_timestamp",
+    "schema_versions",
+    "limitations",
+    "retained_byte_budget",
+    "retained_bytes_total",
+    "budget_enforcement"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "plan_contract": {
+      "const": "primary_document_request_plan@0.2.0"
+    },
+    "plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "base_url": {
+      "const": "https://www.sec.gov/Archives/"
+    },
+    "transport_kind": {
+      "const": "fixture_replay"
+    },
+    "metadata_hop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transport_contract_hash",
+        "max_bytes",
+        "ceiling_enforcement"
+      ],
+      "properties": {
+        "transport_contract_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ceiling_enforcement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mechanism",
+            "content_length_preflight",
+            "stream_chunk_bytes",
+            "max_transport_bytes"
+          ],
+          "properties": {
+            "mechanism": {
+              "enum": [
+                "streaming_chunk_bound",
+                "bounded_local_read"
+              ]
+            },
+            "content_length_preflight": {
+              "type": "boolean"
+            },
+            "stream_chunk_bytes": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "max_transport_bytes": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "primary_document_hop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transport_contract_hash",
+        "max_bytes",
+        "ceiling_enforcement"
+      ],
+      "properties": {
+        "transport_contract_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ceiling_enforcement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mechanism",
+            "content_length_preflight",
+            "stream_chunk_bytes",
+            "max_transport_bytes"
+          ],
+          "properties": {
+            "mechanism": {
+              "enum": [
+                "streaming_chunk_bound",
+                "bounded_local_read"
+              ]
+            },
+            "content_length_preflight": {
+              "type": "boolean"
+            },
+            "stream_chunk_bytes": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "max_transport_bytes": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "carrier_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrier_run_id",
+        "carrier_manifest_sha256",
+        "freeze_record_sha256"
+      ],
+      "properties": {
+        "carrier_run_id": {
+          "type": "string"
+        },
+        "carrier_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "freeze_record_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "route_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "probe_run_id",
+        "probe_manifest_sha256",
+        "covered_accessions",
+        "note"
+      ],
+      "properties": {
+        "probe_run_id": {
+          "type": "string"
+        },
+        "probe_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "covered_accessions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "acquisitions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "accession",
+          "form",
+          "directory_cik",
+          "filing_index_url",
+          "filing_index_final_url",
+          "filing_index_status",
+          "filing_index_byte_length",
+          "filing_index_response_sha256",
+          "candidate_count",
+          "selected_document",
+          "href_form",
+          "primary_url",
+          "primary_final_url",
+          "primary_status",
+          "local_filename",
+          "source_sha256",
+          "source_byte_length",
+          "mapped_carrier_rows",
+          "retrieved_at",
+          "ground_truth_basis"
+        ],
+        "properties": {
+          "accession": {
+            "type": "string",
+            "pattern": "^\\d{10}-\\d{2}-\\d{6}$"
+          },
+          "form": {
+            "enum": [
+              "10-K",
+              "10-KT"
+            ]
+          },
+          "directory_cik": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "filing_index_url": {
+            "type": "string",
+            "pattern": "^https://www\\.sec\\.gov/Archives/edgar/data/\\d{1,10}/\\d{18}/\\d{10}-\\d{2}-\\d{6}-index\\.htm$"
+          },
+          "filing_index_final_url": {
+            "type": "string"
+          },
+          "filing_index_status": {
+            "const": 200
+          },
+          "filing_index_byte_length": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "filing_index_response_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "candidate_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "selected_document": {
+            "type": "string",
+            "pattern": "(?i)\\.(htm|html)$"
+          },
+          "href_form": {
+            "enum": [
+              "direct",
+              "viewer"
+            ]
+          },
+          "primary_url": {
+            "type": "string",
+            "pattern": "^https://www\\.sec\\.gov/Archives/edgar/data/\\d{1,10}/\\d{18}/[^/]+$"
+          },
+          "primary_final_url": {
+            "type": "string"
+          },
+          "primary_status": {
+            "const": 200
+          },
+          "local_filename": {
+            "type": "string",
+            "pattern": "^primary-\\d{18}\\.html$"
+          },
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "source_byte_length": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "mapped_carrier_rows": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "retrieved_at": {
+            "type": "string"
+          },
+          "ground_truth_basis": {
+            "enum": [
+              "none",
+              "expected_filename_only",
+              "expected_filename_and_source_sha256"
+            ]
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planned_accessions",
+        "accessions_acquired",
+        "filing_index_requests",
+        "primary_document_requests",
+        "total_requests",
+        "bundle_entries",
+        "shared_accessions",
+        "href_forms",
+        "primary_bytes_total",
+        "primary_bytes_max"
+      ],
+      "properties": {
+        "planned_accessions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "accessions_acquired": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "filing_index_requests": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "primary_document_requests": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "total_requests": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "bundle_entries": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "shared_accessions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "href_forms": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "primary_bytes_total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "primary_bytes_max": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 7,
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "minProperties": 2,
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary_document_acquisition_manifest_v4"
+      ],
+      "properties": {
+        "primary_document_acquisition_manifest_v4": {
+          "type": "string"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "retained_byte_budget": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The plan-declared cumulative retained-byte bound."
+    },
+    "retained_bytes_total": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Bytes actually written to disk by this run. Must not exceed retained_byte_budget."
+    },
+    "budget_enforcement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mechanism",
+        "bounds",
+        "checked_against"
+      ],
+      "properties": {
+        "mechanism": {
+          "const": "pre_write_retained_byte_check"
+        },
+        "bounds": {
+          "const": "disk"
+        },
+        "checked_against": {
+          "const": "materialised_body_length"
+        }
+      },
+      "description": "How the bound was enforced. bounds='disk' is literal: transient memory stays bounded by the per-document ceiling, not by this budget."
+    }
+  }
+}

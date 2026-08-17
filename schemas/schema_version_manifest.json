@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.35.0",
+  "manifest_version": "0.36.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -75,6 +75,12 @@
     "web_discovery_manifest": "0.1.0",
     "web_snapshot_manifest": "0.1.0",
     "shell_company_determination_v2": "0.2.0",
-    "shell_company_determination_manifest_v2": "0.2.0"
+    "shell_company_determination_manifest_v2": "0.2.0",
+    "primary_document_acquisition_manifest_v4": "0.4.0",
+    "primary_document_acquisition_manifest_v5": "0.5.0",
+    "acquisition_queue_definition": "0.1.0",
+    "acquisition_queue_plan_manifest": "0.1.0",
+    "acquisition_queue_execution_manifest": "0.1.0",
+    "acquisition_queue_aggregate_manifest": "0.1.0"
   }
 }

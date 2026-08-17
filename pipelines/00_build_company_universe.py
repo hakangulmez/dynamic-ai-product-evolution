@@ -88,6 +88,15 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+#: The three W3 queue stages. Each is separately gated: planning writes no
+#: request, execution authorizes only the shard indices it is given, and
+#: aggregation is its own command.
+QUEUE_MODES = frozenset({
+    "plan-acquisition-queue",
+    "execute-acquisition-queue",
+    "aggregate-acquisition-queue",
+})
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from dynamic_ai_products.universe.frame import (  # noqa: E402
@@ -132,6 +141,12 @@ from dynamic_ai_products.ingestion.shell_company_determination import (  # noqa:
     ShellDeterminationError,
     run_shell_company_determination,
 )
+from dynamic_ai_products.universe.acquisition_queue import (
+    AcquisitionQueueError,
+    run_queue_aggregator,
+    run_queue_executor,
+    run_queue_planner,
+)
 from dynamic_ai_products.universe.primary_document_acquisition import (  # noqa: E402
     PrimaryDocumentPlanError,
     load_request_plan as load_primary_document_plan,
@@ -169,7 +184,9 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["sentinel", "frame", "acquire-index", "dera-validate",
                  "acquire-dera", "baseline-carrier", "acquire-docs",
                  "probe-filing-index", "build-baseline-packets",
-                 "acquire-primary-docs", "determine-shell-company"],
+                 "acquire-primary-docs", "determine-shell-company",
+                 "plan-acquisition-queue", "execute-acquisition-queue",
+                 "aggregate-acquisition-queue"],
         help="Stage 00 sub-pipeline to run (default: sentinel).",
     )
     parser.add_argument(
@@ -267,6 +284,44 @@ def build_parser() -> argparse.ArgumentParser:
         help="Dera-validate mode only: directory of local DERA FSDS SUB "
              "files plus fixture_manifest.json (see evals/fixtures/dera_fsds).",
     )
+    parser.add_argument(
+        "--queue-definition", default=None,
+        help="Queue modes: the committed, immutable acquisition queue "
+             "definition. Naming it is what makes shard membership "
+             "reproducible; possessing it authorizes no request.",
+    )
+    parser.add_argument(
+        "--plan-dir", default=None,
+        help="Execute-acquisition-queue mode only: the planner run directory "
+             "holding the persisted shard-plan artefacts. The executor runs "
+             "persisted plans, never ephemeral or hand-supplied ones.",
+    )
+    parser.add_argument(
+        "--shard-indices", default=None,
+        help="Execute-acquisition-queue mode only: an explicit, comma-"
+             "separated allowlist such as '0,3,7'. Required. There is no "
+             "value that expands to the whole queue.",
+    )
+    parser.add_argument(
+        "--expected-request-count", type=int, default=None,
+        help="Execute-acquisition-queue mode only: the exact number of "
+             "requests the named shards will make. Must equal the computed "
+             "total, so the scale being authorized is stated, not discovered.",
+    )
+    parser.add_argument(
+        "--on-shard-failure", default=None, choices=["stop", "continue"],
+        help="Execute-acquisition-queue mode only: the stop policy, declared "
+             "by the operator and never defaulted.",
+    )
+    parser.add_argument(
+        "--shard-output-dir", default=None,
+        help="Queue modes: the root holding per-shard run directories.",
+    )
+    parser.add_argument(
+        "--execution-run-id", default=None,
+        help="Aggregate-acquisition-queue mode only: the execution run id "
+             "whose shard directories are being aggregated.",
+    )
     return parser
 
 
@@ -301,6 +356,109 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         ("--dera-dir", args.dera_dir),
     )
     packet_flags = (("--bundle-dir", args.bundle_dir),)
+    queue_flags = (
+        ("--queue-definition", args.queue_definition),
+        ("--plan-dir", args.plan_dir),
+        ("--shard-indices", args.shard_indices),
+        ("--expected-request-count", args.expected_request_count),
+        ("--on-shard-failure", args.on_shard_failure),
+        ("--shard-output-dir", args.shard_output_dir),
+        ("--execution-run-id", args.execution_run_id),
+    )
+
+    # One guard for every non-queue mode, rather than threading queue_flags
+    # through each existing branch.
+    if args.mode not in QUEUE_MODES:
+        offending = _present(queue_flags)
+        if offending:
+            return f"{args.mode} mode does not accept: {', '.join(offending)}"
+
+    if args.mode in QUEUE_MODES:
+        offending = _present(
+            sentinel_flags + frame_flags + dera_flags + packet_flags
+            + (("--config", args.config),)
+        )
+        if args.mode != "execute-acquisition-queue":
+            offending += _present(acquire_flags)
+        if offending:
+            return f"{args.mode} mode does not accept: {', '.join(offending)}"
+        if args.queue_definition is None:
+            return f"{args.mode} mode requires: --queue-definition"
+
+    if args.mode == "plan-acquisition-queue":
+        offending = _present((
+            ("--plan-dir", args.plan_dir),
+            ("--shard-indices", args.shard_indices),
+            ("--expected-request-count", args.expected_request_count),
+            ("--on-shard-failure", args.on_shard_failure),
+            ("--shard-output-dir", args.shard_output_dir),
+            ("--execution-run-id", args.execution_run_id),
+        ))
+        if offending:
+            return (
+                "plan-acquisition-queue mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        return None
+
+    if args.mode == "execute-acquisition-queue":
+        offending = _present((
+            ("--replay-dir", args.replay_dir) if args.transport == "sec-live"
+            else ("--unused", None),
+            ("--execution-run-id", args.execution_run_id),
+        ))
+        if offending:
+            return (
+                "execute-acquisition-queue mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--plan-dir", args.plan_dir),
+            ("--shard-indices", args.shard_indices),
+            ("--expected-request-count", args.expected_request_count),
+            ("--on-shard-failure", args.on_shard_failure),
+        ))
+        if missing:
+            return (
+                "execute-acquisition-queue mode requires: "
+                f"{', '.join(missing)}"
+            )
+        transport_choice = args.transport or "fixture"
+        if transport_choice == "fixture" and args.replay_dir is None:
+            return (
+                "execute-acquisition-queue mode with the fixture transport "
+                "requires: --replay-dir"
+            )
+        if args.request_plan is not None:
+            return (
+                "execute-acquisition-queue mode does not accept: "
+                "--request-plan; shard plans come from --plan-dir, and the "
+                "executor never runs a hand-supplied plan"
+            )
+        return None
+
+    if args.mode == "aggregate-acquisition-queue":
+        offending = _present((
+            ("--plan-dir", args.plan_dir),
+            ("--shard-indices", args.shard_indices),
+            ("--expected-request-count", args.expected_request_count),
+            ("--on-shard-failure", args.on_shard_failure),
+        ))
+        if offending:
+            return (
+                "aggregate-acquisition-queue mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--shard-output-dir", args.shard_output_dir),
+            ("--execution-run-id", args.execution_run_id),
+        ))
+        if missing:
+            return (
+                "aggregate-acquisition-queue mode requires: "
+                f"{', '.join(missing)}"
+            )
+        return None
 
     if args.mode == "dera-validate":
         offending = _present(
@@ -877,6 +1035,186 @@ def _main_acquire_primary_docs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_shard_indices(raw: str) -> list[int]:
+    """Enumerated integers only: no ranges, no globs, no 'all'."""
+    if not raw.strip():
+        raise AcquisitionQueueError(
+            "--shard-indices must enumerate at least one index."
+        )
+    parts = [p.strip() for p in raw.split(",")]
+    if any(not p for p in parts):
+        raise AcquisitionQueueError(
+            f"--shard-indices {raw!r} has an empty segment; enumerate indices "
+            "exactly, with no trailing or repeated commas."
+        )
+    indices = []
+    for part in parts:
+        if not part.isdigit():
+            raise AcquisitionQueueError(
+                f"--shard-indices accepts enumerated non-negative integers "
+                f"only; {part!r} is not one. Ranges and 'all' are refused."
+            )
+        indices.append(int(part))
+    return indices
+
+
+def _primary_transports(args: argparse.Namespace, definition: dict):
+    """Build the two hop transports from the queue definition's ceilings.
+
+    Returns (metadata_transport, primary_transport, identity) or None after
+    printing the error. Ceilings are definition-owned exactly as they are
+    plan-owned for a direct acquisition; the runner still refuses any
+    transport bound differently.
+    """
+    metadata_ceiling = definition["max_metadata_bytes"]
+    document_ceiling = definition["max_document_bytes"]
+    if (args.transport or "fixture") == "sec-live":
+        return (
+            make_sec_live_document_transport(max_bytes=metadata_ceiling),
+            make_sec_live_document_transport(max_bytes=document_ceiling),
+            SEC_LIVE_DOCUMENT_TRANSPORT_IDENTITY,
+        )
+    replay_dir = Path(args.replay_dir)
+    if not replay_dir.is_dir():
+        print(f"ERROR: replay directory not found: {replay_dir}", file=sys.stderr)
+        return None
+    return (
+        make_filing_index_fixture_replay_transport(
+            replay_dir, max_bytes=metadata_ceiling
+        ),
+        make_primary_document_fixture_replay_transport(
+            replay_dir, max_bytes=document_ceiling
+        ),
+        None,  # fixture-replay identity
+    )
+
+
+def _main_plan_acquisition_queue(args: argparse.Namespace) -> int:
+    try:
+        result = run_queue_planner(
+            repo_root=REPO_ROOT,
+            definition_path=Path(args.queue_definition),
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except AcquisitionQueueError as exc:
+        print(f"ERROR: invalid queue definition or carrier: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "run_id": result.run_id,
+        "dry_run": args.dry_run,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "queue_definition_sha256": result.definition_sha256,
+        "counts": result.counts,
+        "shard_plan_sha256": {
+            s.shard_index: s.plan_sha256 for s in result.shards
+        } if len(result.shards) <= 8 else "omitted: more than 8 shards",
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+    }, indent=2))
+    return 0
+
+
+def _main_execute_acquisition_queue(args: argparse.Namespace) -> int:
+    try:
+        indices = _parse_shard_indices(args.shard_indices)
+    except AcquisitionQueueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    plan_path = Path(args.plan_dir)
+    if not plan_path.is_dir():
+        print(f"ERROR: plan directory not found: {plan_path}", file=sys.stderr)
+        return 2
+    definition_path = Path(args.queue_definition)
+    if not definition_path.is_file():
+        print(f"ERROR: queue definition not found: {definition_path}",
+              file=sys.stderr)
+        return 2
+    definition = json.loads(definition_path.read_text(encoding="utf-8"))
+    transports = _primary_transports(args, definition)
+    if transports is None:
+        return 2
+    metadata_transport, primary_transport, identity = transports
+    try:
+        result = run_queue_executor(
+            repo_root=REPO_ROOT,
+            definition_path=Path(args.queue_definition),
+            plan_dir=plan_path,
+            shard_indices=indices,
+            expected_request_count=args.expected_request_count,
+            on_shard_failure=args.on_shard_failure,
+            output_dir=Path(args.shard_output_dir or args.output_dir),
+            run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc),
+            metadata_transport=metadata_transport,
+            primary_transport=primary_transport,
+            metadata_transport_max_bytes=definition["max_metadata_bytes"],
+            primary_transport_max_bytes=definition["max_document_bytes"],
+            transport_identity=identity,
+        )
+    except (AcquisitionQueueError, PrimaryDocumentPlanError) as exc:
+        print(f"ERROR: queue execution refused: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "run_id": result.run_id,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "authorized_shard_indices": sorted(indices),
+        "on_shard_failure": args.on_shard_failure,
+        "stopped_at_shard_index": result.stopped_at_shard_index,
+        "counts": result.counts,
+        "shards": [
+            {"shard_index": e.shard_index, "outcome": e.outcome,
+             "retained_bytes_total": e.retained_bytes_total,
+             "failure_reason_code": e.failure_reason_code,
+             "receipt_present": e.receipt_present}
+            for e in result.executions
+        ],
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+    }, indent=2))
+    return 0
+
+
+def _main_aggregate_acquisition_queue(args: argparse.Namespace) -> int:
+    try:
+        aggregate = run_queue_aggregator(
+            repo_root=REPO_ROOT,
+            definition_path=Path(args.queue_definition),
+            shard_output_dir=Path(args.shard_output_dir),
+            execution_run_id=args.execution_run_id,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except AcquisitionQueueError as exc:
+        print(f"ERROR: aggregation refused: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    manifest = aggregate.manifest
+    print(json.dumps({
+        "run_id": manifest["run_id"],
+        "run_dir": str(aggregate.run_dir) if aggregate.run_dir else None,
+        "coverage_complete": manifest["coverage_complete"],
+        "coverage_statement": manifest["coverage_statement"],
+        "counts": manifest["counts"],
+        "shards_not_authoritative": manifest["shards_not_authoritative"],
+    }, indent=2))
+    return 0
+
+
 def _main_determine_shell_company(args: argparse.Namespace) -> int:
     bundle_dir = Path(args.bundle_dir)
     if not bundle_dir.is_dir():
@@ -1188,6 +1526,12 @@ def main(argv: list[str] | None = None) -> int:
         return _main_acquire_primary_docs(args)
     if args.mode == "determine-shell-company":
         return _main_determine_shell_company(args)
+    if args.mode == "plan-acquisition-queue":
+        return _main_plan_acquisition_queue(args)
+    if args.mode == "execute-acquisition-queue":
+        return _main_execute_acquisition_queue(args)
+    if args.mode == "aggregate-acquisition-queue":
+        return _main_aggregate_acquisition_queue(args)
     if args.mode == "probe-filing-index":
         return _main_probe_filing_index(args)
     return _main_sentinel(args)

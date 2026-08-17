@@ -1,0 +1,50 @@
+{
+  "queue_contract": "acquisition_queue_definition@0.1.0",
+  "queue_id": "queue-canary",
+  "description": "Restricted six-accession live queue canary (ADR-095). This is a cohort in its own right, NOT shard 0 and shard 1 of domestic-primary-documents: its shard indices 0 and 1 are relative only to these six enumerated accessions, and the full queue's shard 0 contains entirely different accessions. Twelve requests, fourteen bundle rows. Coverage is deliberate: two shared accessions (3 and 7 carrier rows), two 10-KT filings, both measured href forms (viewer and direct), and the Spire accession carrying filename-plus-source-hash ground truth as a byte-level reproducibility control. Five accessions were measured by earlier completed runs; 0001888524-22-003213 has never been fetched, so no ground truth is asserted for it. Possessing this definition authorizes no request.",
+  "carrier": {
+    "relative_path": "data/runs/universe-baseline-carrier/universe-baseline-carrier-frame-v1-20260816/universe_baseline_carrier.jsonl",
+    "carrier_run_id": "universe-baseline-carrier-frame-v1-20260816",
+    "carrier_manifest_sha256": "50a2582f9a255c4402151aa4d963ce5d7bd7c952b8e4a5e77f4a7e7ce454521f",
+    "freeze_record_sha256": "27eb6d236b2e3f81a3b52437027f076a52ae04b245694c9645a4bfb6303e342c"
+  },
+  "selection": {
+    "stratum": "domestic",
+    "forms": [
+      "10-K",
+      "10-KT"
+    ],
+    "restricted_accessions": [
+      "0001104659-22-024443",
+      "0001437749-22-027522",
+      "0001578443-22-000007",
+      "0001628280-22-024293",
+      "0001888524-22-003211",
+      "0001888524-22-003213"
+    ]
+  },
+  "shard_size": 3,
+  "per_accession_allowance_bytes": 12582912,
+  "max_metadata_bytes": 8388608,
+  "max_document_bytes": 268435456,
+  "base_url": "https://www.sec.gov/Archives/",
+  "route_validation": {
+    "probe_run_id": "filing-index-probe-frame-v1-20260816-r2",
+    "probe_manifest_sha256": "7aa16a0ee076800634f4185ba9af47588f084fc9d0ed7a754cbeca81f258e270",
+    "covered_accessions": 3,
+    "note": "URL-route grammar only, proven for the probe's own three accessions; never selection evidence for any firm in this queue."
+  },
+  "deferred_cohorts": [
+    {
+      "stratum": "fpi_extension",
+      "forms": [
+        "20-F",
+        "40-F"
+      ],
+      "rows": 1198,
+      "accessions": 1193,
+      "requests_if_acquired": 2386,
+      "reason": "Preserved by frozen FRAME_v1 and the carrier, and deliberately deferred: the acquisition form enum admits 10-K/10-KT only and FPI cover-page structure has never been measured here. Deferred, not excluded."
+    }
+  ]
+}

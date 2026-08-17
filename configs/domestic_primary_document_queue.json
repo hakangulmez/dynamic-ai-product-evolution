@@ -1,0 +1,42 @@
+{
+  "queue_contract": "acquisition_queue_definition@0.1.0",
+  "queue_id": "domestic-primary-documents",
+  "description": "Domestic 10-K/10-KT primary-document acquisition queue over frozen FRAME_v1 (ADR-095). Derived from the carrier, not estimated from firm counts: 8,718 carrier rows over 8,526 unique accessions, so 17,052 requests at two per accession, and 8,526 fetches serve 8,718 rows because 134 shared accessions cover 326 rows. At shard_size 100 that is 86 shards. The per-accession allowance is a bound and not a prediction: 12 MiB is roughly twice the largest primary ever observed (6,499,830 bytes over 18 measured accessions), and a shard that legitimately exceeds its budget fails closed and must be re-planned under a new plan hash. The four shell-canary exclusions do not reduce this queue: determinations exist for 23 rows only and cannot exist before acquisition. Possessing this definition authorizes no request; execution requires an operator-named shard allowlist.",
+  "carrier": {
+    "relative_path": "data/runs/universe-baseline-carrier/universe-baseline-carrier-frame-v1-20260816/universe_baseline_carrier.jsonl",
+    "carrier_run_id": "universe-baseline-carrier-frame-v1-20260816",
+    "carrier_manifest_sha256": "50a2582f9a255c4402151aa4d963ce5d7bd7c952b8e4a5e77f4a7e7ce454521f",
+    "freeze_record_sha256": "27eb6d236b2e3f81a3b52437027f076a52ae04b245694c9645a4bfb6303e342c"
+  },
+  "selection": {
+    "stratum": "domestic",
+    "forms": [
+      "10-K",
+      "10-KT"
+    ]
+  },
+  "shard_size": 100,
+  "per_accession_allowance_bytes": 12582912,
+  "max_metadata_bytes": 8388608,
+  "max_document_bytes": 268435456,
+  "base_url": "https://www.sec.gov/Archives/",
+  "route_validation": {
+    "probe_run_id": "filing-index-probe-frame-v1-20260816-r2",
+    "probe_manifest_sha256": "7aa16a0ee076800634f4185ba9af47588f084fc9d0ed7a754cbeca81f258e270",
+    "covered_accessions": 3,
+    "note": "URL-route grammar only, proven for the probe's own three accessions; never selection evidence for any firm in this queue."
+  },
+  "deferred_cohorts": [
+    {
+      "stratum": "fpi_extension",
+      "forms": [
+        "20-F",
+        "40-F"
+      ],
+      "rows": 1198,
+      "accessions": 1193,
+      "requests_if_acquired": 2386,
+      "reason": "Preserved by frozen FRAME_v1 and the carrier, and deliberately deferred: the acquisition form enum admits 10-K/10-KT only and FPI cover-page structure has never been measured here. Deferred, not excluded."
+    }
+  ]
+}

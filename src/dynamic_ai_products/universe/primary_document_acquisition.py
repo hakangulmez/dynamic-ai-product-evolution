@@ -94,7 +94,15 @@ from .freeze import create_run_directory
 from .identifiers import IdentifierError, normalize_accession, normalize_cik
 from .io_utils import read_json, sha256_bytes
 
-PLAN_CONTRACT = "primary_document_request_plan@0.1.0"
+#: v0.1 declares only per-document ceilings. v0.2 adds a shard-owned
+#: ``max_retained_bytes``, the cumulative disk bound this runner enforces at
+#: the write seam. Both are accepted; the two committed v0.1 plans are
+#: unaffected and keep producing v0.1/v0.3 manifests.
+PLAN_CONTRACT_V1 = "primary_document_request_plan@0.1.0"
+PLAN_CONTRACT_V2 = "primary_document_request_plan@0.2.0"
+ACCEPTED_PLAN_CONTRACTS = (PLAN_CONTRACT_V1, PLAN_CONTRACT_V2)
+#: Retained for importers that predate the budgeted contract.
+PLAN_CONTRACT = PLAN_CONTRACT_V1
 BUNDLE_CONTRACT = "baseline_primary_document_bundle@0.1.0"
 ADMITTED_FORMS = ("10-K", "10-KT")
 ADMITTED_STRATA = ("domestic",)
@@ -118,6 +126,17 @@ ACQUISITION_V2_SCHEMA_RELATIVE_PATH = Path(
 ACQUISITION_V3_SCHEMA_RELATIVE_PATH = Path(
     "schemas/primary_document_acquisition_manifest.v3.schema.json"
 )
+#: Budgeted (plan v0.2) successors. The lineage numbering is flat and already
+#: interleaves transports — v0.1 is the fixture schema, v0.2 and v0.3 are
+#: sec_live — so v0.4 continues the fixture lineage and v0.5 the sec_live one.
+#: No schema admits two histories: each requires its own schema_versions key
+#: under additionalProperties=false.
+ACQUISITION_V4_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/primary_document_acquisition_manifest.v4.schema.json"
+)
+ACQUISITION_V5_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/primary_document_acquisition_manifest.v5.schema.json"
+)
 
 GROUND_TRUTH_NONE = "none"
 GROUND_TRUTH_FILENAME_ONLY = "expected_filename_only"
@@ -127,6 +146,10 @@ GROUND_TRUTH_BASES = (
     GROUND_TRUTH_FILENAME_ONLY,
     GROUND_TRUTH_FILENAME_AND_SHA,
 )
+
+#: Refusal reasons this module writes into a failure receipt. The receipt has
+#: no governed schema, so the vocabulary is pinned by tests instead.
+REASON_BUDGET_EXHAUSTED = "shard_retained_byte_budget_exhausted"
 
 HOP_FILING_INDEX = "filing_index"
 HOP_PRIMARY_DOCUMENT = "primary_document"
@@ -270,9 +293,11 @@ def validate_request_plan(payload: object) -> tuple[list[PlannedAccession], dict
     """Validate a plan payload and return (planned accessions, plan fields)."""
     if not isinstance(payload, dict):
         raise PrimaryDocumentPlanError("Request plan must be a JSON object.")
-    if payload.get("plan_contract") != PLAN_CONTRACT:
+    plan_contract = payload.get("plan_contract")
+    if plan_contract not in ACCEPTED_PLAN_CONTRACTS:
         raise PrimaryDocumentPlanError(
-            f"Request plan must declare {PLAN_CONTRACT!r}."
+            "Request plan must declare one of "
+            f"{list(ACCEPTED_PLAN_CONTRACTS)!r}."
         )
     for key in ("description", "base_url", "max_metadata_bytes",
                 "max_document_bytes", "provenance", "route_validation",
@@ -291,6 +316,30 @@ def validate_request_plan(payload: object) -> tuple[list[PlannedAccession], dict
                 f"{key} must be an explicit positive integer; it is never "
                 "defaulted in code."
             )
+    # v0.2 owns a cumulative retained-byte bound. It is required there and
+    # forbidden under v0.1, so a plan's contract alone says whether a run is
+    # budgeted; there is no defaulting and no silent unbounded v0.2.
+    max_retained_bytes = payload.get("max_retained_bytes")
+    if plan_contract == PLAN_CONTRACT_V2:
+        if max_retained_bytes is None:
+            raise PrimaryDocumentPlanError(
+                f"{PLAN_CONTRACT_V2} requires max_retained_bytes: the "
+                "cumulative retained-byte bound is plan-owned and never "
+                "defaulted."
+            )
+        if (
+            not isinstance(max_retained_bytes, int)
+            or isinstance(max_retained_bytes, bool)
+            or max_retained_bytes <= 0
+        ):
+            raise PrimaryDocumentPlanError(
+                "max_retained_bytes must be an explicit positive integer."
+            )
+    elif max_retained_bytes is not None:
+        raise PrimaryDocumentPlanError(
+            f"max_retained_bytes is a {PLAN_CONTRACT_V2} field; "
+            f"{PLAN_CONTRACT_V1} declares no cumulative bound."
+        )
     provenance = payload["provenance"]
     if not isinstance(provenance, dict):
         raise PrimaryDocumentPlanError("Plan provenance must be an object.")
@@ -444,6 +493,8 @@ def validate_request_plan(payload: object) -> tuple[list[PlannedAccession], dict
             )
         )
     fields = {
+        "plan_contract": plan_contract,
+        "max_retained_bytes": max_retained_bytes,
         "description": str(payload["description"]),
         "base_url": CANONICAL_BASE_URL,
         "max_metadata_bytes": payload["max_metadata_bytes"],
@@ -587,6 +638,7 @@ def run_primary_document_acquisition(
     run_dir = create_run_directory(output_dir, run_id)
     result.run_dir = run_dir
     retained: list[str] = []
+    retained_bytes_total = 0
 
     def fail(entry: PlannedAccession, hop: str, reason: str, detail: str):
         receipt = AcquisitionFailureReceipt(
@@ -732,6 +784,21 @@ def run_primary_document_acquisition(
         )
         if refused is not None:
             return refused
+        # The cumulative bound is checked here, against the materialised body
+        # length and never against Content-Length, which understates retained
+        # bytes by 7.8x-21.4x in measured live runs and is sometimes absent.
+        # Refusing before the write means disk never exceeds the budget, not
+        # even by one document; the over-budget document is never written.
+        budget = fields["max_retained_bytes"]
+        incoming = len(primary_response.content)
+        if budget is not None and retained_bytes_total + incoming > budget:
+            return fail(
+                entry, HOP_PRIMARY_DOCUMENT, REASON_BUDGET_EXHAUSTED,
+                f"{primary_url}: retaining {incoming} byte(s) would take the "
+                f"run to {retained_bytes_total + incoming}, over the plan's "
+                f"max_retained_bytes {budget}; {retained_bytes_total} byte(s) "
+                "were retained before this document, which is not written.",
+            )
         try:
             source_sha = write_bytes_once(
                 run_dir / entry.local_filename, primary_response.content,
@@ -740,6 +807,7 @@ def run_primary_document_acquisition(
         except WriteOnceError as exc:
             return fail(entry, HOP_PRIMARY_DOCUMENT, "write_once_refused", str(exc))
         retained.append(entry.local_filename)
+        retained_bytes_total += incoming
         if (
             entry.ground_truth_source_sha256 is not None
             and source_sha != entry.ground_truth_source_sha256
@@ -920,7 +988,7 @@ def build_acquisition_manifest(
     mapped_rows = sum(a.mapped_carrier_rows for a in acquired)
     manifest: dict = {
         "run_id": run_id,
-        "plan_contract": PLAN_CONTRACT,
+        "plan_contract": fields["plan_contract"],
         "plan_sha256": plan_sha256,
         "base_url": fields["base_url"],
         "transport_kind": transport_identity.kind,
@@ -1012,6 +1080,18 @@ def build_acquisition_manifest(
             "classified or tiered, and no model is called.",
         ],
     }
+    budgeted = fields["max_retained_bytes"] is not None
+    if budgeted:
+        # Recorded in authoritative evidence, so a completed shard states the
+        # bound it honoured and the bytes it actually kept. bounds="disk" is
+        # literal: transient memory stays bounded by the per-document ceiling.
+        manifest["retained_byte_budget"] = fields["max_retained_bytes"]
+        manifest["retained_bytes_total"] = sum(sizes)
+        manifest["budget_enforcement"] = {
+            "mechanism": "pre_write_retained_byte_check",
+            "bounds": "disk",
+            "checked_against": "materialised_body_length",
+        }
     if live:
         manifest["transport_contract"] = dict(transport_identity.contract)
         # v0.3 adds the transport's already-parsed declared lengths for both
@@ -1024,24 +1104,30 @@ def build_acquisition_manifest(
             record["primary_declared_content_length"] = (
                 item.primary_declared_content_length
             )
-        manifest["schema_versions"] = {
-            "primary_document_acquisition_manifest_v3": schema_versions[
-                "primary_document_acquisition_manifest_v3"
-            ]
-        }
-        schema_path = ACQUISITION_V3_SCHEMA_RELATIVE_PATH
+        key = (
+            "primary_document_acquisition_manifest_v5" if budgeted
+            else "primary_document_acquisition_manifest_v3"
+        )
+        manifest["schema_versions"] = {key: schema_versions[key]}
+        schema_path = (
+            ACQUISITION_V5_SCHEMA_RELATIVE_PATH if budgeted
+            else ACQUISITION_V3_SCHEMA_RELATIVE_PATH
+        )
     else:
-        manifest["schema_versions"] = {
-            "primary_document_acquisition_manifest": schema_versions[
-                "primary_document_acquisition_manifest"
-            ]
-        }
+        key = (
+            "primary_document_acquisition_manifest_v4" if budgeted
+            else "primary_document_acquisition_manifest"
+        )
+        manifest["schema_versions"] = {key: schema_versions[key]}
         manifest["limitations"].insert(
             0,
             "Fixture-replay acquisition: bytes were served from local fixture "
             "index pages and primary documents; no network request was made.",
         )
-        schema_path = ACQUISITION_SCHEMA_RELATIVE_PATH
+        schema_path = (
+            ACQUISITION_V4_SCHEMA_RELATIVE_PATH if budgeted
+            else ACQUISITION_SCHEMA_RELATIVE_PATH
+        )
     schema = read_json(root / schema_path)
     errors = sorted(
         Draft202012Validator(schema).iter_errors(manifest),
