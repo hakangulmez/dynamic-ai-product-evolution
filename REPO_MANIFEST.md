@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **777**
+Total tracked/scaffold files listed: **782**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -282,6 +282,7 @@ Total tracked/scaffold files listed: **777**
 - `evals/gold/draft/README.md`
 - `evals/gold/draft/_reading_instruction_opus.md`
 - `evals/registries/hubs_target_registry_v1.json`
+- `evals/registries/pct_dev30_v0_item1_locator_ledger.json`
 - `evals/registries/pct_dev30_v0_manifest.json`
 - `evals/regression/README.md`
 - `evals/reports/.gitkeep`
@@ -505,6 +506,8 @@ Total tracked/scaffold files listed: **777**
 - `src/dynamic_ai_products/collection/transport.py`
 - `src/dynamic_ai_products/collection/web_snapshot.py`
 - `src/dynamic_ai_products/config.py`
+- `src/dynamic_ai_products/dev30/__init__.py`
+- `src/dynamic_ai_products/dev30/item1_locator.py`
 - `src/dynamic_ai_products/evaluation/__init__.py`
 - `src/dynamic_ai_products/evaluation/assertions.py`
 - `src/dynamic_ai_products/evaluation/axis_inputs.py`
@@ -649,6 +652,8 @@ Total tracked/scaffold files listed: **777**
 - `tests/collection/test_transport_contract.py`
 - `tests/collection/test_web_snapshot.py`
 - `tests/contamination/test_no_legacy_contamination.py`
+- `tests/dev30/test_item1_locator.py`
+- `tests/dev30/test_item1_locator_ledger.py`
 - `tests/evaluation/test_assertions.py`
 - `tests/evaluation/test_axis_inputs.py`
 - `tests/evaluation/test_case_sets.py`

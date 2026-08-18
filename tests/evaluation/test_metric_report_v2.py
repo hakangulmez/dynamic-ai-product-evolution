@@ -641,7 +641,14 @@ def test_manifest_count():
     # by tests. This addition authorizes no PCT extraction prompt, model
     # call, or Dev30 score; not tied to a numbered ADR because none was
     # authorized for this narrowly-scoped increment.
-    assert declared == len(paths) == 777
+    # 782 = 777 + the five PCT_Dev30_v0 Item 1 locator paths: the locator
+    # module and its package __init__, its unit-test module, the committed
+    # 30-row locator ledger (bound to the cohort manifest by that file's own
+    # SHA-256), and the ledger's guard-test module. No schemas/ entry and no
+    # schema-registry change; the ledger follows the same contract-declaring,
+    # test-validated config pattern as the cohort manifest itself. Dev30-only:
+    # no Stage 00C source_id or sec-primary: identity is produced or accepted.
+    assert declared == len(paths) == 782
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

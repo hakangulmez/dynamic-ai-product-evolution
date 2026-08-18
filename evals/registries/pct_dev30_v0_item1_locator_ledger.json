@@ -1,0 +1,282 @@
+{
+  "ledger_contract": "pct_dev30_v0_item1_locator_ledger@0.1.0",
+  "item_one_locator_version": "dev30-item1-marker-v1",
+  "cohort_manifest_relative_path": "evals/registries/pct_dev30_v0_manifest.json",
+  "cohort_manifest_sha256": "07dbab33390a3d26ebe9043632df020de9c09815f7ccf62ce576d197974dbe9d",
+  "cohort_version": "PCT_Dev30_v0",
+  "counts": {
+    "total_rows": 30
+  },
+  "rows": [
+    {
+      "ticker": "ASAN",
+      "legacy_file_sha256": "7d64f86217553ff9751df56f3b09d753b45c5579e0b22b5a0d4c48432691bb3a",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 155,
+      "item_one_char_end": 57825,
+      "source_text_hash": "05b9c24e33a36d37a703c217a18d9f7713d7d9778d3387b73e7169eb0cd433ba",
+      "legacy_source_id": "legacy-item1:dev30-v0:05b9c24e33a36d37a703c217a18d9f7713d7d9778d3387b73e7169eb0cd433ba"
+    },
+    {
+      "ticker": "SPT",
+      "legacy_file_sha256": "98d215a0dd7dc506b2f76e5c07369733404f39cda3bed1af4cde29f1c53fd70e",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 162,
+      "item_one_char_end": 59243,
+      "source_text_hash": "dfcf48748152e9cec8ecd13b9e13c826931e4f36034c25b2ce089d428ef94873",
+      "legacy_source_id": "legacy-item1:dev30-v0:dfcf48748152e9cec8ecd13b9e13c826931e4f36034c25b2ce089d428ef94873"
+    },
+    {
+      "ticker": "HUBS",
+      "legacy_file_sha256": "235fdc3d3619cfcd5b72358b95ae7b2dbfce0def66ed3bd63a3bde5596050828",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 155,
+      "item_one_char_end": 37720,
+      "source_text_hash": "b871e37b06539c9a8c85f6fa83b425d5901c3d1a187efefb4d8ff527317d53ae",
+      "legacy_source_id": "legacy-item1:dev30-v0:b871e37b06539c9a8c85f6fa83b425d5901c3d1a187efefb4d8ff527317d53ae"
+    },
+    {
+      "ticker": "CRM",
+      "legacy_file_sha256": "95624f4848c8f2b081366edbb8e3a982ebf442ea8bec924854322554e120cc29",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 159,
+      "item_one_char_end": 35798,
+      "source_text_hash": "c5205c524c68a3ef002052ea91b440f52ec5f322dc2c37d6080e8977178152d3",
+      "legacy_source_id": "legacy-item1:dev30-v0:c5205c524c68a3ef002052ea91b440f52ec5f322dc2c37d6080e8977178152d3"
+    },
+    {
+      "ticker": "WDAY",
+      "legacy_file_sha256": "bdad230329bc33714c99ebd983c621c9377e7b28fb2f82288426aaf03bf5b033",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 157,
+      "item_one_char_end": 28590,
+      "source_text_hash": "9887dba6026e9bfb84a5bc64aa486a67481cdf248bf09b59a0b6aa3a489d0026",
+      "legacy_source_id": "legacy-item1:dev30-v0:9887dba6026e9bfb84a5bc64aa486a67481cdf248bf09b59a0b6aa3a489d0026"
+    },
+    {
+      "ticker": "INTU",
+      "legacy_file_sha256": "a716c2befe4065be7aea1b28bacc34c4d4a05e5ab0fe3a9cd49891348cfa381e",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 154,
+      "item_one_char_end": 60725,
+      "source_text_hash": "c908d4c765a8b24afdd9f323edcb86bcb1595edc272ddc1af3b918401fa24ee5",
+      "legacy_source_id": "legacy-item1:dev30-v0:c908d4c765a8b24afdd9f323edcb86bcb1595edc272ddc1af3b918401fa24ee5"
+    },
+    {
+      "ticker": "NOW",
+      "legacy_file_sha256": "500180f3fc50d106cfd2f0bff84501fc76e371d14f73691a96a7cac2f4230e81",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 159,
+      "item_one_char_end": 43442,
+      "source_text_hash": "8d790402a4698cbafbe33bca5036d4f9c1ee938987074607f6e9d190a9945554",
+      "legacy_source_id": "legacy-item1:dev30-v0:8d790402a4698cbafbe33bca5036d4f9c1ee938987074607f6e9d190a9945554"
+    },
+    {
+      "ticker": "BL",
+      "legacy_file_sha256": "020fe2b661890f7a5121397691af0809309dc144168d2396f415a013d9b9734f",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 157,
+      "item_one_char_end": 36124,
+      "source_text_hash": "703c77ae95e24629a2ff0fae5b85c92b689ea9ecbcfc251d1827067b2e123683",
+      "legacy_source_id": "legacy-item1:dev30-v0:703c77ae95e24629a2ff0fae5b85c92b689ea9ecbcfc251d1827067b2e123683"
+    },
+    {
+      "ticker": "APPF",
+      "legacy_file_sha256": "4303ee9caec7c0fc59d77803f9742f0c0a6a6737acfdfa6ba6726faeb5a85bb1",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 156,
+      "item_one_char_end": 25763,
+      "source_text_hash": "0d4f6d07ec2b3a7563857d42e8de7295819ed02a08ce99c71ea5a3cb404b55df",
+      "legacy_source_id": "legacy-item1:dev30-v0:0d4f6d07ec2b3a7563857d42e8de7295819ed02a08ce99c71ea5a3cb404b55df"
+    },
+    {
+      "ticker": "NET",
+      "legacy_file_sha256": "b2b48c2403c5e5e7096012cfa3b906aed8a2ad1c3fcd2e1556295d3040f7038a",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 159,
+      "item_one_char_end": 36605,
+      "source_text_hash": "ee192528039f67e36a6a2497ef838d66b570b213f69f1da443850c44ebae214e",
+      "legacy_source_id": "legacy-item1:dev30-v0:ee192528039f67e36a6a2497ef838d66b570b213f69f1da443850c44ebae214e"
+    },
+    {
+      "ticker": "DDOG",
+      "legacy_file_sha256": "3bc116d4cd49c67e5513f7e5d0072f56566722437e5cdbb448d13d84e6a86209",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 157,
+      "item_one_char_end": 36519,
+      "source_text_hash": "f538decbc1250ba18f5fab707d01e77c22da0112e1b897359c5a7619fcf4c3bb",
+      "legacy_source_id": "legacy-item1:dev30-v0:f538decbc1250ba18f5fab707d01e77c22da0112e1b897359c5a7619fcf4c3bb"
+    },
+    {
+      "ticker": "CRWD",
+      "legacy_file_sha256": "afb8d6a875707e24192b54eed2b00146dcebfe437050cf518d878e7eec779dba",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 170,
+      "item_one_char_end": 67601,
+      "source_text_hash": "369706dce767b7f785701b19a8d8a3a8a5d7558db3bcf91770f642c9a18f42b0",
+      "legacy_source_id": "legacy-item1:dev30-v0:369706dce767b7f785701b19a8d8a3a8a5d7558db3bcf91770f642c9a18f42b0"
+    },
+    {
+      "ticker": "ZS",
+      "legacy_file_sha256": "0602a4e6ec74706ad0da4214e63c3fce7ebb17675a518eba5189962843f22eba",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 155,
+      "item_one_char_end": 53596,
+      "source_text_hash": "9916f98a8764c392e7fb3046d59b78661954d5af1b9416996a1386fd9d6771d0",
+      "legacy_source_id": "legacy-item1:dev30-v0:9916f98a8764c392e7fb3046d59b78661954d5af1b9416996a1386fd9d6771d0"
+    },
+    {
+      "ticker": "MDB",
+      "legacy_file_sha256": "d5d595621c5c5187d831d188762825aa74126e830274a7ec89a776ca9e23dfa9",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 156,
+      "item_one_char_end": 49419,
+      "source_text_hash": "5f8d20587f007c52cd3c399bdd3ef3c68738cb935627b2c8a029306c4b38bead",
+      "legacy_source_id": "legacy-item1:dev30-v0:5f8d20587f007c52cd3c399bdd3ef3c68738cb935627b2c8a029306c4b38bead"
+    },
+    {
+      "ticker": "DOCN",
+      "legacy_file_sha256": "346b9dc9eec07d2b542da24555f17640cd9177bbb3c51a3442e5b294d952bc03",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 171,
+      "item_one_char_end": 61413,
+      "source_text_hash": "056b1403df4d7c6a3ffb206912849d848c6317b3050c7b1b118b5b96b0df1059",
+      "legacy_source_id": "legacy-item1:dev30-v0:056b1403df4d7c6a3ffb206912849d848c6317b3050c7b1b118b5b96b0df1059"
+    },
+    {
+      "ticker": "PD",
+      "legacy_file_sha256": "5476fd51f8213d477ff3f328bb29fccf0c17a86195f7dc779d01da54845eea26",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 157,
+      "item_one_char_end": 32668,
+      "source_text_hash": "ea47417ce0f0b34f943a423fede7c87d8722ca73e25cecf50d537b602eb82bcd",
+      "legacy_source_id": "legacy-item1:dev30-v0:ea47417ce0f0b34f943a423fede7c87d8722ca73e25cecf50d537b602eb82bcd"
+    },
+    {
+      "ticker": "VRSK",
+      "legacy_file_sha256": "c78e910105584926b80860d5b3370ee0aae1d4fd51396c2053ddf5d066f58c17",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 166,
+      "item_one_char_end": 64620,
+      "source_text_hash": "c05c3681808b0ac975dc7a646aefedadcd31eb6b53a296f0ee6abae3d7d75057",
+      "legacy_source_id": "legacy-item1:dev30-v0:c05c3681808b0ac975dc7a646aefedadcd31eb6b53a296f0ee6abae3d7d75057"
+    },
+    {
+      "ticker": "MSCI",
+      "legacy_file_sha256": "6858a3b3a599dd0ffe89efb13ac42a5addc02d14f19a2e0d57a29cc3d8cb3e8b",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 153,
+      "item_one_char_end": 60433,
+      "source_text_hash": "7146ab662aca8c3a98eb9ae61aadb53c9f4293fd1c47cadb94901b47fda59c83",
+      "legacy_source_id": "legacy-item1:dev30-v0:7146ab662aca8c3a98eb9ae61aadb53c9f4293fd1c47cadb94901b47fda59c83"
+    },
+    {
+      "ticker": "CSGP",
+      "legacy_file_sha256": "40b04a0e09033e65c2483882d60c66ac825ce74bf0ac72cbb4fc84459587032f",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 162,
+      "item_one_char_end": 65993,
+      "source_text_hash": "d0599644f025c3d480edc51e37382607d0802e58f8f207a39c6b800c29e8a51f",
+      "legacy_source_id": "legacy-item1:dev30-v0:d0599644f025c3d480edc51e37382607d0802e58f8f207a39c6b800c29e8a51f"
+    },
+    {
+      "ticker": "FDS",
+      "legacy_file_sha256": "db2df28f698f5ca4c63b36459804328b518982f93968ab5bb58b5b542501cc73",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 171,
+      "item_one_char_end": 50463,
+      "source_text_hash": "93e1ba88d8a631521b81ccb7880ed837ae610f28082730633ac23c15801cba97",
+      "legacy_source_id": "legacy-item1:dev30-v0:93e1ba88d8a631521b81ccb7880ed837ae610f28082730633ac23c15801cba97"
+    },
+    {
+      "ticker": "DUOL",
+      "legacy_file_sha256": "f64745b738815c420468f2a18d880fc5dfdb7d328e710ee83c28d60d9f0219b6",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 158,
+      "item_one_char_end": 32744,
+      "source_text_hash": "d1b5ecabc78120711a857edf96a2066c6b0aecc256bbfd9b801738e81bd95431",
+      "legacy_source_id": "legacy-item1:dev30-v0:d1b5ecabc78120711a857edf96a2066c6b0aecc256bbfd9b801738e81bd95431"
+    },
+    {
+      "ticker": "CHGG",
+      "legacy_file_sha256": "c87b612bceaaa96c0a19a0f1a25ae15d823eba63effa0d7766f05a6becbf8c0c",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 154,
+      "item_one_char_end": 37113,
+      "source_text_hash": "d82b56e87950ad825f0a7f865dd67fb0e9f4e9ae365ed14ba5f8d93c8a47a1d2",
+      "legacy_source_id": "legacy-item1:dev30-v0:d82b56e87950ad825f0a7f865dd67fb0e9f4e9ae365ed14ba5f8d93c8a47a1d2"
+    },
+    {
+      "ticker": "ROKU",
+      "legacy_file_sha256": "aa07dc761b71a556a40f807dff8211eb331b5230035f733efc846f233f43f7b6",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 153,
+      "item_one_char_end": 40100,
+      "source_text_hash": "a9f9f20994e88ce81cf275d7e6c995a0d18117c0c47ea79371a35df23b55e3ab",
+      "legacy_source_id": "legacy-item1:dev30-v0:a9f9f20994e88ce81cf275d7e6c995a0d18117c0c47ea79371a35df23b55e3ab"
+    },
+    {
+      "ticker": "YELP",
+      "legacy_file_sha256": "07591e571252fa12454cc03df3f06ee7327a76fe080fa3d441485a0639d5a5a6",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 152,
+      "item_one_char_end": 78786,
+      "source_text_hash": "4d84411c493ace0e07093b9cc14b5f7596166e8c52885debf2cac637d55ab14f",
+      "legacy_source_id": "legacy-item1:dev30-v0:4d84411c493ace0e07093b9cc14b5f7596166e8c52885debf2cac637d55ab14f"
+    },
+    {
+      "ticker": "AXON",
+      "legacy_file_sha256": "a329246903a7d1a6ed1977a4d66fcc070c0a3c29cb2db86435bfd31fd038c447",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 165,
+      "item_one_char_end": 31321,
+      "source_text_hash": "1c3eef04b93859ab2439cfaabc168a67cea2c51ae31454ca8cf58a53cffa16eb",
+      "legacy_source_id": "legacy-item1:dev30-v0:1c3eef04b93859ab2439cfaabc168a67cea2c51ae31454ca8cf58a53cffa16eb"
+    },
+    {
+      "ticker": "IOT",
+      "legacy_file_sha256": "341104c64b048af3f59b43569d1eaafc846c7bf523e4f267616bb8ae000cf1b5",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 155,
+      "item_one_char_end": 65896,
+      "source_text_hash": "85a01a497be64dd9cf5d69d4c37d9e002b017485c647db37b955c72e6aaab188",
+      "legacy_source_id": "legacy-item1:dev30-v0:85a01a497be64dd9cf5d69d4c37d9e002b017485c647db37b955c72e6aaab188"
+    },
+    {
+      "ticker": "MQ",
+      "legacy_file_sha256": "5feadd89fdb1ca4b85e26df0666ef1ec98c2b8733231d1522cc8852421e975a2",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 155,
+      "item_one_char_end": 73896,
+      "source_text_hash": "aad87ff0c4bfbe8263e2f21222c46e139897ab378b6fe7649042d965479b244a",
+      "legacy_source_id": "legacy-item1:dev30-v0:aad87ff0c4bfbe8263e2f21222c46e139897ab378b6fe7649042d965479b244a"
+    },
+    {
+      "ticker": "CLVT",
+      "legacy_file_sha256": "903f154008c8265190a297254196c3472c9a74350c2d18cabbaf4b7adfa314d3",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 157,
+      "item_one_char_end": 64023,
+      "source_text_hash": "297b97f20288b4e1cb21f0a79e543e83d891edbc15d30d7fe105c56e35aa1e9e",
+      "legacy_source_id": "legacy-item1:dev30-v0:297b97f20288b4e1cb21f0a79e543e83d891edbc15d30d7fe105c56e35aa1e9e"
+    },
+    {
+      "ticker": "PLTR",
+      "legacy_file_sha256": "47911b0a105862b375edf48ffa39de5ac8af650663d43eff57c696b3bd223962",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 170,
+      "item_one_char_end": 30051,
+      "source_text_hash": "0accb212f1e500087b30f5ad2473e84ebb6f1d97da4789ab9a62fa1ece4fd013",
+      "legacy_source_id": "legacy-item1:dev30-v0:0accb212f1e500087b30f5ad2473e84ebb6f1d97da4789ab9a62fa1ece4fd013"
+    },
+    {
+      "ticker": "PATH",
+      "legacy_file_sha256": "dadae5aac93ffc665753ca7478818ddbbcec496d2661cc285f1950f21bf1133b",
+      "item_one_locator_version": "dev30-item1-marker-v1",
+      "item_one_char_start": 156,
+      "item_one_char_end": 39832,
+      "source_text_hash": "90f62d4d57940b3673bf0f920defeb88ffde7ab3db3c4fbee0ece659d9e0a975",
+      "legacy_source_id": "legacy-item1:dev30-v0:90f62d4d57940b3673bf0f920defeb88ffde7ab3db3c4fbee0ece659d9e0a975"
+    }
+  ]
+}
