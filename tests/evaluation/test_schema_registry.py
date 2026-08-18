@@ -174,6 +174,16 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-098 (Dev30 combined-candidate contract, Round 2):
+    # manifest_version 0.37.0 -> 0.38.0, 86 -> 88 entries, registering
+    # pct_dev30_v0_model_output and pct_dev30_v0_persisted_candidates for the
+    # two-stage Dev30 combined-candidate output contract
+    # (src/dynamic_ai_products/dev30/combined_candidate_adapter.py). Every
+    # predecessor schema is byte-unchanged; neither new schema is added to
+    # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS below --
+    # Dev30 is not a production evaluation-harness contract, and the adapter
+    # loads and hash-pins both schema files itself, independent of this
+    # registry. Before it,
     # Rebaselined by ADR-097 (plain-text primaries): manifest_version
     # 0.36.0 -> 0.37.0, 81 -> 86 entries, registering the bundle, packet,
     # packet-manifest and queue-definition v0.2 successors plus the v0.6
@@ -257,7 +267,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "1aafb1bb7310d3358eb4b97996ccb92fe4e87ed302bfafaf86dfde173042b678"
+    "81de8ba9fd377448c53bd72d4ef2cd84a2697c0217ec39a4ff1a7c3cfc43e896"
 )
 
 

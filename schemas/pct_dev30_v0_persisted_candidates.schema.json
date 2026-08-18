@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pct_dev30_v0_persisted_candidates.schema.json",
+  "title": "PCT_Dev30_v0 combined-candidate persisted output (Stage 2)",
+  "description": "The adapter-produced artifact (src/dynamic_ai_products/dev30/combined_candidate_adapter.py) built deterministically from one Stage-1 model output (pct_dev30_v0_model_output@0.1.0) plus the committed PCT_Dev30_v0 Item 1 locator ledger. Every relationship field is rewritten from a Stage-1 local_id to a persisted candidate_id; local_id survives only as non-authoritative diagnostic metadata, excluded from every candidate_id hash. candidate_id is anchored to model_output_sha256, not to legacy_source_id, so no candidate_id is transferable across distinct raw model outputs even when their logical content agrees. model_output_reference/model_output_sha256 and locator_ledger_relative_path/locator_ledger_sha256 bind this artifact reproducibly to the exact raw bytes it was built from and the exact committed ledger it was checked against. Dev30-only: never a Stage 00C sec-primary: source_id.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "schema_version",
+    "ticker",
+    "legacy_source_id",
+    "model_output_reference",
+    "model_output_sha256",
+    "locator_ledger_relative_path",
+    "locator_ledger_sha256",
+    "candidates",
+    "excluded_mentions",
+    "zero_candidate_reason"
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "candidate_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "availability_status_token": {
+      "comment": "Same literal 8-token vocabulary as pct_dev30_v0_model_output.schema.json.",
+      "type": "string",
+      "enum": [
+        "announced",
+        "broadly_deployed_or_default",
+        "deprecated",
+        "discontinued",
+        "general_availability",
+        "private_beta",
+        "public_beta",
+        "unknown"
+      ]
+    },
+    "stage2_locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["legacy_source_id", "char_start", "char_end"],
+      "properties": {
+        "legacy_source_id": {
+          "type": "string",
+          "pattern": "^legacy-item1:dev30-v0:[0-9a-f]{64}$"
+        },
+        "char_start": { "type": "integer", "minimum": 0 },
+        "char_end": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "product_local_id": { "type": "string", "pattern": "^P[1-9][0-9]*$" },
+    "capability_local_id": { "type": "string", "pattern": "^C[1-9][0-9]*$" },
+    "task_local_id": { "type": "string", "pattern": "^T[1-9][0-9]*$" },
+    "product_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id", "local_id", "ordinal", "kind", "product_family",
+        "product_name", "availability_status", "evidence_quote",
+        "evidence_locator"
+      ],
+      "properties": {
+        "candidate_id": { "$ref": "#/$defs/candidate_id" },
+        "local_id": { "$ref": "#/$defs/product_local_id" },
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "kind": { "const": "product" },
+        "product_family": { "type": ["string", "null"], "minLength": 1 },
+        "product_name": { "type": "string", "minLength": 1 },
+        "availability_status": { "$ref": "#/$defs/availability_status_token" },
+        "evidence_quote": { "type": "string", "minLength": 1 },
+        "evidence_locator": { "$ref": "#/$defs/stage2_locator" }
+      }
+    },
+    "capability_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id", "local_id", "ordinal", "kind", "product_candidate_id",
+        "capability_text", "availability_status", "evidence_quote",
+        "evidence_locator"
+      ],
+      "properties": {
+        "candidate_id": { "$ref": "#/$defs/candidate_id" },
+        "local_id": { "$ref": "#/$defs/capability_local_id" },
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "kind": { "const": "capability" },
+        "product_candidate_id": { "$ref": "#/$defs/candidate_id" },
+        "capability_text": { "type": "string", "minLength": 1 },
+        "availability_status": { "$ref": "#/$defs/availability_status_token" },
+        "evidence_quote": { "type": "string", "minLength": 1 },
+        "evidence_locator": { "$ref": "#/$defs/stage2_locator" }
+      }
+    },
+    "task_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id", "local_id", "ordinal", "kind", "product_candidate_id",
+        "capability_candidate_ids", "task_text", "customer_need",
+        "availability_status", "evidence_quote", "evidence_locator"
+      ],
+      "properties": {
+        "candidate_id": { "$ref": "#/$defs/candidate_id" },
+        "local_id": { "$ref": "#/$defs/task_local_id" },
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "kind": { "const": "task" },
+        "product_candidate_id": { "$ref": "#/$defs/candidate_id" },
+        "capability_candidate_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/candidate_id" }
+        },
+        "task_text": { "type": "string", "minLength": 1 },
+        "customer_need": { "type": "string", "minLength": 1 },
+        "availability_status": { "$ref": "#/$defs/availability_status_token" },
+        "evidence_quote": { "type": "string", "minLength": 1 },
+        "evidence_locator": { "$ref": "#/$defs/stage2_locator" }
+      }
+    },
+    "excluded_mention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "evidence_quote", "evidence_locator"],
+      "properties": {
+        "reason": {
+          "enum": [
+            "internal_use",
+            "vague_ai_marketing",
+            "not_customer_facing",
+            "insufficient_specificity"
+          ]
+        },
+        "evidence_quote": { "type": "string", "minLength": 1 },
+        "evidence_locator": { "$ref": "#/$defs/stage2_locator" }
+      }
+    }
+  },
+  "properties": {
+    "contract": { "const": "pct_dev30_v0_persisted_candidates@0.1.0" },
+    "schema_version": { "const": "0.1.0" },
+    "ticker": { "type": "string", "pattern": "^[A-Z]+$" },
+    "legacy_source_id": {
+      "type": "string",
+      "pattern": "^legacy-item1:dev30-v0:[0-9a-f]{64}$"
+    },
+    "model_output_reference": { "type": "string", "minLength": 1 },
+    "model_output_sha256": { "$ref": "#/$defs/sha256" },
+    "locator_ledger_relative_path": {
+      "const": "evals/registries/pct_dev30_v0_item1_locator_ledger.json"
+    },
+    "locator_ledger_sha256": { "$ref": "#/$defs/sha256" },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/product_candidate" },
+          { "$ref": "#/$defs/capability_candidate" },
+          { "$ref": "#/$defs/task_candidate" }
+        ]
+      }
+    },
+    "excluded_mentions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/excluded_mention" }
+    },
+    "zero_candidate_reason": {
+      "oneOf": [
+        {
+          "enum": [
+            "no_product_capability_or_task_evidence",
+            "all_mentions_excluded"
+          ]
+        },
+        { "type": "null" }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "candidates": { "maxItems": 0 } } },
+      "then": {
+        "properties": {
+          "zero_candidate_reason": {
+            "enum": [
+              "no_product_capability_or_task_evidence",
+              "all_mentions_excluded"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "candidates": { "minItems": 1 } } },
+      "then": { "properties": { "zero_candidate_reason": { "type": "null" } } }
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **782**
+Total tracked/scaffold files listed: **786**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -399,6 +399,8 @@ Total tracked/scaffold files listed: **782**
 - `schemas/live_call_authorization_v2.schema.json`
 - `schemas/official_web_candidate.schema.json`
 - `schemas/official_web_collection_manifest.schema.json`
+- `schemas/pct_dev30_v0_model_output.schema.json`
+- `schemas/pct_dev30_v0_persisted_candidates.schema.json`
 - `schemas/primary_document_acquisition_manifest.schema.json`
 - `schemas/primary_document_acquisition_manifest.v2.schema.json`
 - `schemas/primary_document_acquisition_manifest.v3.schema.json`
@@ -507,6 +509,7 @@ Total tracked/scaffold files listed: **782**
 - `src/dynamic_ai_products/collection/web_snapshot.py`
 - `src/dynamic_ai_products/config.py`
 - `src/dynamic_ai_products/dev30/__init__.py`
+- `src/dynamic_ai_products/dev30/combined_candidate_adapter.py`
 - `src/dynamic_ai_products/dev30/item1_locator.py`
 - `src/dynamic_ai_products/evaluation/__init__.py`
 - `src/dynamic_ai_products/evaluation/assertions.py`
@@ -652,6 +655,7 @@ Total tracked/scaffold files listed: **782**
 - `tests/collection/test_transport_contract.py`
 - `tests/collection/test_web_snapshot.py`
 - `tests/contamination/test_no_legacy_contamination.py`
+- `tests/dev30/test_combined_candidate_adapter.py`
 - `tests/dev30/test_item1_locator.py`
 - `tests/dev30/test_item1_locator_ledger.py`
 - `tests/evaluation/test_assertions.py`

@@ -934,7 +934,15 @@ def test_repo_manifest_count_and_paths():
     # schema-registry change; the ledger follows the same contract-declaring,
     # test-validated config pattern as the cohort manifest itself. Dev30-only:
     # no Stage 00C source_id or sec-primary: identity is produced or accepted.
-    assert "Total tracked/scaffold files listed: **782**" in text
+    # 786 = 782 + the four ADR-098 Dev30 combined-candidate paths: the two
+    # governed Stage-1/Stage-2 schemas and their adapter module and test
+    # file. Unlike the manifest and ledger, this increment IS a schema-
+    # registry change (schema_version_manifest.json 0.37.0 -> 0.38.0, 86 ->
+    # 88 entries) but is not added to EVALUATION_SCHEMA_CONTRACTS or
+    # RELEASED_EVALUATION_CONTRACTS -- Dev30 stays outside the production
+    # evaluation-harness contract surface, and the adapter hash-pins both
+    # schema files itself.
+    assert "Total tracked/scaffold files listed: **786**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

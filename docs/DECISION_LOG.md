@@ -6376,6 +6376,128 @@ that is done here.
 XBRL parsing, no shell determination for text filings, no screening,
 classification or PCT extraction, and no third fetch.
 
+## ADR-098 — PCT_Dev30_v0 combined-candidate contract: local-ID staging, ledger-anchored candidate IDs, no self-confidence fields
+
+**Status.** Accepted. Fixture-first and offline: two governed schemas plus a
+pure adapter module, no `pct_candidate_extraction_dev30_v1` prompt drafted,
+no model called, no Dev30 firm scored, no holdout output touched, no
+`data/runs`/W3 contact.
+
+**What this is for.** A future single Dev30 extraction call must emit
+product, capability and task claims for one Item 1 span in one shape, rather
+than three separate calls each guessing at the others' identities. This ADR
+governs the exact two-stage contract that call will have to produce and the
+deterministic, non-model code that turns its raw output into a persisted,
+verifiable artifact. It authorizes no extraction prompt and no live call.
+
+**Two stages, not one.** Stage 1 (`pct_dev30_v0_model_output@0.1.0`) is the
+shape a model is instructed to emit: candidates keyed by local, per-call IDs
+(`P1`, `C1`, `T1`, kind-prefixed and pattern-typed) so a task can reference
+its product and capabilities before any persisted identity exists. Stage 2
+(`pct_dev30_v0_persisted_candidates@0.1.0`) is what
+`src/dynamic_ai_products/dev30/combined_candidate_adapter.py` — pure,
+deterministic, no model call — produces from it: every local reference
+rewritten to a persisted `candidate_id`, `local_id` retained only as
+non-authoritative diagnostic metadata. Computing `candidate_id` from a
+payload that already contained `candidate_id` would be circular; the local-ID
+stage exists specifically to avoid that.
+
+**The model is not trusted for its own identity.** The adapter takes a
+`ticker`, resolves the one canonical
+`evals/registries/pct_dev30_v0_item1_locator_ledger.json` from the
+repository root, and reads it to obtain the `legacy_source_id` and
+`source_text_hash` that ticker is allowed to claim. `build_persisted_candidates`
+has no `locator_ledger_path` parameter or any other way for a caller to
+redirect it to a different file. A Stage-1 output that echoes a different
+`legacy_source_id` is refused (`legacy_source_id_mismatch`) before any
+`candidate_id` is computed. The caller also supplies `span_text` — the Item 1
+content quote-containment is checked against — and the adapter refuses
+unless `sha256(span_text) == ` the hash embedded in the ledger's
+`legacy_source_id` (`span_text_hash_mismatch`), so an arbitrary or stale
+string cannot be used to rubber-stamp a candidate's evidence quote.
+
+**Correction (same increment, before commit).** The first version of this
+adapter took a `locator_ledger_path` parameter and let the caller supply an
+arbitrary file. It computed that file's real sha256 into
+`locator_ledger_sha256`, but always wrote the fixed, canonical-looking
+string into `locator_ledger_relative_path` regardless of what was actually
+read — so a caller-selected, non-canonical ledger could be consumed while
+the persisted Stage-2 artifact still claimed canonical-ledger provenance. No
+Stage-2 artifact was ever produced against a real Dev30 ticker under this
+defect; it was caught before commit. The fix: the ledger path is now a fixed
+internal constant (`_LEDGER_PATH = _REPO_ROOT / LOCATOR_LEDGER_RELATIVE_PATH`)
+with its own reviewed hash pin (`_CANONICAL_LEDGER_SHA256`), read and
+verified exactly like the two schema files, and checked before any ticker
+row is extracted — mismatch refuses with the new `ledger_file_tampered`
+reason. Tests redirect the adapter only by monkeypatching the two
+module-private names together (`_LEDGER_PATH`, `_CANONICAL_LEDGER_SHA256`);
+no public parameter offers an equivalent.
+
+**`candidate_id` anchors to the raw model output, not to the source.**
+`candidate_id = sha256(model_output_sha256 || 0x00 || ordinal || 0x00 || kind
+|| 0x00 || canonical_json_bytes(fields))[:32]`, where `fields` excludes
+`candidate_id`, `local_id`, `kind` and `ordinal`, and every relationship
+field is rewritten to an already-computed persisted `candidate_id` by
+processing products, then capabilities, then tasks — acyclic by
+construction. `model_output_sha256` is the raw Stage-1 bytes' own hash,
+computed before parsing. Anchoring there rather than on `legacy_source_id`
+makes every `candidate_id` non-transferable across distinct raw outputs even
+when their logical content agrees, matching
+`extraction_candidate_collection@0.1.0`'s existing `raw_artifact_sha256`
+anchor pattern. `ordinal` is the row's index in the **original** Stage-1
+array, independent of the adapter's topological processing order.
+
+**Candidates carry no disposition and no self-confidence field.** A prior
+round of this design put `excluded_internal_use`/
+`excluded_pending_scope_decision` values inside a `disposition` field on
+candidate rows, conflating "this is a candidate" with "this was excluded."
+That field is gone. `candidates` is in-scope only; a separate, optional,
+non-exhaustive `excluded_mentions` list carries evidence-backed exclusions
+under a closed four-value reason enum (`internal_use`, `vague_ai_marketing`,
+`not_customer_facing`, `insufficient_specificity`). Roadmap or beta language
+is never routed there — it is an ordinary candidate carrying a non-GA
+`availability_status`. Neither schema carries a confidence, uncertainty, or
+`ai_relevance_status` field; the quality controls are evidence quote, exact
+offsets, explicit availability, relationship validation, and later human
+review — nothing the model self-rates.
+
+**Discriminated, closed schemas.** Both stages use a `kind`-discriminated
+`oneOf` over product/capability/task branches, each `additionalProperties:
+false`. `local_id` is kind-prefix-patterned (`^P[1-9][0-9]*$` etc.), which
+closes "correctly typed link" at the schema level: a capability or task
+reference can only ever validate against a local_id string whose own branch
+requires the matching `kind` value, so a referential wrong-kind condition is
+unreachable once schema validation has passed and is not re-checked in the
+adapter (only existence and duplication are — JSON Schema cannot express
+either across a heterogeneous array). `zero_candidate_reason` is schema-
+enforced (via `if`/`then`) to be non-null exactly when `candidates` is empty.
+
+**Registry treatment, and its boundary.** Both schema files are registered in
+`schemas/schema_version_manifest.json` (0.37.0 → 0.38.0, 86 → 88 entries).
+Neither is added to `EVALUATION_SCHEMA_CONTRACTS` or
+`RELEASED_EVALUATION_CONTRACTS` in
+`src/dynamic_ai_products/evaluation/schemas.py` — Dev30 is not a production
+evaluation-harness contract, and folding it into that registry would put an
+unauthorized-for-scale artifact on the harness's own release surface. The
+adapter instead hash-pins both schema files itself (`_STAGE1_SCHEMA_SHA256`,
+`_STAGE2_SCHEMA_SHA256`) and refuses on drift
+(`schema_file_tampered`), the same fail-closed posture the production
+registry uses, self-contained rather than shared. The committed locator
+ledger gets the identical treatment: hash-pinned as `_CANONICAL_LEDGER_SHA256`
+against the fixed `_LEDGER_PATH`, refusing with `ledger_file_tampered` on
+drift, checked before any ticker row is extracted.
+
+**Scope.** Added: the two schemas, the adapter module, and its test file (54
+synthetic cases — no real Dev30 firm text, no holdout access — covering
+every schema branch, every one of the eleven `REASON_*` refusal codes,
+ordinal preservation under out-of-order declaration, non-transferability
+across distinct raw outputs, reproducibility of the exact `candidate_id`
+formula, canonical-ledger tamper detection, and the absence of any public
+ledger-selecting parameter). Modified: the schema registry, `REPO_MANIFEST.md`
+(782 → 786), the three manifest-count tests, and `test_schema_registry.py`'s
+pinned manifest hash. This authorizes no extraction prompt, model call, or
+Dev30 score.
+
 ## Open decisions
 
 - Required source packet by firm-year.
