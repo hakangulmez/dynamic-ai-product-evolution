@@ -6760,6 +6760,100 @@ shard count.
 pinned registry hash and manifest counts move. The v0.1 aggregate schema is
 byte-unchanged, verified by hash and by validating a v0.1 payload against it.
 
+## ADR-102 — Full-cohort shell determination reads the lineage aggregate
+
+**Status.** Accepted. Fixture-first; every lineage in the tests is synthesized
+under a temporary root. No real cohort determination was run, no SEC request
+made, no packet built, no model called.
+
+**Measurement.** `run_shell_company_determination` takes one `--bundle-dir`
+and reads that bundle's rows. The completed W3 v0.3 cohort is **8,718 carrier
+rows across 86 bundles in 17 execution runs**, and the only artefact naming
+them authoritatively is the ADR-101 aggregate
+(`b78f35c7a813d30cd1113d19d348eba39213556f52bfb31ce224830bbd9298b6`,
+`coverage_complete: true`). Two obvious routes are wrong before they are
+tried: copying 8,718 primaries into one directory would make a second,
+unhashed copy of 22.5 GiB of immutable evidence, and merging 86 bundle
+manifests would fabricate an artefact no acquisition run wrote. The aggregate
+already *is* the merge.
+
+**Decision: read the aggregate, and read nothing else.** `--aggregate-manifest`
+is the only data location `determine-shell-company-lineage` accepts. There is
+no shard-output root, no bundle directory, no replay directory, no glob and no
+search path, so there is nothing to scan *with*. Every directory the run opens
+is exactly a `shards_authoritative[].run_dir` value from the validated
+manifest, resolved against the repository root and never joined with an
+operator-supplied prefix. A `run_dir` that is absolute, traverses a parent, or
+resolves outside the repository root is refused before any open.
+`superseded_directories` and `shards_not_authoritative` are **counted and
+never resolved**: a nearby shard directory the aggregate does not name is
+unreachable, because no code path constructs its name. Pinned by making an
+unnamed shard directory unreadable and observing that the run still produces
+byte-identical output.
+
+**Full cohort means complete coverage.** `coverage_complete: true` is
+required. A cohort assembled from 80 of 86 shards would under-count exclusions
+without saying so, and partial coverage is refused rather than reported.
+
+**Hash re-verification precedes every read.** For each authoritative record,
+the bundle manifest and the acquisition manifest are re-hashed on disk and
+compared to the aggregate's own record **before** any primary is opened. Hash
+equality means the bytes read are byte-identical to the bytes the aggregate
+bound, which is why the shard plans are not regenerated here — doing so would
+require the queue definition and frozen carrier as inputs, pulling planning
+into determination for a guarantee the recorded hashes already give. The
+unchanged bundle loader then verifies every document's byte length and
+SHA-256, and the unchanged `determine_for_row` reads the bytes.
+
+**The record contract does not move.** Determinations are written under
+`shell_company_determination@0.2.0` exactly as before, and a row determined
+through the lineage path and through the single-bundle path yields an
+identical record — asserted directly, field by field, against a single-bundle
+run over the same fixture rows. Only the manifest describing the *run* is
+versioned, because v0.2's single `bundle_manifest_sha256` cannot describe a
+cohort spread over many bundles. `shell_company_determination_manifest@0.3.0`
+binds the aggregate by path, hash and run id, the queue identity, the supplied
+`execution_run_ids`, every consumed shard, the record-order constant, and the
+ignored superseded and non-authoritative counts. v0.1 and v0.2 stay
+byte-unchanged and neither validates a v0.3 manifest.
+
+**Deterministic record order.** The JSONL is written in `shard_index`
+ascending order, then in each bundle manifest's own entry order. Both keys
+come from artefacts, never from an argument, and the order is **computed by
+sorting on the shard index** rather than inherited from the aggregate's array
+position — so it holds even for an array that arrived out of order. Permuting
+`execution_run_ids` therefore changes the aggregate's own bytes and hence
+`aggregate_manifest_sha256`, but cannot move a determination record: the JSONL
+and its output hash are byte-identical, asserted directly.
+
+**Fail-closed, before output creation.** Missing, malformed, wrong-contract or
+partial aggregate; empty authoritative set; duplicate shard index or run
+directory; escaping `run_dir`; missing or hash-mismatched bundle or
+acquisition manifest; any bundle-loader failure; the same `(cik, accession)`
+in two shards; carrier-provenance disagreement; and a bundle row count that
+disagrees with the aggregate's `carrier_rows`. Each leaves no run directory.
+
+**Outcome semantics unchanged.** `true` is a deterministic hard exclusion;
+`false` and `unknown` are retained and assert nothing. `firms_excluded` equals
+exactly the count of true determinations.
+
+**Limits.** This determines one fact for one cohort. It authorizes no packet
+build, no screening, no classification and no extraction, and it confers
+nothing on a run id the aggregate does not list. The CLI anchors `run_dir`
+resolution at the repository root, so a lineage outside that root is
+unreachable through the entrypoint by construction; the success path is
+exercised in-process against a synthetic root, and the CLI tests pin the
+refusal surface and that anchoring. Recorded now and not repaired here: the
+six plain-text primaries carry no `ix:nonNumeric` markup and will yield
+`unknown` on `no_shell_fact_in_document`, retained rather than excluded, as
+will shard 41's 179-byte document. That is a property of the corpus.
+
+**Scope.** Twelve paths: the new v0.3 manifest schema; the schema registry
+(0.40.0 → 0.41.0, 91 → 92 entries); `shell_company_determination.py`;
+`pipelines/00_build_company_universe.py`; the Stage 00B-S tests; this log;
+`REPO_MANIFEST.md` (793 → 794); and the five evaluation guard modules whose
+pinned registry hash and manifest counts move.
+
 ## Open decisions
 
 - Required source packet by firm-year.

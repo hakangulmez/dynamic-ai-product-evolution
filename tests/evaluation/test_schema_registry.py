@@ -174,6 +174,14 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-102 (full-cohort shell determination from a lineage
+    # aggregate): manifest_version 0.40.0 -> 0.41.0, 91 -> 92 entries,
+    # registering shell_company_determination_manifest_v3. The v0.1 and v0.2
+    # determination schemas and the v0.2 manifest are byte-unchanged, and the
+    # v0.2 *record* contract does not move at all: a row determined through
+    # either path yields an identical record. The successor is not added to
+    # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS below --
+    # Stage 00B-S is not a production evaluation-harness contract. Before it,
     # Rebaselined by ADR-101 (lineage aggregation over enumerated execution
     # runs): manifest_version 0.39.0 -> 0.40.0, 90 -> 91 entries, registering
     # acquisition_queue_aggregate_manifest_v2. The v0.1 aggregate schema is
@@ -284,7 +292,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "40666cfad8888ac72e52ff27d598e804034899db78946d2c39d09e843214efae"
+    "c9d6f8cecdb751c867419f5ce0a5ae788e27c421014ce14efab08393ae6fb1ee"
 )
 
 

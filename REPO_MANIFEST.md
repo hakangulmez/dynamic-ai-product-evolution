@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **793**
+Total tracked/scaffold files listed: **794**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -422,6 +422,7 @@ Total tracked/scaffold files listed: **793**
 - `schemas/shell_company_determination.v2.schema.json`
 - `schemas/shell_company_determination_manifest.schema.json`
 - `schemas/shell_company_determination_manifest.v2.schema.json`
+- `schemas/shell_company_determination_manifest.v3.schema.json`
 - `schemas/snapshot_manifest.schema.json`
 - `schemas/source_document.schema.json`
 - `schemas/source_family_coverage.schema.json`

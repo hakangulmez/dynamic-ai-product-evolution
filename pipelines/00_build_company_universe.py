@@ -143,6 +143,7 @@ from dynamic_ai_products.ingestion.baseline_packet import (  # noqa: E402
 )
 from dynamic_ai_products.ingestion.shell_company_determination import (  # noqa: E402
     ShellDeterminationError,
+    run_lineage_shell_company_determination,
     run_shell_company_determination,
 )
 from dynamic_ai_products.universe.acquisition_queue import (
@@ -190,6 +191,7 @@ def build_parser() -> argparse.ArgumentParser:
                  "acquire-dera", "baseline-carrier", "acquire-docs",
                  "probe-filing-index", "build-baseline-packets",
                  "acquire-primary-docs", "determine-shell-company",
+                 "determine-shell-company-lineage",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
                  "aggregate-acquisition-lineage"],
@@ -327,6 +329,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--execution-run-id", default=None,
         help="Aggregate-acquisition-queue mode only: the execution run id "
              "whose shard directories are being aggregated.",
+    )
+    parser.add_argument(
+        "--aggregate-manifest", default=None,
+        help="Determine-shell-company-lineage mode only: the path of one "
+             "ADR-101 acquisition_queue_aggregate_manifest@0.2.0. It is the "
+             "sole authority root and the only data location this mode "
+             "accepts: every shard directory read comes from inside it.",
     )
     parser.add_argument(
         "--execution-run-ids", default=None,
@@ -544,6 +553,10 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         offending = _present(
             sentinel_flags + frame_flags + acquire_flags + dera_flags
             + (("--config", args.config),)
+            # The generations never mix: the single-bundle path reads exactly
+            # one named bundle, so an aggregate root is not a shorthand it
+            # accepts (ADR-102).
+            + (("--aggregate-manifest", args.aggregate_manifest),)
         )
         if offending:
             return (
@@ -552,6 +565,31 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             )
         if args.bundle_dir is None:
             return "determine-shell-company mode requires: --bundle-dir"
+        return None
+
+    if args.mode == "determine-shell-company-lineage":
+        offending = _present(
+            sentinel_flags + frame_flags + acquire_flags + dera_flags
+            + (("--config", args.config),)
+            # Refused in this direction too, and with it every other data
+            # location: the aggregate is the sole authority root, so a bundle
+            # directory or shard-output root supplied here would name evidence
+            # the manifest does not authorize.
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--shard-output-dir", args.shard_output_dir),)
+            + (("--queue-definition", args.queue_definition),)
+            + (("--replay-dir", args.replay_dir),)
+        )
+        if offending:
+            return (
+                "determine-shell-company-lineage mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        if args.aggregate_manifest is None:
+            return (
+                "determine-shell-company-lineage mode requires: "
+                "--aggregate-manifest"
+            )
         return None
 
     if args.mode == "build-baseline-packets":
@@ -1358,6 +1396,46 @@ def _main_determine_shell_company(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_determine_shell_company_lineage(args: argparse.Namespace) -> int:
+    # One path in, and it is a file: this mode has no directory argument at
+    # all, so there is nothing here that could widen what the run may open.
+    aggregate_manifest = Path(args.aggregate_manifest)
+    if not aggregate_manifest.is_file():
+        print(f"ERROR: aggregate manifest not found: {aggregate_manifest}",
+              file=sys.stderr)
+        return 2
+    try:
+        result = run_lineage_shell_company_determination(
+            repo_root=REPO_ROOT,
+            aggregate_manifest_path=aggregate_manifest,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except (ShellDeterminationError, PacketBundleError) as exc:
+        print(f"ERROR: invalid lineage determination input: {exc}",
+              file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "aggregate_manifest_sha256": result.bundle_manifest_sha256,
+        "counts": result.counts,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 def _main_build_baseline_packets(args: argparse.Namespace) -> int:
     bundle_dir = Path(args.bundle_dir)
     config_path = Path(args.config)
@@ -1631,6 +1709,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_acquire_primary_docs(args)
     if args.mode == "determine-shell-company":
         return _main_determine_shell_company(args)
+    if args.mode == "determine-shell-company-lineage":
+        return _main_determine_shell_company_lineage(args)
     if args.mode == "plan-acquisition-queue":
         return _main_plan_acquisition_queue(args)
     if args.mode == "execute-acquisition-queue":

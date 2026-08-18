@@ -755,3 +755,574 @@ def test_corrected_logic_moves_only_the_three_transform_rows(tmp_path):
     assert counts["by_basis"]["no_fact_assignable_to_this_cik"] == 5
     assert counts["by_basis"]["no_shell_fact_in_document"] == 8
     assert all(result.reconciliation.values())
+
+
+# --- ADR-102: the lineage cohort ----------------------------------------------
+#
+# A completed cohort lives in many bundles across many execution runs, and the
+# only artefact naming them authoritatively is the ADR-101 aggregate. These
+# pin the three things that path is for: the aggregate is the sole authority
+# root, a directory it does not name is unreachable, and the record order is
+# computed from artefacts rather than from how the runs were enumerated.
+#
+# Every lineage is synthesized under tmp_path. The synthetic repository root
+# symlinks the real schemas/ directory, so the real validators run while
+# nothing is written inside the repository.
+
+import os
+
+from dynamic_ai_products.ingestion.shell_company_determination import (  # noqa: E402
+    RECORD_ORDER,
+    load_lineage_bundles,
+    run_lineage_shell_company_determination,
+)
+
+MANIFEST_V3_SCHEMA = (
+    ROOT / "schemas" / "shell_company_determination_manifest.v3.schema.json"
+)
+AGGREGATE_V2_SCHEMA = (
+    ROOT / "schemas" / "acquisition_queue_aggregate_manifest.v2.schema.json"
+)
+ACQ_MANIFEST_FILENAME = "primary_document_acquisition_manifest.json"
+BUNDLE_MANIFEST_FILENAME = "bundle_manifest.json"
+
+
+def _synth_root(tmp_path: Path) -> Path:
+    """A repository root holding only the real schemas, by symlink."""
+    root = tmp_path / "repo"
+    root.mkdir(parents=True)
+    (root / "schemas").symlink_to(ROOT / "schemas")
+    return root
+
+
+def _write_shard(root: Path, name: str, documents: list[dict]) -> Path:
+    """One shard-shaped directory: bundle, its primaries, and a stub manifest.
+
+    The acquisition manifest is only ever re-hashed against the aggregate's
+    record, never parsed, so a stub carries exactly the meaning the consumer
+    reads from it.
+    """
+    source = read_json(BUNDLE_DIR / BUNDLE_MANIFEST_FILENAME)
+    run_dir = root / "shards" / name
+    run_dir.mkdir(parents=True)
+    manifest = {**source, "documents": documents}
+    (run_dir / BUNDLE_MANIFEST_FILENAME).write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    for document in documents:
+        shutil.copyfile(BUNDLE_DIR / document["local_filename"],
+                        run_dir / document["local_filename"])
+    (run_dir / ACQ_MANIFEST_FILENAME).write_text(
+        json.dumps({"stub_for": name}, indent=2) + "\n", encoding="utf-8")
+    return run_dir
+
+
+def _shard_record(root: Path, index: int, run_dir: Path, rows: int) -> dict:
+    return {
+        "shard_index": index,
+        "run_id": run_dir.name,
+        "run_dir": str(run_dir.relative_to(root)),
+        "shard_plan_sha256": f"{index:064d}",
+        "acquisition_manifest_sha256": sha256(
+            (run_dir / ACQ_MANIFEST_FILENAME).read_bytes()).hexdigest(),
+        "bundle_manifest_sha256": sha256(
+            (run_dir / BUNDLE_MANIFEST_FILENAME).read_bytes()).hexdigest(),
+        "accessions": rows,
+        "carrier_rows": rows,
+        "bundle_entries": rows,
+        "total_requests": 2 * rows,
+        "retained_bytes_total": 1,
+    }
+
+
+def _aggregate_payload(records: list[dict], *, run_ids: list[str],
+                       superseded: list[dict] | None = None,
+                       not_authoritative: list[dict] | None = None) -> dict:
+    superseded = superseded or []
+    not_authoritative = not_authoritative or []
+    rows = sum(r["carrier_rows"] for r in records)
+    return {
+        "aggregate_manifest_contract": "acquisition_queue_aggregate_manifest@0.2.0",
+        "run_id": "synthetic-aggregate",
+        "queue_id": "synthetic-queue",
+        "queue_definition_sha256": "a" * 64,
+        "execution_run_ids": list(run_ids),
+        "coverage_complete": not not_authoritative,
+        "coverage_statement": (
+            f"{len(records)} of {len(records) + len(not_authoritative)} "
+            "shard(s) are authoritative."
+            + (" Coverage is PARTIAL." if not_authoritative else "")
+        ),
+        "shards_authoritative": records,
+        "shards_not_authoritative": not_authoritative,
+        "superseded_directories": superseded,
+        "counts": {
+            "shards_in_queue": len(records) + len(not_authoritative),
+            "shards_authoritative": len(records),
+            "shards_not_authoritative": len(not_authoritative),
+            "accessions_covered": rows,
+            "carrier_rows_covered": rows,
+            "bundle_entries": rows,
+            "total_requests": 2 * rows,
+            "retained_bytes_total": len(records),
+            "superseded_directories": len(superseded),
+            "retained_bytes_superseded": 0,
+        },
+        "run_timestamp": "2026-08-18T09:00:00+00:00",
+        "limitations": ["Synthetic fixture aggregate."],
+    }
+
+
+def _lineage(tmp_path: Path, *, run_ids=("ra", "rb"), superseded=None,
+             not_authoritative=None, split: int = 8):
+    """Two shard directories carrying the committed fixture bundle's rows."""
+    root = _synth_root(tmp_path)
+    documents = read_json(BUNDLE_DIR / BUNDLE_MANIFEST_FILENAME)["documents"]
+    first = _write_shard(root, "ra-shard-0000", documents[:split])
+    second = _write_shard(root, "rb-shard-0001", documents[split:])
+    records = [
+        _shard_record(root, 0, first, len(documents[:split])),
+        _shard_record(root, 1, second, len(documents[split:])),
+    ]
+    payload = _aggregate_payload(records, run_ids=list(run_ids),
+                                 superseded=superseded,
+                                 not_authoritative=not_authoritative)
+    path = root / "aggregate.json"
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return root, path, [first, second]
+
+
+def _run_lineage(root: Path, path: Path, tmp_path: Path,
+                 run_id: str = "lin"):
+    return run_lineage_shell_company_determination(
+        repo_root=root, aggregate_manifest_path=path,
+        output_dir=tmp_path / "out", run_id=run_id, clock=FIXED_CLOCK)
+
+
+def _rewrite_aggregate(path: Path, mutate) -> None:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    mutate(payload)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+# --- the cohort ---------------------------------------------------------------
+
+
+def test_lineage_determines_every_row_across_shards(tmp_path):
+    root, path, shards = _lineage(tmp_path)
+    result = _run_lineage(root, path, tmp_path)
+    total = len(read_json(BUNDLE_DIR / BUNDLE_MANIFEST_FILENAME)["documents"])
+    assert result.counts["rows_considered"] == total
+    assert result.counts["determinations"] == total
+    assert result.counts["shards_consumed"] == 2
+    assert all(result.reconciliation.values())
+    manifest = read_json(result.manifest_path)
+    assert not list(Draft202012Validator(read_json(MANIFEST_V3_SCHEMA))
+                    .iter_errors(manifest))
+    assert manifest["determination_record_order"] == RECORD_ORDER
+    assert manifest["aggregate_manifest_sha256"] == sha256(
+        path.read_bytes()).hexdigest()
+    assert [s["shard_index"] for s in manifest["shards_consumed"]] == [0, 1]
+
+
+def test_lineage_records_match_the_single_bundle_path(tmp_path):
+    """Same rows, same records: determine_for_row is reused unchanged."""
+    single = run_shell_company_determination(
+        repo_root=ROOT, bundle_dir=BUNDLE_DIR,
+        output_dir=tmp_path / "single", run_id="single", clock=FIXED_CLOCK)
+    root, path, _ = _lineage(tmp_path)
+    lineage = _run_lineage(root, path, tmp_path)
+
+    def comparable(records):
+        # Each record cites its own shard bundle, so that one field differs by
+        # construction; everything determined from the document must not.
+        return [{k: v for k, v in r.items() if k != "bundle_manifest_sha256"}
+                for r in records]
+
+    assert comparable(lineage.determinations) == comparable(single.determinations)
+    assert lineage.counts["shell_true"] == single.counts["shell_true"]
+    assert lineage.counts["shell_false"] == single.counts["shell_false"]
+    assert lineage.counts["shell_unknown"] == single.counts["shell_unknown"]
+    assert lineage.counts["by_basis"] == single.counts["by_basis"]
+
+
+def test_only_true_excludes_false_and_unknown_are_retained(tmp_path):
+    root, path, _ = _lineage(tmp_path)
+    result = _run_lineage(root, path, tmp_path)
+    outcomes = {r["shell_company"] for r in result.determinations}
+    assert outcomes <= {"true", "false", "unknown"}
+    assert result.counts["firms_excluded"] == result.counts["shell_true"]
+    assert result.counts["shell_true"] >= 1, "fixture must exercise an exclusion"
+    assert result.counts["shell_unknown"] >= 1
+
+
+# --- determinism --------------------------------------------------------------
+
+
+def test_permuted_execution_run_ids_produce_identical_jsonl(tmp_path):
+    """Rule 1: the enumeration orders nothing in the output."""
+    root, path, _ = _lineage(tmp_path, run_ids=("ra", "rb"))
+    first = _run_lineage(root, path, tmp_path, run_id="one")
+    first_bytes = (first.run_dir / DETERMINATIONS_FILENAME).read_bytes()
+    first_hash = read_json(first.manifest_path)["output_hashes"][
+        DETERMINATIONS_FILENAME]
+
+    _rewrite_aggregate(path, lambda p: p.update(
+        execution_run_ids=list(reversed(p["execution_run_ids"]))))
+    second = _run_lineage(root, path, tmp_path, run_id="two")
+    second_bytes = (second.run_dir / DETERMINATIONS_FILENAME).read_bytes()
+    second_manifest = read_json(second.manifest_path)
+
+    assert second_bytes == first_bytes
+    assert second_manifest["output_hashes"][DETERMINATIONS_FILENAME] == first_hash
+    # Only the aggregate's own identity moved.
+    assert second_manifest["execution_run_ids"] == ["rb", "ra"]
+    assert second_manifest["aggregate_manifest_sha256"] != read_json(
+        first.manifest_path)["aggregate_manifest_sha256"]
+
+
+def test_record_order_is_computed_from_shard_index_not_array_position(tmp_path):
+    root, path, _ = _lineage(tmp_path)
+    ordered = _run_lineage(root, path, tmp_path, run_id="ordered").determinations
+    _rewrite_aggregate(path, lambda p: p.update(
+        shards_authoritative=list(reversed(p["shards_authoritative"]))))
+    shuffled = _run_lineage(root, path, tmp_path, run_id="shuffled").determinations
+    assert shuffled == ordered
+
+    # Within a shard, the bundle manifest's own entry order is preserved.
+    documents = read_json(BUNDLE_DIR / BUNDLE_MANIFEST_FILENAME)["documents"]
+    assert [r["accession"] for r in ordered] == [
+        d["accession"].replace("-", "") if False else d["accession"]
+        for d in documents
+    ]
+
+
+# --- the run_dir boundary -----------------------------------------------------
+
+
+def test_a_shard_directory_the_aggregate_does_not_name_is_never_opened(tmp_path):
+    """Rule 2: only shards_authoritative[].run_dir is ever resolved."""
+    root, path, shards = _lineage(tmp_path)
+    before = _run_lineage(root, path, tmp_path, run_id="before")
+
+    documents = read_json(BUNDLE_DIR / BUNDLE_MANIFEST_FILENAME)["documents"]
+    intruder = _write_shard(root, "rz-shard-0002", documents[:2])
+    os.chmod(intruder, 0o000)
+    try:
+        after = _run_lineage(root, path, tmp_path, run_id="after")
+        assert after.determinations == before.determinations
+        assert after.counts == before.counts
+        manifest = json.dumps(read_json(after.manifest_path))
+        assert "rz-shard-0002" not in manifest
+        assert (after.run_dir / DETERMINATIONS_FILENAME).read_bytes() == (
+            before.run_dir / DETERMINATIONS_FILENAME).read_bytes()
+    finally:
+        os.chmod(intruder, 0o755)
+
+
+def test_superseded_and_non_authoritative_entries_are_never_resolved(tmp_path):
+    root, path, _ = _lineage(tmp_path)
+    clean = _run_lineage(root, path, tmp_path, run_id="clean")
+    _rewrite_aggregate(path, lambda p: p.update(superseded_directories=[{
+        "shard_index": 0,
+        "run_dir": "shards/does-not-exist-shard-0000",
+        "receipt_present": True,
+        "failure_reason_code": "metadata_http_failure",
+        "retained_file_count": 3,
+        "retained_bytes": 9,
+        "superseded_by_run_dir": "shards/ra-shard-0000",
+    }], counts={**json.loads(path.read_text())["counts"],
+                "superseded_directories": 1}))
+    noisy = _run_lineage(root, path, tmp_path, run_id="noisy")
+    assert noisy.determinations == clean.determinations
+    assert noisy.counts["superseded_directories_ignored"] == 1
+    assert noisy.counts["rows_considered"] == clean.counts["rows_considered"]
+
+
+@pytest.mark.parametrize("bad", ["/etc", "../escape", "shards/../../escape"])
+def test_an_escaping_run_dir_is_refused(tmp_path, bad):
+    root, path, _ = _lineage(tmp_path)
+
+    def mutate(payload):
+        payload["shards_authoritative"][0]["run_dir"] = bad
+
+    _rewrite_aggregate(path, mutate)
+    with pytest.raises(ShellDeterminationError):
+        _run_lineage(root, path, tmp_path)
+    assert not (tmp_path / "out" / "lin").exists()
+
+
+# --- fail-closed refusals -----------------------------------------------------
+
+
+def test_a_tampered_bundle_manifest_is_refused(tmp_path):
+    root, path, shards = _lineage(tmp_path)
+    manifest = read_json(shards[0] / BUNDLE_MANIFEST_FILENAME)
+    manifest["description"] = "edited after aggregation"
+    (shards[0] / BUNDLE_MANIFEST_FILENAME).write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    with pytest.raises(ShellDeterminationError, match="hashes to"):
+        _run_lineage(root, path, tmp_path)
+    assert not (tmp_path / "out" / "lin").exists()
+
+
+def test_a_tampered_acquisition_manifest_is_refused(tmp_path):
+    root, path, shards = _lineage(tmp_path)
+    (shards[1] / ACQ_MANIFEST_FILENAME).write_text("{}\n", encoding="utf-8")
+    with pytest.raises(ShellDeterminationError, match="hashes to"):
+        _run_lineage(root, path, tmp_path)
+    assert not (tmp_path / "out" / "lin").exists()
+
+
+def test_a_tampered_primary_document_is_refused(tmp_path):
+    from dynamic_ai_products.ingestion.baseline_packet import PacketBundleError
+
+    root, path, shards = _lineage(tmp_path)
+    document = read_json(shards[0] / BUNDLE_MANIFEST_FILENAME)["documents"][0]
+    (shards[0] / document["local_filename"]).write_bytes(b"<html>edited</html>")
+    with pytest.raises(PacketBundleError):
+        _run_lineage(root, path, tmp_path)
+    assert not (tmp_path / "out" / "lin").exists()
+
+
+def test_partial_coverage_is_refused(tmp_path):
+    root, path, _ = _lineage(tmp_path, not_authoritative=[{
+        "shard_index": 2, "run_dir": None, "receipt_present": False,
+        "reason": "no_run_directory", "failure_reason_code": None,
+    }])
+    with pytest.raises(ShellDeterminationError, match="coverage is partial"):
+        _run_lineage(root, path, tmp_path)
+    assert not (tmp_path / "out" / "lin").exists()
+
+
+def test_a_duplicate_shard_index_is_refused(tmp_path):
+    root, path, _ = _lineage(tmp_path)
+    _rewrite_aggregate(path, lambda p: p["shards_authoritative"][1].update(
+        shard_index=0))
+    with pytest.raises(ShellDeterminationError, match="repeats shard index"):
+        _run_lineage(root, path, tmp_path)
+    assert not (tmp_path / "out" / "lin").exists()
+
+
+def test_a_duplicate_run_dir_is_refused(tmp_path):
+    root, path, _ = _lineage(tmp_path)
+    _rewrite_aggregate(path, lambda p: p["shards_authoritative"][1].update(
+        run_dir=p["shards_authoritative"][0]["run_dir"]))
+    with pytest.raises(ShellDeterminationError, match="repeats run directory"):
+        _run_lineage(root, path, tmp_path)
+    assert not (tmp_path / "out" / "lin").exists()
+
+
+def test_a_row_in_two_shards_is_refused(tmp_path):
+    """Overlapping shards: the same carrier row twice is never determined twice."""
+    root = _synth_root(tmp_path)
+    documents = read_json(BUNDLE_DIR / BUNDLE_MANIFEST_FILENAME)["documents"]
+    first = _write_shard(root, "ra-shard-0000", documents[:8])
+    second = _write_shard(root, "rb-shard-0001", documents[6:])
+    records = [_shard_record(root, 0, first, 8),
+               _shard_record(root, 1, second, len(documents) - 6)]
+    path = root / "aggregate.json"
+    path.write_text(json.dumps(
+        _aggregate_payload(records, run_ids=["ra", "rb"]), indent=2) + "\n",
+        encoding="utf-8")
+    with pytest.raises(ShellDeterminationError, match="belongs to exactly one"):
+        _run_lineage(root, path, tmp_path)
+    assert not (tmp_path / "out" / "lin").exists()
+
+
+def test_carrier_provenance_disagreement_is_refused(tmp_path):
+    root, path, shards = _lineage(tmp_path)
+    manifest = read_json(shards[1] / BUNDLE_MANIFEST_FILENAME)
+    manifest["provenance"] = {**manifest["provenance"],
+                              "carrier_run_id": "a-different-carrier"}
+    (shards[1] / BUNDLE_MANIFEST_FILENAME).write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    # Re-point the aggregate at the edited bytes so provenance, not the hash,
+    # is what refuses.
+    _rewrite_aggregate(path, lambda p: p["shards_authoritative"][1].update(
+        bundle_manifest_sha256=sha256(
+            (shards[1] / BUNDLE_MANIFEST_FILENAME).read_bytes()).hexdigest()))
+    with pytest.raises(ShellDeterminationError, match="carrier provenance"):
+        _run_lineage(root, path, tmp_path)
+    assert not (tmp_path / "out" / "lin").exists()
+
+
+def test_a_row_count_disagreement_is_refused(tmp_path):
+    root, path, _ = _lineage(tmp_path)
+    _rewrite_aggregate(path, lambda p: p["shards_authoritative"][0].update(
+        carrier_rows=99))
+    with pytest.raises(ShellDeterminationError, match="carrier row"):
+        _run_lineage(root, path, tmp_path)
+    assert not (tmp_path / "out" / "lin").exists()
+
+
+def test_a_missing_shard_directory_or_manifest_is_refused(tmp_path):
+    root, path, shards = _lineage(tmp_path)
+    (shards[0] / ACQ_MANIFEST_FILENAME).unlink()
+    with pytest.raises(ShellDeterminationError, match="is missing from"):
+        _run_lineage(root, path, tmp_path)
+    assert not (tmp_path / "out" / "lin").exists()
+
+    root2, path2, shards2 = _lineage(tmp_path / "second")
+    shutil.rmtree(shards2[1])
+    with pytest.raises(ShellDeterminationError, match="run directory not found"):
+        _run_lineage(root2, path2, tmp_path / "second")
+
+
+@pytest.mark.parametrize("mutate, match", [
+    (lambda p: p.update(aggregate_manifest_contract="x@0.1.0"), "declares"),
+    (lambda p: p.update(shards_authoritative=[]), "no authoritative shard"),
+    (lambda p: p.pop("counts"), "violates"),
+])
+def test_a_malformed_aggregate_is_refused(tmp_path, mutate, match):
+    root, path, _ = _lineage(tmp_path)
+    _rewrite_aggregate(path, mutate)
+    with pytest.raises(ShellDeterminationError, match=match):
+        _run_lineage(root, path, tmp_path)
+    assert not (tmp_path / "out" / "lin").exists()
+
+
+def test_a_missing_or_unparseable_aggregate_is_refused(tmp_path):
+    root, path, _ = _lineage(tmp_path)
+    path.unlink()
+    with pytest.raises(ShellDeterminationError, match="not found"):
+        _run_lineage(root, path, tmp_path)
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ShellDeterminationError, match="not valid JSON"):
+        _run_lineage(root, path, tmp_path)
+    assert not (tmp_path / "out" / "lin").exists()
+
+
+def test_the_lineage_run_is_write_once(tmp_path):
+    root, path, _ = _lineage(tmp_path)
+    _run_lineage(root, path, tmp_path)
+    with pytest.raises(FileExistsError):
+        _run_lineage(root, path, tmp_path)
+
+
+# --- generation separation ----------------------------------------------------
+
+
+def test_the_two_determination_manifest_generations_reject_each_other(tmp_path):
+    single = run_shell_company_determination(
+        repo_root=ROOT, bundle_dir=BUNDLE_DIR,
+        output_dir=tmp_path / "single", run_id="single", clock=FIXED_CLOCK)
+    root, path, _ = _lineage(tmp_path)
+    lineage = _run_lineage(root, path, tmp_path)
+    v2 = read_json(single.manifest_path)
+    v3 = read_json(lineage.manifest_path)
+    assert "bundle_manifest_sha256" in v2 and "aggregate_manifest_sha256" not in v2
+    assert "aggregate_manifest_sha256" in v3 and "bundle_manifest_sha256" not in v3
+    v2_schema = Draft202012Validator(read_json(MANIFEST_SCHEMA))
+    v3_schema = Draft202012Validator(read_json(MANIFEST_V3_SCHEMA))
+    assert not list(v2_schema.iter_errors(v2))
+    assert not list(v3_schema.iter_errors(v3))
+    assert list(v3_schema.iter_errors(v2)), "a v0.2 manifest is not a v0.3 one"
+    assert list(v2_schema.iter_errors(v3)), "a v0.3 manifest is not a v0.2 one"
+
+
+def test_the_predecessor_schemas_are_byte_unchanged():
+    """v0.1 and v0.2 keep their identity; only the run manifest is versioned."""
+    for path, expected in (
+        (DET_V1_SCHEMA, "shell_company_determination@0.1.0"),
+        (DET_SCHEMA, "shell_company_determination@0.2.0"),
+    ):
+        assert read_json(path)["properties"]["determination_contract"]["const"] \
+            == expected
+    assert read_json(MANIFEST_V1_SCHEMA)["properties"][
+        "determination_contract"]["const"] == "shell_company_determination@0.1.0"
+    assert read_json(MANIFEST_SCHEMA)["properties"][
+        "determination_contract"]["const"] == "shell_company_determination@0.2.0"
+    assert "aggregate_manifest_sha256" not in read_json(MANIFEST_SCHEMA)[
+        "properties"]
+
+
+# --- ADR-102 CLI --------------------------------------------------------------
+
+
+def _shell_cli(*args):
+    import subprocess
+    import sys
+
+    return subprocess.run([sys.executable, str(CLI), *args],
+                          capture_output=True, text=True, check=False)
+
+
+def test_cli_lineage_mode_anchors_run_dirs_at_the_repository_root(tmp_path):
+    """The entrypoint owns the root, so a shard path is never CWD-relative.
+
+    A synthetic lineage under tmp_path is therefore unreachable through the
+    CLI by construction -- which is the property being pinned. The success
+    path is exercised in-process above, where the repository root is the
+    synthetic one.
+    """
+    root, path, _ = _lineage(tmp_path)
+    completed = _shell_cli("--mode", "determine-shell-company-lineage",
+                           "--aggregate-manifest", str(path),
+                           "--output-dir", str(tmp_path / "cli"),
+                           "--run-id", "cli-lineage")
+    assert completed.returncode == 2
+    assert "run directory not found" in completed.stderr
+    assert str(ROOT / "shards" / "ra-shard-0000") in completed.stderr
+    assert not (tmp_path / "cli").exists(), "refused before any output"
+
+
+def test_cli_single_bundle_mode_still_runs_unchanged(tmp_path):
+    completed = _shell_cli("--mode", "determine-shell-company",
+                           "--bundle-dir", str(BUNDLE_DIR),
+                           "--output-dir", str(tmp_path / "out"),
+                           "--run-id", "still-works")
+    assert completed.returncode == 0, completed.stderr
+    written = read_json(tmp_path / "out" / "still-works" / MANIFEST_FILENAME)
+    assert not list(Draft202012Validator(read_json(MANIFEST_SCHEMA))
+                    .iter_errors(written))
+    assert "bundle_manifest_sha256" in written
+
+
+def test_cli_refuses_mixing_the_bundle_and_aggregate_flags(tmp_path):
+    root, path, _ = _lineage(tmp_path)
+    single = _shell_cli("--mode", "determine-shell-company",
+                        "--bundle-dir", str(BUNDLE_DIR),
+                        "--aggregate-manifest", str(path),
+                        "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert single.returncode != 0
+    assert "--aggregate-manifest" in single.stderr
+    assert "does not accept" in single.stderr
+
+    lineage = _shell_cli("--mode", "determine-shell-company-lineage",
+                         "--aggregate-manifest", str(path),
+                         "--bundle-dir", str(BUNDLE_DIR),
+                         "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert lineage.returncode != 0
+    assert "--bundle-dir" in lineage.stderr
+    assert "does not accept" in lineage.stderr
+
+
+@pytest.mark.parametrize("flag", ["--shard-output-dir", "--queue-definition",
+                                  "--replay-dir", "--bundle-dir"])
+def test_cli_lineage_mode_accepts_no_other_data_location(tmp_path, flag):
+    root, path, _ = _lineage(tmp_path)
+    completed = _shell_cli("--mode", "determine-shell-company-lineage",
+                           "--aggregate-manifest", str(path), flag, str(tmp_path),
+                           "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert completed.returncode != 0
+    assert flag in completed.stderr
+    assert not (tmp_path / "o").exists()
+
+
+def test_cli_lineage_mode_requires_the_aggregate_flag(tmp_path):
+    completed = _shell_cli("--mode", "determine-shell-company-lineage",
+                           "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert completed.returncode != 0
+    assert "requires: --aggregate-manifest" in completed.stderr
+    assert not (tmp_path / "o").exists()
+
+
+def test_load_lineage_bundles_opens_only_the_named_directories(tmp_path):
+    """The loader is the seam; it returns exactly what it was allowed to read."""
+    root, path, shards = _lineage(tmp_path)
+    aggregate, loaded, aggregate_sha, provenance = load_lineage_bundles(root, path)
+    assert [s["shard_index"] for s in loaded] == [0, 1]
+    assert [Path(root / s["run_dir"]) for s in loaded] == shards
+    assert aggregate_sha == sha256(path.read_bytes()).hexdigest()
+    assert set(provenance) == {"carrier_run_id", "carrier_manifest_sha256",
+                               "freeze_record_sha256"}

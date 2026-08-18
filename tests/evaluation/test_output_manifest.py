@@ -951,6 +951,13 @@ def test_repo_manifest_count_and_paths():
     # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
     # v0.1.
+    # 794 = 793 + the one ADR-102 path: the v0.3 lineage-cohort determination
+    # manifest schema
+    # (schemas/shell_company_determination_manifest.v3.schema.json). Every
+    # predecessor determination schema is byte-unchanged and the v0.2 record
+    # contract does not move. Schema registry: 0.40.0 -> 0.41.0, 91 -> 92
+    # entries; the successor is not added to EVALUATION_SCHEMA_CONTRACTS or
+    # RELEASED_EVALUATION_CONTRACTS. Before it,
     # 793 = 792 + the one ADR-101 path: the v0.2 lineage aggregate schema
     # (schemas/acquisition_queue_aggregate_manifest.v2.schema.json), the
     # successor scoped to enumerated execution run ids. The v0.1 aggregate
@@ -963,7 +970,7 @@ def test_repo_manifest_count_and_paths():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert "Total tracked/scaffold files listed: **793**" in text
+    assert "Total tracked/scaffold files listed: **794**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

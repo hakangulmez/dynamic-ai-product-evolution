@@ -83,7 +83,15 @@ from ..universe.identifiers import (
     SEC_CIK_IDENTIFIER_SCHEME,
     company_id_for_cik,
 )
+from ..universe.acquisition_queue import (
+    AGGREGATE_MANIFEST_CONTRACT_V2,
+    AGGREGATE_V2_SCHEMA_RELATIVE_PATH,
+)
 from ..universe.io_utils import read_json
+from ..universe.primary_document_acquisition import (
+    ACQUISITION_MANIFEST_FILENAME,
+    BUNDLE_MANIFEST_FILENAME,
+)
 from .baseline_packet import PacketBundleError, load_bundle
 
 DETERMINATION_CONTRACT = "shell_company_determination@0.2.0"
@@ -108,6 +116,21 @@ DETERMINATION_SCHEMA_RELATIVE_PATH = Path(
 MANIFEST_SCHEMA_RELATIVE_PATH = Path(
     "schemas/shell_company_determination_manifest.v2.schema.json"
 )
+#: v0.3, the lineage-cohort run manifest (ADR-102). The record contract does
+#: not move: a row determined through either path yields an identical v0.2
+#: record, and only the manifest describing the *run* is versioned, because
+#: v0.2's single ``bundle_manifest_sha256`` cannot describe a cohort spread
+#: over many bundles. v0.1 and v0.2 stay byte-unchanged and neither validates
+#: a v0.3 manifest.
+MANIFEST_V3_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/shell_company_determination_manifest.v3.schema.json"
+)
+LINEAGE_MANIFEST_FILENAME = MANIFEST_FILENAME
+#: The order determination records are written in, recorded in the manifest so
+#: a reader need not infer it. Both keys come from artefacts -- the aggregate's
+#: shard index and the bundle manifest's own entry order -- never from an
+#: argument, so the output is independent of how the runs were enumerated.
+RECORD_ORDER = "shard_index_then_bundle_entry_order"
 
 #: The one fact this module reads. No other cover-page fact is consulted.
 SHELL_FACT_NAME = "dei:EntityShellCompany"
@@ -597,4 +620,409 @@ def run_shell_company_determination(
         what="shell company determination manifest",
     )
     result.manifest_path = run_dir / MANIFEST_FILENAME
+    return result
+
+
+# --- ADR-102: the lineage cohort ---------------------------------------------
+#
+# The single-bundle path above is unchanged and still takes one bundle
+# directory. A completed cohort, however, lives in many bundles across many
+# execution runs, and the only artefact naming them authoritatively is the
+# ADR-101 aggregate. Copying primaries into one directory would make a second,
+# unhashed copy of immutable evidence; merging bundle manifests would fabricate
+# an artefact no acquisition run wrote. The aggregate is read as the authority
+# root instead.
+#
+# **It is the only data-location input there is.** This consumer takes no
+# shard-output root, no bundle directory, no replay directory, no glob and no
+# search path, so there is nothing to scan *with*. Every directory it opens is
+# exactly a ``shards_authoritative[].run_dir`` value from the validated
+# manifest, resolved against the repository root and never joined with an
+# operator-supplied prefix. ``superseded_directories`` and
+# ``shards_not_authoritative`` are counted and never resolved: a nearby shard
+# directory that the aggregate does not name is unreachable, because no code
+# path here constructs its name.
+
+
+def _resolved_run_dir(root: Path, raw: object, shard_index: int) -> Path:
+    """Resolve a run_dir the aggregate names, refusing anything that escapes."""
+    where = f"shards_authoritative[shard_index={shard_index}].run_dir"
+    if not isinstance(raw, str) or not raw.strip():
+        raise ShellDeterminationError(f"{where} is not a usable path: {raw!r}.")
+    candidate = Path(raw)
+    if candidate.is_absolute():
+        raise ShellDeterminationError(
+            f"{where} is absolute ({raw!r}); a shard directory is named "
+            "relative to the repository root."
+        )
+    if ".." in candidate.parts:
+        raise ShellDeterminationError(
+            f"{where} traverses a parent directory ({raw!r})."
+        )
+    base = root.resolve()
+    resolved = (base / candidate).resolve()
+    if not resolved.is_relative_to(base):
+        raise ShellDeterminationError(
+            f"{where} resolves outside the repository root ({raw!r})."
+        )
+    return resolved
+
+
+def load_lineage_bundles(
+    repo_root: str | Path, aggregate_manifest_path: str | Path
+) -> tuple[dict, list[dict], str, dict]:
+    """Validate one ADR-101 aggregate and open exactly the shards it names.
+
+    Fails closed before anything is written. Each referenced bundle and
+    acquisition manifest is re-hashed against the aggregate's own record
+    *before* a primary document is read: equality means the bytes on disk are
+    byte-identical to the bytes the aggregate bound, which is why the shard
+    plans are not regenerated here. The unchanged bundle loader then verifies
+    every document's byte length and SHA-256.
+    """
+    root = Path(repo_root)
+    path = Path(aggregate_manifest_path)
+    if not path.is_file():
+        raise ShellDeterminationError(f"Aggregate manifest not found: {path}")
+    raw = path.read_bytes()
+    try:
+        aggregate = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ShellDeterminationError(
+            f"Aggregate manifest is not valid JSON: {exc}"
+        ) from exc
+    if not isinstance(aggregate, dict):
+        raise ShellDeterminationError(
+            f"Aggregate manifest is not a JSON object: {path}"
+        )
+    declared = aggregate.get("aggregate_manifest_contract")
+    if declared != AGGREGATE_MANIFEST_CONTRACT_V2:
+        raise ShellDeterminationError(
+            f"Aggregate manifest declares {declared!r}; the lineage cohort is "
+            f"read only from {AGGREGATE_MANIFEST_CONTRACT_V2}."
+        )
+    schema = read_json(root / AGGREGATE_V2_SCHEMA_RELATIVE_PATH)
+    errors = sorted(
+        Draft202012Validator(schema).iter_errors(aggregate),
+        key=lambda e: e.json_path,
+    )
+    if errors:
+        details = "; ".join(f"{e.json_path}: {e.message}" for e in errors[:5])
+        raise ShellDeterminationError(
+            f"Aggregate manifest violates "
+            f"{AGGREGATE_V2_SCHEMA_RELATIVE_PATH.name}: {details}"
+        )
+    if aggregate["coverage_complete"] is not True:
+        raise ShellDeterminationError(
+            "Aggregate coverage is partial "
+            f"({aggregate['coverage_statement']}). A full-cohort determination "
+            "is built only from complete coverage; a partial one would "
+            "under-count exclusions without saying so."
+        )
+    records = aggregate["shards_authoritative"]
+    if not records:
+        raise ShellDeterminationError(
+            "Aggregate names no authoritative shard; there is nothing to read."
+        )
+    indices = [record["shard_index"] for record in records]
+    duplicates = sorted({i for i in indices if indices.count(i) > 1})
+    if duplicates:
+        raise ShellDeterminationError(
+            f"Aggregate repeats shard index {duplicates}; one index names one "
+            "authoritative directory."
+        )
+    directories = [record["run_dir"] for record in records]
+    repeated = sorted({d for d in directories if directories.count(d) > 1})
+    if repeated:
+        raise ShellDeterminationError(
+            f"Aggregate repeats run directory {repeated}."
+        )
+
+    shards: list[dict] = []
+    rows_seen: dict[tuple[str, str], int] = {}
+    provenance: dict | None = None
+    # Sorted rather than taken in array order: the record order is computed
+    # from the shard index itself, so it holds even for an aggregate whose
+    # array arrived out of order, and cannot depend on how the runs were
+    # enumerated.
+    for record in sorted(records, key=lambda r: r["shard_index"]):
+        index = record["shard_index"]
+        run_dir = _resolved_run_dir(root, record["run_dir"], index)
+        if not run_dir.is_dir():
+            raise ShellDeterminationError(
+                f"Shard {index}: run directory not found: {run_dir}"
+            )
+        for filename, key in (
+            (BUNDLE_MANIFEST_FILENAME, "bundle_manifest_sha256"),
+            (ACQUISITION_MANIFEST_FILENAME, "acquisition_manifest_sha256"),
+        ):
+            target = run_dir / filename
+            if not target.is_file():
+                raise ShellDeterminationError(
+                    f"Shard {index}: {filename} is missing from {run_dir}."
+                )
+            observed = sha256(target.read_bytes()).hexdigest()
+            if observed != record[key]:
+                raise ShellDeterminationError(
+                    f"Shard {index}: {filename} hashes to {observed}, but the "
+                    f"aggregate records {record[key]}. The evidence on disk is "
+                    "not the evidence that was aggregated; nothing is read."
+                )
+        manifest, entries, bundle_sha = load_bundle(root, run_dir)
+        if len(entries) != record["carrier_rows"]:
+            raise ShellDeterminationError(
+                f"Shard {index}: bundle holds {len(entries)} row(s) but the "
+                f"aggregate records {record['carrier_rows']} carrier row(s)."
+            )
+        declared_provenance = {
+            "carrier_run_id": manifest["provenance"]["carrier_run_id"],
+            "carrier_manifest_sha256": manifest["provenance"][
+                "carrier_manifest_sha256"
+            ],
+            "freeze_record_sha256": manifest["provenance"][
+                "freeze_record_sha256"
+            ],
+        }
+        if provenance is None:
+            provenance = declared_provenance
+        elif declared_provenance != provenance:
+            raise ShellDeterminationError(
+                f"Shard {index}: carrier provenance {declared_provenance} "
+                f"disagrees with {provenance}. One cohort has one carrier; "
+                "disagreement is refused, never reconciled."
+            )
+        for entry in entries:
+            key = (entry["cik"], entry["accession"])
+            if key in rows_seen:
+                raise ShellDeterminationError(
+                    f"Row {key} appears in shard {rows_seen[key]} and shard "
+                    f"{index}; a carrier row belongs to exactly one shard."
+                )
+            rows_seen[key] = index
+        shards.append({
+            "shard_index": index,
+            "run_dir": record["run_dir"],
+            "bundle_manifest_sha256": bundle_sha,
+            "acquisition_manifest_sha256": record["acquisition_manifest_sha256"],
+            "rows": len(entries),
+            "entries": entries,
+        })
+    return aggregate, shards, sha256(raw).hexdigest(), provenance or {}
+
+
+def run_lineage_shell_company_determination(
+    *,
+    repo_root: str | Path,
+    aggregate_manifest_path: str | Path,
+    output_dir: str | Path,
+    run_id: str,
+    clock: Callable[[], datetime],
+    dry_run: bool = False,
+) -> ShellRunResult:
+    """Determine shell status for every carrier row of one lineage cohort."""
+    root = Path(repo_root)
+    if not _RUN_ID_RE.match(run_id):
+        raise ShellDeterminationError(
+            f"Invalid run id {run_id!r}: only letters, digits, '.', '_', '-' "
+            "are allowed (no path separators)."
+        )
+    aggregate, shards, aggregate_sha, provenance = load_lineage_bundles(
+        root, aggregate_manifest_path
+    )
+
+    determinations: list[dict] = []
+    for shard in shards:
+        for entry in shard["entries"]:
+            record = determine_for_row(entry, entry["path"].read_bytes())
+            record["bundle_manifest_sha256"] = shard["bundle_manifest_sha256"]
+            record["carrier_provenance"] = dict(provenance)
+            determinations.append(record)
+
+    by_outcome: dict[str, int] = {}
+    by_basis: dict[str, int] = {}
+    for record in determinations:
+        by_outcome[record["shell_company"]] = (
+            by_outcome.get(record["shell_company"], 0) + 1
+        )
+        by_basis[record["basis"]] = by_basis.get(record["basis"], 0) + 1
+    rows = sum(shard["rows"] for shard in shards)
+    counts = {
+        "rows_considered": rows,
+        "determinations": len(determinations),
+        "shell_true": by_outcome.get(SHELL_TRUE, 0),
+        "shell_false": by_outcome.get(SHELL_FALSE, 0),
+        "shell_unknown": by_outcome.get(SHELL_UNKNOWN, 0),
+        "firms_excluded": by_outcome.get(SHELL_TRUE, 0),
+        "by_basis": by_basis,
+        "shards_consumed": len(shards),
+        "superseded_directories_ignored": len(
+            aggregate["superseded_directories"]
+        ),
+        "shards_not_authoritative_ignored": len(
+            aggregate["shards_not_authoritative"]
+        ),
+    }
+    reconciliation = {
+        "one determination per carrier row": (
+            counts["rows_considered"] == counts["determinations"]
+        ),
+        "outcomes partition the determinations": (
+            counts["shell_true"] + counts["shell_false"] + counts["shell_unknown"]
+            == counts["determinations"]
+        ),
+        "exclusions are exactly the true determinations": (
+            counts["firms_excluded"] == counts["shell_true"]
+        ),
+        "every consumed shard is an authoritative aggregate record": (
+            counts["shards_consumed"] == len(aggregate["shards_authoritative"])
+        ),
+        "rows equal the aggregate's carrier rows": (
+            rows == aggregate["counts"]["carrier_rows_covered"]
+        ),
+        "every true or false determination cites one raw fact": all(
+            (
+                record["fact_element_sha256"] is not None
+                and record["fact_byte_start"] is not None
+                and record["fact_byte_end"] > record["fact_byte_start"]
+            )
+            for record in determinations
+            if record["shell_company"] in (SHELL_TRUE, SHELL_FALSE)
+        ),
+        "no unknown determination excludes a firm": all(
+            record["shell_company"] != SHELL_TRUE
+            for record in determinations
+            if record["basis"].startswith(("no_", "multiple_", "unsupported_",
+                                           "absent_", "unresolved_"))
+        ),
+    }
+    failed = sorted(name for name, ok in reconciliation.items() if not ok)
+    if failed:
+        raise ShellDeterminationError(
+            f"Lineage shell determination reconciliation failed: "
+            f"{'; '.join(failed)}. Nothing was written."
+        )
+
+    result = ShellRunResult(
+        run_id=run_id, run_dir=None, dry_run=dry_run,
+        bundle_manifest_sha256=aggregate_sha, determinations=determinations,
+        counts=counts, reconciliation=reconciliation,
+    )
+    if dry_run:
+        return result
+
+    validator = Draft202012Validator(
+        read_json(root / DETERMINATION_SCHEMA_RELATIVE_PATH)
+    )
+    for record in determinations:
+        errors = sorted(validator.iter_errors(record), key=lambda e: e.json_path)
+        if errors:
+            details = "; ".join(f"{e.json_path}: {e.message}" for e in errors[:5])
+            raise ValueError(
+                f"Determination violates the canonical schema: {details}"
+            )
+
+    run_dir = create_run_directory(output_dir, run_id)
+    result.run_dir = run_dir
+    payload = (
+        "\n".join(json.dumps(r, sort_keys=True) for r in determinations)
+        + ("\n" if determinations else "")
+    ).encode("utf-8")
+    write_bytes_once(
+        run_dir / DETERMINATIONS_FILENAME, payload,
+        what="lineage shell company determinations",
+    )
+
+    schema_versions = read_json(
+        root / "schemas" / "schema_version_manifest.json"
+    )["schemas"]
+    run_manifest = {
+        "run_id": run_id,
+        "determination_contract": DETERMINATION_CONTRACT,
+        "aggregate_manifest_path": str(aggregate_manifest_path),
+        "aggregate_manifest_sha256": aggregate_sha,
+        "aggregate_run_id": aggregate["run_id"],
+        "queue_id": aggregate["queue_id"],
+        "queue_definition_sha256": aggregate["queue_definition_sha256"],
+        "execution_run_ids": list(aggregate["execution_run_ids"]),
+        "shards_consumed": [
+            {
+                "shard_index": shard["shard_index"],
+                "run_dir": shard["run_dir"],
+                "bundle_manifest_sha256": shard["bundle_manifest_sha256"],
+                "acquisition_manifest_sha256": shard[
+                    "acquisition_manifest_sha256"
+                ],
+                "rows": shard["rows"],
+            }
+            for shard in shards
+        ],
+        "determination_record_order": RECORD_ORDER,
+        "carrier_provenance": dict(provenance),
+        "supported_transforms": list(SUPPORTED_TRANSFORMS),
+        "counts": counts,
+        "reconciliation": reconciliation,
+        "output_hashes": {DETERMINATIONS_FILENAME: sha256(payload).hexdigest()},
+        "run_timestamp": clock().isoformat(),
+        "schema_versions": {
+            "shell_company_determination_v2": schema_versions[
+                "shell_company_determination_v2"
+            ],
+            "shell_company_determination_manifest_v3": schema_versions[
+                "shell_company_determination_manifest_v3"
+            ],
+            "acquisition_queue_aggregate_manifest_v2": schema_versions[
+                "acquisition_queue_aggregate_manifest_v2"
+            ],
+        },
+        "limitations": [
+            "Exactly one fact is determined: shell_company. The four other "
+            "Stage 00B flags are neither read, set nor inferred, and the "
+            "five-flag issuer_filters contract is untouched.",
+            "true is a deterministic hard exclusion with dated evidence; "
+            "false means retained and asserts nothing about software, product "
+            "or general eligibility; unknown is retained.",
+            "The named aggregate is the sole authority root. This run took no "
+            "shard-output root, bundle directory, replay directory, glob or "
+            "search path, and every directory it opened was exactly a "
+            "shards_authoritative run_dir from that manifest. Superseded and "
+            "non-authoritative directories were counted, never resolved or "
+            "opened, and a shard directory the aggregate does not name was "
+            "unreachable.",
+            "Each referenced bundle and acquisition manifest was re-hashed "
+            "against the aggregate before any primary was read, and every "
+            "primary's byte length and SHA-256 were verified by the unchanged "
+            "bundle loader. The shard plans were not regenerated here: hash "
+            "equality means the bytes read are the bytes the aggregate bound.",
+            "Records are written in shard_index ascending order, then in each "
+            "bundle manifest's own entry order. Both keys come from artefacts, "
+            "so the output does not depend on the order the execution run ids "
+            "were enumerated.",
+            "Determination records keep the unchanged v0.2 record contract: a "
+            "row determined here and through the single-bundle path yields an "
+            "identical record.",
+            "Fixture-first: determinations are read from locally supplied, "
+            "hash-verified primary documents. This module performs no network "
+            "access and no model call.",
+        ],
+    }
+    errors = sorted(
+        Draft202012Validator(
+            read_json(root / MANIFEST_V3_SCHEMA_RELATIVE_PATH)
+        ).iter_errors(run_manifest),
+        key=lambda e: e.json_path,
+    )
+    if errors:
+        details = "; ".join(f"{e.json_path}: {e.message}" for e in errors[:5])
+        raise ValueError(
+            f"Lineage determination manifest violates the canonical schema: "
+            f"{details}"
+        )
+    manifest_payload = (
+        json.dumps(run_manifest, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    write_bytes_once(
+        run_dir / LINEAGE_MANIFEST_FILENAME, manifest_payload,
+        what="lineage shell company determination manifest",
+    )
+    result.manifest_path = run_dir / LINEAGE_MANIFEST_FILENAME
     return result

@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "shell_company_determination_manifest.v3.schema.json",
+  "title": "Shell-company determination run manifest (v0.3, lineage cohort)",
+  "description": "Immutable record of one Stage 00B-S shell-company determination run over a whole acquisition lineage (ADR-102). The v0.2 predecessor records bundle_manifest_sha256 as a single string, which no full-cohort run satisfies: the cohort lives in many bundles across many execution runs. This successor binds one ADR-101 acquisition_queue_aggregate_manifest@0.2.0 instead, by path, hash and run id, and lists every shard it consumed. The aggregate is the sole authority root: the consumer takes no shard-output root, bundle directory, replay directory, glob or search path, and every directory it opened is exactly a shards_authoritative[].run_dir value from that validated manifest. superseded_directories and shards_not_authoritative are counted here and never resolved or opened. Each referenced bundle and acquisition manifest was re-hashed against the aggregate's record before any primary document was read, and every primary was then verified for byte length and SHA-256 by the unchanged bundle loader. Determination records keep the v0.2 record contract unchanged and are written in shard_index ascending order, then in each bundle manifest's own entry order, so the output is independent of the order the execution run ids were enumerated. firms_excluded equals exactly the count of true determinations; false and unknown are retained. The 0.1.0 and 0.2.0 schemas are retained unchanged and remain the only validators for artefacts written under those contracts; this file never validates one of them, and neither validates a 0.3.0 manifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "determination_contract",
+    "aggregate_manifest_path",
+    "aggregate_manifest_sha256",
+    "aggregate_run_id",
+    "queue_id",
+    "queue_definition_sha256",
+    "execution_run_ids",
+    "shards_consumed",
+    "determination_record_order",
+    "carrier_provenance",
+    "supported_transforms",
+    "counts",
+    "reconciliation",
+    "output_hashes",
+    "run_timestamp",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "determination_contract": {
+      "const": "shell_company_determination@0.2.0",
+      "description": "The record contract is unchanged. A row determined through the lineage path and through the single-bundle path yields an identical record; only the run manifest describing the run is versioned here."
+    },
+    "aggregate_manifest_path": {
+      "type": "string"
+    },
+    "aggregate_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "aggregate_run_id": {
+      "type": "string"
+    },
+    "queue_id": {
+      "type": "string"
+    },
+    "queue_definition_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "execution_run_ids": {
+      "description": "Copied verbatim from the aggregate, in the order the aggregate recorded. Provenance only: it orders nothing here, and permuting it cannot move a determination record.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "shards_consumed": {
+      "description": "Every shard whose bundle was read, ordered by shard_index. Exactly the aggregate's authoritative records; nothing else was opened.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shard_index",
+          "run_dir",
+          "bundle_manifest_sha256",
+          "acquisition_manifest_sha256",
+          "rows"
+        ],
+        "properties": {
+          "shard_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "run_dir": {
+            "type": "string"
+          },
+          "bundle_manifest_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "acquisition_manifest_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "determination_record_order": {
+      "const": "shard_index_then_bundle_entry_order"
+    },
+    "carrier_provenance": {
+      "description": "One triple for the whole cohort. Every consumed bundle declared the same carrier run id, carrier manifest hash and freeze record hash; disagreement is refused, never reconciled.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrier_run_id",
+        "carrier_manifest_sha256",
+        "freeze_record_sha256"
+      ],
+      "properties": {
+        "carrier_run_id": {
+          "type": "string"
+        },
+        "carrier_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "freeze_record_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "supported_transforms": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "enum": [
+          "ixt-sec:boolballotbox",
+          "ixt:booleanfalse",
+          "ixt:fixed-false",
+          "ixt:booleantrue",
+          "ixt:fixed-true"
+        ]
+      },
+      "description": "Exactly the five transforms a v0.2 record run resolves, unchanged by this successor."
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rows_considered",
+        "determinations",
+        "shell_true",
+        "shell_false",
+        "shell_unknown",
+        "firms_excluded",
+        "by_basis",
+        "shards_consumed",
+        "superseded_directories_ignored",
+        "shards_not_authoritative_ignored"
+      ],
+      "properties": {
+        "rows_considered": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "determinations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "shell_true": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shell_false": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shell_unknown": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "firms_excluded": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_basis": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "shards_consumed": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "superseded_directories_ignored": {
+          "description": "Named by the aggregate and never resolved or opened here.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "shards_not_authoritative_ignored": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 5,
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shell_company_determinations.jsonl"
+      ],
+      "properties": {
+        "shell_company_determinations.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shell_company_determination_v2",
+        "shell_company_determination_manifest_v3",
+        "acquisition_queue_aggregate_manifest_v2"
+      ],
+      "properties": {
+        "shell_company_determination_v2": {
+          "type": "string"
+        },
+        "shell_company_determination_manifest_v3": {
+          "type": "string"
+        },
+        "acquisition_queue_aggregate_manifest_v2": {
+          "type": "string"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
