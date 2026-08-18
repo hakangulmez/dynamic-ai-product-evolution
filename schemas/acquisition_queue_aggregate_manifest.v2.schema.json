@@ -1,0 +1,321 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "acquisition_queue_aggregate_manifest.v2.schema.json",
+  "title": "Acquisition queue lineage aggregate manifest (v0.2, multi-run)",
+  "description": "Coverage over one lineage assembled from explicitly enumerated execution runs (ADR-101). The v0.1 predecessor scopes an aggregate to a single execution_run_id, which no completed lineage satisfies: failure isolation and batch-by-batch authorization each mint a fresh run id. This successor takes execution_run_ids and is otherwise governed identically. The enumeration is the complete authority boundary: discovery is limited strictly to the run ids listed here, and a shard directory under the same output root belonging to an unenumerated run id influences nothing - not selection, not any count, not coverage, not supersession, not an output hash. Only shards holding both a bundle manifest and an acquisition manifest are admitted, and only after their content binds to the regenerated shard plan. Two binding candidates at one shard index are refused rather than resolved. A non-authoritative directory at an index that IS covered authoritatively within the enumeration is recorded in superseded_directories, where it is named but never counted toward coverage. Shard record arrays are ordered by shard_index, independent of the order the run ids were supplied; execution_run_ids itself is recorded verbatim in the supplied order. This aggregate hashes shard manifests; no shard manifest hashes it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "aggregate_manifest_contract",
+    "run_id",
+    "queue_id",
+    "queue_definition_sha256",
+    "execution_run_ids",
+    "coverage_complete",
+    "coverage_statement",
+    "shards_authoritative",
+    "shards_not_authoritative",
+    "superseded_directories",
+    "counts",
+    "run_timestamp",
+    "limitations"
+  ],
+  "properties": {
+    "aggregate_manifest_contract": {
+      "const": "acquisition_queue_aggregate_manifest@0.2.0"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "queue_id": {
+      "type": "string"
+    },
+    "queue_definition_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "execution_run_ids": {
+      "description": "The enumerated execution runs this aggregate is scoped to, recorded verbatim in the order supplied. Order carries no meaning for shard selection or record ordering; it is preserved because the enumeration is the operator's authorization and is reproduced rather than normalized.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "coverage_complete": {
+      "type": "boolean"
+    },
+    "coverage_statement": {
+      "type": "string"
+    },
+    "shards_authoritative": {
+      "description": "One record per shard index holding exactly one bound authoritative directory, ordered by shard_index.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shard_index",
+          "run_id",
+          "run_dir",
+          "shard_plan_sha256",
+          "acquisition_manifest_sha256",
+          "bundle_manifest_sha256",
+          "accessions",
+          "carrier_rows",
+          "bundle_entries",
+          "total_requests",
+          "retained_bytes_total"
+        ],
+        "properties": {
+          "shard_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "run_dir": {
+            "type": "string"
+          },
+          "shard_plan_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "acquisition_manifest_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "bundle_manifest_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "accessions": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "carrier_rows": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "bundle_entries": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "total_requests": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "retained_bytes_total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "shards_not_authoritative": {
+      "description": "One record per shard index with no bound authoritative directory in the enumeration, ordered by shard_index. Such an index has exactly one non-authoritative candidate: several candidates and no authoritative one is ambiguous incomplete evidence and is refused, never resolved by naming one of them.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shard_index",
+          "run_dir",
+          "receipt_present",
+          "reason",
+          "failure_reason_code"
+        ],
+        "properties": {
+          "shard_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "run_dir": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "receipt_present": {
+            "type": "boolean"
+          },
+          "reason": {
+            "enum": [
+              "no_run_directory",
+              "handled_failure",
+              "interrupted_or_incomplete"
+            ]
+          },
+          "failure_reason_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "superseded_directories": {
+      "description": "Non-authoritative directories at shard indices that ARE covered authoritatively within this enumeration, ordered by shard_index then by enumeration order. They are named so the excluded evidence is accounted for, and are counted toward no coverage figure. A directory holding a receipt is a handled failure and states a non-empty reason code; a directory with no receipt was interrupted and states null.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shard_index",
+          "run_dir",
+          "receipt_present",
+          "failure_reason_code",
+          "retained_file_count",
+          "retained_bytes",
+          "superseded_by_run_dir"
+        ],
+        "properties": {
+          "shard_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "run_dir": {
+            "type": "string"
+          },
+          "receipt_present": {
+            "type": "boolean"
+          },
+          "failure_reason_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "retained_file_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "retained_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "superseded_by_run_dir": {
+            "type": "string"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "receipt_present"
+              ],
+              "properties": {
+                "receipt_present": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "failure_reason_code": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "receipt_present"
+              ],
+              "properties": {
+                "receipt_present": {
+                  "const": false
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "failure_reason_code": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shards_in_queue",
+        "shards_authoritative",
+        "shards_not_authoritative",
+        "accessions_covered",
+        "carrier_rows_covered",
+        "bundle_entries",
+        "total_requests",
+        "retained_bytes_total",
+        "superseded_directories",
+        "retained_bytes_superseded"
+      ],
+      "properties": {
+        "shards_in_queue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "shards_authoritative": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shards_not_authoritative": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "accessions_covered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "carrier_rows_covered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bundle_entries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_requests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retained_bytes_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "superseded_directories": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retained_bytes_superseded": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

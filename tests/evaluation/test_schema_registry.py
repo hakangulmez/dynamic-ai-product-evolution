@@ -174,6 +174,15 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-101 (lineage aggregation over enumerated execution
+    # runs): manifest_version 0.39.0 -> 0.40.0, 90 -> 91 entries, registering
+    # acquisition_queue_aggregate_manifest_v2. The v0.1 aggregate schema is
+    # byte-unchanged (re-verified directly by
+    # tests/universe/test_acquisition_queue.py, which validates a v0.1 payload
+    # against it and asserts the two generations reject each other), and the
+    # successor is not added to EVALUATION_SCHEMA_CONTRACTS or
+    # RELEASED_EVALUATION_CONTRACTS below: the acquisition queue is not a
+    # production evaluation-harness contract. Before it,
     # Rebaselined by ADR-099 (Dev30 v0.2 quote-derived-locator successor):
     # manifest_version 0.38.0 -> 0.39.0, 88 -> 90 entries, registering
     # pct_dev30_v0_model_output_v2 and pct_dev30_v0_persisted_candidates_v2.
@@ -275,7 +284,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "910e3b7f55ff61a5d654ffbeb53fe22fc483d3c4af7e8f688effe9f2f489a2f0"
+    "40666cfad8888ac72e52ff27d598e804034899db78946d2c39d09e843214efae"
 )
 
 

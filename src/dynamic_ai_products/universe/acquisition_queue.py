@@ -84,6 +84,12 @@ QUEUE_DEFINITION_V2_SCHEMA_RELATIVE_PATH = Path(
 PLAN_MANIFEST_CONTRACT = "acquisition_queue_plan_manifest@0.1.0"
 EXECUTION_MANIFEST_CONTRACT = "acquisition_queue_execution_manifest@0.1.0"
 AGGREGATE_MANIFEST_CONTRACT = "acquisition_queue_aggregate_manifest@0.1.0"
+#: v0.2 aggregates a **lineage**: one queue covered by several execution runs.
+#: The predecessor scopes an aggregate to a single ``execution_run_id``, which
+#: no completed lineage satisfies, because failure isolation and batch-by-batch
+#: authorization each mint a fresh run id (ADR-101). The successor takes an
+#: enumerated ``execution_run_ids`` instead and is governed identically.
+AGGREGATE_MANIFEST_CONTRACT_V2 = "acquisition_queue_aggregate_manifest@0.2.0"
 
 PLAN_MANIFEST_FILENAME = "acquisition_queue_plan_manifest.json"
 EXECUTION_MANIFEST_FILENAME = "acquisition_queue_execution_manifest.json"
@@ -97,6 +103,9 @@ EXECUTION_MANIFEST_SCHEMA_RELATIVE_PATH = Path(
 )
 AGGREGATE_MANIFEST_SCHEMA_RELATIVE_PATH = Path(
     "schemas/acquisition_queue_aggregate_manifest.schema.json"
+)
+AGGREGATE_V2_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/acquisition_queue_aggregate_manifest.v2.schema.json"
 )
 #: The queue always emits plan v0.2, so a shard's acquisition manifest is
 #: always a budgeted successor: v0.5 for sec_live, v0.4 for fixture replay.
@@ -1103,6 +1112,290 @@ def run_queue_aggregator(
     )
     # The run directory is returned alongside the manifest, never injected
     # into it: the validated payload carries only governed fields.
+    return QueueAggregateResult(
+        manifest=manifest, run_dir=run_dir,
+        manifest_path=run_dir / AGGREGATE_MANIFEST_FILENAME,
+    )
+
+
+#: Written by the acquisition runner itself; everything else a run directory
+#: holds is a retained raw document.
+_GOVERNED_FILENAMES = frozenset({
+    ACQUISITION_MANIFEST_FILENAME,
+    BUNDLE_MANIFEST_FILENAME,
+    FAILURE_RECEIPT_FILENAME,
+})
+
+
+def validate_execution_run_ids(execution_run_ids: list[str]) -> list[str]:
+    """Refuse anything but an explicit, ordered, duplicate-free enumeration.
+
+    Applied here as well as at the entrypoint, so a caller reaching the
+    aggregator directly cannot create a run directory from a malformed
+    enumeration. Order is preserved: the enumeration is the operator's
+    authorization and is recorded as supplied, never normalized.
+    """
+    ordered = list(execution_run_ids)
+    if not ordered:
+        raise AcquisitionQueueError(
+            "execution_run_ids must enumerate at least one execution run. "
+            "There is no value that expands to every run under an output root."
+        )
+    for value in ordered:
+        if not isinstance(value, str) or not value.strip():
+            raise AcquisitionQueueError(
+                f"execution_run_ids holds an empty run id ({value!r}); "
+                "enumerate the runs exactly, with no blank entry."
+            )
+        if not _RUN_ID_RE.match(value):
+            raise AcquisitionQueueError(
+                f"Invalid execution run id {value!r}: only letters, digits, "
+                "'.', '_', '-' are allowed (no path separators)."
+            )
+    duplicates = sorted({v for v in ordered if ordered.count(v) > 1})
+    if duplicates:
+        raise AcquisitionQueueError(
+            f"execution_run_ids repeats {duplicates}; each execution run is "
+            "named once."
+        )
+    return ordered
+
+
+def _lineage_candidates(
+    shard_output_dir: str | Path, execution_run_ids: list[str]
+) -> dict[int, list[Path]]:
+    """Map shard index to candidate directories, enumerated runs only.
+
+    Isolation is structural rather than filtered: discovery only ever asks
+    :func:`find_shard_run_dirs` for a named run id, whose pattern anchors
+    ``^{run_id}-shard-NNNN$``. A directory belonging to an unenumerated run is
+    never opened, so it cannot reach selection, a count, coverage,
+    supersession or an output hash by any path.
+    """
+    root = Path(shard_output_dir)
+    candidates: dict[int, list[Path]] = {}
+    for execution_run_id in execution_run_ids:
+        found = find_shard_run_dirs(root, execution_run_id)
+        if not found:
+            raise AcquisitionQueueError(
+                f"Execution run id {execution_run_id!r} matches no shard run "
+                f"directory under {root}. Every enumerated run must be "
+                "present, so a mistyped id is refused rather than silently "
+                "contributing nothing."
+            )
+        for index, path in sorted(found.items()):
+            candidates.setdefault(index, []).append(path)
+    return candidates
+
+
+def _retained_files(run_dir: Path) -> tuple[int, int]:
+    """Count and size the raw documents a non-authoritative directory kept."""
+    files = [
+        child for child in sorted(run_dir.iterdir())
+        if child.is_file() and child.name not in _GOVERNED_FILENAMES
+    ]
+    return len(files), sum(child.stat().st_size for child in files)
+
+
+def _receipt_reason_code(run_dir: Path, shard_index: int) -> str:
+    code = read_json(run_dir / FAILURE_RECEIPT_FILENAME).get("reason_code")
+    if not isinstance(code, str) or not code:
+        raise ShardIntegrityError(
+            f"Shard {shard_index}: {run_dir} holds a receipt with no usable "
+            "reason_code. A handled failure states why it failed."
+        )
+    return code
+
+
+def run_lineage_aggregator(
+    *,
+    repo_root: str | Path,
+    definition_path: str | Path,
+    shard_output_dir: str | Path,
+    execution_run_ids: list[str],
+    output_dir: str | Path,
+    run_id: str,
+    clock: Callable[[], datetime],
+    dry_run: bool = False,
+) -> QueueAggregateResult:
+    """Report coverage over one queue assembled from enumerated runs.
+
+    The v0.1 aggregator stays exactly as it is and keeps its single-run
+    contract. This successor exists because a *completed* lineage is
+    intrinsically multi-run: failure isolation and batch-by-batch
+    authorization each mint a fresh run id, so no single prefix reaches every
+    shard (ADR-101).
+    """
+    root = Path(repo_root)
+    if not _RUN_ID_RE.match(run_id):
+        raise AcquisitionQueueError(
+            f"Invalid run id {run_id!r}: only letters, digits, '.', '_', '-' "
+            "are allowed (no path separators)."
+        )
+    ordered_run_ids = validate_execution_run_ids(execution_run_ids)
+    definition = load_queue_definition(definition_path)
+    groups = select_carrier_accessions(
+        definition, root / definition.carrier_relative_path
+    )
+    shards = build_shard_plans(definition, groups)
+    candidates = _lineage_candidates(shard_output_dir, ordered_run_ids)
+
+    authoritative: list[dict] = []
+    excluded: list[dict] = []
+    superseded: list[dict] = []
+    for shard in shards:
+        here = candidates.get(shard.shard_index, [])
+        bound: list[tuple[Path, dict]] = []
+        unbound: list[Path] = []
+        for run_dir in here:
+            if manifest_pair_present(run_dir)[0]:
+                # Binding, not filename presence, decides. A candidate that
+                # fails to bind raises rather than being demoted to partial.
+                bound.append((run_dir, _bind_shard_manifest(root, run_dir, shard)))
+            else:
+                unbound.append(run_dir)
+        if len(bound) > 1:
+            raise AcquisitionQueueError(
+                f"Shard {shard.shard_index} has {len(bound)} authoritative "
+                f"directories in this enumeration: "
+                f"{[str(path) for path, _ in bound]}. Ambiguous authority is "
+                "refused; it is never resolved by preferring the newest run."
+            )
+        if not bound:
+            if not here:
+                excluded.append({
+                    "shard_index": shard.shard_index, "run_dir": None,
+                    "receipt_present": False, "reason": "no_run_directory",
+                    "failure_reason_code": None,
+                })
+                continue
+            if len(here) > 1:
+                # Several failed attempts at an index that never succeeded.
+                # Naming one of them would make the manifest depend on the
+                # order the runs were enumerated, and no tie-break --
+                # enumeration order, run-id order, timestamp -- is evidence
+                # about which failure describes the shard. Refused instead.
+                # Sorted for the message only. Nothing is being selected, so
+                # this is not a tie-break; it keeps the refusal itself
+                # independent of the order the runs were enumerated.
+                raise AcquisitionQueueError(
+                    f"Shard {shard.shard_index} has {len(here)} "
+                    f"non-authoritative directories in this enumeration and "
+                    f"no authoritative one: "
+                    f"{sorted(str(path) for path in here)}. Incomplete shard "
+                    "evidence is ambiguous: none of these directories carries "
+                    "authority, and none of them is chosen to represent the "
+                    "others."
+                )
+            representative = here[0]
+            receipt = manifest_pair_present(representative)[1]
+            excluded.append({
+                "shard_index": shard.shard_index,
+                "run_dir": str(representative),
+                "receipt_present": receipt,
+                "reason": ("handled_failure" if receipt
+                           else "interrupted_or_incomplete"),
+                "failure_reason_code": (
+                    _receipt_reason_code(representative, shard.shard_index)
+                    if receipt else None
+                ),
+            })
+            continue
+        run_dir, manifest = bound[0]
+        authoritative.append({
+            "shard_index": shard.shard_index,
+            "run_id": run_dir.name,
+            "run_dir": str(run_dir),
+            "shard_plan_sha256": shard.plan_sha256,
+            "acquisition_manifest_sha256": sha256_bytes(
+                (run_dir / ACQUISITION_MANIFEST_FILENAME).read_bytes()
+            ),
+            "bundle_manifest_sha256": sha256_bytes(
+                (run_dir / BUNDLE_MANIFEST_FILENAME).read_bytes()
+            ),
+            "accessions": len(shard.accessions),
+            "carrier_rows": shard.carrier_rows,
+            "bundle_entries": manifest["counts"]["bundle_entries"],
+            "total_requests": manifest["counts"]["total_requests"],
+            "retained_bytes_total": manifest.get("retained_bytes_total"),
+        })
+        for other in unbound:
+            receipt = manifest_pair_present(other)[1]
+            file_count, retained = _retained_files(other)
+            superseded.append({
+                "shard_index": shard.shard_index,
+                "run_dir": str(other),
+                "receipt_present": receipt,
+                "failure_reason_code": (
+                    _receipt_reason_code(other, shard.shard_index)
+                    if receipt else None
+                ),
+                "retained_file_count": file_count,
+                "retained_bytes": retained,
+                "superseded_by_run_dir": str(run_dir),
+            })
+
+    counts = {
+        "shards_in_queue": len(shards),
+        "shards_authoritative": len(authoritative),
+        "shards_not_authoritative": len(excluded),
+        "accessions_covered": sum(s["accessions"] for s in authoritative),
+        "carrier_rows_covered": sum(s["carrier_rows"] for s in authoritative),
+        "bundle_entries": sum(s["bundle_entries"] for s in authoritative),
+        "total_requests": sum(s["total_requests"] for s in authoritative),
+        "retained_bytes_total": sum(
+            s["retained_bytes_total"] or 0 for s in authoritative
+        ),
+        "superseded_directories": len(superseded),
+        "retained_bytes_superseded": sum(s["retained_bytes"] for s in superseded),
+    }
+    complete = len(authoritative) == len(shards)
+    manifest = {
+        "aggregate_manifest_contract": AGGREGATE_MANIFEST_CONTRACT_V2,
+        "run_id": run_id,
+        "queue_id": definition.queue_id,
+        "queue_definition_sha256": definition.definition_sha256,
+        "execution_run_ids": ordered_run_ids,
+        "coverage_complete": complete,
+        "coverage_statement": (
+            f"{len(authoritative)} of {len(shards)} shard(s) are authoritative "
+            f"across {len(ordered_run_ids)} enumerated execution run(s)."
+            + ("" if complete else " Coverage is PARTIAL.")
+        ),
+        "shards_authoritative": authoritative,
+        "shards_not_authoritative": excluded,
+        "superseded_directories": superseded,
+        "counts": counts,
+        "run_timestamp": clock().isoformat(),
+        "limitations": [
+            "This aggregate is scoped to the execution run ids it lists and "
+            "to nothing else. A shard directory under the same output root "
+            "belonging to an unenumerated run influenced no selection, no "
+            "count, no coverage figure, no supersession and no hash here.",
+            "Only shards holding both a bundle manifest and an acquisition "
+            "manifest are admitted, and only after binding. Two authoritative "
+            "directories at one shard index are refused, never resolved.",
+            "A superseded directory is named so the excluded evidence is "
+            "accounted for; it is counted toward no coverage figure. A shard "
+            "index holding several non-authoritative directories and no "
+            "authoritative one is refused, not represented by one of them.",
+            "Coverage below the queue's shard count is reported as partial and "
+            "never implies completeness.",
+            "This aggregate hashes shard manifests; no shard manifest hashes "
+            "it. The provenance graph stays directed and acyclic.",
+        ],
+    }
+    _validate(root, AGGREGATE_V2_SCHEMA_RELATIVE_PATH, manifest,
+              "lineage aggregate manifest")
+    if dry_run:
+        return QueueAggregateResult(manifest=manifest, run_dir=None,
+                                    manifest_path=None)
+    run_dir = create_run_directory(output_dir, run_id)
+    write_bytes_once(
+        run_dir / AGGREGATE_MANIFEST_FILENAME,
+        (json.dumps(manifest, indent=2) + "\n").encode("utf-8"),
+        what="queue lineage aggregate manifest",
+    )
     return QueueAggregateResult(
         manifest=manifest, run_dir=run_dir,
         manifest_path=run_dir / AGGREGATE_MANIFEST_FILENAME,

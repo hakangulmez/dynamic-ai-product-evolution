@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **792**
+Total tracked/scaffold files listed: **793**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -346,6 +346,7 @@ Total tracked/scaffold files listed: **792**
 - `prompts/measurement/task_defensibility.md`
 - `pyproject.toml`
 - `schemas/acquisition_queue_aggregate_manifest.schema.json`
+- `schemas/acquisition_queue_aggregate_manifest.v2.schema.json`
 - `schemas/acquisition_queue_definition.schema.json`
 - `schemas/acquisition_queue_definition.v2.schema.json`
 - `schemas/acquisition_queue_execution_manifest.schema.json`

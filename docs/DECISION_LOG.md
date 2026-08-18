@@ -6663,6 +6663,103 @@ changed, so `schemas/schema_version_manifest.json` and
 untouched this round. `data/runs` and W3 are untouched; no holdout row was
 opened to write this file.
 
+## ADR-101 — Lineage aggregation: enumerated execution runs, not one run id
+
+**Status.** Accepted. Fixture-first; no live request, no aggregate written
+over `data/runs`, no packet built, no shell determined, no model called.
+
+**Measurement.** The W3 v0.3 text-admitting lineage completed on 2026-08-18:
+86 of 86 shards authoritative and bound, 8,526 accessions, 8,718 carrier rows,
+17,052 requests, 24,180,231,616 retained bytes. It was assembled across
+**seventeen** execution runs — r1 through r17, contributing 1, 1, 1, 3, 29, 1,
+10, 1, 1, 1, 5, 5, 5, 5, 5, 5 and 7 shards. Aggregating it was then refused,
+not by a bug but by the contract: `run_queue_aggregator` discovers shards
+through `find_shard_run_dirs`, whose pattern anchors
+`^{execution_run_id}-shard-NNNN$`, and
+`acquisition_queue_aggregate_manifest@0.1.0` carries `execution_run_id` as a
+single string. Empirically the prefix `…-r5` reaches 30 directories, `…-r17`
+reaches 7, and the common stem `domestic-text-queue-execution-frame-v1`
+reaches 0, because `-shard-` must follow the prefix immediately.
+
+**Why seventeen runs, and why that is not an accident.** Two committed rules
+produce fresh run ids faster than shards are consumed. First, run directories
+are immutable: `create_run_directory` refuses reuse, so a shard that fails
+cannot be retried under its own run id — r5's shard 35 was re-acquired as r6,
+r7's shard 46 as r8, r9's shard 48 as r10. Second, every batch is separately
+authorized, and an authorization names its own run id. A completed lineage is
+therefore **intrinsically multi-run**, and a single-run aggregate can never
+assert one. This is the ADR-095 assumption that reality did not meet.
+
+**Decision: a successor, not a widening.** `@0.1.0` stays byte-identical and
+keeps `execution_run_id`; `@0.2.0` is a new file carrying `execution_run_ids`
+and no singular field, so under `additionalProperties: false` neither
+generation validates as the other. `run_lineage_aggregator` sits beside an
+untouched `run_queue_aggregator`, and `aggregate-acquisition-lineage` sits
+beside an untouched `aggregate-acquisition-queue`. Nothing about the v0.1 path
+moves: same mode name, same flag, same function, same output.
+
+**The enumeration is the complete authority boundary.** Run ids are named
+explicitly on the command line — `--execution-run-ids ea,eb,ec` — exactly as
+the executor's `--shard-indices` names shard indices. There is no value that
+expands to every run under an output root, no range syntax and no glob. An
+enumerated id matching zero directories is refused as a typo rather than
+silently contributing nothing. The list is parsed at the entrypoint, before
+the aggregator is reached and therefore before any run directory could exist,
+and the aggregator re-checks what it is handed; empty values, empty segments
+and duplicates are each refused with their own message. Both modes refuse the
+other's flag, so singular and plural can never be mixed in either direction.
+
+**An unenumerated directory is invisible, structurally.** Isolation is not a
+filter applied to a directory listing: discovery only ever asks
+`find_shard_run_dirs` for a *named* run id, so a directory belonging to an
+unenumerated run is never opened. It cannot reach authoritative selection, a
+count, coverage, supersession or an output hash by any path — proven for four
+shapes (a directory that would bind cleanly, a receipt-only one, one holding
+malformed JSON, and one holding two files merely named like manifests), each
+leaving the manifest byte-identical to the run without it. Enumerating that
+same run changes the answer, which is what makes the isolation the
+enumeration's doing rather than an accident of shape.
+
+**Ambiguous authority is refused, never resolved.** Discovery across several
+runs can find two candidate directories at one shard index. Both are bound,
+so corrupt evidence still raises `ShardIntegrityError`; if both *bind*, the
+aggregate is refused. Preferring the newest run would silently pick a winner
+between two artefacts that each claim to be the same shard.
+
+**Superseded directories are named, never counted.** A non-authoritative
+directory at an index that is covered authoritatively *within the
+enumeration* is recorded in `superseded_directories` with its receipt flag,
+reason code, retained file count and bytes, and the run directory that
+superseded it. Under v0.1 such a directory simply vanished from the aggregate's
+view. `reason` is deliberately absent from these records: `no_run_directory`
+is impossible where a directory exists, and handled-failure versus interrupted
+is exactly `receipt_present`. The remaining correspondence is enforced **in
+the schema**, not merely in code — a receipt present requires a non-empty
+`failure_reason_code`, and its absence requires `null`.
+
+**Ordering.** Shard record arrays are ordered by `shard_index`, independent of
+the order the run ids were supplied, so two enumerations differing only in
+order produce identical shard arrays. `execution_run_ids` itself is recorded
+verbatim in the supplied order: it is the operator's authorization and is
+reproduced rather than normalized.
+
+**Limits.** This aggregate reports coverage. It authorizes no packet build, no
+shell determination and no extraction, and it confers nothing on any run id it
+does not list. A shard index holding several non-authoritative directories and
+no authoritative one is **refused**, not represented by one of them: naming a
+representative would make `shards_not_authoritative` depend on the order the
+runs were enumerated, which the ordering invariant forbids, and no tie-break —
+enumeration order, run-id order, timestamp — is evidence about which failure
+describes the shard. `coverage_complete` is true only at the queue's full
+shard count.
+
+**Scope.** Twelve paths: the new v0.2 schema; the schema registry
+(0.39.0 → 0.40.0, 90 → 91 entries); `acquisition_queue.py`;
+`pipelines/00_build_company_universe.py`; the queue tests; this log;
+`REPO_MANIFEST.md` (792 → 793); and the five evaluation guard modules whose
+pinned registry hash and manifest counts move. The v0.1 aggregate schema is
+byte-unchanged, verified by hash and by validating a v0.1 payload against it.
+
 ## Open decisions
 
 - Required source packet by firm-year.

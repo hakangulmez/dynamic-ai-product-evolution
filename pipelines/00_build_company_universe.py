@@ -96,6 +96,10 @@ QUEUE_MODES = frozenset({
     "plan-acquisition-queue",
     "execute-acquisition-queue",
     "aggregate-acquisition-queue",
+    # ADR-101. A fourth stage, not a widening of the third: the v0.1
+    # aggregate keeps its single-run contract, and this one covers a lineage
+    # assembled from explicitly enumerated execution runs.
+    "aggregate-acquisition-lineage",
 })
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
@@ -143,6 +147,7 @@ from dynamic_ai_products.ingestion.shell_company_determination import (  # noqa:
 )
 from dynamic_ai_products.universe.acquisition_queue import (
     AcquisitionQueueError,
+    run_lineage_aggregator,
     run_queue_aggregator,
     run_queue_executor,
     run_queue_planner,
@@ -186,7 +191,8 @@ def build_parser() -> argparse.ArgumentParser:
                  "probe-filing-index", "build-baseline-packets",
                  "acquire-primary-docs", "determine-shell-company",
                  "plan-acquisition-queue", "execute-acquisition-queue",
-                 "aggregate-acquisition-queue"],
+                 "aggregate-acquisition-queue",
+                 "aggregate-acquisition-lineage"],
         help="Stage 00 sub-pipeline to run (default: sentinel).",
     )
     parser.add_argument(
@@ -322,6 +328,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Aggregate-acquisition-queue mode only: the execution run id "
              "whose shard directories are being aggregated.",
     )
+    parser.add_argument(
+        "--execution-run-ids", default=None,
+        help="Aggregate-acquisition-lineage mode only: an explicit, comma-"
+             "separated, ordered enumeration of the execution run ids the "
+             "lineage is assembled from, such as 'r1,r2,r3'. Required. There "
+             "is no value that expands to every run under an output root, and "
+             "a run outside this enumeration is invisible to the aggregate.",
+    )
     return parser
 
 
@@ -364,6 +378,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         ("--on-shard-failure", args.on_shard_failure),
         ("--shard-output-dir", args.shard_output_dir),
         ("--execution-run-id", args.execution_run_id),
+        ("--execution-run-ids", args.execution_run_ids),
     )
 
     # One guard for every non-queue mode, rather than threading queue_flags
@@ -443,6 +458,10 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             ("--shard-indices", args.shard_indices),
             ("--expected-request-count", args.expected_request_count),
             ("--on-shard-failure", args.on_shard_failure),
+            # The generations never mix: the v0.1 path aggregates exactly one
+            # named run, so the plural enumeration is not a shorthand it
+            # accepts (ADR-101).
+            ("--execution-run-ids", args.execution_run_ids),
         ))
         if offending:
             return (
@@ -456,6 +475,33 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         if missing:
             return (
                 "aggregate-acquisition-queue mode requires: "
+                f"{', '.join(missing)}"
+            )
+        return None
+
+    if args.mode == "aggregate-acquisition-lineage":
+        offending = _present((
+            ("--plan-dir", args.plan_dir),
+            ("--shard-indices", args.shard_indices),
+            ("--expected-request-count", args.expected_request_count),
+            ("--on-shard-failure", args.on_shard_failure),
+            # Refused in this direction too: a lineage is enumerated, and a
+            # single run id supplied here would look like an authorization it
+            # is not.
+            ("--execution-run-id", args.execution_run_id),
+        ))
+        if offending:
+            return (
+                "aggregate-acquisition-lineage mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--shard-output-dir", args.shard_output_dir),
+            ("--execution-run-ids", args.execution_run_ids),
+        ))
+        if missing:
+            return (
+                "aggregate-acquisition-lineage mode requires: "
                 f"{', '.join(missing)}"
             )
         return None
@@ -1058,6 +1104,32 @@ def _parse_shard_indices(raw: str) -> list[int]:
     return indices
 
 
+def _parse_execution_run_ids(raw: str) -> list[str]:
+    """Enumerated run ids only: no ranges, no globs, no 'all'.
+
+    Parsed at the entrypoint so a malformed enumeration is refused before the
+    aggregator is reached, and therefore before any run directory could be
+    created. The aggregator re-checks what it is handed.
+    """
+    if not raw.strip():
+        raise AcquisitionQueueError(
+            "--execution-run-ids must enumerate at least one execution run."
+        )
+    parts = [p.strip() for p in raw.split(",")]
+    if any(not p for p in parts):
+        raise AcquisitionQueueError(
+            f"--execution-run-ids {raw!r} has an empty segment; enumerate the "
+            "runs exactly, with no trailing or repeated commas."
+        )
+    duplicates = sorted({p for p in parts if parts.count(p) > 1})
+    if duplicates:
+        raise AcquisitionQueueError(
+            f"--execution-run-ids {raw!r} repeats {duplicates}; each "
+            "execution run is named once."
+        )
+    return parts
+
+
 def _primary_transports(args: argparse.Namespace, definition: dict):
     """Build the two hop transports from the queue definition's ceilings.
 
@@ -1211,6 +1283,39 @@ def _main_aggregate_acquisition_queue(args: argparse.Namespace) -> int:
         "coverage_statement": manifest["coverage_statement"],
         "counts": manifest["counts"],
         "shards_not_authoritative": manifest["shards_not_authoritative"],
+    }, indent=2))
+    return 0
+
+
+def _main_aggregate_acquisition_lineage(args: argparse.Namespace) -> int:
+    try:
+        execution_run_ids = _parse_execution_run_ids(args.execution_run_ids)
+        aggregate = run_lineage_aggregator(
+            repo_root=REPO_ROOT,
+            definition_path=Path(args.queue_definition),
+            shard_output_dir=Path(args.shard_output_dir),
+            execution_run_ids=execution_run_ids,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except AcquisitionQueueError as exc:
+        print(f"ERROR: lineage aggregation refused: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    manifest = aggregate.manifest
+    print(json.dumps({
+        "run_id": manifest["run_id"],
+        "run_dir": str(aggregate.run_dir) if aggregate.run_dir else None,
+        "execution_run_ids": manifest["execution_run_ids"],
+        "coverage_complete": manifest["coverage_complete"],
+        "coverage_statement": manifest["coverage_statement"],
+        "counts": manifest["counts"],
+        "shards_not_authoritative": manifest["shards_not_authoritative"],
+        "superseded_directories": manifest["superseded_directories"],
     }, indent=2))
     return 0
 
@@ -1532,6 +1637,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_execute_acquisition_queue(args)
     if args.mode == "aggregate-acquisition-queue":
         return _main_aggregate_acquisition_queue(args)
+    if args.mode == "aggregate-acquisition-lineage":
+        return _main_aggregate_acquisition_lineage(args)
     if args.mode == "probe-filing-index":
         return _main_probe_filing_index(args)
     return _main_sentinel(args)

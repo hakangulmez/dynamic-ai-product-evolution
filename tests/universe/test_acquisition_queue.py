@@ -24,6 +24,8 @@ from dynamic_ai_products.universe.acquisition_queue import (
     ACQUISITION_MANIFEST_FILENAME,
     _bind_shard_manifest,
     AGGREGATE_MANIFEST_FILENAME,
+    AGGREGATE_MANIFEST_CONTRACT,
+    AGGREGATE_MANIFEST_CONTRACT_V2,
     BUNDLE_MANIFEST_FILENAME,
     EXECUTION_MANIFEST_FILENAME,
     FAILURE_RECEIPT_FILENAME,
@@ -33,6 +35,7 @@ from dynamic_ai_products.universe.acquisition_queue import (
     build_shard_plans,
     canonical_plan_bytes,
     load_queue_definition,
+    run_lineage_aggregator,
     run_queue_aggregator,
     run_queue_executor,
     run_queue_planner,
@@ -64,6 +67,9 @@ EXECUTION_SCHEMA = (
 )
 AGGREGATE_SCHEMA = (
     ROOT / "schemas" / "acquisition_queue_aggregate_manifest.schema.json"
+)
+AGGREGATE_V2_SCHEMA = (
+    ROOT / "schemas" / "acquisition_queue_aggregate_manifest.v2.schema.json"
 )
 DEFINITION_SCHEMA = ROOT / "schemas" / "acquisition_queue_definition.schema.json"
 
@@ -1033,3 +1039,503 @@ def test_cli_rejects_queue_flags_on_other_modes(tmp_path):
                      "--output-dir", str(tmp_path / "o"), "--run-id", "r")
     assert completed.returncode != 0
     assert "does not accept" in completed.stderr
+
+
+# --- ADR-101: lineage aggregation over enumerated execution runs --------------
+#
+# The v0.1 aggregator is scoped to one execution run id, which no completed
+# lineage satisfies: failure isolation and batch-by-batch authorization each
+# mint a fresh run id. These pin the successor's three obligations -- the
+# enumeration is the whole authority boundary, an unenumerated directory is
+# invisible, and ambiguous authority is refused rather than resolved.
+
+
+def _shards_root(tmp_path: Path) -> Path:
+    return tmp_path / "shards"
+
+
+def _run_one(tmp_path: Path, plan, *, index: int, run_id: str):
+    """Execute exactly one shard under its own execution run id."""
+    return _execute(tmp_path, plan, indices=[index],
+                    requests=4 if index == 0 else 2, run_id=run_id)
+
+
+def _lineage(tmp_path: Path, run_ids, *, run_id="lagg", dry_run=False,
+             definition: Path = DEFINITION):
+    return run_lineage_aggregator(
+        repo_root=ROOT, definition_path=definition,
+        shard_output_dir=_shards_root(tmp_path), execution_run_ids=run_ids,
+        output_dir=tmp_path / "lagg", run_id=run_id, clock=CLOCK,
+        dry_run=dry_run)
+
+
+def _demote(run_dir: Path, *, reason_code: str | None) -> Path:
+    """Turn an authoritative directory into a failed one, raw files kept."""
+    (run_dir / BUNDLE_MANIFEST_FILENAME).unlink()
+    (run_dir / ACQUISITION_MANIFEST_FILENAME).unlink()
+    if reason_code is not None:
+        (run_dir / FAILURE_RECEIPT_FILENAME).write_text(
+            json.dumps({"reason_code": reason_code}, indent=2) + "\n")
+    return run_dir
+
+
+def _two_run_lineage(tmp_path: Path):
+    """Shard 0 from run 'ra', shard 1 from run 'rb'. Complete coverage."""
+    plan = _plan(tmp_path)
+    _run_one(tmp_path, plan, index=0, run_id="ra")
+    _run_one(tmp_path, plan, index=1, run_id="rb")
+    return plan
+
+
+def test_lineage_aggregate_spans_several_execution_runs(tmp_path):
+    _two_run_lineage(tmp_path)
+    manifest = _lineage(tmp_path, ["ra", "rb"]).manifest
+    assert not list(
+        Draft202012Validator(read_json(AGGREGATE_V2_SCHEMA)).iter_errors(manifest))
+    assert manifest["aggregate_manifest_contract"] == AGGREGATE_MANIFEST_CONTRACT_V2
+    assert manifest["coverage_complete"] is True
+    assert manifest["counts"]["shards_authoritative"] == 2
+    assert manifest["counts"]["carrier_rows_covered"] == 4
+    assert manifest["shards_not_authoritative"] == []
+    assert manifest["superseded_directories"] == []
+    # The two shards came from different runs; that is the whole point.
+    assert {Path(s["run_dir"]).name.split("-shard-")[0]
+            for s in manifest["shards_authoritative"]} == {"ra", "rb"}
+
+
+def test_lineage_aggregate_is_partial_when_a_run_is_left_out(tmp_path):
+    _two_run_lineage(tmp_path)
+    manifest = _lineage(tmp_path, ["ra"]).manifest
+    assert manifest["coverage_complete"] is False
+    assert "PARTIAL" in manifest["coverage_statement"]
+    assert manifest["counts"]["shards_authoritative"] == 1
+    assert [s["shard_index"] for s in manifest["shards_not_authoritative"]] == [1]
+    assert manifest["shards_not_authoritative"][0]["reason"] == "no_run_directory"
+
+
+def test_lineage_records_a_superseded_failure_without_counting_it(tmp_path):
+    """The r5/r6 shape: a handled failure, then a fresh run that succeeded."""
+    plan = _plan(tmp_path)
+    failed = _demote(Path(_run_one(tmp_path, plan, index=0,
+                                   run_id="ra").executions[0].run_dir),
+                     reason_code="metadata_http_failure")
+    retained = [c for c in failed.iterdir() if c.name != FAILURE_RECEIPT_FILENAME]
+    _run_one(tmp_path, plan, index=0, run_id="rb")
+    _run_one(tmp_path, plan, index=1, run_id="rc")
+
+    manifest = _lineage(tmp_path, ["ra", "rb", "rc"]).manifest
+    assert not list(
+        Draft202012Validator(read_json(AGGREGATE_V2_SCHEMA)).iter_errors(manifest))
+    assert manifest["coverage_complete"] is True
+    assert manifest["counts"]["shards_authoritative"] == 2
+    assert manifest["shards_not_authoritative"] == []
+
+    assert len(manifest["superseded_directories"]) == 1
+    record = manifest["superseded_directories"][0]
+    assert record["shard_index"] == 0
+    assert Path(record["run_dir"]) == failed
+    assert record["receipt_present"] is True
+    assert record["failure_reason_code"] == "metadata_http_failure"
+    assert record["retained_file_count"] == len(retained)
+    assert record["retained_bytes"] == sum(c.stat().st_size for c in retained)
+    assert Path(record["superseded_by_run_dir"]).name == "rb-shard-0000"
+
+    # Named, never counted: coverage is what the authoritative shards say.
+    assert manifest["counts"]["superseded_directories"] == 1
+    assert manifest["counts"]["retained_bytes_superseded"] == record["retained_bytes"]
+    assert manifest["counts"]["accessions_covered"] == 3
+    assert manifest["counts"]["retained_bytes_total"] == sum(
+        s["retained_bytes_total"] for s in manifest["shards_authoritative"])
+
+
+def test_a_superseded_directory_with_no_receipt_states_a_null_reason_code(tmp_path):
+    plan = _plan(tmp_path)
+    _demote(Path(_run_one(tmp_path, plan, index=0,
+                          run_id="ra").executions[0].run_dir), reason_code=None)
+    _run_one(tmp_path, plan, index=0, run_id="rb")
+    _run_one(tmp_path, plan, index=1, run_id="rc")
+    manifest = _lineage(tmp_path, ["ra", "rb", "rc"]).manifest
+    record = manifest["superseded_directories"][0]
+    assert record["receipt_present"] is False
+    assert record["failure_reason_code"] is None
+    assert not list(
+        Draft202012Validator(read_json(AGGREGATE_V2_SCHEMA)).iter_errors(manifest))
+
+
+@pytest.mark.parametrize("receipt_present, code", [(True, None), (True, ""),
+                                                   (False, "metadata_http_failure")])
+def test_schema_enforces_the_receipt_reason_code_correspondence(
+        tmp_path, receipt_present, code):
+    """Not merely a code convention: the successor schema refuses the pairing."""
+    _two_run_lineage(tmp_path)
+    manifest = _lineage(tmp_path, ["ra", "rb"], dry_run=True).manifest
+    manifest["superseded_directories"] = [{
+        "shard_index": 0, "run_dir": "/x", "receipt_present": receipt_present,
+        "failure_reason_code": code, "retained_file_count": 1,
+        "retained_bytes": 2, "superseded_by_run_dir": "/y",
+    }]
+    assert list(
+        Draft202012Validator(read_json(AGGREGATE_V2_SCHEMA)).iter_errors(manifest))
+
+
+def test_lineage_refuses_two_authoritative_directories_for_one_shard(tmp_path):
+    """Ambiguous authority is refused, never resolved by preferring a run."""
+    import shutil
+
+    plan = _plan(tmp_path)
+    first = Path(_run_one(tmp_path, plan, index=0, run_id="ra")
+                 .executions[0].run_dir)
+    shutil.copytree(first, _shards_root(tmp_path) / "rb-shard-0000")
+    _run_one(tmp_path, plan, index=1, run_id="rc")
+    with pytest.raises(AcquisitionQueueError, match="Ambiguous authority"):
+        _lineage(tmp_path, ["ra", "rb", "rc"])
+    assert not (tmp_path / "lagg" / "lagg").exists(), "no aggregate is written"
+
+
+def test_lineage_refuses_a_run_id_matching_no_directory(tmp_path):
+    _two_run_lineage(tmp_path)
+    with pytest.raises(AcquisitionQueueError, match="matches no shard run"):
+        _lineage(tmp_path, ["ra", "rb", "typo"])
+    assert not (tmp_path / "lagg" / "lagg").exists()
+
+
+@pytest.mark.parametrize("run_ids", [[], ["ra", "ra"], ["ra", ""], ["ra", "  "],
+                                     ["ra", "../escape"]])
+def test_lineage_refuses_a_malformed_enumeration(tmp_path, run_ids):
+    _two_run_lineage(tmp_path)
+    with pytest.raises(AcquisitionQueueError):
+        _lineage(tmp_path, run_ids)
+    assert not (tmp_path / "lagg" / "lagg").exists()
+
+
+# --- isolation: an unenumerated directory influences nothing -------------------
+
+
+def _intruder(tmp_path: Path, shape: str, donor: Path) -> Path:
+    """Build a shard-1 directory under an execution run nobody enumerated."""
+    import shutil
+
+    target = _shards_root(tmp_path) / "rz-shard-0001"
+    if shape == "authoritative":
+        shutil.copytree(donor, target)
+    elif shape == "receipt_only":
+        target.mkdir()
+        (target / FAILURE_RECEIPT_FILENAME).write_text(
+            json.dumps({"reason_code": "transport_exception"}) + "\n")
+    elif shape == "malformed":
+        target.mkdir()
+        (target / BUNDLE_MANIFEST_FILENAME).write_text("not json{")
+        (target / ACQUISITION_MANIFEST_FILENAME).write_text("not json{")
+    elif shape == "named_like_manifests":
+        target.mkdir()
+        (target / BUNDLE_MANIFEST_FILENAME).write_text("{}")
+        (target / ACQUISITION_MANIFEST_FILENAME).write_text("{}")
+    else:  # pragma: no cover - guard against a typo in the parametrisation
+        raise AssertionError(shape)
+    return target
+
+
+@pytest.mark.parametrize("shape", ["authoritative", "receipt_only", "malformed",
+                                   "named_like_manifests"])
+def test_an_unenumerated_directory_is_completely_invisible(tmp_path, shape):
+    plan = _plan(tmp_path)
+    _run_one(tmp_path, plan, index=0, run_id="ra")
+    donor = Path(_run_one(tmp_path, plan, index=1, run_id="rb")
+                 .executions[0].run_dir)
+    before = _lineage(tmp_path, ["ra"], dry_run=True).manifest
+
+    intruder = _intruder(tmp_path, shape, donor)
+    assert intruder.exists()
+    after = _lineage(tmp_path, ["ra"], dry_run=True).manifest
+
+    # Byte-identical, so it reached neither selection, nor a count, nor
+    # coverage, nor supersession, nor an output hash.
+    assert json.dumps(after, indent=2) == json.dumps(before, indent=2)
+    assert after["counts"]["shards_authoritative"] == 1
+    assert after["superseded_directories"] == []
+    assert str(intruder) not in json.dumps(after)
+
+
+def test_enumerating_the_intruders_run_changes_the_answer(tmp_path):
+    """The isolation is the enumeration's doing, not an accident of shape."""
+    plan = _plan(tmp_path)
+    _run_one(tmp_path, plan, index=0, run_id="ra")
+    donor = Path(_run_one(tmp_path, plan, index=1, run_id="rb")
+                 .executions[0].run_dir)
+    _intruder(tmp_path, "receipt_only", donor)
+    manifest = _lineage(tmp_path, ["ra", "rz"], dry_run=True).manifest
+    excluded = manifest["shards_not_authoritative"]
+    assert [s["shard_index"] for s in excluded] == [1]
+    assert excluded[0]["reason"] == "handled_failure"
+    assert excluded[0]["failure_reason_code"] == "transport_exception"
+
+
+# --- ordering -----------------------------------------------------------------
+
+
+def test_shard_records_order_by_index_and_run_ids_are_recorded_as_supplied(tmp_path):
+    _two_run_lineage(tmp_path)
+    forward = _lineage(tmp_path, ["ra", "rb"], dry_run=True).manifest
+    reverse = _lineage(tmp_path, ["rb", "ra"], dry_run=True).manifest
+
+    assert [s["shard_index"] for s in forward["shards_authoritative"]] == [0, 1]
+    assert forward["shards_authoritative"] == reverse["shards_authoritative"]
+    assert forward["counts"] == reverse["counts"]
+    assert forward["execution_run_ids"] == ["ra", "rb"]
+    assert reverse["execution_run_ids"] == ["rb", "ra"]
+    differing = {k for k in forward if forward[k] != reverse[k]}
+    assert differing == {"execution_run_ids"}
+
+
+# --- generation separation ----------------------------------------------------
+
+
+def test_the_two_aggregate_generations_reject_each_other(tmp_path):
+    _two_run_lineage(tmp_path)
+    v2 = _lineage(tmp_path, ["ra", "rb"], dry_run=True).manifest
+    v1 = run_queue_aggregator(
+        repo_root=ROOT, definition_path=DEFINITION,
+        shard_output_dir=_shards_root(tmp_path), execution_run_id="ra",
+        output_dir=tmp_path / "agg", run_id="qagg", clock=CLOCK,
+        dry_run=True).manifest
+
+    assert v1["aggregate_manifest_contract"] == AGGREGATE_MANIFEST_CONTRACT
+    assert "execution_run_id" in v1 and "execution_run_ids" not in v1
+    assert "execution_run_ids" in v2 and "execution_run_id" not in v2
+    v1_schema = Draft202012Validator(read_json(AGGREGATE_SCHEMA))
+    v2_schema = Draft202012Validator(read_json(AGGREGATE_V2_SCHEMA))
+    assert not list(v1_schema.iter_errors(v1))
+    assert not list(v2_schema.iter_errors(v2))
+    assert list(v2_schema.iter_errors(v1)), "a v0.1 payload is not a v0.2 one"
+    assert list(v1_schema.iter_errors(v2)), "a v0.2 payload is not a v0.1 one"
+
+
+def test_v1_aggregator_behaviour_is_untouched_by_the_successor(tmp_path):
+    """The v0.1 path still aggregates exactly one named run, unchanged."""
+    _two_run_lineage(tmp_path)
+    manifest = run_queue_aggregator(
+        repo_root=ROOT, definition_path=DEFINITION,
+        shard_output_dir=_shards_root(tmp_path), execution_run_id="ra",
+        output_dir=tmp_path / "agg", run_id="qagg", clock=CLOCK).manifest
+    assert manifest["execution_run_id"] == "ra"
+    assert manifest["counts"]["shards_authoritative"] == 1
+    assert "superseded_directories" not in manifest
+    assert set(manifest["counts"]) == {
+        "shards_in_queue", "shards_authoritative", "shards_not_authoritative",
+        "accessions_covered", "carrier_rows_covered", "bundle_entries",
+        "total_requests", "retained_bytes_total",
+    }
+
+
+def test_lineage_hashes_shard_manifests_and_is_hashed_by_none(tmp_path):
+    _two_run_lineage(tmp_path)
+    manifest = _lineage(tmp_path, ["ra", "rb"]).manifest
+    for entry in manifest["shards_authoritative"]:
+        run_dir = Path(entry["run_dir"])
+        assert entry["acquisition_manifest_sha256"] == sha256(
+            (run_dir / ACQUISITION_MANIFEST_FILENAME).read_bytes()).hexdigest()
+        assert entry["bundle_manifest_sha256"] == sha256(
+            (run_dir / BUNDLE_MANIFEST_FILENAME).read_bytes()).hexdigest()
+        shard_manifest = read_json(run_dir / ACQUISITION_MANIFEST_FILENAME)
+        assert AGGREGATE_MANIFEST_FILENAME not in shard_manifest["output_hashes"]
+
+
+def test_lineage_aggregate_is_written_write_once(tmp_path):
+    _two_run_lineage(tmp_path)
+    result = _lineage(tmp_path, ["ra", "rb"])
+    assert result.manifest_path.name == AGGREGATE_MANIFEST_FILENAME
+    assert not list(Draft202012Validator(read_json(AGGREGATE_V2_SCHEMA))
+                    .iter_errors(read_json(result.manifest_path)))
+    with pytest.raises(FileExistsError):
+        _lineage(tmp_path, ["ra", "rb"])
+
+
+# --- ADR-101 CLI --------------------------------------------------------------
+
+
+def _cli_two_run_lineage(tmp_path):
+    planned = _cli("--mode", "plan-acquisition-queue",
+                   "--queue-definition", str(DEFINITION),
+                   "--output-dir", str(tmp_path / "plans"), "--run-id", "p")
+    assert planned.returncode == 0, planned.stderr
+    plan_dir = json.loads(planned.stdout)["run_dir"]
+    for run_id, index, requests in (("ea", "0", "4"), ("eb", "1", "2")):
+        executed = _cli("--mode", "execute-acquisition-queue",
+                        "--queue-definition", str(DEFINITION),
+                        "--plan-dir", plan_dir, "--shard-indices", index,
+                        "--expected-request-count", requests,
+                        "--on-shard-failure", "stop",
+                        "--replay-dir", str(REPLAY),
+                        "--shard-output-dir", str(tmp_path / "shards"),
+                        "--output-dir", str(tmp_path / "exec"),
+                        "--run-id", run_id)
+        assert executed.returncode == 0, executed.stderr
+    return plan_dir
+
+
+def test_cli_lineage_aggregate_covers_a_multi_run_queue(tmp_path):
+    _cli_two_run_lineage(tmp_path)
+    aggregated = _cli("--mode", "aggregate-acquisition-lineage",
+                      "--queue-definition", str(DEFINITION),
+                      "--shard-output-dir", str(tmp_path / "shards"),
+                      "--execution-run-ids", "ea,eb",
+                      "--output-dir", str(tmp_path / "lagg"), "--run-id", "a")
+    assert aggregated.returncode == 0, aggregated.stderr
+    reported = json.loads(aggregated.stdout)
+    assert reported["coverage_complete"] is True
+    assert reported["execution_run_ids"] == ["ea", "eb"]
+    written = read_json(
+        tmp_path / "lagg" / "a" / AGGREGATE_MANIFEST_FILENAME)
+    assert not list(Draft202012Validator(read_json(AGGREGATE_V2_SCHEMA))
+                    .iter_errors(written))
+    assert written["aggregate_manifest_contract"] == AGGREGATE_MANIFEST_CONTRACT_V2
+
+
+def test_cli_v1_aggregate_still_runs_unchanged(tmp_path):
+    """The predecessor command keeps working exactly as it did."""
+    _cli_two_run_lineage(tmp_path)
+    aggregated = _cli("--mode", "aggregate-acquisition-queue",
+                      "--queue-definition", str(DEFINITION),
+                      "--shard-output-dir", str(tmp_path / "shards"),
+                      "--execution-run-id", "ea",
+                      "--output-dir", str(tmp_path / "agg"), "--run-id", "a")
+    assert aggregated.returncode == 0, aggregated.stderr
+    written = read_json(tmp_path / "agg" / "a" / AGGREGATE_MANIFEST_FILENAME)
+    assert written["aggregate_manifest_contract"] == AGGREGATE_MANIFEST_CONTRACT
+    assert written["execution_run_id"] == "ea"
+    assert not list(Draft202012Validator(read_json(AGGREGATE_SCHEMA))
+                    .iter_errors(written))
+
+
+def test_cli_refuses_mixing_the_singular_and_plural_flags(tmp_path):
+    lineage_with_singular = _cli(
+        "--mode", "aggregate-acquisition-lineage",
+        "--queue-definition", str(DEFINITION),
+        "--shard-output-dir", str(tmp_path / "shards"),
+        "--execution-run-ids", "ea,eb", "--execution-run-id", "ea",
+        "--output-dir", str(tmp_path / "lagg"), "--run-id", "a")
+    assert lineage_with_singular.returncode != 0
+    assert "--execution-run-id" in lineage_with_singular.stderr
+    assert "does not accept" in lineage_with_singular.stderr
+
+    queue_with_plural = _cli(
+        "--mode", "aggregate-acquisition-queue",
+        "--queue-definition", str(DEFINITION),
+        "--shard-output-dir", str(tmp_path / "shards"),
+        "--execution-run-id", "ea", "--execution-run-ids", "ea,eb",
+        "--output-dir", str(tmp_path / "agg"), "--run-id", "a")
+    assert queue_with_plural.returncode != 0
+    assert "--execution-run-ids" in queue_with_plural.stderr
+    assert "does not accept" in queue_with_plural.stderr
+
+
+def test_cli_lineage_requires_the_plural_flag(tmp_path):
+    completed = _cli("--mode", "aggregate-acquisition-lineage",
+                     "--queue-definition", str(DEFINITION),
+                     "--shard-output-dir", str(tmp_path / "shards"),
+                     "--output-dir", str(tmp_path / "lagg"), "--run-id", "a")
+    assert completed.returncode != 0
+    assert "requires: --execution-run-ids" in completed.stderr
+
+
+@pytest.mark.parametrize("value", ["", "   ", "ea,,eb", "ea,", ",ea", "ea,ea",
+                                   "ea eb", "all", "*"])
+def test_cli_refuses_a_malformed_run_id_list_before_any_output(tmp_path, value):
+    _cli_two_run_lineage(tmp_path)
+    completed = _cli("--mode", "aggregate-acquisition-lineage",
+                     "--queue-definition", str(DEFINITION),
+                     "--shard-output-dir", str(tmp_path / "shards"),
+                     "--execution-run-ids", value,
+                     "--output-dir", str(tmp_path / "lagg"), "--run-id", "a")
+    assert completed.returncode != 0, completed.stdout
+    assert not (tmp_path / "lagg").exists(), "refused before any output exists"
+
+
+def test_cli_lineage_refuses_execution_only_flags(tmp_path):
+    for flag, value in (("--plan-dir", str(tmp_path)),
+                        ("--shard-indices", "0"),
+                        ("--expected-request-count", "4"),
+                        ("--on-shard-failure", "stop")):
+        completed = _cli("--mode", "aggregate-acquisition-lineage",
+                         "--queue-definition", str(DEFINITION),
+                         "--shard-output-dir", str(tmp_path / "shards"),
+                         "--execution-run-ids", "ea,eb", flag, value,
+                         "--output-dir", str(tmp_path / "lagg"), "--run-id", "a")
+        assert completed.returncode != 0
+        assert flag in completed.stderr
+
+
+def test_cli_rejects_the_plural_flag_on_a_non_queue_mode(tmp_path):
+    completed = _cli("--mode", "determine-shell-company",
+                     "--bundle-dir", str(tmp_path),
+                     "--execution-run-ids", "ea,eb",
+                     "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert completed.returncode != 0
+    assert "--execution-run-ids" in completed.stderr
+
+
+# --- ADR-101 correction: incomplete evidence is never represented -------------
+#
+# An earlier revision named the first failed candidate in enumeration order as
+# the representative of a shard index that never succeeded. That made
+# shards_not_authoritative depend on the order the runs were supplied, which
+# the ordering invariant forbids. Several failed candidates and no
+# authoritative one is now refused outright.
+
+
+def _two_failed_candidates(tmp_path: Path) -> tuple[Path, Path]:
+    """Shard 0 authoritative; shard 1 failed twice, under two runs."""
+    plan = _plan(tmp_path)
+    _run_one(tmp_path, plan, index=0, run_id="rok")
+    first = _demote(
+        Path(_run_one(tmp_path, plan, index=1, run_id="ra").executions[0].run_dir),
+        reason_code="metadata_http_failure")
+    second = _demote(
+        Path(_run_one(tmp_path, plan, index=1, run_id="rb").executions[0].run_dir),
+        reason_code="transport_exception")
+    return first, second
+
+
+def test_lineage_refuses_several_failed_candidates_for_one_shard(tmp_path):
+    first, second = _two_failed_candidates(tmp_path)
+    with pytest.raises(AcquisitionQueueError) as caught:
+        _lineage(tmp_path, ["rok", "ra", "rb"])
+    message = str(caught.value)
+    assert "Incomplete shard evidence is ambiguous" in message
+    assert "none of these directories carries authority" in message
+    assert str(first) in message and str(second) in message
+    assert not (tmp_path / "lagg" / "lagg").exists(), "refused before any output"
+
+
+def test_the_ambiguous_incomplete_refusal_does_not_depend_on_run_order(tmp_path):
+    """The regression itself: reversing the enumeration must not change it."""
+    _two_failed_candidates(tmp_path)
+    with pytest.raises(AcquisitionQueueError) as forward:
+        _lineage(tmp_path, ["rok", "ra", "rb"], run_id="fwd")
+    with pytest.raises(AcquisitionQueueError) as reverse:
+        _lineage(tmp_path, ["rb", "ra", "rok"], run_id="rev")
+    # Same refusal, naming the same two directories, in the same order.
+    assert str(forward.value) == str(reverse.value)
+    assert not (tmp_path / "lagg").exists(), "neither order wrote an aggregate"
+
+
+def test_a_single_failed_candidate_still_reports_partial_coverage(tmp_path):
+    """Unchanged: one non-authoritative candidate is recorded, not refused."""
+    plan = _plan(tmp_path)
+    _run_one(tmp_path, plan, index=0, run_id="rok")
+    failed = _demote(
+        Path(_run_one(tmp_path, plan, index=1, run_id="ra").executions[0].run_dir),
+        reason_code="metadata_http_failure")
+    manifest = _lineage(tmp_path, ["rok", "ra"]).manifest
+    assert not list(
+        Draft202012Validator(read_json(AGGREGATE_V2_SCHEMA)).iter_errors(manifest))
+    assert manifest["coverage_complete"] is False
+    assert "PARTIAL" in manifest["coverage_statement"]
+    assert manifest["counts"]["shards_authoritative"] == 1
+    excluded = manifest["shards_not_authoritative"]
+    assert len(excluded) == 1
+    assert excluded[0]["shard_index"] == 1
+    assert Path(excluded[0]["run_dir"]) == failed
+    assert excluded[0]["reason"] == "handled_failure"
+    assert excluded[0]["failure_reason_code"] == "metadata_http_failure"
+    assert manifest["superseded_directories"] == []
