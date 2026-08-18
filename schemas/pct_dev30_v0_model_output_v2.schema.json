@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pct_dev30_v0_model_output_v2.schema.json",
+  "title": "PCT_Dev30_v0 combined-candidate model output (Stage 1, v0.2)",
+  "description": "Successor of pct_dev30_v0_model_output@0.1.0 (unchanged, byte-identical, still valid on its own). The only difference: no candidate or excluded_mention carries evidence_locator / char_start / char_end. The model supplies evidence_quote only; combined_candidate_adapter_v2.py derives exact offsets deterministically by searching the ledger-anchored Item 1 span for all occurrences of the quote (overlap-aware, not str.count) -- zero occurrences refuses (evidence_quote_not_found_in_span), more than one refuses as ambiguous (evidence_quote_ambiguous_in_span), exactly one is accepted. This removes a task (precise character-offset counting over a multi-thousand-word span) that models are unreliable at and that the adapter can already verify deterministically; see ADR-099 for the measured visible-Dev24 evidence this rests on. evidence_quote carries no fixed minimum length beyond minLength: 1 -- specificity is a future prompt instruction, not a schema constraint. Everything else (local-ID staging, kind-discriminated oneOf branches, availability_status vocabulary, zero_candidate_reason biconditional, excluded_mentions shape) is identical to @0.1.0. Dev30-only: legacy_source_id is the legacy-item1:dev30-v0:<hash> namespace and this schema never constructs or accepts a Stage 00C sec-primary: source_id.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "schema_version",
+    "legacy_source_id",
+    "candidates",
+    "excluded_mentions",
+    "zero_candidate_reason"
+  ],
+  "$defs": {
+    "availability_status_token": {
+      "comment": "The canonical 8-token vocabulary of docs/methodology/PRODUCT_CAPABILITY_TASK_ONTOLOGY.md, reused verbatim (schemas/product_candidate_availability_vocabulary.schema.json is the governing source; this is a literal, self-contained copy, not a cross-file $ref, matching this repository's existing schema convention).",
+      "type": "string",
+      "enum": [
+        "announced",
+        "broadly_deployed_or_default",
+        "deprecated",
+        "discontinued",
+        "general_availability",
+        "private_beta",
+        "public_beta",
+        "unknown"
+      ]
+    },
+    "product_local_id": { "type": "string", "pattern": "^P[1-9][0-9]*$" },
+    "capability_local_id": { "type": "string", "pattern": "^C[1-9][0-9]*$" },
+    "task_local_id": { "type": "string", "pattern": "^T[1-9][0-9]*$" },
+    "product_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local_id", "kind", "product_family", "product_name",
+        "availability_status", "evidence_quote"
+      ],
+      "properties": {
+        "local_id": { "$ref": "#/$defs/product_local_id" },
+        "kind": { "const": "product" },
+        "product_family": { "type": ["string", "null"], "minLength": 1 },
+        "product_name": { "type": "string", "minLength": 1 },
+        "availability_status": { "$ref": "#/$defs/availability_status_token" },
+        "evidence_quote": { "type": "string", "minLength": 1 }
+      }
+    },
+    "capability_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local_id", "kind", "product_local_id", "capability_text",
+        "availability_status", "evidence_quote"
+      ],
+      "properties": {
+        "local_id": { "$ref": "#/$defs/capability_local_id" },
+        "kind": { "const": "capability" },
+        "product_local_id": { "$ref": "#/$defs/product_local_id" },
+        "capability_text": { "type": "string", "minLength": 1 },
+        "availability_status": { "$ref": "#/$defs/availability_status_token" },
+        "evidence_quote": { "type": "string", "minLength": 1 }
+      }
+    },
+    "task_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local_id", "kind", "product_local_id", "capability_local_ids",
+        "task_text", "customer_need", "availability_status", "evidence_quote"
+      ],
+      "properties": {
+        "local_id": { "$ref": "#/$defs/task_local_id" },
+        "kind": { "const": "task" },
+        "product_local_id": { "$ref": "#/$defs/product_local_id" },
+        "capability_local_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/capability_local_id" }
+        },
+        "task_text": { "type": "string", "minLength": 1 },
+        "customer_need": { "type": "string", "minLength": 1 },
+        "availability_status": { "$ref": "#/$defs/availability_status_token" },
+        "evidence_quote": { "type": "string", "minLength": 1 }
+      }
+    },
+    "excluded_mention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "evidence_quote"],
+      "properties": {
+        "reason": {
+          "enum": [
+            "internal_use",
+            "vague_ai_marketing",
+            "not_customer_facing",
+            "insufficient_specificity"
+          ]
+        },
+        "evidence_quote": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "properties": {
+    "contract": { "const": "pct_dev30_v0_model_output@0.2.0" },
+    "schema_version": { "const": "0.2.0" },
+    "legacy_source_id": {
+      "type": "string",
+      "pattern": "^legacy-item1:dev30-v0:[0-9a-f]{64}$"
+    },
+    "candidates": {
+      "type": "array",
+      "comment": "Kind-discriminated union, closed per branch. No disposition/exclusion field here -- excluded material lives only in excluded_mentions.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/product_candidate" },
+          { "$ref": "#/$defs/capability_candidate" },
+          { "$ref": "#/$defs/task_candidate" }
+        ]
+      }
+    },
+    "excluded_mentions": {
+      "type": "array",
+      "comment": "Optional and non-exhaustive: not required for every passage considered and rejected. Roadmap/beta claims are never routed here -- they are ordinary candidates carrying a non-GA availability_status.",
+      "items": { "$ref": "#/$defs/excluded_mention" }
+    },
+    "zero_candidate_reason": {
+      "oneOf": [
+        {
+          "enum": [
+            "no_product_capability_or_task_evidence",
+            "all_mentions_excluded"
+          ]
+        },
+        { "type": "null" }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "comment": "candidates == [] iff zero_candidate_reason is non-null. Schema-level defense in depth; the adapter also checks this.",
+      "if": { "properties": { "candidates": { "maxItems": 0 } } },
+      "then": {
+        "properties": {
+          "zero_candidate_reason": {
+            "enum": [
+              "no_product_capability_or_task_evidence",
+              "all_mentions_excluded"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "candidates": { "minItems": 1 } } },
+      "then": { "properties": { "zero_candidate_reason": { "type": "null" } } }
+    }
+  ]
+}

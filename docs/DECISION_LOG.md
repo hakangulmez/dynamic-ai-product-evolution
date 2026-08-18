@@ -6498,6 +6498,112 @@ ledger-selecting parameter). Modified: the schema registry, `REPO_MANIFEST.md`
 pinned manifest hash. This authorizes no extraction prompt, model call, or
 Dev30 score.
 
+## ADR-099 — PCT_Dev30_v0 v0.2 successor: adapter-derived evidence offsets, not model-supplied ones
+
+**Status.** Accepted. Fixture-first and offline: two new schemas plus a new,
+self-contained adapter module, no prompt drafted, no model called, no Dev30
+firm scored, no holdout row touched, no `data/runs`/W3 contact. v0.1
+(`combined_candidate_adapter.py` and its two schemas) is untouched.
+
+**The question.** Requiring a model to emit exact `char_start`/`char_end`
+offsets for every evidence quote across a full Item 1 span (up to ~9,600
+words in this cohort) asks it to do precise character counting over long
+text — a well-documented general LLM weakness. Is that burden operationally
+justified, or can the adapter derive offsets deterministically from a
+model-supplied exact quote instead?
+
+**Measured, visible-Dev24 only.** Using the already-committed
+`item1_locator` module and the committed manifest/ledger for identity (every
+located span cross-checked against its ledger row before measuring; zero
+holdout files opened), duplicate-occurrence rates across the 24 visible
+spans:
+
+| granularity | firms with ≥1 duplicate | dup-rate: min / median / mean / max |
+|---|---|---|
+| short capitalized phrase (1–4 words, "bare-name"-like) | 24/24 | 8.90% / 15.33% / 15.14% / 19.01% |
+| 6-word sliding window | 24/24 | 0.09% / 0.74% / 1.13% / 4.36% |
+| 10-word sliding window | 21/24 | 0.00% / 0.33% / 0.55% / 2.81% |
+| 15-word sliding window | 17/24 | 0.00% / 0.13% / 0.30% / 1.93% |
+
+Bare/short quotes collide often enough (~1 in 6–7) that "not a bare product
+name" is a load-bearing prompt requirement. Ambiguity falls sharply as
+quotes lengthen but never reaches zero — 17/24 firms still have at least one
+duplicated 15-word window — so a refuse-on-ambiguity path is a regularly
+reachable code path across this cohort, not a theoretical one. Illustration
+(ASAN, visible): `"Asana Work Graph,"` occurs 4 times verbatim, each with a
+distinguishable continuation; the bare phrase is genuinely ambiguous, and a
+quote extended to its surrounding clause resolves to exactly one occurrence.
+
+**Decision: retire model-supplied offsets.** The model supplies
+`evidence_quote` only. The adapter finds every occurrence of the quote in
+the ledger-anchored span (see below) and accepts only when there is exactly
+one. This removes a task models are unreliable at while keeping every
+guarantee v0.1 had: the adapter never trusts an unverified offset, because
+there no longer is one to trust — either the derivation is unambiguous or it
+refuses.
+
+**Overlap-aware search, not `str.count`.** `"aaaaa".count("aaa")` is `1`
+(Python's `str.count` is non-overlapping), but `"aaaaa"` genuinely contains
+three overlapping `"aaa"` occurrences at offsets 0, 1 and 2. Using `count()`
+as the ambiguity test would silently accept a match at an arbitrary one of
+several true occurrences. `_find_all_occurrences` instead advances the
+search cursor by 1 (not by the match length) after each hit, so every
+overlapping occurrence is counted; zero → `evidence_quote_not_found_in_span`,
+exactly one → derive `char_start`/`char_end`, two or more →
+`evidence_quote_ambiguous_in_span`. Applied identically to `candidates` and
+`excluded_mentions`.
+
+**No fixed length minimum.** `evidence_quote` keeps `minLength: 1` and
+nothing stronger — the measured table above shows disambiguation is a
+function of contextual specificity, not raw length alone, and a fixed
+character floor (e.g. 40) would be an uncalibrated guess dressed as a rule.
+Specificity is a future prompt instruction; the schema stays permissive and
+the adapter's exact-occurrence check is the real, complete enforcement
+mechanism regardless of quote length.
+
+**Everything else preserved, reimplemented not imported.** The fixed,
+hash-pinned canonical ledger path and its tamper check before any ticker row
+is extracted; the raw-bytes `model_output_sha256` computed before parsing;
+the `legacy_source_id` and `span_text`-hash checks against the ledger; local-
+ID existence/duplication validation; the topological product-then-
+capability-then-task relationship rewrite; and the exact `candidate_id`
+formula (anchored on `model_output_sha256`, unchanged) — all carried over
+from v0.1 with identical behavior. `combined_candidate_adapter_v2.py` does
+not import v0.1's module: the handful of shared helpers are reimplemented
+locally so each version stays independently self-contained and auditable,
+matching this repository's existing per-version module pattern (e.g.
+`documentation_receipt_v4.py`/`v5.py`). v0.1's own byte-identity is
+re-verified behaviorally in `test_combined_candidate_adapter_v2.py` — v0.1's
+schema and ledger pins are re-hashed against its own committed files, and
+its schema is asked to reject a candidate without `evidence_locator` — not
+by diffing git history.
+
+**Reason codes.** `evidence_quote_not_found_in_span` and
+`evidence_quote_ambiguous_in_span` replace v0.1's `invalid_locator_bounds`
+and `evidence_quote_containment_failed`, which have no meaning once there is
+no model-supplied offset to bounds-check or verify containment against. The
+other nine v0.1 codes carry over unchanged. Eleven total, a different set
+from v0.1's eleven.
+
+**Registry.** Two new entries in `schemas/schema_version_manifest.json`
+(0.38.0 → 0.39.0, 88 → 90): `pct_dev30_v0_model_output_v2@0.2.0`,
+`pct_dev30_v0_persisted_candidates_v2@0.2.0`. Neither is added to
+`EVALUATION_SCHEMA_CONTRACTS` or `RELEASED_EVALUATION_CONTRACTS` in
+`src/dynamic_ai_products/evaluation/schemas.py`, matching v0.1: Dev30 stays
+outside the production evaluation-harness contract surface, and the adapter
+hash-pins both its own schema files (and the shared canonical ledger, same
+pin value as v0.1 since it is the same physical file).
+
+**Scope.** Added: two successor schemas, `combined_candidate_adapter_v2.py`,
+and its test file (50 synthetic cases — no real Dev30 firm text, visible or
+holdout — including dedicated overlap-vs-`str.count` regressions and four
+tests that re-verify v0.1's own byte-identity and behavior). Modified: the
+schema registry, `REPO_MANIFEST.md` (786 → 790), the three manifest-count
+tests, and `test_schema_registry.py`/`test_run_manifest_v2.py`'s pinned
+manifest hash. `combined_candidate_adapter.py` and both v0.1 schema files
+are unedited. This authorizes no extraction prompt, model call, or Dev30
+score.
+
 ## Open decisions
 
 - Required source packet by firm-year.

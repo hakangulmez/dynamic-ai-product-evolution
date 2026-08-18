@@ -174,6 +174,14 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-099 (Dev30 v0.2 quote-derived-locator successor):
+    # manifest_version 0.38.0 -> 0.39.0, 88 -> 90 entries, registering
+    # pct_dev30_v0_model_output_v2 and pct_dev30_v0_persisted_candidates_v2.
+    # v0.1's two schemas are byte-unchanged (re-verified directly by
+    # tests/dev30/test_combined_candidate_adapter_v2.py against v0.1's own
+    # pinned hashes, not by diffing git history); the new pair is not added
+    # to EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS below,
+    # same as v0.1. Before it,
     # Rebaselined by ADR-098 (Dev30 combined-candidate contract, Round 2):
     # manifest_version 0.37.0 -> 0.38.0, 86 -> 88 entries, registering
     # pct_dev30_v0_model_output and pct_dev30_v0_persisted_candidates for the
@@ -267,7 +275,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "81de8ba9fd377448c53bd72d4ef2cd84a2697c0217ec39a4ff1a7c3cfc43e896"
+    "910e3b7f55ff61a5d654ffbeb53fe22fc483d3c4af7e8f688effe9f2f489a2f0"
 )
 
 

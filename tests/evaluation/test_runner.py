@@ -1340,7 +1340,16 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # RELEASED_EVALUATION_CONTRACTS -- Dev30 stays outside the production
     # evaluation-harness contract surface, and the adapter hash-pins both
     # schema files itself.
-    assert declared == len(paths) == 786
+    # 790 = 786 + the four ADR-099 Dev30 v0.2 quote-derived-locator paths:
+    # the two successor Stage-1/Stage-2 schemas, the new adapter_v2 module,
+    # and its test file. v0.1's three files (both schemas, the adapter
+    # module) are untouched -- re-verified behaviorally by
+    # tests/dev30/test_combined_candidate_adapter_v2.py against v0.1's own
+    # pinned hashes, not by diffing git history. Schema registry:
+    # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
+    # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
+    # v0.1.
+    assert declared == len(paths) == 790
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):
