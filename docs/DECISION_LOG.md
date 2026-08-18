@@ -6604,6 +6604,65 @@ manifest hash. `combined_candidate_adapter.py` and both v0.1 schema files
 are unedited. This authorizes no extraction prompt, model call, or Dev30
 score.
 
+## ADR-100 — `pct_candidate_extraction_dev30_v1`: first prompt draft, development-only
+
+**Status.** Development draft. Not released, not qualified, not authorized
+for any model call. Creating this file authorizes nothing beyond its own
+existence: no run, no gold label, no Dev24 (visible or holdout) evaluation.
+Whether and when to run it, what protocol governs a run
+(`docs/methodology/PROMPT_DEVELOPMENT_AND_EVALUATION_PROTOCOL.md`, the
+Dev30-Visible/Dev30-Holdout split already on record), and how output would
+be scored are separate, later decisions, each requiring its own explicit
+authorization. This ADR grants none of them.
+
+**What it is.** `prompts/extraction/pct_candidate_extraction_dev30_v1.md`
+targets `pct_dev30_v0_model_output@0.2.0` (ADR-099's quote-only Stage 1):
+one combined product/capability/task extraction call over one verified,
+already-supplied Item 1 span, returning exactly one JSON object and nothing
+else. It carries every rule fixed across the prior design rounds: local-ID
+staging (`P`/`C`/`T`, products then capabilities then tasks) so no
+`candidate_id` is asked of the model; a capability/task ontology matching
+`docs/methodology/PRODUCT_CAPABILITY_TASK_ONTOLOGY.md` (task in
+verb+object+outcome form, a product-independent `customer_need`, exactly one
+product link and zero-or-more capability links); extraction is not limited
+to AI-labelled content; the closed eight-token availability vocabulary with
+roadmap/beta staying a candidate rather than an exclusion; evidence as an
+exact contiguous verbatim quote with no offset request (ADR-099's
+derivation happens after the call, not in it); the optional, non-exhaustive
+`excluded_mentions` log under its closed four-reason enum; an explicit
+prohibition list (no score, confidence, uncertainty, task role, screening or
+classification decision, replicability or defensibility judgment,
+deployment-scale estimate, AI-adoption metric, financial claim, or
+post-period comparison); and the `zero_candidate_reason` biconditional.
+
+**Style.** 1,049 core words (whitespace-split, fenced code blocks excluded —
+the two illustrative JSON blocks are reference material, not prompt prose),
+inside the requested 1,000–1,500 band. Model-agnostic: no named provider or
+model. No firm-specific rule, no real Dev30 or holdout company name or
+ticker, no historical exception catalogue — the one illustrative JSON
+example uses a fictional company (Northwind) with no relation to any Dev30
+or holdout firm.
+
+**Tests, not a run.** `test_pct_candidate_extraction_dev30_v1_prompt.py` is
+text-only: it reads the committed markdown file and the committed cohort
+manifest (ticker list only) and asserts things about their content — the
+declared contract and schema-version literals; the absence of
+`char_start`/`char_end`; presence of the ontology, granularity,
+availability, and exclusion rules; that the JSON blocks shown to the model
+as its actual output target carry no field for any prohibited category
+(checked separately from the prohibition prose, which correctly names those
+categories in order to forbid them); the 1,000–1,500 core-word band; and
+that no real Dev30 or holdout ticker or company name appears, checked
+against the full 30-row manifest roster rather than a hand-typed subset. No
+test opens a legacy filing, calls a model, or reads a holdout row.
+
+**Scope.** Added: the prompt file and its test file. Modified:
+`REPO_MANIFEST.md` (790 → 792), the three manifest-count tests. No schema
+changed, so `schemas/schema_version_manifest.json` and
+`test_schema_registry.py`/`test_run_manifest_v2.py`'s pinned hash are
+untouched this round. `data/runs` and W3 are untouched; no holdout row was
+opened to write this file.
+
 ## Open decisions
 
 - Required source packet by firm-year.

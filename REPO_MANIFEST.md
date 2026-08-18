@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **790**
+Total tracked/scaffold files listed: **792**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -324,6 +324,7 @@ Total tracked/scaffold files listed: **790**
 - `prompts/extraction/capability_discovery_schema_v2.md`
 - `prompts/extraction/capability_discovery_schema_v3.md`
 - `prompts/extraction/capability_extraction.md`
+- `prompts/extraction/pct_candidate_extraction_dev30_v1.md`
 - `prompts/extraction/product_consolidation_precision.md`
 - `prompts/extraction/product_consolidation_schema_v1.md`
 - `prompts/extraction/product_discovery_recall.md`
@@ -662,6 +663,7 @@ Total tracked/scaffold files listed: **790**
 - `tests/dev30/test_combined_candidate_adapter_v2.py`
 - `tests/dev30/test_item1_locator.py`
 - `tests/dev30/test_item1_locator_ledger.py`
+- `tests/dev30/test_pct_candidate_extraction_dev30_v1_prompt.py`
 - `tests/evaluation/test_assertions.py`
 - `tests/evaluation/test_axis_inputs.py`
 - `tests/evaluation/test_case_sets.py`

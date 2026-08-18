@@ -951,7 +951,12 @@ def test_repo_manifest_count_and_paths():
     # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
     # v0.1.
-    assert "Total tracked/scaffold files listed: **790**" in text
+    # 792 = 790 + the two ADR-100 paths: the pct_candidate_extraction_dev30_v1
+    # development-draft prompt and its text-only test file. No schema
+    # changed, so the schema registry and its pinned-hash tests are
+    # untouched this round. Development draft only -- authorizes no model
+    # call, no gold label, no Dev24 evaluation or holdout use.
+    assert "Total tracked/scaffold files listed: **792**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

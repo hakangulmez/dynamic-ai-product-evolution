@@ -665,7 +665,12 @@ def test_manifest_count():
     # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
     # v0.1.
-    assert declared == len(paths) == 790
+    # 792 = 790 + the two ADR-100 paths: the pct_candidate_extraction_dev30_v1
+    # development-draft prompt and its text-only test file. No schema
+    # changed, so the schema registry and its pinned-hash tests are
+    # untouched this round. Development draft only -- authorizes no model
+    # call, no gold label, no Dev24 evaluation or holdout use.
+    assert declared == len(paths) == 792
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 
