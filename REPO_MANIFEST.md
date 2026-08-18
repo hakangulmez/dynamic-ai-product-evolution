@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **794**
+Total tracked/scaffold files listed: **798**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -357,6 +357,7 @@ Total tracked/scaffold files listed: **794**
 - `schemas/baseline_document_acquisition_manifest.v2.schema.json`
 - `schemas/baseline_packet_manifest.schema.json`
 - `schemas/baseline_packet_manifest.v2.schema.json`
+- `schemas/baseline_packet_manifest.v3.schema.json`
 - `schemas/baseline_primary_document_bundle.schema.json`
 - `schemas/baseline_primary_document_bundle.v2.schema.json`
 - `schemas/capability_observation.schema.json`
@@ -581,6 +582,8 @@ Total tracked/scaffold files listed: **794**
 - `src/dynamic_ai_products/ingestion/baseline_packet.py`
 - `src/dynamic_ai_products/ingestion/errors.py`
 - `src/dynamic_ai_products/ingestion/family_coverage.py`
+- `src/dynamic_ai_products/ingestion/lineage_authority.py`
+- `src/dynamic_ai_products/ingestion/lineage_packet.py`
 - `src/dynamic_ai_products/ingestion/manifests.py`
 - `src/dynamic_ai_products/ingestion/normalize.py`
 - `src/dynamic_ai_products/ingestion/parquet_io.py`
@@ -747,6 +750,7 @@ Total tracked/scaffold files listed: **794**
 - `tests/ingestion/test_baseline_packet.py`
 - `tests/ingestion/test_family_coverage.py`
 - `tests/ingestion/test_ingestion_boundaries.py`
+- `tests/ingestion/test_lineage_packet.py`
 - `tests/ingestion/test_normalize.py`
 - `tests/ingestion/test_parquet_determinism.py`
 - `tests/ingestion/test_preflight.py`

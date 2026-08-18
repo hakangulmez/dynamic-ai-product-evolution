@@ -83,16 +83,12 @@ from ..universe.identifiers import (
     SEC_CIK_IDENTIFIER_SCHEME,
     company_id_for_cik,
 )
-from ..universe.acquisition_queue import (
-    AGGREGATE_MANIFEST_CONTRACT_V2,
-    AGGREGATE_V2_SCHEMA_RELATIVE_PATH,
-)
 from ..universe.io_utils import read_json
-from ..universe.primary_document_acquisition import (
-    ACQUISITION_MANIFEST_FILENAME,
-    BUNDLE_MANIFEST_FILENAME,
-)
 from .baseline_packet import PacketBundleError, load_bundle
+from .lineage_authority import (
+    LineageAuthorityError,
+    load_lineage_bundles as _load_lineage_bundles,
+)
 
 DETERMINATION_CONTRACT = "shell_company_determination@0.2.0"
 DETERMINATIONS_FILENAME = "shell_company_determinations.jsonl"
@@ -644,170 +640,21 @@ def run_shell_company_determination(
 # path here constructs its name.
 
 
-def _resolved_run_dir(root: Path, raw: object, shard_index: int) -> Path:
-    """Resolve a run_dir the aggregate names, refusing anything that escapes."""
-    where = f"shards_authoritative[shard_index={shard_index}].run_dir"
-    if not isinstance(raw, str) or not raw.strip():
-        raise ShellDeterminationError(f"{where} is not a usable path: {raw!r}.")
-    candidate = Path(raw)
-    if candidate.is_absolute():
-        raise ShellDeterminationError(
-            f"{where} is absolute ({raw!r}); a shard directory is named "
-            "relative to the repository root."
-        )
-    if ".." in candidate.parts:
-        raise ShellDeterminationError(
-            f"{where} traverses a parent directory ({raw!r})."
-        )
-    base = root.resolve()
-    resolved = (base / candidate).resolve()
-    if not resolved.is_relative_to(base):
-        raise ShellDeterminationError(
-            f"{where} resolves outside the repository root ({raw!r})."
-        )
-    return resolved
-
-
 def load_lineage_bundles(
     repo_root: str | Path, aggregate_manifest_path: str | Path
 ) -> tuple[dict, list[dict], str, dict]:
     """Validate one ADR-101 aggregate and open exactly the shards it names.
 
-    Fails closed before anything is written. Each referenced bundle and
-    acquisition manifest is re-hashed against the aggregate's own record
-    *before* a primary document is read: equality means the bytes on disk are
-    byte-identical to the bytes the aggregate bound, which is why the shard
-    plans are not regenerated here. The unchanged bundle loader then verifies
-    every document's byte length and SHA-256.
+    The validation itself lives in :mod:`.lineage_authority` (ADR-103), where
+    the Item 1 packet consumer shares it instead of duplicating it or
+    importing it from here in a cycle. This wrapper preserves ADR-102's public
+    seam exactly: same signature, same return shape, and the same
+    :class:`ShellDeterminationError` carrying the identical message.
     """
-    root = Path(repo_root)
-    path = Path(aggregate_manifest_path)
-    if not path.is_file():
-        raise ShellDeterminationError(f"Aggregate manifest not found: {path}")
-    raw = path.read_bytes()
     try:
-        aggregate = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ShellDeterminationError(
-            f"Aggregate manifest is not valid JSON: {exc}"
-        ) from exc
-    if not isinstance(aggregate, dict):
-        raise ShellDeterminationError(
-            f"Aggregate manifest is not a JSON object: {path}"
-        )
-    declared = aggregate.get("aggregate_manifest_contract")
-    if declared != AGGREGATE_MANIFEST_CONTRACT_V2:
-        raise ShellDeterminationError(
-            f"Aggregate manifest declares {declared!r}; the lineage cohort is "
-            f"read only from {AGGREGATE_MANIFEST_CONTRACT_V2}."
-        )
-    schema = read_json(root / AGGREGATE_V2_SCHEMA_RELATIVE_PATH)
-    errors = sorted(
-        Draft202012Validator(schema).iter_errors(aggregate),
-        key=lambda e: e.json_path,
-    )
-    if errors:
-        details = "; ".join(f"{e.json_path}: {e.message}" for e in errors[:5])
-        raise ShellDeterminationError(
-            f"Aggregate manifest violates "
-            f"{AGGREGATE_V2_SCHEMA_RELATIVE_PATH.name}: {details}"
-        )
-    if aggregate["coverage_complete"] is not True:
-        raise ShellDeterminationError(
-            "Aggregate coverage is partial "
-            f"({aggregate['coverage_statement']}). A full-cohort determination "
-            "is built only from complete coverage; a partial one would "
-            "under-count exclusions without saying so."
-        )
-    records = aggregate["shards_authoritative"]
-    if not records:
-        raise ShellDeterminationError(
-            "Aggregate names no authoritative shard; there is nothing to read."
-        )
-    indices = [record["shard_index"] for record in records]
-    duplicates = sorted({i for i in indices if indices.count(i) > 1})
-    if duplicates:
-        raise ShellDeterminationError(
-            f"Aggregate repeats shard index {duplicates}; one index names one "
-            "authoritative directory."
-        )
-    directories = [record["run_dir"] for record in records]
-    repeated = sorted({d for d in directories if directories.count(d) > 1})
-    if repeated:
-        raise ShellDeterminationError(
-            f"Aggregate repeats run directory {repeated}."
-        )
-
-    shards: list[dict] = []
-    rows_seen: dict[tuple[str, str], int] = {}
-    provenance: dict | None = None
-    # Sorted rather than taken in array order: the record order is computed
-    # from the shard index itself, so it holds even for an aggregate whose
-    # array arrived out of order, and cannot depend on how the runs were
-    # enumerated.
-    for record in sorted(records, key=lambda r: r["shard_index"]):
-        index = record["shard_index"]
-        run_dir = _resolved_run_dir(root, record["run_dir"], index)
-        if not run_dir.is_dir():
-            raise ShellDeterminationError(
-                f"Shard {index}: run directory not found: {run_dir}"
-            )
-        for filename, key in (
-            (BUNDLE_MANIFEST_FILENAME, "bundle_manifest_sha256"),
-            (ACQUISITION_MANIFEST_FILENAME, "acquisition_manifest_sha256"),
-        ):
-            target = run_dir / filename
-            if not target.is_file():
-                raise ShellDeterminationError(
-                    f"Shard {index}: {filename} is missing from {run_dir}."
-                )
-            observed = sha256(target.read_bytes()).hexdigest()
-            if observed != record[key]:
-                raise ShellDeterminationError(
-                    f"Shard {index}: {filename} hashes to {observed}, but the "
-                    f"aggregate records {record[key]}. The evidence on disk is "
-                    "not the evidence that was aggregated; nothing is read."
-                )
-        manifest, entries, bundle_sha = load_bundle(root, run_dir)
-        if len(entries) != record["carrier_rows"]:
-            raise ShellDeterminationError(
-                f"Shard {index}: bundle holds {len(entries)} row(s) but the "
-                f"aggregate records {record['carrier_rows']} carrier row(s)."
-            )
-        declared_provenance = {
-            "carrier_run_id": manifest["provenance"]["carrier_run_id"],
-            "carrier_manifest_sha256": manifest["provenance"][
-                "carrier_manifest_sha256"
-            ],
-            "freeze_record_sha256": manifest["provenance"][
-                "freeze_record_sha256"
-            ],
-        }
-        if provenance is None:
-            provenance = declared_provenance
-        elif declared_provenance != provenance:
-            raise ShellDeterminationError(
-                f"Shard {index}: carrier provenance {declared_provenance} "
-                f"disagrees with {provenance}. One cohort has one carrier; "
-                "disagreement is refused, never reconciled."
-            )
-        for entry in entries:
-            key = (entry["cik"], entry["accession"])
-            if key in rows_seen:
-                raise ShellDeterminationError(
-                    f"Row {key} appears in shard {rows_seen[key]} and shard "
-                    f"{index}; a carrier row belongs to exactly one shard."
-                )
-            rows_seen[key] = index
-        shards.append({
-            "shard_index": index,
-            "run_dir": record["run_dir"],
-            "bundle_manifest_sha256": bundle_sha,
-            "acquisition_manifest_sha256": record["acquisition_manifest_sha256"],
-            "rows": len(entries),
-            "entries": entries,
-        })
-    return aggregate, shards, sha256(raw).hexdigest(), provenance or {}
+        return _load_lineage_bundles(repo_root, aggregate_manifest_path)
+    except LineageAuthorityError as exc:
+        raise ShellDeterminationError(str(exc)) from exc
 
 
 def run_lineage_shell_company_determination(

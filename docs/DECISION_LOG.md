@@ -6854,6 +6854,124 @@ will shard 41's 179-byte document. That is a property of the corpus.
 `REPO_MANIFEST.md` (793 → 794); and the five evaluation guard modules whose
 pinned registry hash and manifest counts move.
 
+## ADR-103 — Full-cohort Item 1 packets read the aggregate and the shell determination
+
+**Status.** Accepted. Fixture-first; every lineage in the tests is synthesized
+under a temporary root, determinations produced by the real ADR-102 runner
+over that lineage. No real packet build was run, no SEC request made, no
+model called, and `data/runs` is untouched.
+
+**Measurement.** `run_baseline_packet_build` takes one `--bundle-dir`. The
+completed W3 v0.3 cohort is 8,718 carrier rows across 86 bundles in 17
+execution runs, screened by one shell determination that excluded 795 rows
+and retained 7,923. Copying the primaries into one directory would duplicate
+22.5 GiB as a second, unhashed copy of immutable evidence; merging 86 bundle
+manifests would fabricate an artefact no acquisition run wrote. And the v0.2
+packet-run manifest cannot describe the run either way: its
+`bundle_manifest_sha256` names one bundle, and its `counts.firms_excluded` is
+pinned to `{"minimum": 0, "maximum": 0}`, so a run excluding 795 firms cannot
+validate under it.
+
+**Decision: consume the two governing artefacts, and nothing else.**
+`build-baseline-packets-lineage` takes `--aggregate-manifest`,
+`--shell-determination-manifest` and `--config`. It has no directory argument
+at all — no shard-output root, bundle directory, replay directory, glob or
+search path — so every directory the run opens is exactly a
+`shards_authoritative[].run_dir` value from the validated aggregate, and a
+shard directory the aggregate does not name is unreachable. Superseded and
+non-authoritative directories are never resolved.
+
+**A neutral authority boundary, not a duplicate and not a cycle.** The
+aggregate validation ADR-102 built lived inside
+`shell_company_determination`, which imports this package's bundle loader; a
+packet builder importing it back out of that module would have closed a
+cycle. It moved to `ingestion/lineage_authority.py`, raising its own
+`LineageAuthorityError`; `shell_company_determination.load_lineage_bundles`
+became a thin delegate that re-raises as `ShellDeterminationError` with the
+identical message, so its signature, return shape, refusal messages and
+exception type did not move — proven by the ADR-102 test file passing
+byte-unmodified. The import graph stays acyclic: `lineage_packet` →
+{`lineage_authority`, `baseline_packet`, determination constants};
+`shell_company_determination` → `lineage_authority` → `baseline_packet`.
+`baseline_packet.py` itself is untouched.
+
+**The two inputs bind relationally, never against a pinned literal.** No
+production hash appears in source, schema or fixture. The aggregate's bytes
+are re-hashed at run time and the determination manifest's recorded
+`aggregate_manifest_sha256` must equal that recomputation; the determination
+JSONL is re-hashed and must equal that manifest's own `output_hashes` entry;
+every JSONL record must validate under the unchanged v0.2 record contract.
+Shard binding is an **exact per-index tuple mapping** — `(shard_index,
+run_dir, bundle_manifest_sha256, acquisition_manifest_sha256, rows)` —
+identical between the aggregate's authoritative records and the
+determination's consumed records. Mapping equality is the point: independent
+set comparisons per column would pass two shards whose directories were
+swapped between indices, and a test pins exactly that forgery being refused.
+
+**Reconciliation before any output.** Every bundle row must have exactly one
+determination record and every record must cite its own shard's bundle hash;
+omissions, extras, duplicates and cross-shard mismatches are refused even
+when the JSONL's recorded hash was forged to match, so the hash check is
+never the only guard. Recomputed outcome tallies must equal the determination
+manifest's counts; carrier provenance and route validation must agree across
+all bundles and with the determination; every consumed bundle must declare
+`baseline_primary_document_bundle@0.2.0`. All of it happens before
+`create_run_directory`, so an input-integrity failure writes nothing.
+
+**Only `shell_company == true` excludes.** `false` and `unknown` rows are
+retained and packetized by the unchanged `build_packet`, so the ADR-097
+plain-text route, passage normalization and admission-evidence forwarding are
+reused rather than reimplemented. A retained document without a usable Item 1
+is a per-row failure record in the failures JSONL — never an exclusion, never
+a silent drop. The shell filter is per **row**, not per accession: one
+registrant of a combined filing can be excluded while its sibling row, citing
+the same source bytes, is retained — shared-accession rows are never merged.
+
+**The record contract does not move.** Every packet stays
+`universe_baseline_packet@0.2.0`, byte-identical to what the single-bundle
+path builds for the same row (asserted by packet_sha256 equality), with all
+five issuer flags null and basis `cover_page_evidence_not_yet_observed` — the
+packet still has no cover-page route, and the shell result is bound in the
+run manifest, never written into record fields it did not evidence.
+`baseline_packet_manifest@0.3.0` binds the aggregate (path, recomputed hash,
+run id, queue identity, verbatim `execution_run_ids`), the determination
+(path, hash, run id, JSONL hash), per-shard consumption and exclusion counts,
+and the record-order constant. v0.1 and v0.2 stay byte-unchanged and the
+three generations mutually reject.
+
+**Deterministic order.** Packets and failures are written in `shard_index`
+ascending order, then in each bundle manifest's own entry order, after
+shell-true omission. Both keys come from artefacts: permuting
+`execution_run_ids` (which forces a fresh determination, since the aggregate's
+bytes change) moves no packet byte — the JSONLs and their output hashes are
+byte-identical, asserted directly.
+
+**Total flag gating.** Every mode that does not consume a lineage-input flag
+refuses it: `--aggregate-manifest` is accepted only by
+`determine-shell-company-lineage` and `build-baseline-packets-lineage`, and
+`--shell-determination-manifest` only by the latter. No mode silently ignores
+either, swept mode-by-mode in the tests.
+
+**Limits.** This builds Item 1 packets for one cohort. No screening,
+classification, tier derivation or PCT extraction is performed, and no model
+is called. The CLI anchors `run_dir` resolution at the repository root, so a
+synthetic lineage outside it is unreachable through the entrypoint by
+construction; the success path is exercised in-process against a synthetic
+root. The real 7,923-row build is separately authorized and expects: planned
+8,718, excluded 795, retained 7,923, packets plus failures equal to 7,923,
+the six plain-text rows retained, and shard 41's 179-byte text document
+surfacing as a per-row Item 1 failure rather than vanishing.
+
+**Scope.** Fourteen paths: the new v0.3 packet-run manifest schema; the
+schema registry (0.41.0 → 0.42.0, 92 → 93 entries); the new
+`lineage_authority.py` and `lineage_packet.py`; the delegation in
+`shell_company_determination.py`; `pipelines/00_build_company_universe.py`;
+the new `tests/ingestion/test_lineage_packet.py`; this log;
+`REPO_MANIFEST.md` (794 → 798); and the five evaluation guard modules whose
+pinned registry hash and manifest counts move. `baseline_packet.py`, the
+ADR-102 test file, the existing packet tests and every predecessor schema are
+untouched.
+
 ## Open decisions
 
 - Required source packet by firm-year.

@@ -141,6 +141,9 @@ from dynamic_ai_products.ingestion.baseline_packet import (  # noqa: E402
     PacketBundleError,
     run_baseline_packet_build,
 )
+from dynamic_ai_products.ingestion.lineage_packet import (  # noqa: E402
+    run_lineage_packet_build,
+)
 from dynamic_ai_products.ingestion.shell_company_determination import (  # noqa: E402
     ShellDeterminationError,
     run_lineage_shell_company_determination,
@@ -192,6 +195,7 @@ def build_parser() -> argparse.ArgumentParser:
                  "probe-filing-index", "build-baseline-packets",
                  "acquire-primary-docs", "determine-shell-company",
                  "determine-shell-company-lineage",
+                 "build-baseline-packets-lineage",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
                  "aggregate-acquisition-lineage"],
@@ -338,6 +342,13 @@ def build_parser() -> argparse.ArgumentParser:
              "accepts: every shard directory read comes from inside it.",
     )
     parser.add_argument(
+        "--shell-determination-manifest", default=None,
+        help="Build-baseline-packets-lineage mode only: the path of one "
+             "ADR-102 shell_company_determination_manifest@0.3.0. Its "
+             "determinations decide which rows are excluded (shell true) and "
+             "which are retained (false and unknown alike).",
+    )
+    parser.add_argument(
         "--execution-run-ids", default=None,
         help="Aggregate-acquisition-lineage mode only: an explicit, comma-"
              "separated, ordered enumeration of the execution run ids the "
@@ -394,6 +405,25 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
     # through each existing branch.
     if args.mode not in QUEUE_MODES:
         offending = _present(queue_flags)
+        if offending:
+            return f"{args.mode} mode does not accept: {', '.join(offending)}"
+
+    # Total gating for the two lineage-input flags (ADR-103): every mode that
+    # does not consume one refuses it, so no mode silently ignores either.
+    # --aggregate-manifest is consumed by the shell-lineage and packet-lineage
+    # modes; --shell-determination-manifest by the packet-lineage mode alone.
+    if args.mode not in ("determine-shell-company-lineage",
+                         "build-baseline-packets-lineage"):
+        offending = _present(
+            (("--aggregate-manifest", args.aggregate_manifest),)
+        )
+        if offending:
+            return f"{args.mode} mode does not accept: {', '.join(offending)}"
+    if args.mode != "build-baseline-packets-lineage":
+        offending = _present(
+            (("--shell-determination-manifest",
+              args.shell_determination_manifest),)
+        )
         if offending:
             return f"{args.mode} mode does not accept: {', '.join(offending)}"
 
@@ -589,6 +619,33 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             return (
                 "determine-shell-company-lineage mode requires: "
                 "--aggregate-manifest"
+            )
+        return None
+
+    if args.mode == "build-baseline-packets-lineage":
+        offending = _present(
+            sentinel_flags + frame_flags + acquire_flags + dera_flags
+            # The two manifests are the only data locations this mode takes:
+            # a bundle directory or replay directory supplied here would name
+            # evidence the aggregate does not authorize.
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--replay-dir", args.replay_dir),)
+        )
+        if offending:
+            return (
+                "build-baseline-packets-lineage mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--aggregate-manifest", args.aggregate_manifest),
+            ("--shell-determination-manifest",
+             args.shell_determination_manifest),
+            ("--config", args.config),
+        ))
+        if missing:
+            return (
+                "build-baseline-packets-lineage mode requires: "
+                f"{', '.join(missing)}"
             )
         return None
 
@@ -1436,6 +1493,50 @@ def _main_determine_shell_company_lineage(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_build_baseline_packets_lineage(args: argparse.Namespace) -> int:
+    # Two files in, nothing else: this mode has no directory argument at all,
+    # so there is nothing here that could widen what the run may open.
+    aggregate_manifest = Path(args.aggregate_manifest)
+    determination_manifest = Path(args.shell_determination_manifest)
+    for label, path in (("aggregate manifest", aggregate_manifest),
+                        ("determination manifest", determination_manifest)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    try:
+        result = run_lineage_packet_build(
+            repo_root=REPO_ROOT,
+            aggregate_manifest_path=aggregate_manifest,
+            determination_manifest_path=determination_manifest,
+            project_config_path=Path(args.config),
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except PacketBundleError as exc:
+        print(f"ERROR: invalid lineage packet input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "aggregate_manifest_sha256": result.aggregate_manifest_sha256,
+        "determination_manifest_sha256": result.determination_manifest_sha256,
+        "counts": result.counts,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 def _main_build_baseline_packets(args: argparse.Namespace) -> int:
     bundle_dir = Path(args.bundle_dir)
     config_path = Path(args.config)
@@ -1711,6 +1812,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_determine_shell_company(args)
     if args.mode == "determine-shell-company-lineage":
         return _main_determine_shell_company_lineage(args)
+    if args.mode == "build-baseline-packets-lineage":
+        return _main_build_baseline_packets_lineage(args)
     if args.mode == "plan-acquisition-queue":
         return _main_plan_acquisition_queue(args)
     if args.mode == "execute-acquisition-queue":
