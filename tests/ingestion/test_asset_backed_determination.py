@@ -543,3 +543,103 @@ def test_entity_encoded_evidence_offsets_are_authoritative():
 
     assert normalize(j_slice) == record["instruction_j_quote"]
     assert normalize(ab_slice) == record["reg_ab_quote"]
+
+
+# --- ADR-106: the governed CLI entrypoint --------------------------------------
+
+import subprocess
+import sys as _sys
+
+CLI = ROOT / "pipelines" / "00_build_company_universe.py"
+
+
+def _cli(*args):
+    return subprocess.run([_sys.executable, str(CLI), *args],
+                          capture_output=True, text=True, check=False)
+
+
+def test_cli_mode_anchors_run_dirs_at_the_repository_root(tmp_path):
+    """A synthetic lineage outside the repo is unreachable by construction."""
+    root, aggregate, _ = _lineage(tmp_path)
+    completed = _cli("--mode", "determine-asset-backed-issuer-lineage",
+                     "--aggregate-manifest", str(aggregate),
+                     "--output-dir", str(tmp_path / "cli"), "--run-id", "r")
+    assert completed.returncode == 2
+    assert "run directory not found" in completed.stderr
+    assert str(ROOT / "shards" / "ra-shard-0000") in completed.stderr
+    assert not (tmp_path / "cli").exists()
+
+
+def test_cli_mode_requires_an_existing_aggregate(tmp_path):
+    missing = _cli("--mode", "determine-asset-backed-issuer-lineage",
+                   "--aggregate-manifest", str(tmp_path / "missing.json"),
+                   "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert missing.returncode == 2
+    assert "aggregate manifest not found" in missing.stderr
+    assert not (tmp_path / "o").exists()
+
+    absent = _cli("--mode", "determine-asset-backed-issuer-lineage",
+                  "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert absent.returncode != 0
+    assert "requires: --aggregate-manifest" in absent.stderr
+    assert not (tmp_path / "o").exists()
+
+
+@pytest.mark.parametrize("flag, value", [
+    ("--bundle-dir", "x"), ("--shard-output-dir", "x"),
+    ("--queue-definition", "x"), ("--replay-dir", "x"),
+    ("--shell-determination-manifest", "d.json"),
+    ("--item-one-locator", "item_one_span_v2"),
+])
+def test_cli_mode_rejects_every_other_data_or_lineage_flag(tmp_path, flag,
+                                                           value):
+    completed = _cli("--mode", "determine-asset-backed-issuer-lineage",
+                     "--aggregate-manifest", "a.json", flag, value,
+                     "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert completed.returncode != 0
+    assert flag in completed.stderr
+    assert "does not accept" in completed.stderr
+    assert not (tmp_path / "o").exists()
+
+
+def test_cli_json_summary_shape(tmp_path, monkeypatch):
+    """The handler serializes exactly the governed summary fields. The
+    success path is unreachable end-to-end offline (repo-root anchoring), so
+    the handler is exercised in-process with the real result type and only
+    the runner substituted."""
+    import importlib.util
+    import io
+    from contextlib import redirect_stdout
+
+    from dynamic_ai_products.ingestion.asset_backed_determination import (
+        AssetBackedRunResult,
+    )
+
+    spec = importlib.util.spec_from_file_location("universe_cli", CLI)
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+
+    aggregate = tmp_path / "aggregate.json"
+    aggregate.write_text("{}", encoding="utf-8")
+    stub = AssetBackedRunResult(
+        run_id="r", run_dir=None, dry_run=True,
+        aggregate_manifest_sha256="a" * 64,
+        counts={"rows_considered": 1}, reconciliation={"ok": True},
+    )
+    monkeypatch.setattr(cli, "run_asset_backed_determination",
+                        lambda **kwargs: stub)
+    args = type("A", (), {
+        "aggregate_manifest": str(aggregate),
+        "output_dir": str(tmp_path / "o"), "run_id": "r", "dry_run": True,
+    })()
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        code = cli._main_determine_asset_backed_issuer_lineage(args)
+    assert code == 0
+    payload = json.loads(buffer.getvalue())
+    assert set(payload) == {"run_id", "dry_run", "run_dir",
+                            "aggregate_manifest_sha256", "counts",
+                            "reconciliation", "manifest_path"}
+    assert payload["dry_run"] is True and payload["run_dir"] is None
+    assert payload["manifest_path"] is None
+    assert payload["aggregate_manifest_sha256"] == "a" * 64

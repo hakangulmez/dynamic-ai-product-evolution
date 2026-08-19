@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Eleven mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
+Eighteen mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
 so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -49,6 +49,9 @@ so every pre-existing invocation is unchanged):
   a local, hash-verified primary-document bundle (ADR-091). Fixture-first and
   offline: it performs no network access, decides no exclusion, and records
   cover-page evidence and the economic subsections as explicitly missing.
+- ``determine-asset-backed-issuer-lineage`` determines the asset-backed
+  issuer flag for every carrier row of one completed lineage, reading only
+  the ADR-101 aggregate it is given (ADR-105/106).
 - ``determine-shell-company`` reads exactly one cover-page fact,
   ``dei:EntityShellCompany``, from a local hash-verified primary-document
   bundle and emits one governed determination per carrier row (ADR-094). It
@@ -144,6 +147,10 @@ from dynamic_ai_products.ingestion.baseline_packet import (  # noqa: E402
 from dynamic_ai_products.ingestion.lineage_packet import (  # noqa: E402
     run_lineage_packet_build,
 )
+from dynamic_ai_products.ingestion.asset_backed_determination import (  # noqa: E402
+    AssetBackedDeterminationError,
+    run_asset_backed_determination,
+)
 from dynamic_ai_products.ingestion.shell_company_determination import (  # noqa: E402
     ShellDeterminationError,
     run_lineage_shell_company_determination,
@@ -195,6 +202,7 @@ def build_parser() -> argparse.ArgumentParser:
                  "probe-filing-index", "build-baseline-packets",
                  "acquire-primary-docs", "determine-shell-company",
                  "determine-shell-company-lineage",
+                 "determine-asset-backed-issuer-lineage",
                  "build-baseline-packets-lineage",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
@@ -418,9 +426,11 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
 
     # Total gating for the two lineage-input flags (ADR-103): every mode that
     # does not consume one refuses it, so no mode silently ignores either.
-    # --aggregate-manifest is consumed by the shell-lineage and packet-lineage
-    # modes; --shell-determination-manifest by the packet-lineage mode alone.
+    # --aggregate-manifest is consumed by the three lineage consumers: shell
+    # determination, asset-backed determination and the packet build;
+    # --shell-determination-manifest by the packet-lineage mode alone.
     if args.mode not in ("determine-shell-company-lineage",
+                         "determine-asset-backed-issuer-lineage",
                          "build-baseline-packets-lineage"):
         offending = _present(
             (("--aggregate-manifest", args.aggregate_manifest),)
@@ -631,6 +641,30 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         if args.aggregate_manifest is None:
             return (
                 "determine-shell-company-lineage mode requires: "
+                "--aggregate-manifest"
+            )
+        return None
+
+    if args.mode == "determine-asset-backed-issuer-lineage":
+        offending = _present(
+            sentinel_flags + frame_flags + acquire_flags + dera_flags
+            + (("--config", args.config),)
+            # The aggregate is the sole evidence location: any other data
+            # flag supplied here would name evidence the manifest does not
+            # authorize.
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--shard-output-dir", args.shard_output_dir),)
+            + (("--queue-definition", args.queue_definition),)
+            + (("--replay-dir", args.replay_dir),)
+        )
+        if offending:
+            return (
+                "determine-asset-backed-issuer-lineage mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        if args.aggregate_manifest is None:
+            return (
+                "determine-asset-backed-issuer-lineage mode requires: "
                 "--aggregate-manifest"
             )
         return None
@@ -1507,6 +1541,47 @@ def _main_determine_shell_company_lineage(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_determine_asset_backed_issuer_lineage(
+        args: argparse.Namespace) -> int:
+    # One path in, and it is a file: this mode has no directory argument at
+    # all, so there is nothing here that could widen what the run may open.
+    aggregate_manifest = Path(args.aggregate_manifest)
+    if not aggregate_manifest.is_file():
+        print(f"ERROR: aggregate manifest not found: {aggregate_manifest}",
+              file=sys.stderr)
+        return 2
+    try:
+        result = run_asset_backed_determination(
+            repo_root=REPO_ROOT,
+            aggregate_manifest_path=aggregate_manifest,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except (AssetBackedDeterminationError, PacketBundleError) as exc:
+        print(f"ERROR: invalid asset-backed determination input: {exc}",
+              file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "aggregate_manifest_sha256": result.aggregate_manifest_sha256,
+        "counts": result.counts,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 def _main_build_baseline_packets_lineage(args: argparse.Namespace) -> int:
     # Two files in, nothing else: this mode has no directory argument at all,
     # so there is nothing here that could widen what the run may open.
@@ -1829,6 +1904,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_determine_shell_company(args)
     if args.mode == "determine-shell-company-lineage":
         return _main_determine_shell_company_lineage(args)
+    if args.mode == "determine-asset-backed-issuer-lineage":
+        return _main_determine_asset_backed_issuer_lineage(args)
     if args.mode == "build-baseline-packets-lineage":
         return _main_build_baseline_packets_lineage(args)
     if args.mode == "plan-acquisition-queue":

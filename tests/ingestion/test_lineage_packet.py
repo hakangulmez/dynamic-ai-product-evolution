@@ -740,7 +740,8 @@ _OTHER_MODES = [
 ]
 
 
-@pytest.mark.parametrize("mode", _OTHER_MODES)
+@pytest.mark.parametrize(
+    "mode", _OTHER_MODES + ["determine-asset-backed-issuer-lineage"])
 def test_every_other_mode_refuses_the_determination_flag(tmp_path, mode):
     completed = _cli("--mode", mode,
                      "--shell-determination-manifest", "d.json",
@@ -750,6 +751,9 @@ def test_every_other_mode_refuses_the_determination_flag(tmp_path, mode):
     assert "does not accept" in completed.stderr
 
 
+# determine-asset-backed-issuer-lineage is deliberately absent here: it is
+# the third aggregate consumer (ADR-106) and accepts the flag; its own test
+# module pins that acceptance.
 @pytest.mark.parametrize("mode", _OTHER_MODES)
 def test_every_other_mode_refuses_the_aggregate_flag(tmp_path, mode):
     completed = _cli("--mode", mode, "--aggregate-manifest", "a.json",
@@ -882,7 +886,8 @@ def test_cli_refuses_an_unmapped_selector_before_output(tmp_path):
     assert not (tmp_path / "o").exists()
 
 
-@pytest.mark.parametrize("mode", _OTHER_MODES)
+@pytest.mark.parametrize(
+    "mode", _OTHER_MODES + ["determine-asset-backed-issuer-lineage"])
 def test_every_other_mode_refuses_the_locator_flag(tmp_path, mode):
     completed = _cli("--mode", mode, "--item-one-locator", "item_one_span_v2",
                      "--output-dir", str(tmp_path / "o"), "--run-id", "r")

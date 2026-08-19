@@ -7214,6 +7214,42 @@ entrypoint is its own gated increment), any change to
 `shell_company_determination`, `issuer_filters`, packet contracts, or
 `data/runs`.
 
+## ADR-106 — CLI entrypoint for the lineage asset-backed determination
+
+**Status.** Accepted. **CLI wiring only: this ADR authorizes no live
+determination**, writes nothing under `data/runs`, and changes no detector
+logic, schema, registry entry, or manifest count. ADR-105's detector and
+schema decisions stand unchanged.
+
+**Why.** ADR-105 shipped the determination as a library deliberately without
+an entrypoint, because the live cohort run was (and remains) its own gated
+authorization. A governed run, when authorized, must go through a pipeline
+mode with the same flag discipline as every other lineage consumer — not a
+hand-written script. This increment adds exactly that mode:
+`determine-asset-backed-issuer-lineage`.
+
+**Shape.** The mode's only evidence-location input is `--aggregate-manifest`;
+it uses the global `--output-dir`, `--run-id` and `--dry-run`, requires the
+aggregate file to exist before anything runs, and calls
+`run_asset_backed_determination` with the repository root and an injected UTC
+clock. Its summary is the governed JSON shape: run_id, dry_run, run_dir,
+aggregate_manifest_sha256, counts, reconciliation, manifest_path.
+`--aggregate-manifest` is now accepted by exactly the three lineage
+consumers — shell determination, asset-backed determination, and the packet
+build — and by nothing else; the new mode refuses every other data-location
+flag (`--bundle-dir`, `--shard-output-dir`, `--queue-definition`,
+`--replay-dir`, plus the sentinel/frame/acquire/dera/config families) and
+the other modes' lineage inputs (`--shell-determination-manifest`,
+`--item-one-locator`). Repo-root anchoring of shard resolution is inherited
+from the library and pinned by a CLI test, exactly as for the sibling modes.
+
+**Scope.** Four paths: the pipeline entrypoint, this log, and the two test
+modules (CLI coverage in the asset-backed module; the all-mode flag sweeps in
+the lineage-packet module updated so the new mode is treated as an aggregate
+consumer while still proving it rejects the shell-determination and locator
+flags). No schema, registry version/count, or `REPO_MANIFEST` count moves:
+no new file is introduced.
+
 ## Open decisions
 
 - Required source packet by firm-year.
