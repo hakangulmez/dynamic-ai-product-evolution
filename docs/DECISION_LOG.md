@@ -7250,6 +7250,89 @@ consumer while still proving it rejects the shell-determination and locator
 flags). No schema, registry version/count, or `REPO_MANIFEST` count moves:
 no new file is introduced.
 
+## ADR-107 — Two-determination lineage packet successor
+
+**Status.** Accepted. Fixture-first; no live packet rebuild, no `data/runs`
+write, no SEC or model call. The real cohort rebuild under this successor is
+a separate, future authorization.
+
+**Why.** The full-cohort screening now has two governed deterministic
+exclusions: the ADR-102 shell determination (795 true) and the ADR-105
+asset-backed-issuer determination (351 true, measured overlap 0 — the two
+signatures are structurally disjoint: shells assert a cover-page fact,
+asset-backed issuers omit Part I under Instruction J). The ADR-103/104
+packet builder consumes only the shell determination, so a rebuilt cohort
+would still packetize 351 rows whose Item 1 the filer legitimately omitted.
+A successor consumes both.
+
+**Decision: a new generation beside an untouched predecessor.**
+`run_lineage_packet_build` and `build-baseline-packets-lineage` are retained
+byte- and behavior-identical, still emitting the v0.4 manifest.
+`run_lineage_packet_build_v2` and `build-baseline-packets-lineage-v2` are
+the successor: a carrier row is excluded **iff** its shell determination or
+its asset-backed determination is the literal `true`. `false` and `unknown`
+always remain eligible — every shell-unknown and asset-backed-unknown row is
+retained — and **packetization establishes nothing beyond a locatable
+Item 1**: it does not establish software eligibility. Packet records keep
+`universe_baseline_packet@0.2.0` with all five issuer flags null; the
+determinations are bound at run-manifest level, never written into
+evidence-less packet fields.
+
+**Authority and binding.** The aggregate remains the sole authority for
+which directories may be opened (shared `lineage_authority` boundary; no
+glob, no alternate roots; unenumerated shards invisible, pinned by the
+chmod-intruder test). Each determination is independently validated against
+its own manifest and record contracts, its JSONL re-hashed against its own
+`output_hashes` entry and required to be sound UTF-8, and bound relationally
+to the supplied aggregate: recomputed aggregate SHA, aggregate run id, queue
+id, queue-definition SHA, carrier provenance, and the exact per-shard tuple
+mapping `(shard_index, run_dir, bundle_manifest_sha256,
+acquisition_manifest_sha256, rows)`. Each JSONL must hold **one and only
+one** record per aggregate `(cik, accession)` row, each citing its own
+shard's bundle hash — duplicates, omissions, extras, swapped hashes,
+mismatched aggregates, and malformed records all refuse before
+`create_run_directory`. Recomputed outcome tallies must equal each
+manifest's own counts. No live hash or count is hard-coded anywhere.
+
+**Manifest transparency.** `baseline_packet_manifest@0.5.0` binds both
+inputs (path, manifest SHA, run id, JSONL SHA each) and records the
+**five-way exclusion accounting both cohort-wide and per shard**:
+`shell_true`, `asset_backed_true`, `both_true`, `shell_only_true`,
+`asset_backed_only_true` appear in the cohort counts and in every
+`shards_consumed[]` record alike, beside `firms_excluded` (the union,
+exactly `shell + abs − both`), `retained_rows`/`rows_retained`,
+`packets_built`, `packet_failures`. Reconciliation identities prove both
+determinations partition the planned rows, the union arithmetic, excluded +
+retained = planned, packets + failures = retained, per-shard sums equal to
+cohort totals, and — per shard — `shell_only + both = shell`,
+`abs_only + both = abs`, `excluded = shell_only + abs_only + both`,
+`excluded + retained = rows`, `built + failed = retained`. The arithmetic is
+beyond JSON Schema's reach, so the runner's reconciliation is the guard and
+refuses before writing; a regression forges one per-shard value to pin
+exactly that division of labor. Records are written in shard-index-then-bundle-entry order after
+union-exclusion omission (`…_after_union_exclusion`). v0.1–v0.4 stay
+byte-identical; v0.4 and v0.5 mutually reject (the single-determination
+binding fields are replaced by the two named bindings, and the per-shard
+record shape differs).
+
+**CLI.** The successor requires `--aggregate-manifest`,
+`--shell-determination-manifest`, `--asset-backed-determination-manifest`,
+`--item-one-locator` (the ADR-104 closed selector, unchanged) and
+`--config`; it refuses every directory/replay/queue input. The new
+asset-backed flag is refused by every other mode, the shell-only packet mode
+included; total gating is preserved and swept mode-by-mode in the tests. The
+entrypoint docstring's mode count moves to nineteen.
+
+**Expected live accounting — a preflight check only, never a source
+constant**: 8,718 planned rows; shell true 795; ABS true 351; observed
+overlap 0; exclusion union 1,146; retained 7,572. This increment runs no
+rebuild.
+
+**Scope.** Twelve paths: `lineage_packet.py` (successor appended; v1
+function untouched), the new v0.5 schema, the registry (0.44.0 → 0.45.0,
+96 → 97), the pipeline, the lineage-packet tests, this log,
+`REPO_MANIFEST.md` (803 → 804), and the five evaluation guard modules.
+
 ## Open decisions
 
 - Required source packet by firm-year.

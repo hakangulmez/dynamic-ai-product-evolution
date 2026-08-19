@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from hashlib import sha256
@@ -688,6 +689,658 @@ def run_lineage_packet_build(
     payload = (json.dumps(run_manifest, indent=2, sort_keys=True) + "\n").encode(
         "utf-8"
     )
+    write_bytes_once(run_dir / PACKET_MANIFEST_FILENAME, payload,
+                     what="lineage baseline packet manifest")
+    result.manifest_path = run_dir / PACKET_MANIFEST_FILENAME
+    return result
+
+
+# --- ADR-107: the two-determination successor ----------------------------------
+#
+# The v1 builder above consumes one screening input, the ADR-102 shell
+# determination, and is retained byte-identical: same function, same CLI
+# mode, same v0.4 manifest. The successor below additionally consumes the
+# ADR-105 asset-backed-issuer determination and excludes a carrier row iff
+# either determination is the literal string "true" for that row. false and
+# unknown always remain eligible; neither determination writes anything into
+# a packet record, whose contract stays universe_baseline_packet@0.2.0 with
+# all five issuer flags null. The screening evidence lives at run-manifest
+# level (v0.5), where each input is bound by path, recomputed hash, run id,
+# queue identity, carrier provenance and the exact per-shard tuple mapping.
+
+PACKET_MANIFEST_V5_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/baseline_packet_manifest.v5.schema.json"
+)
+PACKET_RECORD_ORDER_V2 = (
+    "shard_index_then_bundle_entry_order_after_union_exclusion"
+)
+
+from .asset_backed_determination import (  # noqa: E402
+    DETERMINATION_CONTRACT as ABS_DETERMINATION_CONTRACT,
+    DETERMINATION_SCHEMA_RELATIVE_PATH as ABS_RECORD_SCHEMA_RELATIVE_PATH,
+    DETERMINATIONS_FILENAME as ABS_DETERMINATIONS_FILENAME,
+    MANIFEST_SCHEMA_RELATIVE_PATH as ABS_MANIFEST_SCHEMA_RELATIVE_PATH,
+)
+
+
+def _load_asset_backed_determination(
+    root: Path, determination_manifest_path: Path
+) -> tuple[dict, str, list[dict], str]:
+    """Validate the ADR-105 manifest and its JSONL; return both, with hashes.
+
+    The same fail-closed shape as the shell loader: manifest schema, contract
+    identity, JSONL presence, recomputed hash against the manifest's own
+    output_hashes entry, UTF-8 soundness, and per-record schema validation —
+    each refused before any output directory could exist.
+    """
+    if not determination_manifest_path.is_file():
+        raise PacketBundleError(
+            f"Asset-backed determination manifest not found: "
+            f"{determination_manifest_path}"
+        )
+    raw = determination_manifest_path.read_bytes()
+    try:
+        manifest = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise PacketBundleError(
+            f"Asset-backed determination manifest is not valid JSON: {exc}"
+        ) from exc
+    if not isinstance(manifest, dict):
+        raise PacketBundleError(
+            f"Asset-backed determination manifest is not a JSON object: "
+            f"{determination_manifest_path}"
+        )
+    schema = read_json(root / ABS_MANIFEST_SCHEMA_RELATIVE_PATH)
+    errors = sorted(
+        Draft202012Validator(schema).iter_errors(manifest),
+        key=lambda e: e.json_path,
+    )
+    if errors:
+        details = "; ".join(f"{e.json_path}: {e.message}" for e in errors[:5])
+        raise PacketBundleError(
+            f"Asset-backed determination manifest violates "
+            f"{ABS_MANIFEST_SCHEMA_RELATIVE_PATH.name}: {details}"
+        )
+    if manifest["determination_contract"] != ABS_DETERMINATION_CONTRACT:
+        raise PacketBundleError(
+            f"Asset-backed determination manifest declares "
+            f"{manifest['determination_contract']!r}; the cohort filter "
+            f"reads only {ABS_DETERMINATION_CONTRACT} records."
+        )
+
+    jsonl_path = (determination_manifest_path.parent
+                  / ABS_DETERMINATIONS_FILENAME)
+    if not jsonl_path.is_file():
+        raise PacketBundleError(
+            f"Asset-backed determinations JSONL not found beside its "
+            f"manifest: {jsonl_path}"
+        )
+    jsonl_raw = jsonl_path.read_bytes()
+    recorded = manifest["output_hashes"][ABS_DETERMINATIONS_FILENAME]
+    observed = sha256(jsonl_raw).hexdigest()
+    if observed != recorded:
+        raise PacketBundleError(
+            f"Asset-backed determinations JSONL hashes to {observed}, but "
+            f"its manifest records {recorded}. The records on disk are not "
+            "the records that manifest describes; nothing is built."
+        )
+    try:
+        jsonl_text = jsonl_raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise PacketBundleError(
+            f"Asset-backed determinations JSONL {jsonl_path} is not valid "
+            f"UTF-8: {exc}. Nothing is built."
+        ) from exc
+    validator = Draft202012Validator(
+        read_json(root / ABS_RECORD_SCHEMA_RELATIVE_PATH)
+    )
+    records: list[dict] = []
+    for line_number, line in enumerate(jsonl_text.splitlines(), 1):
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise PacketBundleError(
+                f"Asset-backed determinations JSONL line {line_number} is "
+                f"not valid JSON: {exc}"
+            ) from exc
+        errors = sorted(validator.iter_errors(record),
+                        key=lambda e: e.json_path)
+        if errors:
+            details = "; ".join(
+                f"{e.json_path}: {e.message}" for e in errors[:3])
+            raise PacketBundleError(
+                f"Asset-backed determinations JSONL line {line_number} "
+                f"violates the record contract: {details}"
+            )
+        records.append(record)
+    return manifest, sha256(raw).hexdigest(), records, observed
+
+
+def _bind_determination_to_aggregate(
+    determination: dict, aggregate: dict, aggregate_sha: str,
+    provenance: dict, what: str,
+) -> None:
+    """One determination must describe exactly the supplied aggregate."""
+    if determination["aggregate_manifest_sha256"] != aggregate_sha:
+        raise PacketBundleError(
+            f"The {what} manifest records aggregate "
+            f"{determination['aggregate_manifest_sha256']}, but the supplied "
+            f"aggregate's bytes hash to {aggregate_sha}. The inputs do not "
+            "belong together; nothing is built."
+        )
+    for name in ("queue_id", "queue_definition_sha256"):
+        if determination[name] != aggregate[name]:
+            raise PacketBundleError(
+                f"The {what} manifest records {name} "
+                f"{determination[name]!r}, but the aggregate declares "
+                f"{aggregate[name]!r}."
+            )
+    if determination["aggregate_run_id"] != aggregate["run_id"]:
+        raise PacketBundleError(
+            f"The {what} manifest records aggregate run id "
+            f"{determination['aggregate_run_id']!r}, but the aggregate "
+            f"declares {aggregate['run_id']!r}."
+        )
+    if determination["carrier_provenance"] != provenance:
+        raise PacketBundleError(
+            f"The {what} manifest's carrier provenance disagrees with the "
+            "consumed bundles'."
+        )
+    _require_tuple_equality(aggregate, determination)
+
+
+def _bind_determination_rows(
+    records: list[dict], shards: list[dict],
+    bundle_hash_by_index: dict[int, str], what: str,
+) -> dict[tuple[str, str], dict]:
+    """One and only one record per aggregate row, each citing its shard."""
+    by_row: dict[tuple[str, str], dict] = {}
+    for record in records:
+        key = (record["cik"], record["accession"])
+        if key in by_row:
+            raise PacketBundleError(
+                f"The {what} JSONL repeats row {key}; the cohort determines "
+                "each carrier row exactly once."
+            )
+        by_row[key] = record
+    rows_planned = 0
+    for shard in shards:
+        for entry in shard["entries"]:
+            key = (entry["cik"], entry["accession"])
+            rows_planned += 1
+            record = by_row.get(key)
+            if record is None:
+                raise PacketBundleError(
+                    f"Bundle row {key} (shard {shard['shard_index']}) has no "
+                    f"{what} record; the cohort filter is incomplete."
+                )
+            if record["bundle_manifest_sha256"] != bundle_hash_by_index[
+                shard["shard_index"]
+            ]:
+                raise PacketBundleError(
+                    f"The {what} record for row {key} cites bundle "
+                    f"{record['bundle_manifest_sha256']}, but the row lives "
+                    f"in shard {shard['shard_index']} whose bundle hashes "
+                    f"to {bundle_hash_by_index[shard['shard_index']]}."
+                )
+    if len(records) != rows_planned:
+        extras = sorted(
+            set(by_row)
+            - {(e["cik"], e["accession"])
+               for shard in shards for e in shard["entries"]}
+        )
+        raise PacketBundleError(
+            f"The {what} JSONL holds {len(records)} record(s) but the "
+            f"lineage plans {rows_planned} row(s); unmatched: {extras[:5]}."
+        )
+    return by_row
+
+
+def _v2_per_shard_identities(per_shard: list[dict],
+                             counts: dict) -> dict[str, bool]:
+    """The per-shard exclusion identities, as reconciliation flags.
+
+    JSON Schema cannot express arithmetic across fields, so these identities
+    live here as the runner's own guard: any False flag makes the run refuse
+    before anything is written.
+    """
+    return {
+        "per-shard sums equal the cohort totals": all(
+            sum(s[column] for s in per_shard) == counts[total]
+            for column, total in (
+                ("rows", "planned_rows"), ("shell_true", "shell_true"),
+                ("asset_backed_true", "asset_backed_true"),
+                ("both_true", "both_true"),
+                ("shell_only_true", "shell_only_true"),
+                ("asset_backed_only_true", "asset_backed_only_true"),
+                ("rows_excluded", "firms_excluded"),
+                ("rows_retained", "retained_rows"),
+                ("packets_built", "packets_built"),
+                ("packet_failures", "packet_failures"),
+            )
+        ),
+        "per-shard exclusion identities hold": all(
+            s["shell_only_true"] + s["both_true"] == s["shell_true"]
+            and s["asset_backed_only_true"] + s["both_true"]
+            == s["asset_backed_true"]
+            and s["rows_excluded"]
+            == s["shell_only_true"] + s["asset_backed_only_true"]
+            + s["both_true"]
+            and s["rows_excluded"] + s["rows_retained"] == s["rows"]
+            and s["packets_built"] + s["packet_failures"]
+            == s["rows_retained"]
+            for s in per_shard
+        ),
+    }
+
+
+def run_lineage_packet_build_v2(
+    *,
+    repo_root: str | Path,
+    aggregate_manifest_path: str | Path,
+    shell_determination_manifest_path: str | Path,
+    asset_backed_determination_manifest_path: str | Path,
+    project_config_path: str | Path,
+    output_dir: str | Path,
+    run_id: str,
+    item_one_locator: str,
+    clock: Callable[[], datetime],
+    dry_run: bool = False,
+) -> LineagePacketRunResult:
+    """Build Item 1 packets for every row retained by both determinations.
+
+    A carrier row is excluded iff its shell determination or its asset-backed
+    determination is the literal ``"true"``. ``false`` and ``unknown`` always
+    remain eligible: retention asserts nothing about software eligibility,
+    and neither determination writes into a packet record.
+    """
+    root = Path(repo_root)
+    if not _RUN_ID_RE.match(run_id):
+        raise PacketBundleError(
+            f"Invalid run id {run_id!r}: only letters, digits, '.', '_', '-' "
+            "are allowed (no path separators)."
+        )
+    if item_one_locator not in ITEM_ONE_LOCATORS:
+        raise PacketBundleError(
+            f"Unknown item_one_locator {item_one_locator!r}; the HTML locator "
+            f"is selected from exactly {sorted(ITEM_ONE_LOCATORS)}."
+        )
+    locate_html = ITEM_ONE_LOCATORS[item_one_locator]
+    canonical_locator = next(
+        key for key, value in ITEM_ONE_LOCATORS.items() if value is locate_html
+    )
+
+    # --- authority: the aggregate names everything that may be opened -------
+    try:
+        aggregate, shards, aggregate_sha, provenance = load_lineage_bundles(
+            root, aggregate_manifest_path
+        )
+    except LineageAuthorityError as exc:
+        raise PacketBundleError(str(exc)) from exc
+    for shard in shards:
+        if shard["bundle_contract"] != BUNDLE_CONTRACT_V2:
+            raise PacketBundleError(
+                f"Shard {shard['shard_index']}: bundle declares "
+                f"{shard['bundle_contract']!r}; a lineage cohort is built "
+                f"only from {BUNDLE_CONTRACT_V2} bundles."
+            )
+    route_validation = shards[0]["route_validation"]
+    for shard in shards[1:]:
+        if shard["route_validation"] != route_validation:
+            raise PacketBundleError(
+                f"Shard {shard['shard_index']}: route validation "
+                f"{shard['route_validation']} disagrees with "
+                f"{route_validation}. One cohort has one probe record; "
+                "disagreement is refused, never reconciled."
+            )
+
+    # --- binding: each determination must describe exactly this aggregate ---
+    shell_manifest, shell_sha, shell_records, shell_jsonl_sha = (
+        _load_determination(root, Path(shell_determination_manifest_path))
+    )
+    _bind_determination_to_aggregate(
+        shell_manifest, aggregate, aggregate_sha, provenance,
+        "shell determination")
+    abs_manifest, abs_sha, abs_records, abs_jsonl_sha = (
+        _load_asset_backed_determination(
+            root, Path(asset_backed_determination_manifest_path))
+    )
+    _bind_determination_to_aggregate(
+        abs_manifest, aggregate, aggregate_sha, provenance,
+        "asset-backed determination")
+
+    bundle_hash_by_index = {
+        shard["shard_index"]: shard["bundle_manifest_sha256"]
+        for shard in shards
+    }
+    shell_by_row = _bind_determination_rows(
+        shell_records, shards, bundle_hash_by_index, "shell determination")
+    abs_by_row = _bind_determination_rows(
+        abs_records, shards, bundle_hash_by_index,
+        "asset-backed determination")
+
+    shell_counts = Counter(r["shell_company"] for r in shell_records)
+    for name, key in (("shell_true", "true"), ("shell_false", "false"),
+                      ("shell_unknown", "unknown")):
+        if shell_manifest["counts"][name] != shell_counts.get(key, 0):
+            raise PacketBundleError(
+                f"Shell manifest counts {name}="
+                f"{shell_manifest['counts'][name]}, but its own records "
+                f"tally {shell_counts.get(key, 0)}."
+            )
+    abs_counts = Counter(r["asset_backed_issuer"] for r in abs_records)
+    for name, key in (("asset_backed_true", "true"),
+                      ("asset_backed_unknown", "unknown")):
+        if abs_manifest["counts"][name] != abs_counts.get(key, 0):
+            raise PacketBundleError(
+                f"Asset-backed manifest counts {name}="
+                f"{abs_manifest['counts'][name]}, but its own records tally "
+                f"{abs_counts.get(key, 0)}."
+            )
+
+    # --- the cutoff, exactly as the v1 path reads it -------------------------
+    config_path = Path(project_config_path)
+    if not config_path.is_file():
+        raise PacketBundleError(f"Project config not found: {config_path}")
+    import yaml
+
+    universe_config = (
+        yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    ).get("universe") or {}
+    raw_cutoff = universe_config.get("baseline_cutoff")
+    if raw_cutoff is None:
+        raise PacketBundleError(
+            "Project config carries no universe.baseline_cutoff; the cutoff "
+            "is the W0-frozen value, never a parameter."
+        )
+    cutoff = raw_cutoff if isinstance(raw_cutoff, date) else date.fromisoformat(
+        str(raw_cutoff)
+    )
+    cutoff_source = {
+        "path": "configs/project.yaml",
+        "key": "universe.baseline_cutoff",
+        "project_config_sha256": sha256(config_path.read_bytes()).hexdigest(),
+    }
+
+    # --- build: shard_index ascending, bundle order, union-excluded omitted --
+    result = LineagePacketRunResult(
+        run_id=run_id, run_dir=None, dry_run=dry_run,
+        aggregate_manifest_sha256=aggregate_sha,
+        determination_manifest_sha256=shell_sha,
+    )
+    per_shard: list[dict] = []
+    rows_planned = 0
+    for shard in shards:
+        shell_true = abs_true = both_true = built = failed = 0
+        for entry in shard["entries"]:
+            key = (entry["cik"], entry["accession"])
+            rows_planned += 1
+            is_shell = shell_by_row[key]["shell_company"] == "true"
+            is_abs = abs_by_row[key]["asset_backed_issuer"] == "true"
+            if is_shell:
+                shell_true += 1
+            if is_abs:
+                abs_true += 1
+            if is_shell and is_abs:
+                both_true += 1
+            if is_shell or is_abs:
+                continue
+            outcome = build_packet(
+                entry,
+                baseline_cutoff=cutoff,
+                baseline_cutoff_source=cutoff_source,
+                route_validation=route_validation,
+                packet_contract=PACKET_CONTRACT_V2,
+                locate_html=locate_html,
+            )
+            if isinstance(outcome, UniverseBaselinePacket):
+                result.packets.append(outcome)
+                built += 1
+            else:
+                result.failures.append(outcome)
+                failed += 1
+        excluded = shell_true + abs_true - both_true
+        per_shard.append({
+            "shard_index": shard["shard_index"],
+            "run_dir": shard["run_dir"],
+            "bundle_manifest_sha256": shard["bundle_manifest_sha256"],
+            "acquisition_manifest_sha256": shard[
+                "acquisition_manifest_sha256"],
+            "rows": shard["rows"],
+            "shell_true": shell_true,
+            "asset_backed_true": abs_true,
+            "both_true": both_true,
+            "shell_only_true": shell_true - both_true,
+            "asset_backed_only_true": abs_true - both_true,
+            "rows_excluded": excluded,
+            "rows_retained": shard["rows"] - excluded,
+            "packets_built": built,
+            "packet_failures": failed,
+        })
+
+    boundary_counts: dict[str, int] = {}
+    for packet in result.packets:
+        boundary_counts[packet.end_boundary_kind] = (
+            boundary_counts.get(packet.end_boundary_kind, 0) + 1
+        )
+    failure_counts: dict[str, int] = {}
+    for failure in result.failures:
+        failure_counts[failure.reason_code] = (
+            failure_counts.get(failure.reason_code, 0) + 1
+        )
+    sizes = [p.packet_byte_size for p in result.packets]
+    shell_true_total = sum(s["shell_true"] for s in per_shard)
+    abs_true_total = sum(s["asset_backed_true"] for s in per_shard)
+    both_true_total = sum(s["both_true"] for s in per_shard)
+    excluded_total = shell_true_total + abs_true_total - both_true_total
+    counts = {
+        "planned_rows": rows_planned,
+        "shell_true": shell_true_total,
+        "shell_false": shell_counts.get("false", 0),
+        "shell_unknown": shell_counts.get("unknown", 0),
+        "asset_backed_true": abs_true_total,
+        "asset_backed_unknown": abs_counts.get("unknown", 0),
+        "both_true": both_true_total,
+        "shell_only_true": shell_true_total - both_true_total,
+        "asset_backed_only_true": abs_true_total - both_true_total,
+        "firms_excluded": excluded_total,
+        "retained_rows": rows_planned - excluded_total,
+        "packets_built": len(result.packets),
+        "packet_failures": len(result.failures),
+        "shards_consumed": len(shards),
+        "packets_by_end_boundary": boundary_counts,
+        "failures_by_reason": failure_counts,
+        "passages_total": sum(len(p.passages) for p in result.packets),
+        "packet_bytes_total": sum(sizes),
+        "packet_bytes_max": max(sizes) if sizes else 0,
+        "packet_bytes_mean": (sum(sizes) // len(sizes)) if sizes else 0,
+    }
+    reconciliation = {
+        "the shell determination partitions the planned rows": (
+            counts["shell_true"] + counts["shell_false"]
+            + counts["shell_unknown"] == counts["planned_rows"]
+        ),
+        "the asset-backed determination partitions the planned rows": (
+            counts["asset_backed_true"] + counts["asset_backed_unknown"]
+            == counts["planned_rows"]
+        ),
+        "union accounting is exact": (
+            counts["firms_excluded"]
+            == counts["shell_true"] + counts["asset_backed_true"]
+            - counts["both_true"]
+            and counts["shell_only_true"]
+            == counts["shell_true"] - counts["both_true"]
+            and counts["asset_backed_only_true"]
+            == counts["asset_backed_true"] - counts["both_true"]
+        ),
+        "excluded and retained partition the planned rows": (
+            counts["firms_excluded"] + counts["retained_rows"]
+            == counts["planned_rows"]
+        ),
+        "packets and failures partition the retained rows": (
+            counts["packets_built"] + counts["packet_failures"]
+            == counts["retained_rows"]
+        ),
+        **_v2_per_shard_identities(per_shard, counts),
+        "every passage lies inside its Item 1 span": all(
+            packet.item_one_start <= passage.byte_start
+            and passage.byte_end <= packet.item_one_end
+            for packet in result.packets
+            for passage in packet.passages
+        ),
+        "every packet conserves its normalized bytes": all(
+            packet.normalization_ledger["input_byte_count"]
+            == packet.normalization_ledger["normalized_byte_count"]
+            + packet.normalization_ledger["dropped_byte_count"]
+            for packet in result.packets
+        ),
+        "cover page and the deferred sections are explicitly missing": all(
+            COVER_PAGE_SECTION in packet.missing_sections
+            and all(s in packet.missing_sections for s in DEFERRED_SECTIONS)
+            for packet in result.packets
+        ),
+        "no issuer flag is asserted without cover-page evidence": all(
+            packet.issuer_status_flags.model_dump() == {
+                "investment_company": None,
+                "asset_backed_issuer": None,
+                "non_operating_trust": None,
+                "shell_company": None,
+                "blank_check_precombination": None,
+            }
+            for packet in result.packets
+        ),
+        "boundary counts sum to packets built": (
+            sum(boundary_counts.values()) == counts["packets_built"]
+        ),
+    }
+    result.counts, result.reconciliation = counts, reconciliation
+    failed_checks = sorted(name for name, ok in reconciliation.items()
+                           if not ok)
+    if failed_checks:
+        raise PacketBundleError(
+            f"Lineage packet reconciliation failed: "
+            f"{'; '.join(failed_checks)}. Nothing was written."
+        )
+    if dry_run:
+        return result
+
+    run_dir = create_run_directory(output_dir, run_id)
+    result.run_dir = run_dir
+    packets_payload = (
+        "\n".join(
+            json.dumps(p.model_dump(mode="json"), sort_keys=True)
+            for p in result.packets
+        )
+        + ("\n" if result.packets else "")
+    ).encode("utf-8")
+    failures_payload = (
+        "\n".join(
+            json.dumps(f.model_dump(mode="json"), sort_keys=True)
+            for f in result.failures
+        )
+        + ("\n" if result.failures else "")
+    ).encode("utf-8")
+    write_bytes_once(run_dir / PACKETS_FILENAME, packets_payload,
+                     what="lineage baseline packets")
+    write_bytes_once(run_dir / FAILURES_FILENAME, failures_payload,
+                     what="lineage baseline packet failures")
+
+    schema_versions = read_json(
+        root / "schemas" / "schema_version_manifest.json"
+    )["schemas"]
+    run_manifest = {
+        "run_id": run_id,
+        "aggregate_manifest_path": str(aggregate_manifest_path),
+        "aggregate_manifest_sha256": aggregate_sha,
+        "aggregate_run_id": aggregate["run_id"],
+        "queue_id": aggregate["queue_id"],
+        "queue_definition_sha256": aggregate["queue_definition_sha256"],
+        "execution_run_ids": list(aggregate["execution_run_ids"]),
+        "shell_determination_manifest_path": str(
+            shell_determination_manifest_path),
+        "shell_determination_manifest_sha256": shell_sha,
+        "shell_determination_run_id": shell_manifest["run_id"],
+        "shell_determinations_jsonl_sha256": shell_jsonl_sha,
+        "asset_backed_determination_manifest_path": str(
+            asset_backed_determination_manifest_path),
+        "asset_backed_determination_manifest_sha256": abs_sha,
+        "asset_backed_determination_run_id": abs_manifest["run_id"],
+        "asset_backed_determinations_jsonl_sha256": abs_jsonl_sha,
+        "shards_consumed": per_shard,
+        "packet_record_order": PACKET_RECORD_ORDER_V2,
+        "item_one_locator": canonical_locator,
+        "bundle_contract": BUNDLE_CONTRACT_V2,
+        "carrier_provenance": dict(provenance),
+        "route_validation": dict(route_validation),
+        "baseline_cutoff": str(cutoff),
+        "baseline_cutoff_source": cutoff_source,
+        "counts": counts,
+        "reconciliation": reconciliation,
+        "output_hashes": {
+            PACKETS_FILENAME: sha256(packets_payload).hexdigest(),
+            FAILURES_FILENAME: sha256(failures_payload).hexdigest(),
+        },
+        "run_timestamp": clock().isoformat(),
+        "schema_versions": {
+            "universe_baseline_packet_v2": schema_versions[
+                "universe_baseline_packet_v2"],
+            "baseline_packet_manifest_v5": schema_versions[
+                "baseline_packet_manifest_v5"],
+            "shell_company_determination_manifest_v3": schema_versions[
+                "shell_company_determination_manifest_v3"],
+            "asset_backed_issuer_determination_manifest": schema_versions[
+                "asset_backed_issuer_determination_manifest"],
+            "acquisition_queue_aggregate_manifest_v2": schema_versions[
+                "acquisition_queue_aggregate_manifest_v2"],
+        },
+        "limitations": [
+            "A carrier row is excluded iff its shell determination or its "
+            "asset-backed determination is the literal true. false and "
+            "unknown rows — including every shell-unknown and "
+            "asset-backed-unknown row — are retained and packetized, and "
+            "retention asserts nothing: packetization does not establish "
+            "software eligibility or any other property beyond a locatable "
+            "Item 1.",
+            "Packet records keep the unchanged universe_baseline_packet@0.2.0 "
+            "contract with all five issuer flags null: the determinations "
+            "are bound here at run level, each by path, recomputed hash, run "
+            "id, queue identity, carrier provenance and per-shard tuple "
+            "mapping — never written into record fields the packet did not "
+            "evidence.",
+            "The named aggregate is the sole authority root: no shard-output "
+            "root, bundle directory, replay directory, glob or search path, "
+            "and a directory the aggregate does not name is unreachable.",
+            "Both determination JSONLs were re-hashed against their own "
+            "manifests, validated record-by-record, and proven to hold "
+            "exactly one record per aggregate carrier row before anything "
+            "was written.",
+            "A retained document without a usable Item 1 is a per-row "
+            "failure record, never an exclusion and never a silent drop.",
+            "Packets and failures are written in shard_index ascending "
+            "order, then in each bundle manifest's own entry order, after "
+            "union-exclusion omission; the order is independent of "
+            "execution-run-id enumeration.",
+            "The HTML locator is an operator-declared closed selector over "
+            "ITEM_ONE_LOCATORS; the plain-text route is selector-"
+            "independent.",
+            "Fixture-first: packets are built only from locally supplied, "
+            "hash-verified primary documents. This module performs no "
+            "network access and no model call.",
+        ],
+    }
+    schema = read_json(root / PACKET_MANIFEST_V5_SCHEMA_RELATIVE_PATH)
+    errors = sorted(
+        Draft202012Validator(schema).iter_errors(run_manifest),
+        key=lambda e: e.json_path,
+    )
+    if errors:
+        details = "; ".join(f"{e.json_path}: {e.message}" for e in errors[:5])
+        raise ValueError(
+            f"Lineage packet manifest violates the canonical schema: "
+            f"{details}"
+        )
+    payload = (json.dumps(run_manifest, indent=2, sort_keys=True)
+               + "\n").encode("utf-8")
     write_bytes_once(run_dir / PACKET_MANIFEST_FILENAME, payload,
                      what="lineage baseline packet manifest")
     result.manifest_path = run_dir / PACKET_MANIFEST_FILENAME

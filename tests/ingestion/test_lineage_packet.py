@@ -1049,3 +1049,352 @@ def test_armb_acceptance_replay_matches_the_measured_result():
     assert html_checked == 7190 and mismatches == 0, "G1"
     assert not g2_bad, "G2"
     assert not g3_bad, "G3"
+
+
+# --- ADR-107: the two-determination successor ----------------------------------
+#
+# A carrier row is excluded iff shell OR asset-backed is the literal true.
+# These pin the union accounting, the independent binding of both
+# determinations, retention of false/unknown, and the v1 path's preservation.
+
+from dynamic_ai_products.ingestion.asset_backed_determination import (  # noqa: E402
+    run_asset_backed_determination,
+)
+from dynamic_ai_products.ingestion.lineage_packet import (  # noqa: E402
+    run_lineage_packet_build_v2,
+)
+from dynamic_ai_products.ingestion.shell_company_determination import (  # noqa: E402
+    DETERMINATIONS_FILENAME as SHELL_JSONL_FILENAME,
+)
+from dynamic_ai_products.ingestion.asset_backed_determination import (  # noqa: E402
+    DETERMINATIONS_FILENAME as ABS_JSONL_FILENAME,
+)
+
+PACKET_MANIFEST_V5_SCHEMA = (
+    ROOT / "schemas" / "baseline_packet_manifest.v5.schema.json"
+)
+
+ABS_TRUE_DOC = (
+    b"<html><p>Item 1. Business.</p>"
+    b"<p>Omitted pursuant to General Instruction J of Form 10-K.</p>"
+    b"<p>Item 1122. Compliance with Applicable Servicing Criteria</p>"
+    b"<p>The servicer has complied with the applicable servicing "
+    b"criteria.</p></html>"
+)
+
+
+def _abs_true_row(root: Path, cik: str, *, base: bytes = b"") -> tuple[Path, dict]:
+    """A row that the ABS detector marks true; base bytes may add shell facts."""
+    raw = base + ABS_TRUE_DOC
+    name = f"abs_{cik}.htm"
+    source = root / name
+    source.write_bytes(raw)
+    _, template = _fixture_doc(PACKET_FIXTURES, "primary_10k_ixbrl.htm")
+    entry = {**template, "cik": cik, "accession": f"{cik}-22-000001",
+             "local_filename": name, "selected_document": name,
+             "source_sha256": sha256(raw).hexdigest(),
+             "source_byte_length": len(raw)}
+    return source, entry
+
+
+def _v2_lineage(tmp_path: Path):
+    """One shard covering the whole exclusion matrix:
+    shell-only true, ABS-only true, both true, shell-false retained (Item 1
+    failure), and unknown/unknown retained (packet built)."""
+    root = _synth_root(tmp_path)
+    shell_true_bytes = (SHELL_FIXTURES / "shell_true_ballotbox.html").read_bytes()
+    shard = _write_shard(root, "ra-shard-0000", [
+        _fixture_doc(SHELL_FIXTURES, "shell_true_ballotbox.html"),
+        _abs_true_row(root, "0009800001"),
+        # The both-true row must reuse the ballotbox document's own context
+        # CIK (0009300002): the shell rule binds a fact only to the context's
+        # identifier, so any other row CIK would stay shell-unknown. A
+        # distinct accession keeps the (cik, accession) row unique.
+        _abs_true_row(root, "0009300002", base=shell_true_bytes),
+        _fixture_doc(SHELL_FIXTURES, "shell_false_booleanfalse.html"),
+        _fixture_doc(PACKET_FIXTURES, "primary_10k_ixbrl.htm"),
+    ])
+    aggregate = _write_aggregate(root, [shard], run_ids=("ra",))
+    shell_det = _determine(root, aggregate, run_id="shell-det")
+    abs_result = run_asset_backed_determination(
+        repo_root=root, aggregate_manifest_path=aggregate,
+        output_dir=root / "abs-determinations", run_id="abs-det",
+        clock=FIXED_CLOCK)
+    return root, aggregate, shell_det, abs_result.manifest_path, shard
+
+
+def _build_v2(root, aggregate, shell_det, abs_det, tmp_path,
+              run_id="lpk2", dry_run=False, locator="item_one_span_v2"):
+    return run_lineage_packet_build_v2(
+        repo_root=root, aggregate_manifest_path=aggregate,
+        shell_determination_manifest_path=shell_det,
+        asset_backed_determination_manifest_path=abs_det,
+        project_config_path=CONFIG, output_dir=tmp_path / "packets2",
+        run_id=run_id, item_one_locator=locator, clock=FIXED_CLOCK,
+        dry_run=dry_run)
+
+
+def test_v2_union_exclusion_matrix(tmp_path):
+    root, aggregate, shell_det, abs_det, _ = _v2_lineage(tmp_path)
+    result = _build_v2(root, aggregate, shell_det, abs_det, tmp_path)
+    c = result.counts
+    assert c["planned_rows"] == 5
+    assert c["shell_true"] == 2, "ballotbox doc + the both-true doc"
+    assert c["asset_backed_true"] == 2, "abs-only doc + the both-true doc"
+    assert c["both_true"] == 1
+    assert c["shell_only_true"] == 1
+    assert c["asset_backed_only_true"] == 1
+    assert c["firms_excluded"] == 3, "the union counts the both-true row once"
+    assert c["retained_rows"] == 2
+    assert c["packets_built"] == 1, "the unknown/unknown iXBRL row"
+    assert c["packet_failures"] == 1, "the retained shell-false row"
+    assert all(result.reconciliation.values())
+    reached = {p.cik for p in result.packets} | {f.cik for f in result.failures}
+    assert reached == {"0009100001", "0009300004"}
+    assert "0009300002" not in reached and "0009800001" not in reached
+    manifest = read_json(result.manifest_path)
+    assert not list(Draft202012Validator(read_json(PACKET_MANIFEST_V5_SCHEMA))
+                    .iter_errors(manifest))
+    shard_row = manifest["shards_consumed"][0]
+    assert (shard_row["shell_true"], shard_row["asset_backed_true"],
+            shard_row["both_true"], shard_row["shell_only_true"],
+            shard_row["asset_backed_only_true"], shard_row["rows_excluded"],
+            shard_row["rows_retained"]) == (2, 2, 1, 1, 1, 3, 2)
+    assert manifest["packet_record_order"] == \
+        "shard_index_then_bundle_entry_order_after_union_exclusion"
+    assert manifest["shell_determinations_jsonl_sha256"] == sha256(
+        (Path(shell_det).parent / SHELL_JSONL_FILENAME).read_bytes()
+    ).hexdigest()
+    assert manifest["asset_backed_determinations_jsonl_sha256"] == sha256(
+        (Path(abs_det).parent / ABS_JSONL_FILENAME).read_bytes()
+    ).hexdigest()
+
+
+def test_v1_path_still_emits_v4_beside_the_successor(tmp_path):
+    root, aggregate, shell_det, abs_det, _ = _v2_lineage(tmp_path)
+    v1 = _build(root, aggregate, shell_det, tmp_path, run_id="v1side")
+    v1_manifest = read_json(v1.manifest_path)
+    assert not list(Draft202012Validator(read_json(PACKET_MANIFEST_V4_SCHEMA))
+                    .iter_errors(v1_manifest))
+    # v1 excludes only shell-true: the ABS-only row is retained there.
+    assert v1.counts["firms_excluded"] == 2
+    v2 = _build_v2(root, aggregate, shell_det, abs_det, tmp_path,
+                   run_id="v2side")
+    v2_manifest = read_json(v2.manifest_path)
+    v4_schema = Draft202012Validator(read_json(PACKET_MANIFEST_V4_SCHEMA))
+    v5_schema = Draft202012Validator(read_json(PACKET_MANIFEST_V5_SCHEMA))
+    assert not list(v5_schema.iter_errors(v2_manifest))
+    assert list(v4_schema.iter_errors(v2_manifest)), "v5 is not v4"
+    assert list(v5_schema.iter_errors(v1_manifest)), "v4 is not v5"
+    # Retained rows' packets are byte-identical across the generations.
+    v1_rows = {(p.cik, p.accession): p.model_dump(mode="json")
+               for p in v1.packets}
+    for p in v2.packets:
+        assert p.model_dump(mode="json") == v1_rows[(p.cik, p.accession)]
+
+
+def test_v2_binds_both_determinations_independently(tmp_path):
+    root, aggregate, shell_det, abs_det, _ = _v2_lineage(tmp_path)
+
+    # (a) tampered ABS JSONL: hash mismatch refuses.
+    abs_jsonl = Path(abs_det).parent / ABS_JSONL_FILENAME
+    original = abs_jsonl.read_bytes()
+    abs_jsonl.write_bytes(original + b"\n")
+    with pytest.raises(PacketBundleError, match="hashes to"):
+        _build_v2(root, aggregate, shell_det, abs_det, tmp_path)
+    abs_jsonl.write_bytes(original)
+
+    # (b) forged omission with repaired hash: row binding refuses.
+    lines = original.decode().splitlines()
+    removed = lines.pop(0)
+    forged = ("\n".join(lines) + "\n").encode()
+    abs_jsonl.write_bytes(forged)
+    payload = json.loads(Path(abs_det).read_text())
+    payload["output_hashes"][ABS_JSONL_FILENAME] = sha256(forged).hexdigest()
+    Path(abs_det).write_text(json.dumps(payload, indent=2) + "\n")
+    with pytest.raises(PacketBundleError, match="no asset-backed determination record"):
+        _build_v2(root, aggregate, shell_det, abs_det, tmp_path)
+
+    # (c) duplicate row with repaired hash: refused.
+    lines.append(removed)
+    lines.append(removed)
+    forged = ("\n".join(lines) + "\n").encode()
+    abs_jsonl.write_bytes(forged)
+    payload["output_hashes"][ABS_JSONL_FILENAME] = sha256(forged).hexdigest()
+    Path(abs_det).write_text(json.dumps(payload, indent=2) + "\n")
+    with pytest.raises(PacketBundleError, match="repeats row"):
+        _build_v2(root, aggregate, shell_det, abs_det, tmp_path)
+
+    # (d) non-UTF-8 ABS JSONL with repaired hash: its own refusal.
+    lines.pop()
+    forged = ("\n".join(lines) + "\n").encode() + b"\xff\xfe{bad}\xff\n"
+    abs_jsonl.write_bytes(forged)
+    payload["output_hashes"][ABS_JSONL_FILENAME] = sha256(forged).hexdigest()
+    Path(abs_det).write_text(json.dumps(payload, indent=2) + "\n")
+    with pytest.raises(PacketBundleError, match="not valid UTF-8"):
+        _build_v2(root, aggregate, shell_det, abs_det, tmp_path)
+    assert not (tmp_path / "packets2").exists()
+
+
+def test_v2_refuses_a_shell_side_tamper_too(tmp_path):
+    root, aggregate, shell_det, abs_det, _ = _v2_lineage(tmp_path)
+    shell_jsonl = Path(shell_det).parent / SHELL_JSONL_FILENAME
+    shell_jsonl.write_bytes(shell_jsonl.read_bytes() + b"\n")
+    with pytest.raises(PacketBundleError, match="hashes to"):
+        _build_v2(root, aggregate, shell_det, abs_det, tmp_path)
+    assert not (tmp_path / "packets2").exists()
+
+
+def test_v2_refuses_an_abs_determination_bound_elsewhere(tmp_path):
+    root, aggregate, shell_det, abs_det, _ = _v2_lineage(tmp_path)
+    other = root / "aggregate-other.json"
+    shutil.copyfile(root / "aggregate.json", other)
+    _rewrite(other, lambda p: p.update(run_id="a-different-aggregate"))
+    other_shell = _determine(root, other, run_id="other-shell")
+    with pytest.raises(PacketBundleError, match="do not belong together"):
+        _build_v2(root, other, other_shell, abs_det, tmp_path)
+    assert not (tmp_path / "packets2").exists()
+
+
+def test_v2_refuses_a_tuple_swap_in_the_abs_manifest(tmp_path):
+    root, aggregate, shell_det, abs_det, shard = _v2_lineage(tmp_path)
+    # Two-shard variant is required for a swap; rebuild with a second shard.
+    root2 = _synth_root(tmp_path / "two")
+    docs = read_json(PACKET_FIXTURES / BUNDLE_MANIFEST_FILENAME)["documents"]
+    s0 = _write_shard(root2, "ra-shard-0000",
+                      [_fixture_doc(PACKET_FIXTURES, docs[0]["local_filename"])])
+    s1 = _write_shard(root2, "rb-shard-0001",
+                      [_fixture_doc(PACKET_FIXTURES, docs[1]["local_filename"])])
+    aggregate2 = _write_aggregate(root2, [s0, s1], run_ids=("ra", "rb"))
+    shell2 = _determine(root2, aggregate2, run_id="shell2")
+    abs2 = run_asset_backed_determination(
+        repo_root=root2, aggregate_manifest_path=aggregate2,
+        output_dir=root2 / "abs", run_id="abs2",
+        clock=FIXED_CLOCK).manifest_path
+    payload = json.loads(Path(abs2).read_text())
+    a, b = payload["shards_consumed"]
+    for name in ("run_dir", "bundle_manifest_sha256",
+                 "acquisition_manifest_sha256", "rows"):
+        a[name], b[name] = b[name], a[name]
+    Path(abs2).write_text(json.dumps(payload, indent=2) + "\n")
+    with pytest.raises(PacketBundleError,
+                       match="disagrees with the aggregate's authoritative"):
+        _build_v2(root2, aggregate2, shell2, abs2, tmp_path)
+    assert not (tmp_path / "packets2").exists()
+
+
+def test_v2_partial_aggregate_and_intruder_isolation(tmp_path):
+    root, aggregate, shell_det, abs_det, _ = _v2_lineage(tmp_path)
+    before = _build_v2(root, aggregate, shell_det, abs_det, tmp_path,
+                       run_id="before")
+    intruder = _write_shard(root, "rz-shard-0001", [
+        _fixture_doc(PACKET_FIXTURES, "primary_10kt.htm"),
+    ])
+    os.chmod(intruder, 0o000)
+    try:
+        after = _build_v2(root, aggregate, shell_det, abs_det, tmp_path,
+                          run_id="after")
+        assert (after.run_dir / PACKETS_FILENAME).read_bytes() == \
+            (before.run_dir / PACKETS_FILENAME).read_bytes()
+        assert after.counts == before.counts
+    finally:
+        os.chmod(intruder, 0o755)
+
+    partial = root / "aggregate-partial.json"
+    shutil.copyfile(root / "aggregate.json", partial)
+    _rewrite(partial, lambda p: p.update(coverage_complete=False))
+    with pytest.raises(PacketBundleError, match="coverage is partial"):
+        _build_v2(root, partial, shell_det, abs_det, tmp_path)
+
+
+def test_v2_determinism_write_once_and_dry_run(tmp_path):
+    root, aggregate, shell_det, abs_det, _ = _v2_lineage(tmp_path)
+    dry = _build_v2(root, aggregate, shell_det, abs_det, tmp_path,
+                    run_id="dry", dry_run=True)
+    assert dry.run_dir is None
+    assert not (tmp_path / "packets2").exists()
+    one = _build_v2(root, aggregate, shell_det, abs_det, tmp_path,
+                    run_id="one")
+    with pytest.raises(FileExistsError):
+        _build_v2(root, aggregate, shell_det, abs_det, tmp_path, run_id="one")
+    two = _build_v2(root, aggregate, shell_det, abs_det, tmp_path,
+                    run_id="two")
+    assert (one.run_dir / PACKETS_FILENAME).read_bytes() == \
+        (two.run_dir / PACKETS_FILENAME).read_bytes()
+    assert (one.run_dir / FAILURES_FILENAME).read_bytes() == \
+        (two.run_dir / FAILURES_FILENAME).read_bytes()
+    assert read_json(one.manifest_path)["output_hashes"] == \
+        read_json(two.manifest_path)["output_hashes"]
+
+
+def test_cli_v2_mode_matrix(tmp_path):
+    # requires all five flags
+    completed = _cli("--mode", "build-baseline-packets-lineage-v2",
+                     "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert completed.returncode != 0
+    for flag in ("--aggregate-manifest", "--shell-determination-manifest",
+                 "--asset-backed-determination-manifest",
+                 "--item-one-locator", "--config"):
+        assert flag in completed.stderr
+    assert not (tmp_path / "o").exists()
+    # the v1 packet mode rejects the new flag
+    v1 = _cli("--mode", "build-baseline-packets-lineage",
+              "--asset-backed-determination-manifest", "a.json",
+              "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert v1.returncode != 0
+    assert "--asset-backed-determination-manifest" in v1.stderr
+    assert "does not accept" in v1.stderr
+    # missing input files create no output directory
+    missing = _cli("--mode", "build-baseline-packets-lineage-v2",
+                   "--aggregate-manifest", str(tmp_path / "a.json"),
+                   "--shell-determination-manifest", str(tmp_path / "s.json"),
+                   "--asset-backed-determination-manifest",
+                   str(tmp_path / "b.json"),
+                   "--item-one-locator", "item_one_span_v2",
+                   "--config", str(CONFIG),
+                   "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert missing.returncode == 2
+    assert "not found" in missing.stderr
+    assert not (tmp_path / "o").exists()
+
+
+@pytest.mark.parametrize(
+    "mode", _OTHER_MODES + ["determine-shell-company-lineage",
+                            "determine-asset-backed-issuer-lineage",
+                            "build-baseline-packets-lineage"])
+def test_every_other_mode_refuses_the_abs_manifest_flag(tmp_path, mode):
+    completed = _cli("--mode", mode,
+                     "--asset-backed-determination-manifest", "a.json",
+                     "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert completed.returncode != 0
+    assert "--asset-backed-determination-manifest" in completed.stderr
+    assert "does not accept" in completed.stderr
+
+
+def test_v2_per_shard_identities_are_the_guard_the_schema_cannot_be(tmp_path):
+    """Forging one per-shard-only value passes v0.5 schema validation (JSON
+    Schema cannot express the arithmetic) but fails the runner's own
+    reconciliation predicate — the guard that refuses before writing."""
+    from dynamic_ai_products.ingestion.lineage_packet import (
+        _v2_per_shard_identities,
+    )
+
+    root, aggregate, shell_det, abs_det, _ = _v2_lineage(tmp_path)
+    result = _build_v2(root, aggregate, shell_det, abs_det, tmp_path)
+    manifest = read_json(result.manifest_path)
+
+    forged = json.loads(json.dumps(manifest))
+    forged["shards_consumed"][0]["shell_only_true"] += 1
+    # the schema alone accepts the forgery...
+    v5 = Draft202012Validator(read_json(PACKET_MANIFEST_V5_SCHEMA))
+    assert not list(v5.iter_errors(forged)), \
+        "arithmetic across fields is beyond JSON Schema, by design"
+    # ...and the runner's reconciliation predicate rejects it.
+    healthy = _v2_per_shard_identities(manifest["shards_consumed"],
+                                       manifest["counts"])
+    assert all(healthy.values())
+    tripped = _v2_per_shard_identities(forged["shards_consumed"],
+                                       forged["counts"])
+    assert tripped["per-shard exclusion identities hold"] is False
+    # A False flag is exactly what makes run_lineage_packet_build_v2 raise
+    # "Nothing was written" before create_run_directory.

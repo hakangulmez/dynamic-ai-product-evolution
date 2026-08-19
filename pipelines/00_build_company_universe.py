@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Eighteen mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
+Nineteen mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
 so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -146,6 +146,7 @@ from dynamic_ai_products.ingestion.baseline_packet import (  # noqa: E402
 )
 from dynamic_ai_products.ingestion.lineage_packet import (  # noqa: E402
     run_lineage_packet_build,
+    run_lineage_packet_build_v2,
 )
 from dynamic_ai_products.ingestion.asset_backed_determination import (  # noqa: E402
     AssetBackedDeterminationError,
@@ -204,6 +205,7 @@ def build_parser() -> argparse.ArgumentParser:
                  "determine-shell-company-lineage",
                  "determine-asset-backed-issuer-lineage",
                  "build-baseline-packets-lineage",
+                 "build-baseline-packets-lineage-v2",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
                  "aggregate-acquisition-lineage"],
@@ -357,6 +359,14 @@ def build_parser() -> argparse.ArgumentParser:
              "which are retained (false and unknown alike).",
     )
     parser.add_argument(
+        "--asset-backed-determination-manifest", default=None,
+        help="Build-baseline-packets-lineage-v2 mode only: the path of one "
+             "ADR-105 asset_backed_issuer_determination manifest. Its "
+             "determinations join the shell determination in deciding which "
+             "rows are excluded (either true excludes; false and unknown "
+             "are retained).",
+    )
+    parser.add_argument(
         "--item-one-locator", default=None,
         help="Build-baseline-packets-lineage mode only, required: the HTML "
              "Item 1 locator, selected from the closed mapping "
@@ -431,13 +441,15 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
     # --shell-determination-manifest by the packet-lineage mode alone.
     if args.mode not in ("determine-shell-company-lineage",
                          "determine-asset-backed-issuer-lineage",
-                         "build-baseline-packets-lineage"):
+                         "build-baseline-packets-lineage",
+                         "build-baseline-packets-lineage-v2"):
         offending = _present(
             (("--aggregate-manifest", args.aggregate_manifest),)
         )
         if offending:
             return f"{args.mode} mode does not accept: {', '.join(offending)}"
-    if args.mode != "build-baseline-packets-lineage":
+    if args.mode not in ("build-baseline-packets-lineage",
+                         "build-baseline-packets-lineage-v2"):
         offending = _present(
             (("--shell-determination-manifest",
               args.shell_determination_manifest),)
@@ -446,6 +458,13 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             return f"{args.mode} mode does not accept: {', '.join(offending)}"
         offending = _present(
             (("--item-one-locator", args.item_one_locator),)
+        )
+        if offending:
+            return f"{args.mode} mode does not accept: {', '.join(offending)}"
+    if args.mode != "build-baseline-packets-lineage-v2":
+        offending = _present(
+            (("--asset-backed-determination-manifest",
+              args.asset_backed_determination_manifest),)
         )
         if offending:
             return f"{args.mode} mode does not accept: {', '.join(offending)}"
@@ -693,6 +712,36 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         if missing:
             return (
                 "build-baseline-packets-lineage mode requires: "
+                f"{', '.join(missing)}"
+            )
+        return None
+
+    if args.mode == "build-baseline-packets-lineage-v2":
+        offending = _present(
+            sentinel_flags + frame_flags + acquire_flags + dera_flags
+            # The three manifests are the only data locations this mode
+            # takes: a bundle or replay directory supplied here would name
+            # evidence the aggregate does not authorize.
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--replay-dir", args.replay_dir),)
+        )
+        if offending:
+            return (
+                "build-baseline-packets-lineage-v2 mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--aggregate-manifest", args.aggregate_manifest),
+            ("--shell-determination-manifest",
+             args.shell_determination_manifest),
+            ("--asset-backed-determination-manifest",
+             args.asset_backed_determination_manifest),
+            ("--item-one-locator", args.item_one_locator),
+            ("--config", args.config),
+        ))
+        if missing:
+            return (
+                "build-baseline-packets-lineage-v2 mode requires: "
                 f"{', '.join(missing)}"
             )
         return None
@@ -1629,6 +1678,55 @@ def _main_build_baseline_packets_lineage(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_build_baseline_packets_lineage_v2(
+        args: argparse.Namespace) -> int:
+    # Three files in, nothing else: this mode has no directory argument at
+    # all, so there is nothing here that could widen what the run may open.
+    aggregate_manifest = Path(args.aggregate_manifest)
+    shell_manifest = Path(args.shell_determination_manifest)
+    abs_manifest = Path(args.asset_backed_determination_manifest)
+    for label, path in (("aggregate manifest", aggregate_manifest),
+                        ("shell determination manifest", shell_manifest),
+                        ("asset-backed determination manifest",
+                         abs_manifest)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    try:
+        result = run_lineage_packet_build_v2(
+            repo_root=REPO_ROOT,
+            aggregate_manifest_path=aggregate_manifest,
+            shell_determination_manifest_path=shell_manifest,
+            asset_backed_determination_manifest_path=abs_manifest,
+            project_config_path=Path(args.config),
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            item_one_locator=args.item_one_locator,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except PacketBundleError as exc:
+        print(f"ERROR: invalid lineage packet input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "aggregate_manifest_sha256": result.aggregate_manifest_sha256,
+        "counts": result.counts,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 def _main_build_baseline_packets(args: argparse.Namespace) -> int:
     bundle_dir = Path(args.bundle_dir)
     config_path = Path(args.config)
@@ -1908,6 +2006,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_determine_asset_backed_issuer_lineage(args)
     if args.mode == "build-baseline-packets-lineage":
         return _main_build_baseline_packets_lineage(args)
+    if args.mode == "build-baseline-packets-lineage-v2":
+        return _main_build_baseline_packets_lineage_v2(args)
     if args.mode == "plan-acquisition-queue":
         return _main_plan_acquisition_queue(args)
     if args.mode == "execute-acquisition-queue":
