@@ -1181,6 +1181,92 @@ def test_budget_exhaustion_is_terminal(small, tmp_path):
     assert not (result.run_dir / ls.SCREEN_MANIFEST_FILENAME).exists()
 
 
+def test_output_budget_stops_before_any_post_limit_send(small, tmp_path):
+    """The output ceiling is a pre-send refusal: row 1 completes (verified
+    usage: 7 output tokens), and row 2 is refused before its handshake,
+    countTokens or generateContent — with a ceiling of exactly one route
+    maximum, the accounted 7 tokens leave no room for another 16384."""
+    selection_path = _selection(small, tmp_path, "full_cohort")
+    governance = _governance(
+        tmp_path, cohort=small, selection_path=selection_path,
+        selection_kind="full_cohort", logical=3,
+        mutate_authorization=lambda a: a.update(
+            budget_max_output_tokens=16384))
+    result, factory = _live(small, tmp_path, selection_path=selection_path,
+                            governance=governance)
+    assert result.status == "failed"
+    receipt = result.receipt
+    assert receipt["reason_code"] == "provider_error"
+    assert "output-token budget" in receipt["detail"]
+    assert receipt["stopping_row_index"] == 2
+    assert receipt["stopping_cik"] == small.packets[1]["cik"]
+    assert receipt["records_completed_before_failure"] == 1
+    assert receipt["raw_responses_captured"] == 1
+    # Not one external call exists for the stopping or any later row.
+    assert factory.count_calls == 1
+    assert factory.generate_calls == 1
+    assert receipt["count_captures"] == 1
+    assert receipt["generate_captures"] == 1
+    assert receipt["external_requests_made"] == 2
+    # No records JSONL, capture ledger, or manifest was written.
+    assert not (result.run_dir / ls.RECORDS_FILENAME).exists()
+    assert not (result.run_dir / ll.CAPTURE_LEDGER_FILENAME).exists()
+    assert not (result.run_dir / ls.SCREEN_MANIFEST_FILENAME).exists()
+    # The completed first row's evidence is retained: its archive line and
+    # both of its wire captures.
+    archive_lines = (result.run_dir / ls.RAW_RESPONSES_FILENAME).read_text(
+        encoding="utf-8").splitlines()
+    assert len(archive_lines) == 1
+    assert json.loads(archive_lines[0])["cik"] == small.packets[0]["cik"]
+    captures = sorted(
+        str(p.relative_to(result.run_dir))
+        for p in (result.run_dir / ll.CAPTURES_DIRNAME).rglob("*")
+        if p.is_file())
+    assert len(captures) == 2
+    assert all(small.packets[0]["cik"] in name for name in captures)
+
+
+def test_unverified_output_usage_consumes_the_declared_maximum(small, tmp_path):
+    """A completed row whose terminal usage is absent must consume the
+    route's declared maximum from future headroom — a ceiling of one route
+    maximum less than two rows' worth is then exhausted after one row,
+    where verified usage would have left ample room."""
+    selection_path = _selection(small, tmp_path, "full_cohort")
+    governance = _governance(
+        tmp_path, cohort=small, selection_path=selection_path,
+        selection_kind="full_cohort", logical=3,
+        mutate_authorization=lambda a: a.update(
+            budget_max_output_tokens=2 * 16384 - 1))
+    script = _script_for(small.packets)
+    first = small.packets[0]
+    script[first["cik"]]["envelope"] = {
+        "candidates": [{
+            "content": {"parts": [{"text": script[first["cik"]]["text"]}]},
+            "finishReason": "STOP",
+        }],
+        # No usageMetadata at all: the row completes, but its output cannot
+        # be verified, so the full 16384 is accounted.
+    }
+    result, factory = _live(small, tmp_path, selection_path=selection_path,
+                            governance=governance, script=script)
+    assert result.status == "failed"
+    assert result.receipt["reason_code"] == "provider_error"
+    assert "output-token budget" in result.receipt["detail"]
+    assert result.receipt["stopping_row_index"] == 2
+    assert result.receipt["records_completed_before_failure"] == 1
+    assert factory.generate_calls == 1  # no post-limit send of any kind
+    # Under the same ceiling, a verified first row passes: 7 + 16384 fits.
+    governance_ok = _governance(
+        tmp_path / "ok", cohort=small, selection_path=selection_path,
+        selection_kind="full_cohort", logical=3,
+        mutate_authorization=lambda a: a.update(
+            budget_max_output_tokens=2 * 16384 - 1))
+    ok, _ = _live(small, tmp_path / "ok", selection_path=selection_path,
+                  governance=governance_ok, run_id="verified")
+    assert ok.status == "completed"
+    assert ok.request_accounting["tokens_out_reported"] == 21
+
+
 def test_wall_clock_budget_is_enforced_by_the_wrapper():
     moments = [datetime(2026, 8, 19, 9, 0, 0, tzinfo=timezone.utc)]
 

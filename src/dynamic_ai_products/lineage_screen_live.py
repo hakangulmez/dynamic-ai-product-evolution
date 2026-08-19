@@ -451,6 +451,7 @@ class ScreenCohortBudget:
     ) -> None:
         self._max_input_tokens = authorization["budget_max_input_tokens"]
         self._max_output_tokens = authorization["budget_max_output_tokens"]
+        self._route_max_output_tokens = MODEL_PARAMETERS_V2["max_output_tokens"]
         self._max_cost_micros = authorization["budget_max_estimated_cost_micros"]
         self._max_wall_clock_seconds = authorization["budget_max_wall_clock_seconds"]
         self._max_external_requests = authorization["budget_max_external_requests"]
@@ -461,9 +462,34 @@ class ScreenCohortBudget:
         )
         self.tokens_in_measured = 0
         self.tokens_out_reported: int | None = 0
+        #: Conservative output consumption (ADR-109 correction): verified
+        #: terminal usage when the envelope's usage block verifies, else the
+        #: route's declared per-call maximum for that completed row. Spent
+        #: against budget_max_output_tokens BEFORE the next row's first send.
+        self.tokens_out_accounted = 0
         self.rows_usage_verified = 0
         self.cost_micros_settled = 0
         self.external_requests_made = 0
+
+    def require_output_headroom(self) -> None:
+        """Refuse the next row before its first send, not after its last.
+
+        The output of a generation is unknowable until it arrives, so the
+        only fail-closed reading of ``budget_max_output_tokens`` is a
+        pre-send one: the already-accounted output plus the route's maximum
+        possible terminal output must still fit. Checked before the
+        handshake, the countTokens send and the generateContent send alike,
+        so no post-limit external call of any kind exists.
+        """
+        if (self.tokens_out_accounted + self._route_max_output_tokens
+                > self._max_output_tokens):
+            raise ScreenProviderTerminalError(
+                "The cohort output-token budget cannot cover another row's "
+                f"maximum terminal output ({self.tokens_out_accounted} "
+                f"accounted + {self._route_max_output_tokens} ceiling > "
+                f"{self._max_output_tokens}); the run stops before any send "
+                "it cannot pay for."
+            )
 
     def _require_wall_clock(self) -> None:
         elapsed = (self._clock() - self._started_at).total_seconds()
@@ -510,6 +536,14 @@ class ScreenCohortBudget:
     ) -> None:
         self.tokens_in_measured += measured_input_tokens
         self.external_requests_made += 1 + attempts
+        # Output consumption is accounted for every completed row: verified
+        # terminal usage when available, else the declared per-call maximum.
+        # Absent or unverifiable usage can therefore only shrink future
+        # headroom, never bypass the ceiling (ADR-109 correction).
+        if usage_verified and usage_output_tokens is not None:
+            self.tokens_out_accounted += usage_output_tokens
+        else:
+            self.tokens_out_accounted += self._route_max_output_tokens
         if usage_verified and attempts == 1 and usage_output_tokens is not None:
             self.rows_usage_verified += 1
             if self.tokens_out_reported is not None:
@@ -768,6 +802,11 @@ class VertexLineageScreenProvider:
         return raw
 
     def screen(self, rendered_prompt: str, *, cik: str, accession: str) -> str:
+        # Fail closed on the output ceiling BEFORE anything exists for this
+        # row: no handshake, no sink, no countTokens and no generateContent
+        # send happens for a row the output budget cannot cover (ADR-109
+        # correction — prevention, not post-hoc detection).
+        self._budget.require_output_headroom()
         self._row_ordinal += 1
         key = (cik, accession)
         packet_sha = self._packet_sha_by_key.get(key)

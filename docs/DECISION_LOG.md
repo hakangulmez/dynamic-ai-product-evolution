@@ -7575,6 +7575,22 @@ and the five evaluation guard modules. `providers/*`, `extraction/*`, both
 prompts, every packet/determination/aggregate schema and ingestion module,
 and everything under `data/runs` are byte-unchanged.
 
+**Correction (2026-08-20) — the output ceiling is now enforced
+pre-send.** As merged, `budget_max_output_tokens` was recorded and
+schema-required but never spent against: no send was ever refused by
+it. Corrected in place, three paths (`lineage_screen_live.py`, its test
+module, this note): the cohort budget now accounts terminal output
+conservatively — the verified terminal usage when the envelope's usage
+block verifies, else the route's declared per-call `max_output_tokens`
+for that completed row, so absent or unverifiable usage can only shrink
+future headroom, never bypass the ceiling — and the adapter refuses the
+next row before anything exists for it: no handshake, no countTokens
+send and no generateContent send happens once the accounted output plus
+the route's maximum possible terminal output would exceed the ceiling.
+Every post-limit external call is prevented, not detected after another
+generation. Input, cost, external-request, retry, archive, receipt and
+manifest semantics are byte-unchanged, and no schema moved.
+
 ## Open decisions
 
 - Required source packet by firm-year.
