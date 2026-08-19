@@ -1106,3 +1106,100 @@ def find_item_one_span_text(raw: bytes) -> tuple[int, int, str]:
         "boundary follows it",
         reason_code=_NO_END_BOUNDARY,
     )
+
+
+# --- ADR-104: the combined-heading successor, S2 only -------------------------
+#
+# The full-cohort build left 730 Item 1 failures. A read-only audit measured
+# the failure shapes, a frozen 730-row cohort was built under
+# adr104_bucket_method@1, and a scratch ablation (Arm B) evaluated exactly one
+# bounded rule: admitting the combined ``Items 1 and 2. Business and
+# Properties`` convention of energy, utility and REIT filers as an Item 1
+# start. Arm B recovered 51 of the 59 frozen combined-bucket rows (82 rows in
+# total, 81 spans ending at Item 1A and one at Item 1B — both authorized
+# tiers — minimum span 57,451 bytes,
+# none below 4 KB or 0.5% of its document) while reproducing all 7,190 prior
+# HTML spans byte-identically and every ambiguous and no-end refusal
+# verbatim. The wider candidate rules the audit also considered — worded
+# plain headings, guard relaxation, running-header deduplication — either
+# missed their acceptance floors or produced degenerate spans, and are
+# deliberately absent here.
+
+_ITEMS_ONE_AND_TWO_TEXT_RE = re.compile(
+    (r"(?i)Items\s{0,20}1\.?\s{0,20}(?:and|&)\s{0,20}2\.?\s{0,20}"
+     + _ITEM_SEPARATOR
+     + r"\s{0,20}Business\s{0,20}and\s{0,20}Propert").encode()
+)
+
+
+def find_item_one_span_v3(raw: bytes) -> tuple[int, int, str]:
+    """Locate Item 1's span, admitting the combined ``Items 1 and 2`` heading.
+
+    **v2 first, verbatim.** :func:`find_item_one_span_v2` is called and its
+    result returned unchanged, so a document the corpus already reads keeps
+    its exact span. Only ``item_span_not_found`` enters the retry;
+    ``ambiguous_end_boundary`` and ``no_end_boundary`` re-raise unchanged —
+    the original exception object propagates, never converted or retried.
+
+    **The retry admits one shape and nothing else**: a block-opening
+    ``Items 1 and 2 [.:-] Business and Propert…`` heading, with the measured
+    optional dots after the numerals and the ampersand spelling. The body
+    heading is the last qualifying match, exactly as v2 chooses its own.
+
+    **End tiers are Item 1A then Item 1B, never Item 2.** Item 2 lies inside
+    the section the filer merged, so a later Item 2 token cannot truncate it.
+    Each tier keeps v2's single-candidate rule: two block-opening candidates
+    after the body refuse as ambiguous rather than silently taking the
+    earlier one. A combined section followed by neither boundary fails closed
+    as ``no_end_boundary`` — the Item 3 tier is deliberately not introduced,
+    so the packet record's closed ``end_boundary_kind`` enum never widens.
+    """
+    try:
+        return find_item_one_span_v2(raw)
+    except IngestionError as exc:
+        if exc.reason_code != _ITEM_SPAN_NOT_FOUND:
+            raise
+    raw = bytes(raw)
+
+    text, offsets = _text_offset_map(raw)
+    combined = [
+        offsets[m.start()]
+        for m in _ITEMS_ONE_AND_TWO_TEXT_RE.finditer(text)
+        if _starts_a_block(raw, offsets[m.start()])
+    ]
+    if not combined:
+        raise IngestionError(
+            "no combined Items 1 and 2 heading was found in this document",
+            reason_code=_ITEM_SPAN_NOT_FOUND,
+        )
+    body_start = max(combined)
+
+    for kind in (BOUNDARY_ITEM_1A, BOUNDARY_ITEM_1B):
+        candidates = [
+            offsets[m.start()]
+            for m in _BOUNDARY_TEXT_RES[kind].finditer(text)
+            if _starts_a_block(raw, offsets[m.start()])
+        ]
+        after = [position for position in candidates if position > body_start]
+        if not after:
+            continue
+        if len(after) > 1:
+            raise IngestionError(
+                f"{len(after)} block-opening {kind} headings follow Item 1; "
+                "the end boundary is ambiguous",
+                reason_code=_AMBIGUOUS_END_BOUNDARY,
+            )
+        start_offset = raw.rfind(b">", 0, body_start)
+        end_offset = raw.rfind(b"<", 0, after[0])
+        if start_offset < 0 or end_offset <= start_offset:
+            raise IngestionError(
+                "the located Item 1 span is empty or inverted",
+                reason_code=_ITEM_SPAN_NOT_FOUND,
+            )
+        return start_offset, end_offset, kind
+
+    raise IngestionError(
+        "Item 1 is present but no trustworthy Item 1A or Item 1B boundary "
+        "follows it",
+        reason_code=_NO_END_BOUNDARY,
+    )

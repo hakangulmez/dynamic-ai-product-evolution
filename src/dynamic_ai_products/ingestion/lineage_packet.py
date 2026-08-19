@@ -74,6 +74,7 @@ from .baseline_packet import (
     build_packet,
 )
 from .lineage_authority import LineageAuthorityError, load_lineage_bundles
+from .normalize import find_item_one_span_v2, find_item_one_span_v3
 from .shell_company_determination import (
     DETERMINATION_CONTRACT,
     DETERMINATION_SCHEMA_RELATIVE_PATH,
@@ -87,6 +88,23 @@ from .shell_company_determination import (
 PACKET_MANIFEST_V3_SCHEMA_RELATIVE_PATH = Path(
     "schemas/baseline_packet_manifest.v3.schema.json"
 )
+#: v0.4 (ADR-104): v0.3 plus the operator-declared HTML locator. The mode
+#: emits v0.4 from ADR-104 on; the v0.3 schema stays byte-identical and keeps
+#: validating the artifacts already written under it.
+PACKET_MANIFEST_V4_SCHEMA_RELATIVE_PATH = Path(
+    "schemas/baseline_packet_manifest.v4.schema.json"
+)
+
+#: The closed HTML-locator dispatch (ADR-104). ``--item-one-locator`` is a
+#: functional selector over exactly this mapping, never free provenance text:
+#: the callable used comes only from here, an unmapped value is refused
+#: before any output directory exists, and the v0.4 manifest records the
+#: canonical key re-derived from the selected entry. The text route is not
+#: part of the selection.
+ITEM_ONE_LOCATORS = {
+    "item_one_span_v2": find_item_one_span_v2,
+    "item_one_span_v3": find_item_one_span_v3,
+}
 #: The order packet and failure records are written in, recorded in the
 #: manifest so a reader need not infer it. Both keys come from artefacts —
 #: the aggregate's shard index and the bundle manifest's own entry order —
@@ -256,6 +274,7 @@ def run_lineage_packet_build(
     project_config_path: str | Path,
     output_dir: str | Path,
     run_id: str,
+    item_one_locator: str,
     clock: Callable[[], datetime],
     dry_run: bool = False,
 ) -> LineagePacketRunResult:
@@ -266,6 +285,21 @@ def run_lineage_packet_build(
             f"Invalid run id {run_id!r}: only letters, digits, '.', '_', '-' "
             "are allowed (no path separators)."
         )
+    # The selector is exact-match against the closed mapping: no whitespace
+    # normalization, no aliasing, no caller-supplied callable, and the
+    # refusal precedes every read and every write.
+    if item_one_locator not in ITEM_ONE_LOCATORS:
+        raise PacketBundleError(
+            f"Unknown item_one_locator {item_one_locator!r}; the HTML locator "
+            f"is selected from exactly {sorted(ITEM_ONE_LOCATORS)}."
+        )
+    locate_html = ITEM_ONE_LOCATORS[item_one_locator]
+    # Derived from the selected mapping entry, never copied from operator
+    # text: the recorded identifier is the key under which the callable was
+    # found.
+    canonical_locator = next(
+        key for key, value in ITEM_ONE_LOCATORS.items() if value is locate_html
+    )
 
     # --- authority: the aggregate names everything that may be opened -------
     try:
@@ -424,6 +458,7 @@ def run_lineage_packet_build(
                 baseline_cutoff_source=cutoff_source,
                 route_validation=route_validation,
                 packet_contract=PACKET_CONTRACT_V2,
+                locate_html=locate_html,
             )
             if isinstance(outcome, UniverseBaselinePacket):
                 result.packets.append(outcome)
@@ -574,6 +609,7 @@ def run_lineage_packet_build(
         "determinations_jsonl_sha256": jsonl_sha,
         "shards_consumed": per_shard,
         "packet_record_order": PACKET_RECORD_ORDER,
+        "item_one_locator": canonical_locator,
         "bundle_contract": BUNDLE_CONTRACT_V2,
         "carrier_provenance": dict(provenance),
         "route_validation": dict(route_validation),
@@ -590,8 +626,8 @@ def run_lineage_packet_build(
             "universe_baseline_packet_v2": schema_versions[
                 "universe_baseline_packet_v2"
             ],
-            "baseline_packet_manifest_v3": schema_versions[
-                "baseline_packet_manifest_v3"
+            "baseline_packet_manifest_v4": schema_versions[
+                "baseline_packet_manifest_v4"
             ],
             "shell_company_determination_manifest_v3": schema_versions[
                 "shell_company_determination_manifest_v3"
@@ -628,13 +664,18 @@ def run_lineage_packet_build(
             "then in each bundle manifest's own entry order, after shell-true "
             "omission; the order is independent of execution-run-id "
             "enumeration.",
+            "The HTML locator is an operator-declared, closed functional "
+            "selector: the callable comes only from ITEM_ONE_LOCATORS, an "
+            "unmapped value is refused before any output exists, and the "
+            "identifier recorded here is re-derived from the selected "
+            "mapping entry. The plain-text route is selector-independent.",
             "Fixture-first: packets are built only from locally supplied, "
             "hash-verified primary documents. This module performs no network "
             "access and no model call, and no screening, classification, tier "
             "derivation or PCT extraction is performed.",
         ],
     }
-    schema = read_json(root / PACKET_MANIFEST_V3_SCHEMA_RELATIVE_PATH)
+    schema = read_json(root / PACKET_MANIFEST_V4_SCHEMA_RELATIVE_PATH)
     errors = sorted(
         Draft202012Validator(schema).iter_errors(run_manifest),
         key=lambda e: e.json_path,

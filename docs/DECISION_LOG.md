@@ -6972,6 +6972,164 @@ pinned registry hash and manifest counts move. `baseline_packet.py`, the
 ADR-102 test file, the existing packet tests and every predecessor schema are
 untouched.
 
+## ADR-104 — Item 1 locator v3: the combined heading, and only it
+
+**Status.** Accepted. Fixture-first; no packet rebuild, no `data/runs` write,
+no SEC request, no model call. The full-cohort rebuild under the new locator
+is a separate, future authorization.
+
+**Measurement, phase by phase.** The ADR-103 full-cohort build left 730
+Item 1 failures (`missing_item_one` 492, `ambiguous_end_boundary` 206,
+`no_end_boundary` 32). A read-only audit of all 730, a frozen cohort built
+under `adr104_bucket_method@1` (appendix below), and scratch ablations
+measured what a deterministic successor could safely recover:
+
+- **Phase 0 (frozen cohort).** Bound triple: method-definition sha256
+  `b0ef02d3017a300071da304f324d54deae66f36023e6deb47d0aceaeb7ecd742`,
+  mapping sha256
+  `a686217450c4d08e4bc1bf0fa471f4efae5d6c38cc5544a8d8ea6455f0039840`,
+  failure-JSONL sha256
+  `34e5fc88f0e68062e281484e5ca73b31c336f226dcb82736224ab366486c2ac8`.
+  Exact bucket counts over a proven 730-row partition: s1_plain_present 115,
+  s2_combined 59, s3_single 188, s3_multi 18, n0_no_end_boundary 32,
+  token_early_only 176, bare_numeric 58, other_worded 55, no_token 24,
+  part_iv_financial_statements 5. S1 mechanism table over the 115:
+  guard_rejected 69 (sampled contexts dominated by genuine inline
+  cross-references the guard exists to refuse), stream_splitting 26,
+  wording_only_s1a 19, plain_text 1.
+
+- **A first, wider candidate failed its gates and was withdrawn.** An
+  experimental v3 carrying S1 wording, the combined heading, and an S3
+  running-header deduplication recovered 385 rows — but 31% of them were
+  out-of-scope breadth, S1 reached only 28 of 115, and the dedup rule
+  recovered all 18 multi-registrant rows with degenerate 1.2–7.8 KB spans:
+  identical-title-with-no-intervening-Item-1 cannot distinguish a running
+  header from a TOC-row/genuine-heading pair. The rule and the experiment
+  were removed; **no dedup rule ships, and span size is an audit metric,
+  never a parser rule.**
+
+- **Arm B (v2 + S2 only), the accepted evidence.** 51 of the frozen 59
+  combined-bucket rows recovered — G4-S2 floor ≥36 passed — 82 recoveries in
+  total (the 31 outside the bucket each individually rule-attributed to the
+  combined pattern; the 15%-proxy had mis-bucketed them). 81 recovered
+  spans end at Item 1A and one at Item 1B — both authorized tiers; min
+  57,451 B, median 273,636 B, max 2,126,037 B;
+  none below 4 KB or 0.5% of its document. G1: 7,190/7,190 prior HTML spans
+  byte-identical. G2: 238/238 ambiguous and no-end rows re-raise v2's
+  exception with identical reason code and message — all 18 multi-registrant
+  rows among them. G3: zero unattributable recoveries.
+
+**Decision: ship S2 alone.** `find_item_one_span_v3` calls
+`find_item_one_span_v2` first and returns its result unchanged; only
+`item_span_not_found` enters the retry; `ambiguous_end_boundary` and
+`no_end_boundary` re-raise unchanged — the original exception object
+propagates. The retry admits exactly one start shape, the block-opening
+combined `Items 1 and 2 [.:-] Business and Propert…` heading with the
+measured optional dots and ampersand spelling, and ends at Item 1A then
+Item 1B under v2's single-candidate rule. **The Item 2 tier is never used on
+the retry**: Item 2 lies inside the merged section, so a later Item 2 token
+cannot truncate it; a combined section followed by neither boundary fails
+closed as `no_end_boundary`. The Item 3 tier is deliberately absent, so the
+packet record's closed `end_boundary_kind` enum never widens and
+`universe_baseline_packet@0.2.0` is untouched. Not implemented, by
+measurement rather than omission: S1a (19 of 115 — under any plausible
+floor), S1b (its dominant mechanism is contaminated with legitimate
+refusals), S3 in any form, broad guard relaxation, and every historical
+heuristic.
+
+**The locator is selected, never defaulted and never free text.** The
+lineage packet mode requires `--item-one-locator`, a closed functional
+selector over exactly
+`{"item_one_span_v2": find_item_one_span_v2, "item_one_span_v3":
+find_item_one_span_v3}`: the callable comes only from that mapping, an
+unmapped value — including whitespace variants and function names — is
+refused before any output directory exists, and the v0.4 manifest records
+the canonical key re-derived from the selected entry. No caller-supplied
+callable exists. `build_packet` gains a keyword-only `locate_html`
+defaulting to v2, so the single-bundle path is behaviorally unchanged; the
+plain-text route is selector-independent and its three cohort packets stay
+byte-identical.
+
+**Succession.** v1, v2 and the plain-text locator bodies are byte-identical.
+`baseline_packet_manifest@0.4.0` adds exactly one required field to v0.3 —
+`item_one_locator`, enum-closed to the two canonical keys — and v0.3/v0.4
+mutually reject under `additionalProperties: false`; the ADR-103 artifact
+remains valid under v0.3 alone. Registry 0.42.0 → 0.43.0, 93 → 94 entries.
+
+**Acceptance replay.** An opt-in test
+(`ADR104_ARMB_REPLAY=1`) replays the Arm B gates against the pinned
+artifacts with the production locator and fails the implementation if any
+gate differs from the measured result above. A companion always-on test pins
+the appendix below to the Phase-0 method hash, so the frozen cohort's
+authority survives byte-for-byte or the evidence is declared invalid.
+
+**Measurement appendix — `adr104_bucket_method@1`** (normative; sha256
+`b0ef02d3017a300071da304f324d54deae66f36023e6deb47d0aceaeb7ecd742` over
+exactly the block between the markers):
+
+<!-- ADR104-METHOD-BLOCK-BEGIN -->
+adr104_bucket_method@1
+======================
+
+Frozen bucket method for the 730-row ADR-103 packet-failure cohort.
+Input: baseline_packet_failures.jsonl (sha256
+34e5fc88f0e68062e281484e5ca73b31c336f226dcb82736224ab366486c2ac8), with each
+row's source document and representation resolved solely through the packet
+manifest's shards_consumed bundle entries.
+
+1. Probe stream.
+   html rows: the raw document bytes with every HTML tag replaced by one
+   space and every entity replaced by one space, applied in this order:
+     tag pattern     (bytes, DOTALL not set):  <[^>]*>
+     entity pattern  (bytes):                  &[#a-zA-Z0-9]{1,8};
+   plain_text rows: the raw document bytes unmodified.
+   n = max(1, len(stream)).
+
+2. Probe expressions (bytes patterns, case-insensitive where written (?i)).
+   ITEM1_ANY:   (?i)\bItems?\s{0,20}1\b
+   Context extraction: for a match m, ctx = the 90 bytes
+   stream[m.start():m.start()+90], whitespace runs collapsed to one space
+   (regex \s+ -> " "), decoded UTF-8 with errors=replace, lowercased.
+   Context classifiers, applied to ctx with re.match (anchored at start):
+     S2_COMBINED:  items? 1\.? ?(?:and|&) ?2\b
+     S1_PLAIN:     items? 1[\.\:\-‐-―]? ?(?:description of )?business
+     PART_IV:      the substring "financial statement" occurs in ctx[:60]
+     OTHER_WORDED: items? 1[\.\:\-‐-―]? ?[a-z]
+   (‐-― is the unicode hyphen..horizontal-bar range.)
+
+3. Body region. A token match is in the body region iff
+   m.start() / n >= 0.15. This is a proxy threshold, not a proof of
+   table-of-contents membership.
+
+4. Bucket priority order (first matching rule assigns the bucket; every row
+   receives exactly one bucket):
+   a. reason_code == "ambiguous_end_boundary":
+        "s3_multi"  iff the row's accession appears on more than one failure
+                    row within the 730-row set, else
+        "s3_single".
+   b. reason_code == "no_end_boundary": "n0_no_end_boundary".
+   c. reason_code == "missing_item_one": let B = ITEM1_ANY matches in the
+      body region.
+        B empty and no ITEM1_ANY match anywhere -> "no_token"
+        B empty but an early ITEM1_ANY match exists -> "token_early_only"
+        else, with ctx taken from the LAST match in B, first of:
+          S2_COMBINED matches ctx          -> "s2_combined"
+          S1_PLAIN matches ctx             -> "s1_plain_present"
+          PART_IV holds                    -> "part_iv_financial_statements"
+          OTHER_WORDED matches ctx         -> "other_worded"
+          otherwise                        -> "bare_numeric"
+
+5. Representation handling. representation is read from the bundle entry
+   ("html" or "plain_text"); it is never inferred from document content.
+
+6. Canonical mapping serialization. The mapping is the UTF-8 JSON array of
+   one record per failure row, each record exactly
+   {"accession": <accession>, "bucket": <bucket>, "cik": <cik>},
+   the array sorted lexicographically by (cik, accession), serialized with
+   json.dumps(records, sort_keys=True, separators=(",", ":")) and NO trailing
+   newline. The mapping sha256 is computed over exactly these bytes.
+<!-- ADR104-METHOD-BLOCK-END -->
+
 ## Open decisions
 
 - Required source packet by firm-year.

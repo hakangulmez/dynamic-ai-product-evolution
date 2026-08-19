@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **798**
+Total tracked/scaffold files listed: **799**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -358,6 +358,7 @@ Total tracked/scaffold files listed: **798**
 - `schemas/baseline_packet_manifest.schema.json`
 - `schemas/baseline_packet_manifest.v2.schema.json`
 - `schemas/baseline_packet_manifest.v3.schema.json`
+- `schemas/baseline_packet_manifest.v4.schema.json`
 - `schemas/baseline_primary_document_bundle.schema.json`
 - `schemas/baseline_primary_document_bundle.v2.schema.json`
 - `schemas/capability_observation.schema.json`

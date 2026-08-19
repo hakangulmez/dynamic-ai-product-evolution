@@ -829,3 +829,185 @@ def test_v1_v2_and_v3_are_byte_identical_after_the_successor_lands() -> None:
     assert v1 == committed_v1
     assert v2 == committed("v2")
     assert v3 == committed("v3")
+
+
+# --- ADR-104: the combined-heading successor, S2 only -------------------------
+#
+# find_item_one_span_v3 admits exactly one new start shape — the combined
+# "Items 1 and 2. Business and Properties" heading — behind a fallback that
+# fires only when v2 raises item_span_not_found. Everything else about v2 is
+# preserved verbatim, and these tests pin both halves: the recovery and the
+# preservation.
+
+
+def _locator_v3():
+    from dynamic_ai_products.ingestion.normalize import find_item_one_span_v3
+    return find_item_one_span_v3
+
+
+def _locator_v2():
+    from dynamic_ai_products.ingestion.normalize import find_item_one_span_v2
+    return find_item_one_span_v2
+
+
+def _combined_doc(heading: bytes, boundary: bytes) -> bytes:
+    return (
+        b"<html><p>Table of contents mentions " + heading + b" here.</p>"
+        b"<p>Some front matter.</p>"
+        b"<p>" + heading + b"</p>"
+        b"<p>We drill, gather and process. Our properties are described "
+        b"together with our business, as the heading says.</p>"
+        b"<p>" + boundary + b"</p>"
+        b"<p>Content after the boundary.</p></html>"
+    )
+
+
+def test_v3_recovers_the_combined_heading_and_v2_still_refuses() -> None:
+    from dynamic_ai_products.ingestion.errors import IngestionError
+
+    raw = _combined_doc(b"Items 1 and 2. Business and Properties",
+                        b"Item 1A. Risk Factors")
+    with pytest.raises(IngestionError) as v2_exc:
+        _locator_v2()(raw)
+    assert v2_exc.value.reason_code == "item_span_not_found"
+    start, end, kind = _locator_v3()(raw)
+    assert kind == "item_1a_risk_factors"
+    body = raw[start:end]
+    assert b"We drill, gather and process" in body
+    assert b"Risk Factors" not in body
+    # The TOC occurrence did not supply the start: the body heading did.
+    assert body.count(b"Items 1 and 2") == 1
+
+
+@pytest.mark.parametrize("spelling", [
+    b"Items 1 and 2. Business and Properties",
+    b"Items 1. and 2. Business and Properties",
+    b"Items 1 & 2 - Business and Properties",
+    b"ITEMS 1 AND 2. BUSINESS AND PROPERTIES",
+])
+def test_v3_admits_exactly_the_measured_spellings(spelling) -> None:
+    start, end, kind = _locator_v3()(_combined_doc(spelling, b"Item 1A. Risk Factors"))
+    assert kind == "item_1a_risk_factors"
+    assert end > start
+
+
+def test_v3_is_not_a_general_wording_expansion() -> None:
+    """S1 is not implemented: the worded plain heading still fails."""
+    from dynamic_ai_products.ingestion.errors import IngestionError
+
+    raw = _combined_doc(b"Item 1. Description of Business",
+                        b"Item 1A. Risk Factors")
+    with pytest.raises(IngestionError) as caught:
+        _locator_v3()(raw)
+    assert caught.value.reason_code == "item_span_not_found"
+
+
+def test_v3_never_ends_a_combined_section_at_item_two() -> None:
+    """A later Item 2 token cannot truncate the merged section."""
+    from dynamic_ai_products.ingestion.errors import IngestionError
+
+    # Item 2 present after the combined heading, 1A also present later: the
+    # span must end at 1A and contain the Item 2 heading whole.
+    raw = (
+        b"<html><p>Items 1 and 2. Business and Properties</p>"
+        b"<p>Business narrative.</p>"
+        b"<p>Item 2. Properties</p>"
+        b"<p>Our properties, inside the merged section.</p>"
+        b"<p>Item 1A. Risk Factors</p><p>Risks.</p></html>"
+    )
+    start, end, kind = _locator_v3()(raw)
+    assert kind == "item_1a_risk_factors"
+    assert b"Item 2. Properties" in raw[start:end]
+    assert b"inside the merged section" in raw[start:end]
+
+    # Only Item 2 after the combined heading: fail closed, never truncate.
+    raw = (
+        b"<html><p>Items 1 and 2. Business and Properties</p>"
+        b"<p>Business narrative.</p>"
+        b"<p>Item 2. Properties</p><p>Properties text.</p></html>"
+    )
+    with pytest.raises(IngestionError) as caught:
+        _locator_v3()(raw)
+    assert caught.value.reason_code == "no_end_boundary"
+
+
+def test_v3_combined_with_only_item_three_stays_no_end_boundary() -> None:
+    """The Item 3 tier is deliberately absent."""
+    from dynamic_ai_products.ingestion.errors import IngestionError
+
+    raw = (
+        b"<html><p>Items 1 and 2. Business and Properties</p>"
+        b"<p>Business narrative.</p>"
+        b"<p>Item 3. Legal Proceedings</p><p>None.</p></html>"
+    )
+    with pytest.raises(IngestionError) as caught:
+        _locator_v3()(raw)
+    assert caught.value.reason_code == "no_end_boundary"
+
+
+def test_v3_refuses_an_inline_combined_cross_reference() -> None:
+    """The block guard is not relaxed: mid-prose mentions supply nothing."""
+    from dynamic_ai_products.ingestion.errors import IngestionError
+
+    raw = (
+        b"<html><p>As described under Items 1 and 2. Business and Properties "
+        b"of this report, we operate wells.</p>"
+        b"<p>Item 1A. Risk Factors</p><p>Risks.</p></html>"
+    )
+    with pytest.raises(IngestionError) as caught:
+        _locator_v3()(raw)
+    assert caught.value.reason_code == "item_span_not_found"
+
+
+def test_v3_keeps_v2_single_candidate_ambiguity_on_the_retry() -> None:
+    from dynamic_ai_products.ingestion.errors import IngestionError
+
+    raw = (
+        b"<html><p>Items 1 and 2. Business and Properties</p>"
+        b"<p>Business narrative.</p>"
+        b"<p>Item 1A. Risk Factors</p><p>Risks.</p>"
+        b"<p>Item 1A. Risk Factors</p><p>More risks.</p></html>"
+    )
+    with pytest.raises(IngestionError) as caught:
+        _locator_v3()(raw)
+    assert caught.value.reason_code == "ambiguous_end_boundary"
+
+
+def test_v3_returns_the_exact_v2_result_on_success() -> None:
+    from dynamic_ai_products.ingestion.normalize import find_item_one_span_v2
+
+    raw = (
+        b"<html><p>Item 1. Business</p><p>Ordinary narrative.</p>"
+        b"<p>Item 1A. Risk Factors</p><p>Risks.</p></html>"
+    )
+    assert _locator_v3()(raw) == find_item_one_span_v2(raw)
+
+
+def test_v3_reraises_v2_ambiguous_and_no_end_unchanged() -> None:
+    from dynamic_ai_products.ingestion.errors import IngestionError
+
+    ambiguous = (
+        b"<html><p>Item 1. Business</p><p>Narrative.</p>"
+        b"<p>Item 1A. Risk Factors</p><p>Risks.</p>"
+        b"<p>Item 1A. Risk Factors</p><p>Again.</p></html>"
+    )
+    no_end = (
+        b"<html><p>Item 1. Business</p><p>Narrative with no boundary.</p>"
+        b"</html>"
+    )
+    for raw in (ambiguous, no_end):
+        with pytest.raises(IngestionError) as v2_exc:
+            _locator_v2()(raw)
+        with pytest.raises(IngestionError) as v3_exc:
+            _locator_v3()(raw)
+        assert v3_exc.value.reason_code == v2_exc.value.reason_code
+        assert str(v3_exc.value) == str(v2_exc.value)
+
+
+def test_v3_propagates_non_locator_errors_identically() -> None:
+    from dynamic_ai_products.ingestion.errors import IngestionError
+
+    for function in (_locator_v2(), _locator_v3()):
+        with pytest.raises(IngestionError) as caught:
+            function("not bytes")  # type: ignore[arg-type]
+        assert caught.value.reason_code == "normalize_input_invalid"

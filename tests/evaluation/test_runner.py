@@ -1349,6 +1349,11 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
     # v0.1.
+    # 799 = 798 + the one ADR-104 path: the v0.4 locator-declared packet-run
+    # manifest schema (schemas/baseline_packet_manifest.v4.schema.json).
+    # Every predecessor packet schema is byte-unchanged and the v0.2 packet
+    # record contract does not move. Schema registry: 0.42.0 -> 0.43.0,
+    # 93 -> 94 entries. Before it,
     # 798 = 794 + the four ADR-103 paths: the v0.3 lineage packet-run
     # manifest schema (schemas/baseline_packet_manifest.v3.schema.json), the
     # neutral lineage-authority module and the lineage packet builder
@@ -1376,7 +1381,7 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert declared == len(paths) == 798
+    assert declared == len(paths) == 799
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

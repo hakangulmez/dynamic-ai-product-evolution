@@ -52,6 +52,9 @@ TEXT_FIXTURES = ROOT / "evals" / "fixtures" / "plain_text_primary"
 PACKET_MANIFEST_V3_SCHEMA = (
     ROOT / "schemas" / "baseline_packet_manifest.v3.schema.json"
 )
+PACKET_MANIFEST_V4_SCHEMA = (
+    ROOT / "schemas" / "baseline_packet_manifest.v4.schema.json"
+)
 PACKET_MANIFEST_V2_SCHEMA = (
     ROOT / "schemas" / "baseline_packet_manifest.v2.schema.json"
 )
@@ -225,12 +228,14 @@ def _lineage(tmp_path: Path):
 
 
 def _build(root: Path, aggregate: Path, determination: Path, tmp_path: Path,
-           run_id: str = "lpk", dry_run: bool = False):
+           run_id: str = "lpk", dry_run: bool = False,
+           locator: str = "item_one_span_v2"):
     return run_lineage_packet_build(
         repo_root=root, aggregate_manifest_path=aggregate,
         determination_manifest_path=determination,
         project_config_path=CONFIG, output_dir=tmp_path / "packets",
-        run_id=run_id, clock=FIXED_CLOCK, dry_run=dry_run)
+        run_id=run_id, item_one_locator=locator, clock=FIXED_CLOCK,
+        dry_run=dry_run)
 
 
 def _rewrite(path: Path, mutate) -> None:
@@ -260,9 +265,10 @@ def test_lineage_build_covers_every_retained_row(tmp_path):
     assert counts["shell_unknown"] >= 1, "unknown rows must be exercised"
     assert all(result.reconciliation.values())
     manifest = read_json(result.manifest_path)
-    assert not list(Draft202012Validator(read_json(PACKET_MANIFEST_V3_SCHEMA))
+    assert not list(Draft202012Validator(read_json(PACKET_MANIFEST_V4_SCHEMA))
                     .iter_errors(manifest))
     assert manifest["packet_record_order"] == PACKET_RECORD_ORDER
+    assert manifest["item_one_locator"] == "item_one_span_v2"
     assert manifest["aggregate_manifest_sha256"] == sha256(
         aggregate.read_bytes()).hexdigest()
     assert [s["shard_index"] for s in manifest["shards_consumed"]] == [0, 1]
@@ -625,7 +631,7 @@ def test_the_lineage_packet_run_is_write_once_and_dry_run_writes_nothing(
 # --- generation separation --------------------------------------------------------
 
 
-def test_the_three_packet_manifest_generations_reject_each_other(tmp_path):
+def test_the_packet_manifest_generations_reject_each_other(tmp_path):
     root, aggregate, determination, shards = _lineage(tmp_path)
     lineage = read_json(_build(root, aggregate, determination,
                                tmp_path).manifest_path)
@@ -636,11 +642,24 @@ def test_the_three_packet_manifest_generations_reject_each_other(tmp_path):
     v1_schema = Draft202012Validator(read_json(PACKET_MANIFEST_V1_SCHEMA))
     v2_schema = Draft202012Validator(read_json(PACKET_MANIFEST_V2_SCHEMA))
     v3_schema = Draft202012Validator(read_json(PACKET_MANIFEST_V3_SCHEMA))
+    v4_schema = Draft202012Validator(read_json(PACKET_MANIFEST_V4_SCHEMA))
     assert not list(v2_schema.iter_errors(v2))
-    assert not list(v3_schema.iter_errors(lineage))
-    assert list(v3_schema.iter_errors(v2)), "a v0.2 manifest is not a v0.3 one"
-    assert list(v2_schema.iter_errors(lineage)), "and the converse"
+    assert not list(v4_schema.iter_errors(lineage))
+    # v0.4 <-> v0.3 mutual rejection: the successor field is required in one
+    # generation and refused by the other's additionalProperties: false.
+    assert list(v3_schema.iter_errors(lineage)), "a v0.4 manifest is not v0.3"
+    v3_shaped = dict(lineage)
+    del v3_shaped["item_one_locator"]
+    v3_shaped["schema_versions"] = {
+        **{k: v for k, v in lineage["schema_versions"].items()
+           if k != "baseline_packet_manifest_v4"},
+        "baseline_packet_manifest_v3": "0.3.0",
+    }
+    assert not list(v3_schema.iter_errors(v3_shaped)),         "the delta is exactly the successor fields"
+    assert list(v4_schema.iter_errors(v3_shaped)), "a v0.3 manifest is not v0.4"
+    assert list(v2_schema.iter_errors(lineage))
     assert list(v1_schema.iter_errors(lineage))
+    assert list(v4_schema.iter_errors(v2)), "a v0.2 manifest is not a v0.4 one"
     assert "bundle_manifest_sha256" not in lineage
     assert lineage["counts"]["firms_excluded"] >= 1
     assert v2["counts"]["firms_excluded"] == 0
@@ -674,6 +693,7 @@ def test_cli_lineage_packet_mode_requires_both_manifests(tmp_path):
     assert completed.returncode != 0
     assert "--aggregate-manifest" in completed.stderr
     assert "--shell-determination-manifest" in completed.stderr
+    assert "--item-one-locator" in completed.stderr
     assert not (tmp_path / "o").exists()
 
 
@@ -683,6 +703,7 @@ def test_cli_lineage_packet_mode_anchors_at_the_repository_root(tmp_path):
     completed = _cli("--mode", "build-baseline-packets-lineage",
                      "--aggregate-manifest", str(aggregate),
                      "--shell-determination-manifest", str(determination),
+                     "--item-one-locator", "item_one_span_v2",
                      "--config", str(CONFIG),
                      "--output-dir", str(tmp_path / "cli"), "--run-id", "r")
     assert completed.returncode == 2
@@ -746,3 +767,280 @@ def test_the_shell_lineage_mode_refuses_the_determination_flag(tmp_path):
     assert completed.returncode != 0
     assert "--shell-determination-manifest" in completed.stderr
     assert "does not accept" in completed.stderr
+
+
+# --- ADR-104: the closed locator selector -------------------------------------
+#
+# --item-one-locator is a functional selector over ITEM_ONE_LOCATORS, never
+# free provenance text. These pin the dispatch, the refusal, the canonical
+# manifest field, and the text route's independence from the selection.
+
+from dynamic_ai_products.ingestion.lineage_packet import (  # noqa: E402
+    ITEM_ONE_LOCATORS,
+)
+
+COMBINED_DOC = (
+    b"<html><p>Items 1 and 2. Business and Properties</p>"
+    b"<p>We drill, gather and process; our properties are described together "
+    b"with our business, exactly as the combined heading announces. This "
+    b"narrative continues long enough to normalize into a passage.</p>"
+    b"<p>Item 1A. Risk Factors</p><p>Risks follow here.</p></html>"
+)
+
+
+def _combined_row(root: Path) -> tuple[Path, dict]:
+    """A synthetic combined-heading bundle row alongside the fixtures."""
+    source = root / "combined_10k.htm"
+    source.write_bytes(COMBINED_DOC)
+    _, template = _fixture_doc(PACKET_FIXTURES, "primary_10k_ixbrl.htm")
+    entry = {**template,
+             "cik": "0009900001", "accession": "0009900001-22-000001",
+             "local_filename": "combined_10k.htm",
+             "selected_document": "combined_10k.htm",
+             "source_sha256": sha256(COMBINED_DOC).hexdigest(),
+             "source_byte_length": len(COMBINED_DOC)}
+    return source, entry
+
+
+def _selector_lineage(tmp_path: Path):
+    """One shard mixing a v3-recoverable row, ordinary rows, and a text row."""
+    root = _synth_root(tmp_path)
+    shard = _write_shard(root, "ra-shard-0000", [
+        _combined_row(root),
+        _fixture_doc(PACKET_FIXTURES, "primary_10k_ixbrl.htm"),
+        _fixture_doc(TEXT_FIXTURES, "text-10k-item1a.txt"),
+    ])
+    aggregate = _write_aggregate(root, [shard], run_ids=("ra",))
+    determination = _determine(root, aggregate)
+    return root, aggregate, determination
+
+
+def test_selector_dispatch_reaches_distinct_locators(tmp_path):
+    root, aggregate, determination = _selector_lineage(tmp_path)
+    v2_run = _build(root, aggregate, determination, tmp_path, run_id="v2",
+                    locator="item_one_span_v2")
+    v3_run = _build(root, aggregate, determination, tmp_path, run_id="v3",
+                    locator="item_one_span_v3")
+    # Under v2 the combined row is a recorded failure; under v3 it packetizes.
+    v2_fail = {f.cik: f.reason_code for f in v2_run.failures}
+    assert v2_fail.get("0009900001") == "missing_item_one"
+    v3_packets = {p.cik: p for p in v3_run.packets}
+    assert "0009900001" in v3_packets
+    assert v3_packets["0009900001"].end_boundary_kind == "item_1a_risk_factors"
+    # Every other row's record is byte-identical between the two runs.
+    v2_others = {p.cik: p.model_dump(mode="json") for p in v2_run.packets}
+    for cik, packet in v3_packets.items():
+        if cik != "0009900001":
+            assert packet.model_dump(mode="json") == v2_others[cik]
+
+
+@pytest.mark.parametrize("selector", [
+    "item_one_span_v9", "", " item_one_span_v2", "item_one_span_v2 ",
+    "find_item_one_span_v3", "ITEM_ONE_SPAN_V3",
+])
+def test_an_unmapped_selector_is_refused_with_no_output(tmp_path, selector):
+    """Exact match only: no whitespace normalization, no aliasing."""
+    root, aggregate, determination = _selector_lineage(tmp_path)
+    with pytest.raises(PacketBundleError, match="item_one_locator"):
+        _build(root, aggregate, determination, tmp_path, locator=selector)
+    assert not (tmp_path / "packets").exists()
+
+
+def test_the_manifest_records_the_canonical_mapping_key(tmp_path):
+    root, aggregate, determination = _selector_lineage(tmp_path)
+    for run_id, selector in (("mv2", "item_one_span_v2"),
+                             ("mv3", "item_one_span_v3")):
+        result = _build(root, aggregate, determination, tmp_path,
+                        run_id=run_id, locator=selector)
+        manifest = read_json(result.manifest_path)
+        assert manifest["item_one_locator"] == selector
+        assert manifest["item_one_locator"] in ITEM_ONE_LOCATORS
+        assert not list(Draft202012Validator(
+            read_json(PACKET_MANIFEST_V4_SCHEMA)).iter_errors(manifest))
+
+
+def test_plain_text_routing_is_selector_independent(tmp_path):
+    root, aggregate, determination = _selector_lineage(tmp_path)
+    v2_run = _build(root, aggregate, determination, tmp_path, run_id="tv2",
+                    locator="item_one_span_v2")
+    v3_run = _build(root, aggregate, determination, tmp_path, run_id="tv3",
+                    locator="item_one_span_v3")
+    v2_text = next(p for p in v2_run.packets if p.cik == "0009300101")
+    v3_text = next(p for p in v3_run.packets if p.cik == "0009300101")
+    assert v2_text.model_dump(mode="json") == v3_text.model_dump(mode="json")
+    assert v2_text.packet_sha256 == v3_text.packet_sha256
+
+
+def test_cli_refuses_an_unmapped_selector_before_output(tmp_path):
+    completed = _cli("--mode", "build-baseline-packets-lineage",
+                     "--aggregate-manifest", "a.json",
+                     "--shell-determination-manifest", "d.json",
+                     "--item-one-locator", "item_one_span_v9",
+                     "--config", str(CONFIG),
+                     "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert completed.returncode != 0
+    assert not (tmp_path / "o").exists()
+
+
+@pytest.mark.parametrize("mode", _OTHER_MODES)
+def test_every_other_mode_refuses_the_locator_flag(tmp_path, mode):
+    completed = _cli("--mode", mode, "--item-one-locator", "item_one_span_v2",
+                     "--output-dir", str(tmp_path / "o"), "--run-id", "r")
+    assert completed.returncode != 0
+    assert "--item-one-locator" in completed.stderr
+    assert "does not accept" in completed.stderr
+
+
+def test_the_adr104_method_block_hash_matches_phase0():
+    """G8: the committed appendix must reproduce the Phase-0 method block
+    byte-for-byte; a drifted appendix invalidates the recorded evidence."""
+    text = (ROOT / "docs" / "DECISION_LOG.md").read_text(encoding="utf-8")
+    begin = "<!-- ADR104-METHOD-BLOCK-BEGIN -->\n"
+    end = "<!-- ADR104-METHOD-BLOCK-END -->"
+    assert begin in text and end in text
+    block = text.split(begin, 1)[1].split(end, 1)[0]
+    assert sha256(block.encode("utf-8")).hexdigest() == \
+        "b0ef02d3017a300071da304f324d54deae66f36023e6deb47d0aceaeb7ecd742"
+
+
+# --- ADR-104: Arm B acceptance replay (opt-in; reads data/runs read-only) -----
+#
+# A full replay of the measured acceptance gates against the pinned ADR-103
+# artifacts. It re-runs the production v3 locator over all 730 failures and
+# all 7,190 prior HTML successes, so it takes tens of minutes and only runs
+# when ADR104_ARMB_REPLAY=1 and the pinned artifacts are present.
+
+_REPLAY_RUN = (ROOT / "data" / "runs" / "baseline-packets"
+               / "baseline-packets-domestic-text-lineage-v3-20260818")
+
+
+@pytest.mark.skipif(
+    os.environ.get("ADR104_ARMB_REPLAY") != "1"
+    or not _REPLAY_RUN.is_dir(),
+    reason="opt-in replay of the Arm B acceptance gates (ADR104_ARMB_REPLAY=1)",
+)
+def test_armb_acceptance_replay_matches_the_measured_result():
+    from collections import Counter
+
+    from dynamic_ai_products.ingestion.errors import IngestionError
+    from dynamic_ai_products.ingestion.normalize import (
+        find_item_one_span_v2,
+        _ITEMS_ONE_AND_TWO_TEXT_RE, _ITEM_ONE_TEXT_RE, _text_offset_map,
+    )
+
+    v3 = ITEM_ONE_LOCATORS["item_one_span_v3"]
+    fail_raw = (_REPLAY_RUN / "baseline_packet_failures.jsonl").read_bytes()
+    assert sha256(fail_raw).hexdigest() == \
+        "34e5fc88f0e68062e281484e5ca73b31c336f226dcb82736224ab366486c2ac8"
+    failures = [json.loads(l) for l in fail_raw.decode().splitlines()]
+    manifest = read_json(_REPLAY_RUN / "baseline_packet_manifest.json")
+    row_to_entry = {}
+    for shard_record in manifest["shards_consumed"]:
+        run_dir = ROOT / shard_record["run_dir"]
+        bm = (run_dir / BUNDLE_MANIFEST_FILENAME).read_bytes()
+        assert sha256(bm).hexdigest() == shard_record["bundle_manifest_sha256"]
+        for entry in json.loads(bm)["documents"]:
+            row_to_entry[(entry["cik"], entry["accession"])] = (run_dir, entry)
+
+    # frozen S2 bucket, adr104_bucket_method@1 (missing_item_one branch)
+    import re as _re
+    tag = _re.compile(rb"<[^>]*>"); ent = _re.compile(rb"&[#a-zA-Z0-9]{1,8};")
+    token = _re.compile(rb"(?i)\bItems?\s{0,20}1\b")
+    s2ctx = _re.compile(r"items? 1\.? ?(?:and|&) ?2\b")
+    s2_bucket = set()
+    for f in failures:
+        if f["reason_code"] != "missing_item_one":
+            continue
+        run_dir, entry = row_to_entry[(f["cik"], f["accession"])]
+        if entry.get("representation", "html") != "html":
+            continue
+        raw = (run_dir / entry["local_filename"]).read_bytes()
+        stream = ent.sub(b" ", tag.sub(b" ", raw))
+        n = max(1, len(stream))
+        body = [m for m in token.finditer(stream) if m.start() / n >= 0.15]
+        if not body:
+            continue
+        ctx = _re.sub(rb"\s+", b" ",
+                      stream[body[-1].start():body[-1].start() + 90]) \
+            .decode("utf-8", "replace").lower()
+        if s2ctx.match(ctx):
+            s2_bucket.add((f["cik"], f["accession"]))
+    assert len(s2_bucket) == 59, "frozen S2 bucket must hold"
+
+    # G4 + G2 + G3 over the 730
+    recovered = []
+    g2_bad = []
+    g3_bad = []
+    for f in failures:
+        key = (f["cik"], f["accession"])
+        run_dir, entry = row_to_entry[key]
+        if entry.get("representation", "html") != "html":
+            continue
+        raw = (run_dir / entry["local_filename"]).read_bytes()
+        if f["reason_code"] in ("ambiguous_end_boundary", "no_end_boundary"):
+            try:
+                find_item_one_span_v2(raw); v2r = ("SUCCESS", "")
+            except IngestionError as exc:
+                v2r = (exc.reason_code, str(exc))
+            try:
+                v3(raw); v3r = ("SUCCESS", "")
+            except IngestionError as exc:
+                v3r = (exc.reason_code, str(exc))
+            if v2r != v3r or v3r[0] != f["reason_code"]:
+                g2_bad.append(key)
+            continue
+        try:
+            start, end, kind = v3(raw)
+        except IngestionError:
+            continue
+        span = end - start
+        recovered.append((key, kind, span, len(raw)))
+        text, offsets = _text_offset_map(raw)
+        comb = {offsets[m.start()]
+                for m in _ITEMS_ONE_AND_TWO_TEXT_RE.finditer(text)}
+        plain = {offsets[m.start()]
+                 for m in _ITEM_ONE_TEXT_RE.finditer(text)}
+        # attribution: v2 failed on these bytes, so no plain start was
+        # usable; the recovery is S2-attributed iff a combined match exists.
+        if not comb:
+            g3_bad.append(key)
+        del plain
+    s2_recovered = sum(1 for key, *_ in recovered if key in s2_bucket)
+    kinds = Counter(kind for _, kind, _, _ in recovered)
+    spans = sorted(span for _, _, span, _ in recovered)
+    flagged = [1 for _, _, span, doc in recovered
+               if span < 4096 or span / doc < 0.005]
+
+    # G1 over the prior successes
+    mismatches = 0
+    html_checked = 0
+    with open(_REPLAY_RUN / "universe_baseline_packets.jsonl") as fh:
+        for line in fh:
+            p = json.loads(line)
+            if p.get("representation", "html") != "html":
+                continue
+            run_dir, entry = row_to_entry[(p["cik"], p["accession"])]
+            raw = (run_dir / entry["local_filename"]).read_bytes()
+            got = v3(raw)
+            html_checked += 1
+            if got != (p["item_one_start"], p["item_one_end"],
+                       p["end_boundary_kind"]):
+                mismatches += 1
+
+    print(f"\nARM B REPLAY: recovered={len(recovered)} "
+          f"s2_bucket={s2_recovered}/59 kinds={dict(kinds)} "
+          f"min_span={spans[0] if spans else None} flagged={len(flagged)} "
+          f"G1={html_checked} checked/{mismatches} mismatches "
+          f"G2_bad={len(g2_bad)} G3_bad={len(g3_bad)}")
+    assert s2_recovered == 51, "G4: measured 51/59 must reproduce"
+    assert len(recovered) == 82, "measured 82 total recoveries must reproduce"
+    # 81 spans end at Item 1A and one at Item 1B — both tiers the rule
+    # authorizes. (An earlier summary said "all end at 1A"; the scratch arm
+    # never printed the in-bucket kind split, and this is the measured truth.)
+    assert kinds == {"item_1a_risk_factors": 81,
+                     "item_1b_unresolved_staff_comments": 1}
+    assert spans[0] == 57451, "measured minimum span must reproduce"
+    assert not flagged
+    assert html_checked == 7190 and mismatches == 0, "G1"
+    assert not g2_bad, "G2"
+    assert not g3_bad, "G3"

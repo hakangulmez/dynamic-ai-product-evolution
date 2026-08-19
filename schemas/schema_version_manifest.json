@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.42.0",
+  "manifest_version": "0.43.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -90,6 +90,7 @@
     "acquisition_queue_aggregate_manifest_v2": "0.2.0",
     "shell_company_determination_manifest_v3": "0.3.0",
     "baseline_packet_manifest_v3": "0.3.0",
+    "baseline_packet_manifest_v4": "0.4.0",
     "pct_dev30_v0_model_output": "0.1.0",
     "pct_dev30_v0_persisted_candidates": "0.1.0",
     "pct_dev30_v0_model_output_v2": "0.2.0",

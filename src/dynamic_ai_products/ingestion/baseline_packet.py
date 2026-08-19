@@ -322,6 +322,7 @@ def build_packet(
     baseline_cutoff_source: dict,
     route_validation: dict,
     packet_contract: str = PACKET_CONTRACT,
+    locate_html: Callable[[bytes], tuple[int, int, str]] = find_item_one_span_v2,
 ) -> UniverseBaselinePacket | PacketBuildFailure:
     """Build one packet, or return the recorded reason it could not be built."""
     cik, accession = entry["cik"], entry["accession"]
@@ -355,10 +356,13 @@ def build_packet(
         {field: entry.get(field) for field in ADMISSION_EVIDENCE_FIELDS}
         if representation == REPRESENTATION_PLAIN_TEXT else None
     )
+    # The text route is locator-selector independent (ADR-104): only the
+    # HTML locator is parameterized, and its default is the committed v2, so
+    # the single-bundle path is unchanged.
     locate = (
         find_item_one_span_text
         if representation == REPRESENTATION_PLAIN_TEXT
-        else find_item_one_span_v2
+        else locate_html
     )
     try:
         start, end, boundary_kind = locate(raw)

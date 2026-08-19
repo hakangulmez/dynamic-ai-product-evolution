@@ -1,0 +1,349 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "baseline_packet_manifest.v4.schema.json",
+  "title": "Baseline packet run manifest (v0.4, lineage cohort, shell-filtered, locator-declared)",
+  "description": "Immutable record of one full-cohort Item 1 packet build over a completed acquisition lineage (ADR-103, ADR-104). The v0.4 successor adds exactly one field to v0.3: item_one_locator, the operator-declared HTML Item 1 locator, drawn from a closed functional mapping (item_one_span_v2 -> find_item_one_span_v2, item_one_span_v3 -> find_item_one_span_v3). The recorded value is the canonical mapping key re-derived from the selected entry, never free operator text; an unmapped selector is refused before any output directory exists. The plain-text route is selector-independent. Everything else is governed exactly as v0.3 describes: the aggregate is the sole authority for which shard directories are opened, the two inputs bind relationally with per-index shard tuple equality, only shell_company true excludes, packet records keep the unchanged universe_baseline_packet@0.2.0 contract with its closed end_boundary_kind enum, and records are written in shard_index ascending order then bundle entry order after shell-true omission. The 0.3.0 schema is retained byte-identical and remains the only validator for artifacts written under it; this file never validates a 0.3.0 manifest (item_one_locator is required here), and 0.3.0 never validates a 0.4.0 one (additionalProperties: false).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "aggregate_manifest_path",
+    "aggregate_manifest_sha256",
+    "aggregate_run_id",
+    "queue_id",
+    "queue_definition_sha256",
+    "execution_run_ids",
+    "determination_manifest_path",
+    "determination_manifest_sha256",
+    "determination_run_id",
+    "determinations_jsonl_sha256",
+    "shards_consumed",
+    "packet_record_order",
+    "item_one_locator",
+    "bundle_contract",
+    "carrier_provenance",
+    "route_validation",
+    "baseline_cutoff",
+    "baseline_cutoff_source",
+    "counts",
+    "reconciliation",
+    "output_hashes",
+    "run_timestamp",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "aggregate_manifest_path": {
+      "type": "string"
+    },
+    "aggregate_manifest_sha256": {
+      "description": "Recomputed over the supplied aggregate's bytes at run time; required to equal the determination manifest's recorded aggregate_manifest_sha256. A relational binding between the two supplied inputs, never a pinned literal.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "aggregate_run_id": {
+      "type": "string"
+    },
+    "queue_id": {
+      "type": "string"
+    },
+    "queue_definition_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "execution_run_ids": {
+      "description": "Copied verbatim from the aggregate. Provenance only: it orders nothing here, and permuting it cannot move a packet record.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "determination_manifest_path": {
+      "type": "string"
+    },
+    "determination_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "determination_run_id": {
+      "type": "string"
+    },
+    "determinations_jsonl_sha256": {
+      "description": "Recomputed over the determination JSONL bytes at run time; required to equal that manifest's own output_hashes entry.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "shards_consumed": {
+      "description": "Every shard whose bundle was read, ordered by shard_index. Exactly the aggregate's authoritative records, tuple-equal with the determination manifest's consumed shards.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shard_index",
+          "run_dir",
+          "bundle_manifest_sha256",
+          "acquisition_manifest_sha256",
+          "rows",
+          "rows_excluded_shell",
+          "rows_retained",
+          "packets_built",
+          "packet_failures"
+        ],
+        "properties": {
+          "shard_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "run_dir": {
+            "type": "string"
+          },
+          "bundle_manifest_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "acquisition_manifest_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "rows_excluded_shell": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rows_retained": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "packets_built": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "packet_failures": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "packet_record_order": {
+      "const": "shard_index_then_bundle_entry_order_after_shell_exclusion"
+    },
+    "item_one_locator": {
+      "description": "The canonical key of the closed HTML-locator mapping entry this run resolved and used. Derived from the mapping, never copied from operator text.",
+      "enum": [
+        "item_one_span_v2",
+        "item_one_span_v3"
+      ]
+    },
+    "bundle_contract": {
+      "description": "Every consumed shard declared this one bundle contract; a lineage mixes no generations.",
+      "const": "baseline_primary_document_bundle@0.2.0"
+    },
+    "carrier_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrier_run_id",
+        "carrier_manifest_sha256",
+        "freeze_record_sha256"
+      ],
+      "properties": {
+        "carrier_run_id": {
+          "type": "string"
+        },
+        "carrier_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "freeze_record_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "route_validation": {
+      "description": "One value for the whole cohort: every consumed bundle declared this same route validation, and disagreement was refused.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "probe_run_id",
+        "probe_manifest_sha256",
+        "covered_accessions",
+        "note"
+      ],
+      "properties": {
+        "probe_run_id": {
+          "type": "string"
+        },
+        "probe_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "covered_accessions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "baseline_cutoff": {
+      "type": "string",
+      "format": "date"
+    },
+    "baseline_cutoff_source": {
+      "type": "object"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planned_rows",
+        "shell_true",
+        "shell_false",
+        "shell_unknown",
+        "firms_excluded",
+        "retained_rows",
+        "packets_built",
+        "packet_failures",
+        "shards_consumed",
+        "packets_by_end_boundary",
+        "failures_by_reason",
+        "passages_total",
+        "packet_bytes_total",
+        "packet_bytes_max",
+        "packet_bytes_mean"
+      ],
+      "properties": {
+        "planned_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "shell_true": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shell_false": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shell_unknown": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "firms_excluded": {
+          "description": "Equals shell_true exactly: the one deterministic exclusion this stage applies. The v0.2 predecessor pins this to zero, which is precisely why it cannot describe this run.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "retained_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "packets_built": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "packet_failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shards_consumed": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "packets_by_end_boundary": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "failures_by_reason": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "passages_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "packet_bytes_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "packet_bytes_max": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "packet_bytes_mean": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 10,
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "minProperties": 2,
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_baseline_packet_v2",
+        "baseline_packet_manifest_v4",
+        "shell_company_determination_manifest_v3",
+        "acquisition_queue_aggregate_manifest_v2"
+      ],
+      "properties": {
+        "universe_baseline_packet_v2": {
+          "type": "string"
+        },
+        "baseline_packet_manifest_v4": {
+          "type": "string"
+        },
+        "shell_company_determination_manifest_v3": {
+          "type": "string"
+        },
+        "acquisition_queue_aggregate_manifest_v2": {
+          "type": "string"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

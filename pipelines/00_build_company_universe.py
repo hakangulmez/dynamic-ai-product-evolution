@@ -349,6 +349,14 @@ def build_parser() -> argparse.ArgumentParser:
              "which are retained (false and unknown alike).",
     )
     parser.add_argument(
+        "--item-one-locator", default=None,
+        help="Build-baseline-packets-lineage mode only, required: the HTML "
+             "Item 1 locator, selected from the closed mapping "
+             "item_one_span_v2 | item_one_span_v3. Exact match; an unmapped "
+             "value is refused before any output directory exists. The "
+             "plain-text route is selector-independent.",
+    )
+    parser.add_argument(
         "--execution-run-ids", default=None,
         help="Aggregate-acquisition-lineage mode only: an explicit, comma-"
              "separated, ordered enumeration of the execution run ids the "
@@ -423,6 +431,11 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         offending = _present(
             (("--shell-determination-manifest",
               args.shell_determination_manifest),)
+        )
+        if offending:
+            return f"{args.mode} mode does not accept: {', '.join(offending)}"
+        offending = _present(
+            (("--item-one-locator", args.item_one_locator),)
         )
         if offending:
             return f"{args.mode} mode does not accept: {', '.join(offending)}"
@@ -640,6 +653,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             ("--aggregate-manifest", args.aggregate_manifest),
             ("--shell-determination-manifest",
              args.shell_determination_manifest),
+            ("--item-one-locator", args.item_one_locator),
             ("--config", args.config),
         ))
         if missing:
@@ -1511,6 +1525,9 @@ def _main_build_baseline_packets_lineage(args: argparse.Namespace) -> int:
             project_config_path=Path(args.config),
             output_dir=Path(args.output_dir),
             run_id=args.run_id,
+            # Passed exactly as typed: the library's closed-mapping lookup is
+            # the authority, with no normalization of any kind.
+            item_one_locator=args.item_one_locator,
             clock=lambda: datetime.now(timezone.utc),
             dry_run=args.dry_run,
         )
