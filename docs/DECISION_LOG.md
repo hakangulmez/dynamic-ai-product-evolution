@@ -7130,6 +7130,90 @@ manifest's shards_consumed bundle entries.
    newline. The mapping sha256 is computed over exactly these bytes.
 <!-- ADR104-METHOD-BLOCK-END -->
 
+## ADR-105 — Deterministic asset-backed-issuer determination, evidence-first
+
+**Status.** Accepted. Fixture-first; no live determination run, no packet
+rebuild, no SEC request, no model call, no `data/runs` write. The live
+cohort run — and the pipeline entrypoint it would require — are separate,
+future authorizations.
+
+**Why this flag, and why now.** The Item 1 length audit over the 7,193-packet
+artifact flagged 947 packets with degenerate spans, and the failure audit
+before it showed Part-IV-only and instruction-omitted filings among the 730
+failures: asset-backed issuers file 10-Ks that legitimately omit Item 1
+under General Instruction J and disclose under Regulation AB instead. Those
+filings are not short *businesses*; they are a different filing shape, and
+`issuer_filters` has always reserved the `ASSET_BACKED_ISSUER` reason code
+for them without any deterministic rule ever earning it. This increment adds
+the rule — and nothing else.
+
+**Decision: two positive conditions, both required, in the same filing.**
+`asset_backed_issuer` is `true` only when the document carries **(1)** a
+**non-negated Item 1 / Part I omission construction tied structurally to
+General Instruction J** — one contiguous expression, omission verb
+(`omitted`, `not included`, `not applicable`) immediately joined by
+`pursuant to / in accordance with / in reliance (up)on / under` to
+`General Instruction J`, with an `Item 1` or `Part I` reference in the 150
+bytes before the construction and no negator in the 40 bytes before it —
+**and (2)** a structural Regulation AB signature: at least one
+**block-opening** `Item 1112/1114/1115/1117/1119/1122/1123` heading under
+the same `_starts_a_block` guard the Item 1 locator uses (line-start for
+plain text). A first draft accepted `pursuant to` as an omission token
+inside a 400-byte proximity window and any textual Item 11xx mention; it
+returned `true` for operating-company prose of the form "…pursuant to
+General Instruction J for administrative reasons, but no Item 1 section is
+omitted. Our securitization note refers investors to Item 1122…" and was
+corrected before staging — that exact prose is now a pinned regression, as
+are a genuine omission beside only inline Regulation AB prose, a bare
+`pursuant to General Instruction J`, and a negated omission construction.
+Every `true` record preserves the source SHA-256, the **exact minimal
+matched span** of each condition — never a surrounding window — as
+half-open raw-byte offsets computed through the same offset map the Item 1
+locator uses, plus the quote, the rule id
+`instruction_j_omission_and_reg_ab_items@1`, and the reason code
+`ASSET_BACKED_ISSUER` verbatim. The **offsets are authoritative**: the quote
+is the deterministic tag/entity/whitespace-normalized rendering of the raw
+span through the locator offset-map stream, so where the span contains HTML
+entities — `Item&nbsp;1112`, measured on 95 of the 351 dry-run trues — the
+quote (`Item 1112`) is not raw-byte-equal to the slice, and normalizing the
+slice reconciles them exactly; a synthetic entity regression pins this.
+
+**The only other outcome is `unknown`, and `false` does not exist.** Absence
+of the signature is absence of evidence, never evidence of an operating
+company. Either half-condition alone stays `unknown`
+(`general_instruction_j_only`, `regulation_ab_items_only`), and so do the
+look-alikes measured to matter: an operating company discussing
+securitization or asset-backed securities, a trust-styled name, and a short
+Item 1 — **no word count, span length, or source-size ratio is ever
+consulted**, pinned by a test that pads a document five-thousand-fold and
+requires the identical determination. The record schema enforces both
+directions conditionally: `true` without full evidence is invalid, and the
+exclusion code can never ride on `unknown` — so the evidence requirement
+cannot be routed around by setting a generic flag, and the five-flag
+`issuer_filters` contract is untouched.
+
+**Authority and shape.** The module consumes only the ADR-101
+aggregate-authorized, local, hash-verified primaries through the shared
+`lineage_authority` boundary — no glob, no alternate shard root, every
+bundle and primary re-hashed before any byte is read, unenumerated shards
+invisible (pinned by the chmod-intruder test). One record per carrier row,
+written in shard-index-then-bundle-entry order, write-once, deterministic
+across run ids. Two new contracts:
+`asset_backed_issuer_determination@0.1.0` (record) and
+`asset_backed_issuer_determination_manifest@0.1.0` (lineage run manifest,
+binding the aggregate by path, recomputed hash and run id, and embedding the
+rule constants). The manifest and the shell-determination manifests mutually
+reject. The sibling shell module, its three manifest schemas, its two record
+schemas, and its live artifact are byte-identical — asserted by test.
+
+**Scope.** Twelve paths: the new module, its two schemas, the registry
+(0.43.0 → 0.44.0, 94 → 96 entries), the new test module, this log,
+`REPO_MANIFEST.md` (799 → 803), and the five evaluation guard modules.
+Deliberately absent: a CLI mode (the live run is unauthorized, and wiring an
+entrypoint is its own gated increment), any change to
+`shell_company_determination`, `issuer_filters`, packet contracts, or
+`data/runs`.
+
 ## Open decisions
 
 - Required source packet by firm-year.

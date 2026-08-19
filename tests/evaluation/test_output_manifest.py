@@ -951,6 +951,11 @@ def test_repo_manifest_count_and_paths():
     # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
     # v0.1.
+    # 803 = 799 + the four ADR-105 paths: the asset-backed-issuer
+    # determination module, its record and lineage-manifest schemas, and
+    # its test module. The shell-determination module and schemas are
+    # byte-unchanged. Schema registry: 0.43.0 -> 0.44.0, 94 -> 96 entries.
+    # Before it,
     # 799 = 798 + the one ADR-104 path: the v0.4 locator-declared packet-run
     # manifest schema (schemas/baseline_packet_manifest.v4.schema.json).
     # Every predecessor packet schema is byte-unchanged and the v0.2 packet
@@ -983,7 +988,7 @@ def test_repo_manifest_count_and_paths():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert "Total tracked/scaffold files listed: **799**" in text
+    assert "Total tracked/scaffold files listed: **803**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

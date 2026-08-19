@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "asset_backed_issuer_determination.schema.json",
+  "title": "Asset-backed issuer determination record (v0.1)",
+  "description": "One deterministic asset-backed-issuer determination per carrier row (ADR-105). true requires BOTH positive conditions in the same filing: an explicit General Instruction J omission and at least one Regulation AB item heading (1112/1114/1115/1117/1119/1122/1123), each preserved with its exact quote and half-open raw-byte offsets. unknown is the only other outcome; false is never emitted, because absence of the signature is absence of evidence. The reason code ASSET_BACKED_ISSUER is the exact string issuer_filters reserves for this exclusion and appears only beside the evidence that justifies it. No word count, span length or source-size ratio is consulted. Evidence contract: the byte offsets delimit the minimal raw-byte evidence span, and they are authoritative; instruction_j_quote and reg_ab_quote are the deterministic normalized rendering of that span through the locator offset-map stream (tags and entities collapsed to one space each, whitespace runs collapsed), so where the raw span contains HTML entities or tags - Item&nbsp;1112, for example - the quote is not raw-byte-equal to the slice; normalizing the slice reconciles them exactly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "determination_contract",
+    "cik",
+    "company_id",
+    "accession",
+    "form",
+    "baseline_filing_date",
+    "source_sha256",
+    "asset_backed_issuer",
+    "basis",
+    "reason_code",
+    "rule_id",
+    "instruction_j_quote",
+    "instruction_j_byte_start",
+    "instruction_j_byte_end",
+    "reg_ab_items",
+    "reg_ab_quote",
+    "reg_ab_byte_start",
+    "reg_ab_byte_end",
+    "bundle_manifest_sha256",
+    "carrier_provenance"
+  ],
+  "properties": {
+    "determination_contract": {
+      "const": "asset_backed_issuer_determination@0.1.0"
+    },
+    "cik": {
+      "type": "string",
+      "pattern": "^[0-9]{10}$"
+    },
+    "company_id": {
+      "type": "string"
+    },
+    "accession": {
+      "type": "string",
+      "pattern": "^[0-9]{10}-[0-9]{2}-[0-9]{6}$"
+    },
+    "form": {
+      "enum": [
+        "10-K",
+        "10-KT"
+      ]
+    },
+    "baseline_filing_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "asset_backed_issuer": {
+      "enum": [
+        "true",
+        "unknown"
+      ]
+    },
+    "basis": {
+      "enum": [
+        "instruction_j_omission_and_reg_ab_items",
+        "general_instruction_j_only",
+        "regulation_ab_items_only",
+        "no_asset_backed_evidence"
+      ]
+    },
+    "reason_code": {
+      "anyOf": [
+        {
+          "const": "ASSET_BACKED_ISSUER"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rule_id": {
+      "const": "instruction_j_omission_and_reg_ab_items@1"
+    },
+    "instruction_j_quote": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "description": "Deterministic normalized rendering of the raw span [instruction_j_byte_start, instruction_j_byte_end) through the locator offset-map stream. The offsets are authoritative; the quote equals the slice only after tag/entity/whitespace normalization."
+    },
+    "instruction_j_byte_start": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Half-open raw-byte start of the minimal matched omission construction."
+    },
+    "instruction_j_byte_end": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "reg_ab_items": {
+      "anyOf": [
+        {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "1112",
+              "1114",
+              "1115",
+              "1117",
+              "1119",
+              "1122",
+              "1123"
+            ]
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reg_ab_quote": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "description": "Deterministic normalized rendering of the raw span [reg_ab_byte_start, reg_ab_byte_end) through the locator offset-map stream. The offsets are authoritative; the quote equals the slice only after tag/entity/whitespace normalization."
+    },
+    "reg_ab_byte_start": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Half-open raw-byte start of the first block-opening Regulation AB heading match."
+    },
+    "reg_ab_byte_end": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "bundle_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "carrier_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrier_run_id",
+        "carrier_manifest_sha256",
+        "freeze_record_sha256"
+      ],
+      "properties": {
+        "carrier_run_id": {
+          "type": "string"
+        },
+        "carrier_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "freeze_record_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "asset_backed_issuer": {
+            "const": "true"
+          }
+        },
+        "required": [
+          "asset_backed_issuer"
+        ]
+      },
+      "then": {
+        "properties": {
+          "basis": {
+            "const": "instruction_j_omission_and_reg_ab_items"
+          },
+          "reason_code": {
+            "const": "ASSET_BACKED_ISSUER"
+          },
+          "instruction_j_quote": {
+            "type": "string",
+            "minLength": 1
+          },
+          "instruction_j_byte_start": {
+            "type": "integer"
+          },
+          "instruction_j_byte_end": {
+            "type": "integer"
+          },
+          "reg_ab_items": {
+            "type": "array",
+            "minItems": 1
+          },
+          "reg_ab_quote": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reg_ab_byte_start": {
+            "type": "integer"
+          },
+          "reg_ab_byte_end": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "asset_backed_issuer": {
+            "const": "unknown"
+          }
+        },
+        "required": [
+          "asset_backed_issuer"
+        ]
+      },
+      "then": {
+        "properties": {
+          "basis": {
+            "enum": [
+              "general_instruction_j_only",
+              "regulation_ab_items_only",
+              "no_asset_backed_evidence"
+            ]
+          },
+          "reason_code": {
+            "type": "null"
+          },
+          "instruction_j_quote": {
+            "type": "null"
+          },
+          "instruction_j_byte_start": {
+            "type": "null"
+          },
+          "instruction_j_byte_end": {
+            "type": "null"
+          },
+          "reg_ab_items": {
+            "type": "null"
+          },
+          "reg_ab_quote": {
+            "type": "null"
+          },
+          "reg_ab_byte_start": {
+            "type": "null"
+          },
+          "reg_ab_byte_end": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

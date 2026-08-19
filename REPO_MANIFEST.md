@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **799**
+Total tracked/scaffold files listed: **803**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -359,6 +359,8 @@ Total tracked/scaffold files listed: **799**
 - `schemas/baseline_packet_manifest.v2.schema.json`
 - `schemas/baseline_packet_manifest.v3.schema.json`
 - `schemas/baseline_packet_manifest.v4.schema.json`
+- `schemas/asset_backed_issuer_determination.schema.json`
+- `schemas/asset_backed_issuer_determination_manifest.schema.json`
 - `schemas/baseline_primary_document_bundle.schema.json`
 - `schemas/baseline_primary_document_bundle.v2.schema.json`
 - `schemas/capability_observation.schema.json`
@@ -580,6 +582,7 @@ Total tracked/scaffold files listed: **799**
 - `src/dynamic_ai_products/extraction/validation.py`
 - `src/dynamic_ai_products/ingestion/__init__.py`
 - `src/dynamic_ai_products/ingestion/adoption.py`
+- `src/dynamic_ai_products/ingestion/asset_backed_determination.py`
 - `src/dynamic_ai_products/ingestion/baseline_packet.py`
 - `src/dynamic_ai_products/ingestion/errors.py`
 - `src/dynamic_ai_products/ingestion/family_coverage.py`
@@ -748,6 +751,7 @@ Total tracked/scaffold files listed: **799**
 - `tests/extraction/test_validation.py`
 - `tests/ingestion/ingestion_test_helpers.py`
 - `tests/ingestion/test_adoption.py`
+- `tests/ingestion/test_asset_backed_determination.py`
 - `tests/ingestion/test_baseline_packet.py`
 - `tests/ingestion/test_family_coverage.py`
 - `tests/ingestion/test_ingestion_boundaries.py`
