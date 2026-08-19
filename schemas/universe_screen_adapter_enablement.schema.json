@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_adapter_enablement.schema.json",
+  "title": "Universe screen adapter enablement (v0.1, standing capability record)",
+  "description": "The standing, hash-bound record that the lineage-screen adapter, its provider client contract, and its two exact operation endpoints are enabled at all (ADR-109). It is the independent third list of the connector's default-deny handshake: a run authorization references this record by (reference, sha256) and may never widen what it declares, so a fabricated run authorization alone cannot reach an endpoint the enablement never permitted. It is a runtime-only governance artifact - authored and held separately from any run authorization, never committed to source control, and carrying no credential, API key, or account identifier beyond the endpoint URLs' own project segment. It deliberately inherits no extraction semantics: there is no prompt-qualification layer here, because the screen has no qualified extraction prompt - the screen prompt binds through the run authorization's prompt_template_sha256 instead. As with the extraction chain (ADR-035), what this buys is detectability, not prevention: a caller fabricating every artifact and digest at once is a noncanonical experiment that no canonical record will validate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enablement_contract",
+    "enablement_id",
+    "enabled_by",
+    "effective_at",
+    "expires_at",
+    "deployment_environment_id",
+    "screen_stage",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "endpoint_allowlist"
+  ],
+  "properties": {
+    "enablement_contract": {
+      "const": "universe_screen_adapter_enablement@0.1.0"
+    },
+    "enablement_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "enabled_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "effective_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expires_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "deployment_environment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "screen_stage": {
+      "const": "universe_high_recall_screen"
+    },
+    "provider_client_contract_reference": {
+      "description": "The code-owned client-contract identity label (for example extraction_provider_client_contract@0.3.0). The sha256 beside it is the canonical contract digest recomputed from the connector's own declared contract at preflight - never the hash of a copied file.",
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_client_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "endpoint_allowlist": {
+      "description": "Exactly the two operation endpoints (countTokens, generateContent) derived from the client contract. The handshake requires equality across connector, authorization and this record.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

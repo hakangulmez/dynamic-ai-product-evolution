@@ -7,8 +7,8 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Twenty mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
-so every pre-existing invocation is unchanged):
+Twenty-two mutually exclusive modes, selected by ``--mode`` (default
+``sentinel`` so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
   `docs/implementation/COMPANY_UNIVERSE_SENTINEL_V0.md`. It performs no
@@ -58,6 +58,19 @@ so every pre-existing invocation is unchanged):
   row is preserved as a visible insufficient-evidence record with no model
   call, and the run is fail-closed with a governed failure receipt. Only
   the deterministic mock provider exists in this increment.
+- ``screen-universe-lineage-live`` is the ADR-108 mode's explicit live
+  successor (ADR-109): it screens exactly the rows of one governed selection
+  artifact under the default-deny Vertex connector, bound by a screen live
+  authorization whose digest, enablement, client contract, endpoints,
+  prompt-template hash, packet-manifest hash and caps are all verified
+  before a run directory, an SDK import, credential resolution or any
+  network send exists. This increment ships offline only: no test builds a
+  real SDK client.
+- ``select-screen-rows`` builds one governed ``universe_screen_selection``
+  artifact (ADR-109): a seeded, stratified, packet-native canary_100
+  enumeration of exactly one hundred rows, or the explicitly different
+  full_cohort mode that enumerates nothing because the packet manifest is
+  the row authority. Deterministic; no model call, no network.
 - ``determine-shell-company`` reads exactly one cover-page fact,
   ``dei:EntityShellCompany``, from a local hash-verified primary-document
   bundle and emits one governed determination per carrier row (ADR-094). It
@@ -192,6 +205,10 @@ from dynamic_ai_products.universe.lineage_screen import (  # noqa: E402
     ScreenInputError,
     run_lineage_screen,
 )
+from dynamic_ai_products.lineage_screen_live import (  # noqa: E402
+    build_screen_selection,
+    run_lineage_screen_live,
+)
 from dynamic_ai_products.universe.runner import (  # noqa: E402
     FixtureError,
     run_universe_sentinel,
@@ -218,6 +235,8 @@ def build_parser() -> argparse.ArgumentParser:
                  "build-baseline-packets-lineage",
                  "build-baseline-packets-lineage-v2",
                  "screen-universe-lineage",
+                 "screen-universe-lineage-live",
+                 "select-screen-rows",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
                  "aggregate-acquisition-lineage"],
@@ -415,6 +434,43 @@ def build_parser() -> argparse.ArgumentParser:
              "record.",
     )
     parser.add_argument(
+        "--selection-artifact", default=None,
+        help="Screen-universe-lineage-live mode only: the path of one "
+             "universe_screen_selection artifact. The live screen runs "
+             "exactly its rows (canary_100) or the full cohort it names "
+             "(full_cohort); no other row source exists.",
+    )
+    parser.add_argument(
+        "--governance-root", default=None,
+        help="Screen-universe-lineage-live mode only: the explicit directory "
+             "holding the screen live authorization and its enablement. "
+             "There is no ambient, cwd, or environment fallback.",
+    )
+    parser.add_argument(
+        "--screen-authorization", default=None,
+        help="Screen-universe-lineage-live mode only: the authorization's "
+             "path relative to --governance-root.",
+    )
+    parser.add_argument(
+        "--screen-authorization-sha256", default=None,
+        help="Screen-universe-lineage-live mode only: the expected SHA-256 "
+             "of the authorization bytes — the operator states the digest "
+             "half of the handshake explicitly.",
+    )
+    parser.add_argument(
+        "--selection-seed", type=int, default=None,
+        help="Select-screen-rows mode only: the integer seed of the "
+             "deterministic canary_100 sampler. Refused for full_cohort, "
+             "which samples nothing.",
+    )
+    parser.add_argument(
+        "--selection-kind", default=None, choices=["canary_100", "full_cohort"],
+        help="Select-screen-rows mode only: canary_100 enumerates exactly "
+             "one hundred packet-native stratified rows; full_cohort "
+             "enumerates nothing because the packet manifest is the row "
+             "authority.",
+    )
+    parser.add_argument(
         "--execution-run-ids", default=None,
         help="Aggregate-acquisition-lineage mode only: an explicit, comma-"
              "separated, ordered enumeration of the execution run ids the "
@@ -509,18 +565,44 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         if offending:
             return f"{args.mode} mode does not accept: {', '.join(offending)}"
 
-    # Total gating for the four screen flags (ADR-108): the production
-    # screen is the only mode that consumes any of them, so every other mode
-    # refuses all four rather than silently ignoring one.
+    # Total gating for the screen flags (ADR-108/109), collected into one
+    # refusal so a caller sees every offending flag at once. --packet-manifest
+    # is consumed by the three packet-consuming screen modes; --screen-fixture
+    # by the mock screen alone; the two caps by both screen modes; the four
+    # live-governance flags by the live screen alone; the two selection flags
+    # by the selection builder alone. Every other mode refuses them all.
+    screen_offenders: list[str] = []
+    if args.mode not in ("screen-universe-lineage",
+                         "screen-universe-lineage-live",
+                         "select-screen-rows"):
+        screen_offenders += _present(
+            (("--packet-manifest", args.packet_manifest),)
+        )
     if args.mode != "screen-universe-lineage":
-        offending = _present((
-            ("--packet-manifest", args.packet_manifest),
-            ("--screen-fixture", args.screen_fixture),
+        screen_offenders += _present(
+            (("--screen-fixture", args.screen_fixture),)
+        )
+    if args.mode not in ("screen-universe-lineage",
+                         "screen-universe-lineage-live"):
+        screen_offenders += _present((
             ("--logical-request-cap", args.logical_request_cap),
             ("--provider-attempt-cap", args.provider_attempt_cap),
         ))
-        if offending:
-            return f"{args.mode} mode does not accept: {', '.join(offending)}"
+    if args.mode != "screen-universe-lineage-live":
+        screen_offenders += _present((
+            ("--selection-artifact", args.selection_artifact),
+            ("--governance-root", args.governance_root),
+            ("--screen-authorization", args.screen_authorization),
+            ("--screen-authorization-sha256",
+             args.screen_authorization_sha256),
+        ))
+    if args.mode != "select-screen-rows":
+        screen_offenders += _present((
+            ("--selection-seed", args.selection_seed),
+            ("--selection-kind", args.selection_kind),
+        ))
+    if screen_offenders:
+        return f"{args.mode} mode does not accept: {', '.join(screen_offenders)}"
 
     if args.mode in QUEUE_MODES:
         offending = _present(
@@ -828,6 +910,73 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             return (
                 "screen-universe-lineage mode requires: "
                 f"{', '.join(missing)}"
+            )
+        return None
+
+    if args.mode == "screen-universe-lineage-live":
+        offending = _present(
+            frame_flags + acquire_flags + dera_flags
+            # The governed route takes no fixture, no provider choice and no
+            # other data location: the packet manifest, the selection
+            # artifact and the governance root are its only inputs, and the
+            # mock provider is the other mode's whole point.
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+            + (("--input", args.input),)
+            + (("--seed", args.seed),)
+            + (("--provider", args.provider),)
+        )
+        if offending:
+            return (
+                "screen-universe-lineage-live mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--packet-manifest", args.packet_manifest),
+            ("--selection-artifact", args.selection_artifact),
+            ("--governance-root", args.governance_root),
+            ("--screen-authorization", args.screen_authorization),
+            ("--screen-authorization-sha256",
+             args.screen_authorization_sha256),
+            ("--logical-request-cap", args.logical_request_cap),
+            ("--provider-attempt-cap", args.provider_attempt_cap),
+        ))
+        if missing:
+            return (
+                "screen-universe-lineage-live mode requires: "
+                f"{', '.join(missing)}"
+            )
+        return None
+
+    if args.mode == "select-screen-rows":
+        offending = _present(
+            frame_flags + acquire_flags + dera_flags
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+            + (("--input", args.input),)
+            + (("--seed", args.seed),)
+            + (("--provider", args.provider),)
+        )
+        if offending:
+            return (
+                "select-screen-rows mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--packet-manifest", args.packet_manifest),
+            ("--selection-kind", args.selection_kind),
+        ))
+        if missing:
+            return f"select-screen-rows mode requires: {', '.join(missing)}"
+        if args.selection_kind == "canary_100" and args.selection_seed is None:
+            return (
+                "select-screen-rows mode with canary_100 requires: "
+                "--selection-seed"
+            )
+        if args.selection_kind == "full_cohort" and args.selection_seed is not None:
+            return (
+                "select-screen-rows mode with full_cohort does not accept: "
+                "--selection-seed; a full-cohort selection samples nothing"
             )
         return None
 
@@ -1874,6 +2023,106 @@ def _main_screen_universe_lineage(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_screen_universe_lineage_live(args: argparse.Namespace) -> int:
+    packet_manifest = Path(args.packet_manifest)
+    selection_artifact = Path(args.selection_artifact)
+    governance_root = Path(args.governance_root)
+    for label, path in (("packet manifest", packet_manifest),
+                        ("selection artifact", selection_artifact)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    if not governance_root.is_dir():
+        print(f"ERROR: governance root not found: {governance_root}",
+              file=sys.stderr)
+        return 2
+    try:
+        result = run_lineage_screen_live(
+            repo_root=REPO_ROOT,
+            packet_manifest_path=packet_manifest,
+            selection_artifact_path=selection_artifact,
+            governance_root=governance_root,
+            authorization_reference=args.screen_authorization,
+            authorization_sha256=args.screen_authorization_sha256,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            logical_request_cap=args.logical_request_cap,
+            provider_attempt_cap=args.provider_attempt_cap,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid live screen input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "status": result.status,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "planned_screened": result.planned_screened,
+        "planned_insufficient": result.planned_insufficient,
+        "counts": result.counts,
+        "request_accounting": result.request_accounting,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+        "failure_receipt_path": (
+            str(result.failure_receipt_path)
+            if result.failure_receipt_path else None
+        ),
+        "receipt": result.receipt,
+    }
+    print(json.dumps(payload, indent=2))
+    if result.status == "failed":
+        print("ERROR: live screen run stopped with a failure receipt; the "
+              "run directory is non-authoritative.", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _main_select_screen_rows(args: argparse.Namespace) -> int:
+    packet_manifest = Path(args.packet_manifest)
+    if not packet_manifest.is_file():
+        print(f"ERROR: packet manifest not found: {packet_manifest}",
+              file=sys.stderr)
+        return 2
+    try:
+        result = build_screen_selection(
+            repo_root=REPO_ROOT,
+            packet_manifest_path=packet_manifest,
+            selection_kind=args.selection_kind,
+            seed=args.selection_seed,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid selection input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "status": result.status,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "counts": result.counts,
+        "selection_artifact": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 def _main_build_baseline_packets(args: argparse.Namespace) -> int:
     bundle_dir = Path(args.bundle_dir)
     config_path = Path(args.config)
@@ -2157,6 +2406,10 @@ def main(argv: list[str] | None = None) -> int:
         return _main_build_baseline_packets_lineage_v2(args)
     if args.mode == "screen-universe-lineage":
         return _main_screen_universe_lineage(args)
+    if args.mode == "screen-universe-lineage-live":
+        return _main_screen_universe_lineage_live(args)
+    if args.mode == "select-screen-rows":
+        return _main_select_screen_rows(args)
     if args.mode == "plan-acquisition-queue":
         return _main_plan_acquisition_queue(args)
     if args.mode == "execute-acquisition-queue":

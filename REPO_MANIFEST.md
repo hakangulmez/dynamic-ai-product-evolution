@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **808**
+Total tracked/scaffold files listed: **814**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -442,8 +442,12 @@ Total tracked/scaffold files listed: **808**
 - `schemas/universe_baseline_packet.v2.schema.json`
 - `schemas/universe_run_manifest.schema.json`
 - `schemas/universe_run_manifest.v2.schema.json`
+- `schemas/universe_screen_adapter_enablement.schema.json`
+- `schemas/universe_screen_live_authorization.schema.json`
 - `schemas/universe_screen_manifest.schema.json`
+- `schemas/universe_screen_manifest.v2.schema.json`
 - `schemas/universe_screen_record.schema.json`
+- `schemas/universe_screen_selection.schema.json`
 - `schemas/web_collection_receipt.schema.json`
 - `schemas/web_collection_request_plan.schema.json`
 - `schemas/web_discovery_manifest.schema.json`
@@ -597,6 +601,7 @@ Total tracked/scaffold files listed: **808**
 - `src/dynamic_ai_products/ingestion/preflight.py`
 - `src/dynamic_ai_products/ingestion/publication.py`
 - `src/dynamic_ai_products/ingestion/shell_company_determination.py`
+- `src/dynamic_ai_products/lineage_screen_live.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/providers/__init__.py`
 - `src/dynamic_ai_products/providers/authorization.py`
@@ -799,6 +804,7 @@ Total tracked/scaffold files listed: **808**
 - `tests/universe/test_identifiers.py`
 - `tests/universe/test_issuer_filters.py`
 - `tests/universe/test_lineage_screen.py`
+- `tests/universe/test_lineage_screen_live.py`
 - `tests/universe/test_pilot_packet.py`
 - `tests/universe/test_plain_text_primary.py`
 - `tests/universe/test_primary_document_acquisition.py`

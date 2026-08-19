@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_selection.schema.json",
+  "title": "Universe screen selection (v0.1, governed row-selection authority)",
+  "description": "The hash-bound selection authority for one live screen run (ADR-109). A canary_100 selection enumerates exactly one hundred (cik, accession, packet_sha256) rows drawn from the one named v0.5 packet run it binds by SHA, under the seeded, stratified, packet-native sampling algorithm it names - representation by filing-date quartile by packet-byte-size quartile, with largest-remainder allocation and per-stratum deterministic sampling. A full_cohort selection is the explicitly different mode: it enumerates no rows at all, because the packet manifest itself is the row authority and an enumeration would be a second copy that could drift. The live runner accepts exactly one selection artifact and refuses any selected row absent from the packet run, any selected row whose packet SHA differs, any duplicate, any count other than the declared one, and any selection bound to a different packet manifest. A run screened under a canary selection is structurally non-promotable to a SCREEN release; promotion requires full_cohort. No model, no network and no SIC or other external carrier participates in selection.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "selection_contract",
+    "selection_id",
+    "selection_kind",
+    "packet_manifest_path",
+    "packet_manifest_sha256",
+    "sampling",
+    "rows",
+    "counts",
+    "run_timestamp",
+    "limitations"
+  ],
+  "properties": {
+    "selection_contract": {
+      "const": "universe_screen_selection@0.1.0"
+    },
+    "selection_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selection_kind": {
+      "enum": [
+        "canary_100",
+        "full_cohort"
+      ]
+    },
+    "packet_manifest_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packet_manifest_sha256": {
+      "description": "Recomputed over the named v0.5 packet manifest's bytes at selection time; the consuming runner recomputes it again and requires equality. Relational, never a pinned production literal in code or schema.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "seed",
+        "strata"
+      ],
+      "properties": {
+        "algorithm": {
+          "enum": [
+            "seeded_stratified_quartiles@1",
+            "full_cohort@1"
+          ]
+        },
+        "seed": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "strata": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "rows",
+              "selected"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1
+              },
+              "rows": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "selected": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cik",
+          "accession",
+          "packet_sha256"
+        ],
+        "properties": {
+          "cik": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "accession": {
+            "type": "string",
+            "pattern": "^\\d{10}-\\d{2}-\\d{6}$"
+          },
+          "packet_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packets_total",
+        "rows_selected"
+      ],
+      "properties": {
+        "packets_total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rows_selected": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "selection_kind": {
+            "const": "canary_100"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "rows": {
+            "minItems": 100,
+            "maxItems": 100
+          },
+          "sampling": {
+            "properties": {
+              "algorithm": {
+                "const": "seeded_stratified_quartiles@1"
+              },
+              "seed": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "selection_kind": {
+            "const": "full_cohort"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "rows": {
+            "maxItems": 0
+          },
+          "sampling": {
+            "properties": {
+              "algorithm": {
+                "const": "full_cohort@1"
+              },
+              "seed": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

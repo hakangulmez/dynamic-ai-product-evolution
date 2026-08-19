@@ -749,7 +749,14 @@ def test_manifest_declared_total_matches_entry_count_and_lists_new_path():
 def test_no_static_schema_added_and_schema_manifest_unchanged():
     # Evaluation-v2 meaning preserved: run manifest v0.2 still adds no static
     # schema file. Only the global schema-version-manifest baseline is
-    # rebaselined (latest: ADR-108, 0.45.0 -> 0.46.0, 97 -> 99 entries,
+    # rebaselined (latest: ADR-109, 0.46.0 -> 0.47.0, 99 -> 103 entries,
+    # registering universe_screen_selection,
+    # universe_screen_adapter_enablement,
+    # universe_screen_live_authorization and universe_screen_manifest_v2,
+    # the live-screen governance contracts -- the v0.1 screen schemas,
+    # every packet schema and the provider stack stay byte-unchanged;
+    # before it
+    # ADR-108, 0.45.0 -> 0.46.0, 97 -> 99 entries,
     # registering universe_screen_record and universe_screen_manifest,
     # the lineage-bound production screen contracts -- every packet,
     # determination and aggregate schema stays byte-unchanged; before it
@@ -829,7 +836,7 @@ def test_no_static_schema_added_and_schema_manifest_unchanged():
     # successor).
     assert not (ROOT / "schemas" / "evaluation_run_manifest.v2.schema.json").exists()
     got = sha256_bytes((ROOT / "schemas" / "schema_version_manifest.json").read_bytes())
-    assert got == "ba17d0035a942acd6839b3840998709f11f9b4f1d4e445cd8c97e89b351ebfcc"
+    assert got == "fe2c15825216f1cbd149eb25d3748226a16cb3b8ba2021596cefd23d18d23ef9"
 
 
 def test_protected_identities_unchanged():

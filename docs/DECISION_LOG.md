@@ -7449,6 +7449,132 @@ registry (0.45.0 → 0.46.0, 97 → 99), the pipeline entrypoint,
 `tests/universe/test_lineage_screen.py`, this log, `REPO_MANIFEST.md`
 (804 → 808), and the five evaluation guard modules.
 
+## ADR-109 — Governed Vertex/Gemini binding for the lineage screen
+
+**Status.** Accepted. Fixture-first and offline: this increment calls no live
+model, builds no real SDK client, resolves no credential, makes no network
+request, and writes nothing under `data/runs`. The 100-packet canary and the
+full-cohort live run remain separate, future authorizations.
+
+**Why.** ADR-108 shipped the production screen mock-only. Gate B needs the
+governed Vertex/Gemini stack bound to the same screen contract so a
+separately authorized canary can run — without touching the predecessor, the
+provider stack, or the extraction stack.
+
+**Decision: an explicit successor beside an untouched predecessor.**
+`run_lineage_screen`, its mock path, `universe_screen_record@0.1.0`,
+`universe_screen_manifest@0.1.0` and the ADR-108 test module keep their exact
+behavior; the live route is `src/dynamic_ai_products/lineage_screen_live.py` —
+`run_lineage_screen_live` plus the adapter, selection builder, cohort budget
+and promotion gate. It imports the predecessor's loader, renderer, row
+validator and roll-up so the validation logic cannot drift, and pins the
+predecessor files by SHA-256 so a silent edit is loud. A parity test proves
+the mock path and the live path produce identical model-derived record
+fields from identical model text.
+
+**What a live authorization binds** (`universe_screen_live_authorization@0.1.0`,
+runtime-only, never committed): the packet cohort (`packet_manifest_sha256`)
++ the selected rows or full-cohort mode (`selection_artifact_sha256`,
+`selection_kind`) + the prompt bytes (`prompt_template_sha256`, the SHA-256
+of the exact committed `prompts/discovery/universe_high_recall_screen.md`,
+re-verified against the current committed bytes at preflight and recorded
+again in the v0.2 manifest) + the provider client contract (canonical
+digest, recomputed from the connector's own declared contract) + the
+enablement (reference plus sha) + the endpoints (allowlist equality across
+connector, authorization and enablement) + the model route + the caps and
+budgets (logical, attempt, external, token, cost, wall-clock) + the
+committed retry/rate-limit policy versions. A run under any different value
+is a different authorization, refused before a run directory, an SDK
+import, credential resolution, or any network send exists. The canary
+arithmetic is schema-pinned: canary_100 carries exactly 100 logical
+requests, 300 generate attempts, 400 external requests, controlled_pilot.
+
+**Selection authority** (`universe_screen_selection@0.1.0`). A canary_100
+selection enumerates exactly one hundred `(cik, accession, packet_sha256)`
+rows bound to the named v0.5 manifest SHA under
+`seeded_stratified_quartiles@1` — representation × filing-date quartile ×
+packet-byte-size quartile, largest-remainder allocation, per-stratum seeded
+sampling; packet-native only, no SIC carrier, no external authority
+(resolutions 1 and 2 of the plan approval). full_cohort is the explicitly
+different mode: it enumerates nothing, because the packet manifest is the
+row authority. The live runner accepts exactly one named artifact and
+refuses foreign rows, drifted packet SHAs, duplicates, wrong counts and
+cross-cohort bindings. `require_promotable_screen_run` accepts only a live
+full-cohort manifest: a canary is a measurement run and is structurally
+non-promotable to a SCREEN release; a mock v0.1 run has no selection block
+and is refused the same way.
+
+**The enablement chain** (`universe_screen_adapter_enablement@0.1.0`). The
+connector's three-list handshake gets a genuine independent third list: a
+standing capability record referenced by the authorization by (reference,
+sha), pinning the same client-contract digest and the same two operation
+endpoints. It inherits no extraction prompt/stage semantics — the screen has
+no prompt-qualification layer; the prompt binds through the authorization's
+hash instead. As with ADR-035, this buys detectability, not prevention.
+
+**Retry ownership and accounting.** The connector's tenacity loop is the
+single retry owner; the adapter never raises the screen's transient error,
+so double retry is structurally impossible. One logical request per selected
+packet; at most 3 generate attempts per row; 1 countTokens + ≤3 generate
+sends per row; external cap = logical × 4. Attempt truth comes from the
+capture ledger, not a loop counter — a failed run's receipt reports the
+stopping row's real sends.
+
+**Dual raw authority.** The screen raw archive keeps ADR-108's rule exactly:
+final verbatim model *text*, archived before parsing. The wire envelopes —
+every count and generate attempt body — persist write-once under
+`provider_captures/` before the next send (the extraction sink's rule,
+reimplemented screen-side; a persistence failure permits no further send).
+The capture ledger is the complete file mapping: every referenced file is
+re-hashed and an orphan walk runs both before the v0.2 manifest is written
+and again inside the promotion gate. Records + archive are the row-level
+model-output authority; ledger + envelopes are the attempt-level wire
+authority. Reconciliation proves count + generate captures == external
+requests, generate captures == provider attempts, and every archived
+response equals the text extracted from its terminal hash-verified envelope
+under `vertex_generate_content_candidates0_text_parts@1` (exactly one
+candidate; every part a string text; blocked, empty, malformed,
+multi-candidate, part-less and truncated envelopes are terminal).
+
+**Cohort budget.** `ScreenCohortBudget` — the narrow screen wrapper of
+resolution 1 — owns cumulative input tokens, settled cost, external sends
+and wall clock against the authorization budgets and mints the one-shot
+admissions itself; extraction's per-record session is not the cohort
+authority. Pricing is the committed exact-integer rule in
+`extraction.count_reconciliation`; no price appears in any schema or
+authorization. Settlement is conservative: usage cost when the usage block
+verified on a single attempt, else the per-attempt ceiling times attempts
+made.
+
+**Import boundary.** The live binding is a top-level composition module
+(`src/dynamic_ai_products/lineage_screen_live.py`, beside `provenance.py`
+and `workflow.py`), because the committed E-P boundary guards forbid any
+module under `universe/` — or the other three data packages — from
+referencing `providers` or `extraction` at all. Both guards stay
+byte-identical and at full strength: universe still imports neither
+stack, `lineage_screen.py` is untouched, an AST test pins that no
+universe module gained such an import, `sdk_factory` remains the only
+`google.*` importer, and the offline tests prove the live path adds no
+google module to a shared process plus, in a fresh subprocess, that the
+preflight never imports it at all.
+
+**One narrowly scoped mechanical exception.** ADR-108's test module
+`tests/universe/test_lineage_screen.py` pinned the registry literally
+(0.46.0, 99 entries), which no ADR-109 implementation can satisfy while
+registering its four schemas. Under explicit authorization, exactly two
+literals in `test_registry_registers_the_two_screen_schemas` were
+rebaselined (0.46.0 → 0.47.0, 99 → 103) — no other byte of the module moved,
+and the live suite's byte-identity pin freezes the rebaselined bytes.
+
+**Scope.** Sixteen paths: `src/dynamic_ai_products/lineage_screen_live.py`, the four new
+schemas (selection, adapter enablement, live authorization, manifest v0.2),
+the registry (0.46.0 → 0.47.0, 99 → 103), the pipeline entrypoint (two new
+modes, twenty-two total, total gating), `tests/universe/test_lineage_screen_live.py`,
+the two-literal rebaseline above, this log, `REPO_MANIFEST.md` (808 → 814),
+and the five evaluation guard modules. `providers/*`, `extraction/*`, both
+prompts, every packet/determination/aggregate schema and ingestion module,
+and everything under `data/runs` are byte-unchanged.
+
 ## Open decisions
 
 - Required source packet by firm-year.

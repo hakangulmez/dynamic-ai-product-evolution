@@ -951,6 +951,17 @@ def test_repo_manifest_count_and_paths():
     # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
     # v0.1.
+    # 814 = 808 + the six ADR-109 paths: the live-screen successor module
+    # (src/dynamic_ai_products/lineage_screen_live.py, a top-level
+    # composition module), its four
+    # governance schemas (selection, adapter enablement, live
+    # authorization, manifest v0.2), and its test module. The ADR-108
+    # screen module, its v0.1 schemas, the provider stack and the
+    # extraction stack are byte-unchanged; the one authorized exception is
+    # a two-literal registry rebaseline inside the ADR-108 test module.
+    # Schema registry: 0.46.0 -> 0.47.0, 99 -> 103 entries; none of the
+    # four is added to EVALUATION_SCHEMA_CONTRACTS or
+    # RELEASED_EVALUATION_CONTRACTS. Before it,
     # 808 = 804 + the four ADR-108 paths: the production high-recall screen
     # module (src/dynamic_ai_products/universe/lineage_screen.py), its
     # record and run-manifest schemas, and its test module. The sentinel
@@ -1001,7 +1012,7 @@ def test_repo_manifest_count_and_paths():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert "Total tracked/scaffold files listed: **808**" in text
+    assert "Total tracked/scaffold files listed: **814**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text
