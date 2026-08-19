@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_manifest.schema.json",
+  "title": "Universe high-recall screen run manifest (v0.1, lineage-bound production screen)",
+  "description": "Immutable record of one production high-recall screen over exactly one named v0.5 baseline-packet run (ADR-108). The packet manifest is the sole input authority: its bytes are re-hashed at run time, both of its JSONLs are re-hashed against its own output_hashes, every packet record is re-validated against universe_baseline_packet@0.2.0, and the retained-row partition (packets plus failures) is re-proven before any output directory exists - all bindings are relational between the supplied inputs, never pinned literals. This manifest is written last and its presence is the only thing that makes a screen run authoritative: a run directory holding a failure receipt, or no manifest at all, is structurally non-authoritative and may not be consumed by a SCREEN release or a classifier loader. output_hashes covers both output files - the records JSONL and the raw-responses archive - so a byte of either cannot move without detection; each screened record additionally binds its own archive entry by id and raw-response SHA-256. Request accounting states the authorized scale rather than discovering it: the logical request cap must equal the screened-packet count, the provider attempt cap is declared separately, and both made-counters are recorded. Firm roll-up follows the pinned fail-safe rule named here; INSUFFICIENT_EVIDENCE exists only at that roll-up, never as a model status. The screen result is a recall decision only, never final sample membership.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "packet_manifest_path",
+    "packet_manifest_sha256",
+    "packet_run_id",
+    "packets_jsonl_sha256",
+    "packet_failures_jsonl_sha256",
+    "prompt_template_path",
+    "prompt_template_sha256",
+    "provider",
+    "screen_record_order",
+    "firm_rollup_rule",
+    "baseline_cutoff",
+    "counts",
+    "request_accounting",
+    "reconciliation",
+    "output_hashes",
+    "run_timestamp",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "packet_manifest_path": {
+      "type": "string"
+    },
+    "packet_manifest_sha256": {
+      "description": "Recomputed over the supplied v0.5 packet manifest's bytes at run time. Relational, never a pinned literal.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_run_id": {
+      "type": "string"
+    },
+    "packets_jsonl_sha256": {
+      "description": "Recomputed over the packet JSONL bytes at run time; required to equal the packet manifest's own output_hashes entry.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_failures_jsonl_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prompt_template_path": {
+      "const": "prompts/discovery/universe_high_recall_screen.md"
+    },
+    "prompt_template_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "model_route"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_route": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "model_label"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model_label": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "screen_record_order": {
+      "const": "packet_rows_in_packet_file_order_then_failure_rows_in_failure_file_order"
+    },
+    "firm_rollup_rule": {
+      "description": "LIKELY_ELIGIBLE > BOUNDARY_OR_UNCERTAIN > LIKELY_INELIGIBLE per CIK; a CIK with no screened packet rolls up to INSUFFICIENT_EVIDENCE, which is non-negative and excluded from later classifier call lists.",
+      "const": "eligible_over_boundary_over_ineligible_failsafe@1"
+    },
+    "baseline_cutoff": {
+      "type": "string",
+      "format": "date"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planned_rows",
+        "screened_packets",
+        "insufficient_evidence",
+        "by_screen_status",
+        "firms_total",
+        "firm_rollup"
+      ],
+      "properties": {
+        "planned_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "screened_packets": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "insufficient_evidence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_screen_status": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "LIKELY_ELIGIBLE",
+            "LIKELY_INELIGIBLE",
+            "BOUNDARY_OR_UNCERTAIN"
+          ],
+          "properties": {
+            "LIKELY_ELIGIBLE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "LIKELY_INELIGIBLE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "BOUNDARY_OR_UNCERTAIN": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "firms_total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "firm_rollup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "LIKELY_ELIGIBLE",
+            "LIKELY_INELIGIBLE",
+            "BOUNDARY_OR_UNCERTAIN",
+            "INSUFFICIENT_EVIDENCE"
+          ],
+          "properties": {
+            "LIKELY_ELIGIBLE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "LIKELY_INELIGIBLE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "BOUNDARY_OR_UNCERTAIN": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "INSUFFICIENT_EVIDENCE": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "request_accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logical_request_cap",
+        "provider_attempt_cap",
+        "max_transient_retries",
+        "logical_requests_made",
+        "provider_attempts_made",
+        "rows_retried",
+        "tokens_in",
+        "tokens_out"
+      ],
+      "properties": {
+        "logical_request_cap": {
+          "description": "Must equal the screened-packet count exactly: one logical request per valid packet, stated in advance, never discovered.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider_attempt_cap": {
+          "description": "Declared separately: logical_request_cap times (1 + max_transient_retries) under the bounded transient retry policy. A retry never creates another logical record.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_transient_retries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "logical_requests_made": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider_attempts_made": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_retried": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_in": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "tokens_out": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 10,
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_screen_records.jsonl",
+        "universe_screen_raw_responses.jsonl"
+      ],
+      "properties": {
+        "universe_screen_records.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "universe_screen_raw_responses.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_screen_record",
+        "universe_screen_manifest",
+        "baseline_packet_manifest_v5",
+        "universe_baseline_packet_v2"
+      ],
+      "properties": {
+        "universe_screen_record": {
+          "type": "string"
+        },
+        "universe_screen_manifest": {
+          "type": "string"
+        },
+        "baseline_packet_manifest_v5": {
+          "type": "string"
+        },
+        "universe_baseline_packet_v2": {
+          "type": "string"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

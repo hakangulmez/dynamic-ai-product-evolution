@@ -7333,6 +7333,122 @@ function untouched), the new v0.5 schema, the registry (0.44.0 → 0.45.0,
 96 → 97), the pipeline, the lineage-packet tests, this log,
 `REPO_MANIFEST.md` (803 → 804), and the five evaluation guard modules.
 
+## ADR-108 — Production high-recall screen over the lineage packet cohort
+
+**Status.** Accepted. Fixture-first and mock-only: this increment calls no
+live model, makes no SEC or network request, writes nothing under
+`data/runs`, and rebuilds no packets. The 100-packet canary and the full
+7,042-row run are separate, future authorizations that will name the model
+route, pricing and both request caps explicitly.
+
+**Why.** The sentinel screen is fixture-bound: it consumes hand-built
+`BaselineEvidencePacket` fixtures and no code consumed the canonical v0.5
+packet artifact at all. Gate B needs a production successor that screens the
+real cohort — every valid Item 1 packet — while keeping the 530 packet-build
+failures visible instead of silently dropping the firms they represent.
+
+**Decision: one authority, two record kinds, three statuses.**
+`universe/lineage_screen.py` consumes exactly one named
+`baseline_packet_manifest@0.5.0` — never a directory scan or glob. Before
+any output directory or provider call: the manifest's bytes are re-hashed,
+both JSONLs are re-hashed against the manifest's own `output_hashes` and
+UTF-8-guarded, every packet record is re-validated against
+`universe_baseline_packet@0.2.0`, the failure rows are checked against their
+closed seven-key shape, and the partition (packets + failures = retained
+rows, `(cik, accession)` unique, no overlap) is re-proven. All bindings are
+relational; no production hash appears in code, schema or fixture. Every
+retained row becomes exactly one `universe_screen_record@0.1.0`:
+`screened_packet` (non-null filing date from the packet, one of the three
+closed statuses LIKELY_ELIGIBLE | LIKELY_INELIGIBLE | BOUNDARY_OR_UNCERTAIN,
+packet SHA, prompt SHA, model route, raw-response binding, validated
+evidence) or `insufficient_evidence` (null filing date — the v0.5 failures
+JSONL is the only authority for these rows and it measurably carries no
+date, so none is derived from a carrier or any other source; null status —
+INSUFFICIENT_EVIDENCE is a roll-up state, never a fourth model status;
+original failure reason and detail preserved; every model field null). The
+schema conditionals make the kinds mutually rejecting.
+
+**Evidence-minimal rendering.** The model sees CIK, accession, form, filing
+date, the packet cutoff, and the verbatim Item 1 passages with
+source/passage identifiers — never a company name, ticker, exchange or SIC
+code. The committed prompt template is unmodified (its placeholders are
+generic); the production renderer fills them minimally, and the template
+plus the untouched sentinel `screening.py` are hash-pinned as predecessors.
+Deterministic SIC stratification, if used for the canary, happens outside
+the model entirely.
+
+**Raw-response authority.** Every received raw response is appended to
+`universe_screen_raw_responses.jsonl` verbatim — before any parsing or
+validation — as `{raw_response_id = <run_id>-<cik>-<accession>, cik,
+accession, raw_response, raw_response_sha256 over the exact original
+bytes}`, fsynced per line so a mid-run failure retains every captured
+response. The screen manifest's `output_hashes` covers the records JSONL
+and the raw archive both; each screened record binds its archive entry by
+id and SHA, and the runner re-reads the archive from disk and re-derives
+every binding before writing anything else.
+
+**Fail-closed semantics.** A successful run directory holds exactly three
+files, and `universe_screen_manifest.json` is written last: its presence
+plus its hash bindings are what make a run authoritative. On the first
+terminal provider error, invalid model JSON, adapter rejection,
+quote-resolution failure, temporal violation or attempt-cap breach, the run
+stops: no records JSONL, no manifest — only the raw archive captured so far
+plus `universe_screen_failure_receipt.json` (module-governed shape, the
+acquisition-receipt precedent; closed five-reason vocabulary). Pinned
+counters: `records_completed_before_failure = k - 1` always; on a provider
+terminal error no raw exists for the stopping row, so
+`raw_responses_captured = k - 1`; on invalid JSON, adapter, quote or
+temporal errors the raw was archived before parsing, so it is `k`.
+`require_authoritative_screen_run` refuses receipt-bearing, manifest-less
+and hash-mismatched directories, so no partial run is consumable by a
+SCREEN release or classifier loader. Run directories are write-once in
+success and failure alike; a retry needs a new run id and new
+authorization. An internal reconciliation failure raises instead of
+writing a receipt — the vocabulary describes row-level stops only — and
+still leaves no manifest.
+
+**Request accounting (contract B).** `logical_request_cap` must equal the
+valid-packet count exactly (7,042 full run, 100 canary — preflight facts,
+never source constants); `provider_attempt_cap` is declared separately and
+must equal logical × (1 + 2 bounded transient retries). A retry never
+creates a second logical record; only the final received response enters
+the archive. The manifest records both caps, both made-counters,
+`rows_retried` and nullable token totals (null under the mock).
+
+**Firm roll-up.** `eligible_over_boundary_over_ineligible_failsafe@1`,
+pinned as a manifest const: LIKELY_ELIGIBLE > BOUNDARY_OR_UNCERTAIN >
+LIKELY_INELIGIBLE per CIK; any eligible or boundary packet prevents
+firm-negative treatment; a CIK with no valid packet rolls up to
+INSUFFICIENT_EVIDENCE — non-negative, visible in the manifest counts, and
+excluded from later classifier call lists (insufficient rows are never
+model-called; the mock's call counter proves it). Shared accessions stay
+separate rows per CIK; firms are never merged.
+
+**CLI.** One new mode, `screen-universe-lineage`, requiring
+`--packet-manifest`, `--provider` (mock only in this increment),
+`--screen-fixture`, `--logical-request-cap` and `--provider-attempt-cap`,
+with dry-run support (full validation and rendering, no provider call, no
+write). All four screen flags are totally gated: every other mode refuses
+them, and the screen mode refuses every other data location. The
+entrypoint's mode count moves to twenty. `providers/*` is untouched; the
+live route binding is the canary increment's decision.
+
+**Boundaries.** Screen only: no classifier, no tiers, no PCT/Dev30 field
+anywhere, no live model call, no `data/runs` write. The sentinel modules
+(`screening.py`, `classification.py`, `runner.py`, `models.py`, `rules.py`,
+`review.py`, `audit.py`, `freeze.py`, `packets.py`, `taxonomy.py`), both
+discovery prompts, `providers/*`, and every packet/determination/aggregate
+schema and ingestion module are byte-unchanged. The universe→ingestion
+import boundary holds: the screen re-implements manifest loading against
+the committed schemas and pins its filename constants equal to the
+ingestion originals by test.
+
+**Scope.** Thirteen paths: `universe/lineage_screen.py`, the two new
+schemas (`universe_screen_record`, `universe_screen_manifest`), the
+registry (0.45.0 → 0.46.0, 97 → 99), the pipeline entrypoint,
+`tests/universe/test_lineage_screen.py`, this log, `REPO_MANIFEST.md`
+(804 → 808), and the five evaluation guard modules.
+
 ## Open decisions
 
 - Required source packet by firm-year.

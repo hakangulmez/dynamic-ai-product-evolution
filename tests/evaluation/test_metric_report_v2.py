@@ -665,6 +665,13 @@ def test_manifest_count():
     # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
     # v0.1.
+    # 808 = 804 + the four ADR-108 paths: the production high-recall screen
+    # module (src/dynamic_ai_products/universe/lineage_screen.py), its
+    # record and run-manifest schemas, and its test module. The sentinel
+    # screen modules, both discovery prompts and every packet schema are
+    # byte-unchanged. Schema registry: 0.45.0 -> 0.46.0, 97 -> 99 entries;
+    # neither new schema is added to EVALUATION_SCHEMA_CONTRACTS or
+    # RELEASED_EVALUATION_CONTRACTS. Before it,
     # 804 = 803 + the one ADR-107 path: the v0.5 two-determination lineage
     # packet-run manifest schema
     # (schemas/baseline_packet_manifest.v5.schema.json). Every predecessor
@@ -708,7 +715,7 @@ def test_manifest_count():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert declared == len(paths) == 804
+    assert declared == len(paths) == 808
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

@@ -174,6 +174,14 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-108 (production high-recall screen over the
+    # lineage packet cohort): manifest_version 0.45.0 -> 0.46.0,
+    # 97 -> 99 entries, registering universe_screen_record and
+    # universe_screen_manifest, the lineage-bound screen record and run
+    # manifest. Every packet, determination and aggregate schema is
+    # byte-unchanged; neither new schema is added to
+    # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS
+    # below. Before it,
     # Rebaselined by ADR-107 (two-determination lineage packet successor):
     # manifest_version 0.44.0 -> 0.45.0, 96 -> 97 entries, registering
     # baseline_packet_manifest_v5, the shell- and asset-backed-filtered
@@ -323,7 +331,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "74568e46f8c5b048e0eeade74b547646971f2a569408ea4bdee1976978a0b0f1"
+    "ba17d0035a942acd6839b3840998709f11f9b4f1d4e445cd8c97e89b351ebfcc"
 )
 
 

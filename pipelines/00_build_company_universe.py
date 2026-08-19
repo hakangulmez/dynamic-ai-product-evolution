@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Nineteen mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
+Twenty mutually exclusive modes, selected by ``--mode`` (default ``sentinel``
 so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -52,6 +52,12 @@ so every pre-existing invocation is unchanged):
 - ``determine-asset-backed-issuer-lineage`` determines the asset-backed
   issuer flag for every carrier row of one completed lineage, reading only
   the ADR-101 aggregate it is given (ADR-105/106).
+- ``screen-universe-lineage`` runs the production high-recall screen over
+  exactly one named v0.5 baseline-packet run (ADR-108): every valid packet
+  row is screened under the evidence-minimal prompt, every packet-failure
+  row is preserved as a visible insufficient-evidence record with no model
+  call, and the run is fail-closed with a governed failure receipt. Only
+  the deterministic mock provider exists in this increment.
 - ``determine-shell-company`` reads exactly one cover-page fact,
   ``dei:EntityShellCompany``, from a local hash-verified primary-document
   bundle and emits one governed determination per carrier row (ADR-094). It
@@ -181,6 +187,11 @@ from dynamic_ai_products.universe.frame_dera_validation import (  # noqa: E402
     run_dera_validation,
 )
 from dynamic_ai_products.universe.freeze import FreezeBlockedError  # noqa: E402
+from dynamic_ai_products.universe.lineage_screen import (  # noqa: E402
+    MockLineageScreenProvider,
+    ScreenInputError,
+    run_lineage_screen,
+)
 from dynamic_ai_products.universe.runner import (  # noqa: E402
     FixtureError,
     run_universe_sentinel,
@@ -206,6 +217,7 @@ def build_parser() -> argparse.ArgumentParser:
                  "determine-asset-backed-issuer-lineage",
                  "build-baseline-packets-lineage",
                  "build-baseline-packets-lineage-v2",
+                 "screen-universe-lineage",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
                  "aggregate-acquisition-lineage"],
@@ -239,8 +251,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--provider", default=None, choices=["mock"],
-        help="Sentinel mode only: only the deterministic 'mock' fixture-replay "
-             "provider exists in Phase 0.",
+        help="Sentinel and screen-universe-lineage modes: only the "
+             "deterministic 'mock' fixture-replay provider exists in this "
+             "phase.",
     )
     parser.add_argument(
         "--dry-run", action="store_true",
@@ -375,6 +388,33 @@ def build_parser() -> argparse.ArgumentParser:
              "plain-text route is selector-independent.",
     )
     parser.add_argument(
+        "--packet-manifest", default=None,
+        help="Screen-universe-lineage mode only: the path of one v0.5 "
+             "baseline_packet_manifest.json. It is the sole input authority "
+             "and the only data location this mode accepts: its JSONLs are "
+             "re-hashed against its own output_hashes before anything runs.",
+    )
+    parser.add_argument(
+        "--screen-fixture", default=None,
+        help="Screen-universe-lineage mode only: the mock provider's fixture "
+             "file of precomputed raw responses keyed by 'cik:accession'. "
+             "The only provider of this increment is the deterministic mock.",
+    )
+    parser.add_argument(
+        "--logical-request-cap", type=int, default=None,
+        help="Screen-universe-lineage mode only: the exact number of logical "
+             "model requests, one per valid packet row. Must equal the "
+             "packet run's packet count, so the scale being authorized is "
+             "stated, not discovered.",
+    )
+    parser.add_argument(
+        "--provider-attempt-cap", type=int, default=None,
+        help="Screen-universe-lineage mode only: the separately declared "
+             "provider attempt ceiling, logical cap times (1 + the bounded "
+             "transient retry count). Retries never create another logical "
+             "record.",
+    )
+    parser.add_argument(
         "--execution-run-ids", default=None,
         help="Aggregate-acquisition-lineage mode only: an explicit, comma-"
              "separated, ordered enumeration of the execution run ids the "
@@ -466,6 +506,19 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             (("--asset-backed-determination-manifest",
               args.asset_backed_determination_manifest),)
         )
+        if offending:
+            return f"{args.mode} mode does not accept: {', '.join(offending)}"
+
+    # Total gating for the four screen flags (ADR-108): the production
+    # screen is the only mode that consumes any of them, so every other mode
+    # refuses all four rather than silently ignoring one.
+    if args.mode != "screen-universe-lineage":
+        offending = _present((
+            ("--packet-manifest", args.packet_manifest),
+            ("--screen-fixture", args.screen_fixture),
+            ("--logical-request-cap", args.logical_request_cap),
+            ("--provider-attempt-cap", args.provider_attempt_cap),
+        ))
         if offending:
             return f"{args.mode} mode does not accept: {', '.join(offending)}"
 
@@ -742,6 +795,38 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         if missing:
             return (
                 "build-baseline-packets-lineage-v2 mode requires: "
+                f"{', '.join(missing)}"
+            )
+        return None
+
+    if args.mode == "screen-universe-lineage":
+        offending = _present(
+            frame_flags + acquire_flags + dera_flags
+            # The packet manifest is the sole data location this mode takes:
+            # a bundle directory, fixture input, sample-rule config or seed
+            # supplied here would name evidence or behavior it does not
+            # authorize. --provider is consumed, not refused: the mock is
+            # the only provider of this increment.
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+            + (("--input", args.input),)
+            + (("--seed", args.seed),)
+        )
+        if offending:
+            return (
+                "screen-universe-lineage mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--packet-manifest", args.packet_manifest),
+            ("--provider", args.provider),
+            ("--screen-fixture", args.screen_fixture),
+            ("--logical-request-cap", args.logical_request_cap),
+            ("--provider-attempt-cap", args.provider_attempt_cap),
+        ))
+        if missing:
+            return (
+                "screen-universe-lineage mode requires: "
                 f"{', '.join(missing)}"
             )
         return None
@@ -1727,6 +1812,68 @@ def _main_build_baseline_packets_lineage_v2(
     return 0
 
 
+def _main_screen_universe_lineage(args: argparse.Namespace) -> int:
+    # One file of authority, one fixture of scripted outputs, nothing else:
+    # this mode has no directory argument at all.
+    packet_manifest = Path(args.packet_manifest)
+    fixture_path = Path(args.screen_fixture)
+    if not packet_manifest.is_file():
+        print(f"ERROR: packet manifest not found: {packet_manifest}",
+              file=sys.stderr)
+        return 2
+    if not fixture_path.is_file():
+        print(f"ERROR: screen fixture not found: {fixture_path}",
+              file=sys.stderr)
+        return 2
+    try:
+        provider = MockLineageScreenProvider(
+            json.loads(fixture_path.read_text(encoding="utf-8"))
+        )
+        result = run_lineage_screen(
+            repo_root=REPO_ROOT,
+            packet_manifest_path=packet_manifest,
+            provider=provider,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            logical_request_cap=args.logical_request_cap,
+            provider_attempt_cap=args.provider_attempt_cap,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid screen input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "status": result.status,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "planned_screened": result.planned_screened,
+        "planned_insufficient": result.planned_insufficient,
+        "counts": result.counts,
+        "request_accounting": result.request_accounting,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+        "failure_receipt_path": (
+            str(result.failure_receipt_path)
+            if result.failure_receipt_path else None
+        ),
+        "receipt": result.receipt,
+    }
+    print(json.dumps(payload, indent=2))
+    if result.status == "failed":
+        print("ERROR: screen run stopped with a failure receipt; the run "
+              "directory is non-authoritative.", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _main_build_baseline_packets(args: argparse.Namespace) -> int:
     bundle_dir = Path(args.bundle_dir)
     config_path = Path(args.config)
@@ -2008,6 +2155,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_build_baseline_packets_lineage(args)
     if args.mode == "build-baseline-packets-lineage-v2":
         return _main_build_baseline_packets_lineage_v2(args)
+    if args.mode == "screen-universe-lineage":
+        return _main_screen_universe_lineage(args)
     if args.mode == "plan-acquisition-queue":
         return _main_plan_acquisition_queue(args)
     if args.mode == "execute-acquisition-queue":

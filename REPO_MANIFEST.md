@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **804**
+Total tracked/scaffold files listed: **808**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -442,6 +442,8 @@ Total tracked/scaffold files listed: **804**
 - `schemas/universe_baseline_packet.v2.schema.json`
 - `schemas/universe_run_manifest.schema.json`
 - `schemas/universe_run_manifest.v2.schema.json`
+- `schemas/universe_screen_manifest.schema.json`
+- `schemas/universe_screen_record.schema.json`
 - `schemas/web_collection_receipt.schema.json`
 - `schemas/web_collection_request_plan.schema.json`
 - `schemas/web_discovery_manifest.schema.json`
@@ -624,6 +626,7 @@ Total tracked/scaffold files listed: **804**
 - `src/dynamic_ai_products/universe/identifiers.py`
 - `src/dynamic_ai_products/universe/io_utils.py`
 - `src/dynamic_ai_products/universe/issuer_filters.py`
+- `src/dynamic_ai_products/universe/lineage_screen.py`
 - `src/dynamic_ai_products/universe/models.py`
 - `src/dynamic_ai_products/universe/packets.py`
 - `src/dynamic_ai_products/universe/pilot_packet.py`
@@ -795,6 +798,7 @@ Total tracked/scaffold files listed: **804**
 - `tests/universe/test_frame_freeze.py`
 - `tests/universe/test_identifiers.py`
 - `tests/universe/test_issuer_filters.py`
+- `tests/universe/test_lineage_screen.py`
 - `tests/universe/test_pilot_packet.py`
 - `tests/universe/test_plain_text_primary.py`
 - `tests/universe/test_primary_document_acquisition.py`
