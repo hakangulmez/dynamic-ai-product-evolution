@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **843**
+Total tracked/scaffold files listed: **849**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -462,12 +462,14 @@ Total tracked/scaffold files listed: **843**
 - `schemas/universe_screen_diagnostic_repair_selection.schema.json`
 - `schemas/universe_screen_live_authorization.schema.json`
 - `schemas/universe_screen_live_authorization.v2.schema.json`
+- `schemas/universe_screen_live_authorization.v3.schema.json`
 - `schemas/universe_screen_manifest.schema.json`
 - `schemas/universe_screen_manifest.v2.schema.json`
 - `schemas/universe_screen_manifest.v3.schema.json`
 - `schemas/universe_screen_manifest.v4.schema.json`
 - `schemas/universe_screen_manifest.v5.schema.json`
 - `schemas/universe_screen_manifest.v6.schema.json`
+- `schemas/universe_screen_manifest.v7.schema.json`
 - `schemas/universe_screen_record.schema.json`
 - `schemas/universe_screen_record.v2.schema.json`
 - `schemas/universe_screen_selection.schema.json`
@@ -628,6 +630,7 @@ Total tracked/scaffold files listed: **843**
 - `src/dynamic_ai_products/lineage_screen_diagnostic_repair.py`
 - `src/dynamic_ai_products/lineage_screen_live.py`
 - `src/dynamic_ai_products/lineage_screen_live_v2.py`
+- `src/dynamic_ai_products/lineage_screen_live_v3.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/providers/__init__.py`
 - `src/dynamic_ai_products/providers/authorization.py`
@@ -637,8 +640,10 @@ Total tracked/scaffold files listed: **843**
 - `src/dynamic_ai_products/providers/errors.py`
 - `src/dynamic_ai_products/providers/response_capture.py`
 - `src/dynamic_ai_products/providers/retry_policy.py`
+- `src/dynamic_ai_products/providers/screen_retry_policy.py`
 - `src/dynamic_ai_products/providers/sdk_factory.py`
 - `src/dynamic_ai_products/providers/vertex_gemini.py`
+- `src/dynamic_ai_products/providers/vertex_gemini_screen_v3.py`
 - `src/dynamic_ai_products/providers/vertex_gemini_v2.py`
 - `src/dynamic_ai_products/sec_document_transport.py`
 - `src/dynamic_ai_products/sec_index_transport.py`
@@ -834,6 +839,7 @@ Total tracked/scaffold files listed: **843**
 - `tests/universe/test_lineage_screen_diagnostic_repair.py`
 - `tests/universe/test_lineage_screen_live.py`
 - `tests/universe/test_lineage_screen_live_v2.py`
+- `tests/universe/test_lineage_screen_live_v3.py`
 - `tests/universe/test_pilot_packet.py`
 - `tests/universe/test_plain_text_primary.py`
 - `tests/universe/test_primary_document_acquisition.py`

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_live_authorization.v3.schema.json",
+  "title": "Universe screen live-call authorization (v0.3, long 429 backoff)",
+  "description": "Per-run authorization for the ADR-117 authoritative screen successor. It binds everything the v0.2 grant binds - the V5 source-minimal prompt bytes, the packet cohort, the selection, the enablement, the client contract, the route, the budgets and the model-evidence circuit breaker - and adds the screen's own generate-attempt policy as a bound field rather than an assumption. screen_generate_retry_policy_version, generate_attempt_cap_per_row and external_requests_per_row are consts: a grant minted for the committed three-attempt extraction policy cannot be executed by this route, and a grant minted for this route cannot be executed by the v0.1 or v0.2 runners, whose own contract consts differ. The runtime arithmetic is relational and re-derived at preflight: provider_attempt_cap equals logical_request_cap times five, and budget_max_external_requests equals logical_request_cap times six (one countTokens send plus the five-attempt generate ceiling). No production cohort size is pinned here; only the canary case is fixed by const, because a canary is a stated hundred rows by definition. Runtime-only: this artifact is never committed to source control.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["authorization_contract", "authorization_id", "authorized_by", "effective_at", "expires_at", "deployment_environment_id", "rollout_state", "screen_stage", "packet_manifest_sha256", "prompt_template_sha256", "selection_artifact_sha256", "selection_kind", "screen_adapter_enablement_reference", "screen_adapter_enablement_sha256", "provider_client_contract_reference", "provider_client_contract_sha256", "vertex_project", "vertex_location", "model_route", "endpoint_allowlist", "logical_request_cap", "provider_attempt_cap", "budget_max_external_requests", "budget_max_input_tokens", "budget_max_output_tokens", "budget_max_estimated_cost_micros", "budget_max_wall_clock_seconds", "retry_policy_version", "rate_limit_policy_version", "screen_generate_retry_policy_version", "generate_attempt_cap_per_row", "external_requests_per_row", "max_model_evidence_unverified"],
+  "properties": {
+    "authorization_contract": {"const": "universe_screen_live_authorization@0.3.0"},
+    "authorization_id": {"type": "string", "minLength": 1}, "authorized_by": {"type": "string", "minLength": 1},
+    "effective_at": {"type": "string", "minLength": 1}, "expires_at": {"type": "string", "minLength": 1},
+    "deployment_environment_id": {"type": "string", "minLength": 1},
+    "rollout_state": {"enum": ["controlled_pilot", "release_or_research_production"]},
+    "screen_stage": {"const": "universe_high_recall_screen"},
+    "packet_manifest_sha256": {"$ref": "#/$defs/sha256"}, "prompt_template_sha256": {"$ref": "#/$defs/sha256"}, "selection_artifact_sha256": {"$ref": "#/$defs/sha256"},
+    "selection_kind": {"enum": ["canary_100", "full_cohort"]},
+    "screen_adapter_enablement_reference": {"type": "string", "minLength": 1}, "screen_adapter_enablement_sha256": {"$ref": "#/$defs/sha256"},
+    "provider_client_contract_reference": {"type": "string", "minLength": 1}, "provider_client_contract_sha256": {"$ref": "#/$defs/sha256"},
+    "vertex_project": {"type": "string", "minLength": 1}, "vertex_location": {"type": "string", "minLength": 1},
+    "model_route": {"type": "object", "additionalProperties": false, "required": ["provider", "model_label"], "properties": {"provider": {"type": "string", "minLength": 1}, "model_label": {"type": "string", "minLength": 1}}},
+    "endpoint_allowlist": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string", "minLength": 1}},
+    "logical_request_cap": {"description": "One logical request per selected valid packet, exactly. Stated, never discovered.", "type": "integer", "minimum": 1},
+    "provider_attempt_cap": {"description": "logical_request_cap times the five-attempt generate ceiling of the screen policy. Re-derived and re-checked at preflight.", "type": "integer", "minimum": 5},
+    "budget_max_external_requests": {"description": "logical_request_cap times six: one countTokens send plus the five-attempt generate ceiling per row.", "type": "integer", "minimum": 6},
+    "budget_max_input_tokens": {"type": "integer", "minimum": 1}, "budget_max_output_tokens": {"type": "integer", "minimum": 1}, "budget_max_estimated_cost_micros": {"type": "integer", "minimum": 1}, "budget_max_wall_clock_seconds": {"type": "integer", "minimum": 1},
+    "retry_policy_version": {"description": "The committed extraction transport policy, still named and still unchanged: it continues to govern timeouts and the declared transient conditions.", "type": "string", "minLength": 1},
+    "rate_limit_policy_version": {"type": "string", "minLength": 1},
+    "screen_generate_retry_policy_version": {"description": "The screen's own generate-attempt policy. Pinned by const so a three-attempt grant cannot run here and this grant cannot run on a three-attempt route.", "const": "universe_screen_generate_retry_policy_v1"},
+    "generate_attempt_cap_per_row": {"description": "Five total attempts per logical packet: the original send plus four retries at 15s, 30s, 60s and 120s.", "const": 5},
+    "external_requests_per_row": {"description": "One countTokens send, which is never retried, plus the five-attempt generate ceiling.", "const": 6},
+    "max_model_evidence_unverified": {"description": "The ADR-116 model-evidence circuit breaker, carried forward unchanged: model-content failures are recorded, provider, governance, capture, cap and budget faults stay run-fatal.", "type": "integer", "minimum": 0}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+  "allOf": [
+    {"if": {"properties": {"selection_kind": {"const": "canary_100"}}}, "then": {"properties": {"rollout_state": {"const": "controlled_pilot"}, "logical_request_cap": {"const": 100}, "provider_attempt_cap": {"const": 500}, "budget_max_external_requests": {"const": 600}}}},
+    {"if": {"properties": {"selection_kind": {"const": "full_cohort"}}}, "then": {"properties": {"rollout_state": {"const": "release_or_research_production"}}}}
+  ]
+}

@@ -174,6 +174,16 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-117 (the screen waits longer for a 429 without any
+    # other route changing): manifest_version 0.55.0 -> 0.56.0, 115 -> 117
+    # entries, registering universe_screen_live_authorization_v3 and
+    # universe_screen_manifest_v7 -- the contracts of the long-backoff
+    # authoritative successor, which pins five generate attempts per logical
+    # packet at 15s/30s/60s/120s and one un-retried countTokens send. The
+    # committed extraction retry policy, both shared connectors, the v0.1/v0.2
+    # authorizations and the v0.5/v0.6 manifests are byte-unchanged, and
+    # neither new contract is added to EVALUATION_SCHEMA_CONTRACTS or
+    # RELEASED_EVALUATION_CONTRACTS below. Before it,
     # Rebaselined by ADR-115 (a repair measurement re-screens exactly the
     # seven quote-resolution rejections of one completed diagnostic run,
     # and stays diagnostic forever): manifest_version 0.51.0 -> 0.52.0,
@@ -382,7 +392,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "a2056a0cc0200241a80b4c2dfec07b92d12553606cd736dcc207733d27f1458c"
+    "e5988617695c520e204656873f0801acffaf8d475545f080f26f1097d0246aff"
 )
 
 

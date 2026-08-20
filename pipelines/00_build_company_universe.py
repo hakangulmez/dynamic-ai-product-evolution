@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Twenty-five mutually exclusive modes, selected by ``--mode`` (default
+Twenty-seven mutually exclusive modes, selected by ``--mode`` (default
 ``sentinel`` so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -86,6 +86,17 @@ Twenty-five mutually exclusive modes, selected by ``--mode`` (default
   to 7 logical / 21 attempts / 28 external requests. Diagnostic measurement
   only: its outputs are structurally non-promotable and every other loader
   refuses them.
+- ``screen-universe-lineage-live-v3`` is the long-backoff authoritative
+  successor (ADR-117). It is the V5 evidence-safe route with exactly one
+  transport dimension changed: each logical packet may spend five
+  ``generateContent`` attempts with fixed 15s/30s/60s/120s waits instead of
+  three at 1s/2s, and ``countTokens`` remains a single un-retried send. The
+  retry triggers are the committed transient conditions unchanged, 429 among
+  them; no validation, capture, governance, budget or evidence failure is
+  ever retried. Its own authorization and manifest contracts pin the policy
+  and the arithmetic — logical x 5 attempts, logical x 6 external requests —
+  so a three-attempt grant cannot run here and this grant cannot run on the
+  three-attempt routes.
 - ``select-screen-rows`` builds one governed ``universe_screen_selection``
   artifact (ADR-109): a seeded, stratified, packet-native canary_100
   enumeration of exactly one hundred rows, or the explicitly different
@@ -239,6 +250,9 @@ from dynamic_ai_products.lineage_screen_live import (  # noqa: E402
 from dynamic_ai_products.lineage_screen_live_v2 import (  # noqa: E402
     run_lineage_screen_live_v2,
 )
+from dynamic_ai_products.lineage_screen_live_v3 import (  # noqa: E402
+    run_lineage_screen_live_v3,
+)
 from dynamic_ai_products.universe.runner import (  # noqa: E402
     FixtureError,
     run_universe_sentinel,
@@ -267,6 +281,7 @@ def build_parser() -> argparse.ArgumentParser:
                  "screen-universe-lineage",
                  "screen-universe-lineage-live",
                  "screen-universe-lineage-live-v2",
+                 "screen-universe-lineage-live-v3",
                  "screen-universe-lineage-diagnostic",
                  "screen-universe-lineage-diagnostic-repair",
                  "select-screen-repair-rows",
@@ -616,6 +631,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
     if args.mode not in ("screen-universe-lineage",
                          "screen-universe-lineage-live",
                          "screen-universe-lineage-live-v2",
+                         "screen-universe-lineage-live-v3",
                          "screen-universe-lineage-diagnostic",
                          "screen-universe-lineage-diagnostic-repair",
                          "select-screen-repair-rows",
@@ -630,6 +646,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
     if args.mode not in ("screen-universe-lineage",
                          "screen-universe-lineage-live",
                          "screen-universe-lineage-live-v2",
+                         "screen-universe-lineage-live-v3",
                          "screen-universe-lineage-diagnostic",
                          "screen-universe-lineage-diagnostic-repair"):
         screen_offenders += _present((
@@ -638,6 +655,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         ))
     if args.mode not in ("screen-universe-lineage-live",
                          "screen-universe-lineage-live-v2",
+                         "screen-universe-lineage-live-v3",
                          "screen-universe-lineage-diagnostic",
                          "screen-universe-lineage-diagnostic-repair"):
         screen_offenders += _present((
@@ -1030,6 +1048,36 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         if missing:
             return (
                 "screen-universe-lineage-live-v2 mode requires: "
+                f"{', '.join(missing)}"
+            )
+        return None
+
+    if args.mode == "screen-universe-lineage-live-v3":
+        offending = _present(
+            frame_flags + acquire_flags + dera_flags
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+            + (("--input", args.input),)
+            + (("--seed", args.seed),)
+            + (("--provider", args.provider),)
+        )
+        if offending:
+            return (
+                "screen-universe-lineage-live-v3 mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--packet-manifest", args.packet_manifest),
+            ("--selection-artifact", args.selection_artifact),
+            ("--governance-root", args.governance_root),
+            ("--screen-authorization", args.screen_authorization),
+            ("--screen-authorization-sha256", args.screen_authorization_sha256),
+            ("--logical-request-cap", args.logical_request_cap),
+            ("--provider-attempt-cap", args.provider_attempt_cap),
+        ))
+        if missing:
+            return (
+                "screen-universe-lineage-live-v3 mode requires: "
                 f"{', '.join(missing)}"
             )
         return None
@@ -2312,6 +2360,61 @@ def _main_screen_universe_lineage_live_v2(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_screen_universe_lineage_live_v3(args: argparse.Namespace) -> int:
+    """CLI boundary for the ADR-117 long-backoff authoritative successor."""
+    packet_manifest = Path(args.packet_manifest)
+    selection_artifact = Path(args.selection_artifact)
+    governance_root = Path(args.governance_root)
+    for label, path in (("packet manifest", packet_manifest),
+                        ("selection artifact", selection_artifact)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    if not governance_root.is_dir():
+        print(f"ERROR: governance root not found: {governance_root}",
+              file=sys.stderr)
+        return 2
+    try:
+        result = run_lineage_screen_live_v3(
+            repo_root=REPO_ROOT, packet_manifest_path=packet_manifest,
+            selection_artifact_path=selection_artifact,
+            governance_root=governance_root,
+            authorization_reference=args.screen_authorization,
+            authorization_sha256=args.screen_authorization_sha256,
+            output_dir=Path(args.output_dir), run_id=args.run_id,
+            logical_request_cap=args.logical_request_cap,
+            provider_attempt_cap=args.provider_attempt_cap,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid live v3 screen input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "run_id": result.run_id, "dry_run": result.dry_run,
+        "status": result.status,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "planned_screened": result.planned_screened,
+        "planned_insufficient": result.planned_insufficient,
+        "counts": result.counts,
+        "request_accounting": result.request_accounting,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None),
+        "failure_receipt_path": (
+            str(result.failure_receipt_path)
+            if result.failure_receipt_path else None),
+        "receipt": result.receipt,
+    }, indent=2))
+    if result.status == "failed":
+        print("ERROR: live v3 screen stopped with a failure receipt; the run "
+              "is non-authoritative.", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _main_screen_universe_lineage_diagnostic_repair(
         args: argparse.Namespace) -> int:
     packet_manifest = Path(args.packet_manifest)
@@ -2807,6 +2910,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_screen_universe_lineage_live(args)
     if args.mode == "screen-universe-lineage-live-v2":
         return _main_screen_universe_lineage_live_v2(args)
+    if args.mode == "screen-universe-lineage-live-v3":
+        return _main_screen_universe_lineage_live_v3(args)
     if args.mode == "screen-universe-lineage-diagnostic":
         return _main_screen_universe_lineage_diagnostic(args)
     if args.mode == "screen-universe-lineage-diagnostic-repair":

@@ -8037,6 +8037,81 @@ and authorizations from silently consuming this generation. V0.6 pins the V5
 prompt path and records the five-way row accounting, raw archive and capture
 ledger hashes.
 
+## ADR-117 — The screen waits out a 429 instead of spending its packets
+
+**Status.** Accepted, fixture-first successor. No live model call, no
+`data/runs` write, and no change to the ADR-116 route, the committed
+extraction retry policy, either shared Vertex connector, the V2 screen
+contracts or the V5 prompt — all of them are pinned byte-identical by test.
+
+**Problem.** A 429 is the provider declaring a quota or a rate limit, not a
+transport hiccup. The committed policy
+(`extraction_provider_retry_policy_v1`) answers it with three attempts at 1s
+then 2s, which re-sends twice inside the same rate-limit window and then
+gives up. On the authoritative route a give-up is run-fatal, so a
+rate-limited cohort does not lose one packet, it loses the run — and the
+7,042-packet full cohort is exactly the shape where sustained rate limiting
+is expected rather than exceptional. Widening the generic policy is not
+available: it governs every extraction caller, and its three-attempt
+ceiling is a committed E-P contract.
+
+**Decision.** A second, screen-only policy and a screen-only connector,
+beside the generic ones rather than instead of them.
+`providers/screen_retry_policy.py` declares
+`universe_screen_generate_retry_policy_v1`: five total `generateContent`
+attempts per logical packet — the original send plus four retries — with
+fixed waits of 15s, 30s, 60s and 120s, no jitter, and `countTokens` pinned
+to exactly one un-retried send. `providers/vertex_gemini_screen_v3.py`
+subclasses the V2 connector and overrides exactly two methods: the handshake,
+so that a five-attempt cap is admissible, and the generate call, so that the
+screen's wait chain drives it. Everything else is inherited, including
+`count_tokens` — which has no loop at all — and `_attempt`, which is what
+keeps the per-attempt rule true: each attempt's body reaches the runner's
+sink before the wrapper may wait or re-send, so a persistence failure still
+stops the loop while there is a loop to stop.
+
+**What is not retried.** The trigger set is not restated here. The screen
+policy re-exports the committed `should_retry` object itself, so the
+retryable conditions remain 408, 429, 500, 502, 503, 504 and a transport
+timeout, and a validation, capture, governance, budget or evidence failure is
+outside the predicate by construction rather than by convention. A
+capture-sink failure is proven non-retryable; an undeclared exception is
+terminal on its first attempt.
+
+**Arithmetic.** One logical packet may now spend five generate attempts and
+one count send, so a run of `n` selected packets authorizes `n × 5` provider
+attempts and `n × 6` external requests. For the full cohort: 7,042 logical
+requests, 35,210 generate attempts, 42,252 external requests. The ceilings
+are re-derived from the selection at preflight and checked against the grant;
+no cohort size is pinned in code or schema, and a test asserts that those
+three numbers appear in neither.
+
+**Contracts.** `universe_screen_live_authorization@0.3.0` and
+`universe_screen_manifest@0.7.0`. The grant carries the policy version and
+the per-row arithmetic as consts, so a three-attempt grant cannot execute
+here and this grant cannot execute on the v0.1 or v0.2 routes; the manifest
+records the wait chain it actually ran under, and its contract const makes
+the v0.5, v0.6 and v0.7 generations mutually exclusive even though all three
+write the same authoritative filename. The record contract is unchanged:
+this is a transport decision, and `universe_screen_record@0.2.0` still
+describes the rows. The ADR-116 evidence semantics — `model_evidence_unverified`
+rows, the fail-safe roll-up, the model-evidence breaker — are inherited by
+import, not restated.
+
+**Cost of the change, stated.** A single rate-limited packet can now occupy
+225 seconds of wall clock before failing, and the cohort cost reserve must
+pay for five attempts per row rather than three. Both are bounded and both
+are authorized up front: the budget wrapper prices the five-attempt reserve
+before the row's first send, and the wall-clock budget remains a hard stop.
+
+**Scope.** Eighteen paths: the screen policy, the screen connector, the v3
+runner, its two contracts, its fixture-only test module, the CLI mode, the
+registry (0.55.0 to 0.56.0, 115 to 117), this decision log, `REPO_MANIFEST.md`
+(843 to 849), the five manifest/registry guards, and the two-literal absolute
+registry assertions in the three sibling screen suites. The CLI docstring's
+mode count is corrected from twenty-five to twenty-seven; it had gone stale
+when the v2 route landed without updating it.
+
 ## Open decisions
 
 - Required source packet by firm-year.

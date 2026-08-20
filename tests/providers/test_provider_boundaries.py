@@ -123,11 +123,16 @@ def _code_tokens(tree: ast.AST) -> tuple[set[str], list[str]]:
 
 
 def test_package_is_enumerable():
+    # ADR-117 adds screen_retry_policy.py and vertex_gemini_screen_v3.py:
+    # 11 -> 13. Both are screen-only successors that sit beside the committed
+    # modules rather than changing them: retry_policy.py keeps publishing the
+    # three-attempt extraction policy every extraction caller reads, and
+    # vertex_gemini_v2.py keeps refusing any cap above it. Before it,
     # ADR-043 (E-M) adds client_contract_v2.py, endpoint_grammar_v2.py and
     # vertex_gemini_v2.py: 8 -> 11. Each is a successor rather than a rewrite,
     # because the released v1 modules keep publishing the contract they were
     # built for and their instances are hash-pinned by existing governance.
-    assert len(MODULES) == 11
+    assert len(MODULES) == 13
     assert (PACKAGE / "__init__.py") in MODULES
 
 
