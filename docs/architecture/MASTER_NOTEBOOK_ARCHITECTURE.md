@@ -6,6 +6,13 @@ The repository has one canonical notebook, `notebooks/00_MASTER_PIPELINE.ipynb`,
 explains and orchestrates the full research pipeline from company-universe construction
 to final analysis.
 
+It also has a deliberately narrower companion,
+`notebooks/01_STAGE00_UNIVERSE_AND_SCREEN_REPRODUCIBILITY.ipynb`. The companion
+does not orchestrate a stage: it is a read-only verification walkthrough of the
+governed Stage 00 corpus, selection, and high-recall readiness evidence. It is
+kept separate so that a durable handoff can verify completed artifacts without
+gaining authority to start a model or acquisition run.
+
 This is a **literate control plane**, not a monolithic implementation notebook.
 
 ## Why this is useful

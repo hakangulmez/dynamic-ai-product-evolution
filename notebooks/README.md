@@ -12,6 +12,15 @@ logic belongs in `src/` and the numbered scripts under `pipelines/`. Keeping log
 of the notebook prevents hidden state, copy-pasted code, and irreproducible manual
 changes.
 
+## Reproducibility walkthrough
+
+[`01_STAGE00_UNIVERSE_AND_SCREEN_REPRODUCIBILITY.ipynb`](01_STAGE00_UNIVERSE_AND_SCREEN_REPRODUCIBILITY.ipynb)
+is a separate, read-only walkthrough of the completed Stage 00 corpus and the
+high-recall-screen readiness chain. It re-hashes and reconciles the canonical
+v5 packet corpus and canary selection, and summarizes receipt-bearing canaries.
+It never invokes a model, SEC endpoint, or pipeline run; a printed command is a
+template, not an execution cell.
+
 ## Safe default behavior
 
 The notebook opens in `status` mode. In this mode it:

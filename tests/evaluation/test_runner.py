@@ -1349,6 +1349,9 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
     # v0.1.
+    # 830 = 823 + the seven durable planning/reproducibility paths: the
+    # repository project-plan pointer, five docs/planning files, and the
+    # read-only Stage 00 universe/screen notebook. Before it,
     # 823 = 818 + the five ADR-112 paths: the diagnostic-canary runner
     # (src/dynamic_ai_products/lineage_screen_diagnostic.py), its three
     # contracts (record, manifest, authorization) and its test module.
@@ -1435,8 +1438,12 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert declared == len(paths) == 823
+    assert declared == len(paths) == 830
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):
+        assert paths.count(path) == 1, path
+    for path in ("docs/PROJECT_PLAN.md",
+                 "docs/planning/README.md",
+                 "notebooks/01_STAGE00_UNIVERSE_AND_SCREEN_REPRODUCIBILITY.ipynb"):
         assert paths.count(path) == 1, path

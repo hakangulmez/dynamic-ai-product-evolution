@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **823**
+Total tracked/scaffold files listed: **830**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -82,6 +82,7 @@ Total tracked/scaffold files listed: **823**
 - `docs/GLOSSARY.md`
 - `docs/LEGACY_ISOLATION_POLICY.md`
 - `docs/PROJECT_CHARTER.md`
+- `docs/PROJECT_PLAN.md`
 - `docs/RESEARCH_QUESTIONS.md`
 - `docs/ROADMAP_90_DAYS.md`
 - `docs/SOURCE_POLICY.md`
@@ -118,6 +119,11 @@ Total tracked/scaffold files listed: **823**
 - `docs/methodology/VALIDATION_STRATEGY.md`
 - `docs/operations/CLAUDE_CODE_LOCAL_SAFETY.md`
 - `docs/operations/G3_LIVE_SMOKE_RUNBOOK.md`
+- `docs/planning/01_CURRENT_STATUS_AND_EXECUTION_ROADMAP.md`
+- `docs/planning/02_LONGITUDINAL_PANEL_AND_MATCHING_PLAN.md`
+- `docs/planning/03_MEASUREMENT_OUTCOMES_AND_ECONOMETRICS_PLAN.md`
+- `docs/planning/04_TECHNICAL_HANDOFF_CURRENT_PIPELINE.md`
+- `docs/planning/README.md`
 - `docs/source_playbooks/DEVELOPER_DOCS.md`
 - `docs/source_playbooks/NEWSROOM.md`
 - `docs/source_playbooks/OFFICIAL_IR.md`
@@ -296,6 +302,7 @@ Total tracked/scaffold files listed: **823**
 - `evals/templates/change_request.template.md`
 - `evals/templates/eval_case.template.json`
 - `notebooks/00_MASTER_PIPELINE.ipynb`
+- `notebooks/01_STAGE00_UNIVERSE_AND_SCREEN_REPRODUCIBILITY.ipynb`
 - `notebooks/README.md`
 - `pipelines/00_build_company_universe.py`
 - `pipelines/01_discover_sec_sources.py`
