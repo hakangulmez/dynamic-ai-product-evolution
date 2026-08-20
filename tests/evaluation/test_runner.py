@@ -1438,7 +1438,7 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert declared == len(paths) == 832
+    assert declared == len(paths) == 833
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):
@@ -1448,5 +1448,6 @@ def test_repo_manifest_lists_the_three_new_paths_once():
                  "notebooks/01_STAGE00_UNIVERSE_AND_SCREEN_REPRODUCIBILITY.ipynb"):
         assert paths.count(path) == 1, path
     for path in ("prompts/discovery/universe_high_recall_screen.v4.md",
+                 "prompts/discovery/universe_high_recall_screen.v5.md",
                  "schemas/universe_screen_manifest.v5.schema.json"):
         assert paths.count(path) == 1, path

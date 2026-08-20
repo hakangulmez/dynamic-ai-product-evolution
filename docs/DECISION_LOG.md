@@ -7872,6 +7872,50 @@ prompt path; v0.1–v0.4 schemas and prompts remain byte-identical and mutually
 reject. A new fixture-only validation run is required before any new model
 canary authorization.
 
+## ADR-114 — Diagnostic prompt removes a redundant source-copy task
+
+**Status.** Accepted, fixture-first. This is a diagnostic-only prompt
+successor; it makes no live model call, changes no authoritative runner or
+manifest, and does not promote any diagnostic result to SCREEN_v1.
+
+**Measured input.** The completed v4 diagnostic canary validated 93 of 100
+rows and recorded seven `quote_resolution_failure` rows. Offline inspection
+of the hash-bound raw archive and the v5 packets found one pure source-copy
+error, one quote paired with the wrong passage, and five non-verbatim model
+edits (re-capitalisation, abbreviation, dropped scope, stitching, or added
+context). The wrong passage was P009 while the exact quote was in P037; it is
+not adjacent-reference confusion. Rejected rows averaged 4.57 evidence items
+versus 3.95 for validated rows, an insufficient seven-row signal to impose an
+evidence-item cap. No maximum quote length is introduced: valid citations can
+be longer than a generic threshold.
+
+**Decision.** The diagnostic v5 prompt no longer displays or asks the model
+to emit `source_id`. Each row is one immutable filing, so source identity has
+one permitted value and no screening information. The diagnostic renderer
+instead exposes only an ordered `passage_ref` (`P001`, `P002`, ...) and the
+passage body. Before the existing strict validator runs, the diagnostic
+resolver maps an exact known reference to the packet's immutable passage ID
+and injects the packet-owned source ID. The raw archive remains the
+unmodified model response. Unknown references are never repaired and
+non-verbatim quotes remain strict rejections.
+
+**Prompt discipline.** Quote is explicitly a copy operation, not writing.
+The prompt makes the exact-substring acceptance test visible and forbids the
+five observed editing behaviours. It asks for the shortest directly
+supporting span as a preference only, never a length cap. A model output uses
+`passage_ref`, `quote`, and `supported_claim`; it does not carry a source
+identifier.
+
+**Scope.** Eight paths: the v5 diagnostic prompt, diagnostic runner, its
+fixture tests, this decision log, `REPO_MANIFEST.md` (832 to 833), and the
+three mechanically necessary manifest-count guards. No registry or schema
+contract changes occur.
+`lineage_screen_live.py`, all authoritative contracts, the shared validator,
+all predecessor prompts and every `data/runs` artifact remain byte-identical.
+A governed seven-row live repair measurement requires a separate selection
+and authorization successor: the current diagnostic contract intentionally
+pins a 100-row canary and is not bypassed here.
+
 ## Open decisions
 
 - Required source packet by firm-year.

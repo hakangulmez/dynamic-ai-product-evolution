@@ -90,15 +90,12 @@ from .lineage_screen_live import (
     ENVELOPE_TEXT_EXTRACTION_RULE,
     EXTERNAL_REQUESTS_PER_ROW,
     GENERATE_ATTEMPT_CAP_PER_ROW,
-    LIVE_PROMPT_TEMPLATE_RELATIVE_PATH,
     ScreenCohortBudget,
     VertexLineageScreenProvider,
     _extract_envelope_text,
     _hydrate_pinned,
     _parse_moment,
     load_screen_selection,
-    render_live_prompt_with_citation_refs,
-    resolve_live_citation_refs,
 )
 from .universe.freeze import create_run_directory
 from .universe.lineage_screen import (
@@ -143,6 +140,13 @@ RUN_KIND = "diagnostic_canary"
 SCREEN_STAGE = "universe_high_recall_screen"
 RECORD_ORDER = "selection_row_order"
 
+# The diagnostic route is deliberately the prompt-iteration surface.  The
+# authoritative route remains bound to its own prompt and manifest generation
+# until a diagnostic prompt has earned promotion in a separate increment.
+DIAGNOSTIC_PROMPT_TEMPLATE_RELATIVE_PATH = (
+    "prompts/discovery/universe_high_recall_screen.v5.md"
+)
+
 RECORD_SCHEMA_RELATIVE_PATH = "schemas/universe_screen_diagnostic_record.schema.json"
 MANIFEST_SCHEMA_RELATIVE_PATH = (
     "schemas/universe_screen_diagnostic_manifest.schema.json"
@@ -173,6 +177,79 @@ RECEIPT_REASON_CODES = (
 )
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def render_diagnostic_prompt_with_citation_refs(
+    template_text: str, packet: dict
+) -> tuple[str, dict[str, str]]:
+    """Render a source-minimal diagnostic prompt with exact ``Pnnn`` refs.
+
+    A screen packet has exactly one source document.  Its immutable source ID
+    therefore carries no decision content for the model and was a pure copying
+    failure surface.  Only passage selection is model-facing; the resolver
+    injects the packet-owned source ID before the unchanged strict validator.
+    """
+    metadata = (
+        f"cik: {packet['cik']}\n"
+        f"accession: {packet['accession']}\n"
+        f"form: {packet['form']}\n"
+        f"filing_date: {packet['baseline_filing_date']}"
+    )
+    refs: dict[str, str] = {}
+    displayed: list[str] = []
+    for ordinal, passage in enumerate(packet["passages"], start=1):
+        ref = f"P{ordinal:03d}"
+        refs[ref] = passage["passage_id"]
+        displayed.append(
+            f"[passage_ref={ref} section={passage['section']}]\n"
+            f"{passage['text']}"
+        )
+    rendered = template_text
+    replacements = {
+        "{{baseline_cutoff}}": packet["baseline_cutoff"],
+        "{{company_metadata}}": metadata,
+        "{{passages_with_source_and_passage_ids}}": "\n\n".join(displayed),
+    }
+    for placeholder, value in replacements.items():
+        if placeholder not in rendered:
+            raise ScreenInputError(
+                f"Screen prompt template is missing placeholder {placeholder}."
+            )
+        rendered = rendered.replace(placeholder, value)
+    return rendered, refs
+
+
+def resolve_diagnostic_citation_refs(
+    raw_response: str, refs: dict[str, str], packet: dict
+) -> str:
+    """Inject the packet-owned source and resolve only exact ``Pnnn`` refs.
+
+    The raw archive remains unmodified.  Unknown or malformed references pass
+    through to the shared strict validator, which records the row as rejected;
+    no nearest-reference repair is ever attempted.
+    """
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError:
+        return raw_response
+    if not isinstance(payload, dict):
+        return raw_response
+    for evidence_field in ("positive_evidence", "negative_or_boundary_evidence"):
+        evidence = payload.get(evidence_field)
+        if not isinstance(evidence, list):
+            continue
+        for item in evidence:
+            if not isinstance(item, dict):
+                continue
+            # ``passage_id`` is accepted as a compatibility alias in fixture
+            # envelopes only; v5 asks the model to emit ``passage_ref``.
+            ref = item.pop("passage_ref", item.get("passage_id"))
+            # Source identity is structural: a row has one immutable packet.
+            # Discard any model-supplied source rather than letting it create a
+            # second source-selection task.
+            item["source_id"] = packet["source_id"]
+            item["passage_id"] = refs.get(ref, ref)
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
 def _bounded_detail(detail: str) -> str:
@@ -389,7 +466,7 @@ def _diagnostic_preflight(
             )
 
     # (6) The prompt binding: committed bytes against the authorization.
-    template_path = root / LIVE_PROMPT_TEMPLATE_RELATIVE_PATH
+    template_path = root / DIAGNOSTIC_PROMPT_TEMPLATE_RELATIVE_PATH
     if not template_path.is_file():
         raise ScreenInputError(
             f"Live screen prompt template not found: {template_path}"
@@ -399,7 +476,7 @@ def _diagnostic_preflight(
     if template_sha != authorization["prompt_template_sha256"]:
         raise ScreenInputError(
             f"The committed screen prompt template "
-            f"({LIVE_PROMPT_TEMPLATE_RELATIVE_PATH}) hashes to "
+            f"({DIAGNOSTIC_PROMPT_TEMPLATE_RELATIVE_PATH}) hashes to "
             f"{template_sha}, but the authorization binds "
             f"{authorization['prompt_template_sha256']}. A stale or "
             "mismatched prompt authorization runs nothing."
@@ -494,7 +571,7 @@ def _diagnostic_preflight(
         enablement=enablement,
         contract_digest=contract_digest,
         endpoints=endpoints,
-        prompt_template_path=LIVE_PROMPT_TEMPLATE_RELATIVE_PATH,
+        prompt_template_path=DIAGNOSTIC_PROMPT_TEMPLATE_RELATIVE_PATH,
         prompt_template_text=_decode_utf8(template_raw, "Screen prompt template"),
         prompt_template_sha256=template_sha,
         inputs=inputs,
@@ -556,7 +633,9 @@ def run_lineage_screen_diagnostic(
 
     if dry_run:
         for packet in pre.selected_packets:
-            render_live_prompt_with_citation_refs(pre.prompt_template_text, packet)
+            render_diagnostic_prompt_with_citation_refs(
+                pre.prompt_template_text, packet
+            )
         return DiagnosticRunResult(
             run_id=run_id, run_dir=None, dry_run=True, status="dry_run",
             planned_screened=len(pre.selected_packets),
@@ -722,7 +801,7 @@ def run_lineage_screen_diagnostic(
         return result
 
     for ordinal, packet in enumerate(pre.selected_packets, start=1):
-        rendered, citation_refs = render_live_prompt_with_citation_refs(
+        rendered, citation_refs = render_diagnostic_prompt_with_citation_refs(
             pre.prompt_template_text, packet
         )
         prompt_sha256 = _sha256(rendered.encode("utf-8"))
@@ -786,7 +865,10 @@ def run_lineage_screen_diagnostic(
         try:
             # The identical strict validator the authoritative runner uses.
             output = _validate_row_output(
-                resolve_live_citation_refs(raw_response, citation_refs), packet
+                resolve_diagnostic_citation_refs(
+                    raw_response, citation_refs, packet
+                ),
+                packet,
             )
         except _RowValidationFailure as exc:
             rejections[exc.reason_code] = rejections.get(exc.reason_code, 0) + 1

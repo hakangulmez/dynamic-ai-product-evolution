@@ -160,7 +160,8 @@ def _diagnostic_governance(tmp_path: Path, *, cohort, selection_path: Path,
                       + "\n").encode("utf-8")
     (root / "screen_adapter_enablement.json").write_bytes(enablement_raw)
     template_sha = sha256(
-        (ROOT / ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH).read_bytes()).hexdigest()
+        (ROOT / ld.DIAGNOSTIC_PROMPT_TEMPLATE_RELATIVE_PATH)
+        .read_bytes()).hexdigest()
     authorization = {
         "authorization_contract": "universe_screen_diagnostic_authorization@0.1.0",
         "authorization_id": "diagnostic-authorization-fixture",
@@ -265,6 +266,122 @@ def _bad(packet, kind: str) -> str:
     elif kind == "quote_resolution_failure":
         payload["positive_evidence"][0]["quote"] = "text present in no passage"
     return json.dumps(payload)
+
+
+def _v5_evidence_payload(packet: dict, *, ref: str = "P001",
+                         quote: str | None = None,
+                         supplied_source: str | None = None) -> str:
+    """One v5-shaped response: model emits a passage ref, never source truth."""
+    passage = packet["passages"][0]
+    evidence = {
+        "passage_ref": ref,
+        "quote": passage["text"] if quote is None else quote,
+        "supported_claim": "The cited passage supports this diagnostic claim.",
+    }
+    if supplied_source is not None:
+        evidence["source_id"] = supplied_source
+    return json.dumps({
+        "screen_status": "LIKELY_ELIGIBLE",
+        "plausible_customer_facing_digital_product": True,
+        "candidate_customer_value_archetypes": ["FUNCTIONAL_SOFTWARE"],
+        "positive_evidence": [evidence],
+        "negative_or_boundary_evidence": [],
+        "missing_evidence": [],
+        "confidence": "high",
+    })
+
+
+def test_v5_renderer_removes_model_facing_source_identity_and_round_trips(big):
+    """There is one packet source, so only passage selection reaches model."""
+    packet = big.packets[0]
+    template = (ROOT / ld.DIAGNOSTIC_PROMPT_TEMPLATE_RELATIVE_PATH).read_text(
+        encoding="utf-8")
+    rendered, refs = ld.render_diagnostic_prompt_with_citation_refs(template, packet)
+    assert "sec-primary:" not in rendered
+    assert packet["source_id"] not in rendered
+    assert packet["passages"][0]["passage_id"] not in rendered
+    assert "[passage_ref=P001 section=" in rendered
+    assert refs["P001"] == packet["passages"][0]["passage_id"]
+
+    # A hostile or malformed source field is discarded; packet ownership,
+    # not model copying, supplies source identity before strict validation.
+    raw = _v5_evidence_payload(
+        packet, supplied_source="sec-primary:invented:source"
+    )
+    normalized = ld.resolve_diagnostic_citation_refs(raw, refs, packet)
+    output = ls._validate_row_output(normalized, packet)
+    evidence = output.positive_evidence[0]
+    assert evidence.source_id == packet["source_id"]
+    assert evidence.passage_id == packet["passages"][0]["passage_id"]
+
+
+@pytest.mark.parametrize("ref,quote", [
+    ("P999", None),
+    ("P001", "Text present in no passage."),
+    ("P001", "The supplied filing says something else."),
+])
+def test_v5_resolver_never_repairs_unknown_refs_or_nonverbatim_quotes(
+        big, ref, quote):
+    packet = big.packets[0]
+    template = (ROOT / ld.DIAGNOSTIC_PROMPT_TEMPLATE_RELATIVE_PATH).read_text(
+        encoding="utf-8")
+    _, refs = ld.render_diagnostic_prompt_with_citation_refs(template, packet)
+    raw = _v5_evidence_payload(packet, ref=ref, quote=quote)
+    with pytest.raises(ls._RowValidationFailure,
+                       match="passage_id|quote does not resolve") as exc:
+        ls._validate_row_output(
+            ld.resolve_diagnostic_citation_refs(raw, refs, packet), packet
+        )
+    assert exc.value.reason_code == "quote_resolution_failure"
+
+
+def test_v5_replays_the_seven_measured_failures_without_relaxing_quotes():
+    """Read-only regression over the exact seven v4 diagnostic rejections.
+
+    This is intentionally an integration pin rather than a fixture: it proves
+    the structural source injection cures the one source-copy error while the
+    six wrong-passage/non-verbatim examples remain strict rejections.  A clean
+    checkout without the ignored diagnostic artifact skips rather than making
+    the unit suite depend on an unavailable research run.
+    """
+    run_dir = ROOT / "data/runs/universe-screens" / (
+        "universe-high-recall-diagnostic-canary-v2-20260820"
+    )
+    records_path = run_dir / ld.DIAGNOSTIC_RECORDS_FILENAME
+    archive_path = run_dir / ls.RAW_RESPONSES_FILENAME
+    if not records_path.is_file() or not archive_path.is_file():
+        pytest.skip("the pinned v4 diagnostic artifact is unavailable")
+    records = [json.loads(line) for line in records_path.read_text(
+        encoding="utf-8").splitlines() if line.strip()]
+    rejected = [r for r in records if r["record_kind"] == "rejected_output"]
+    assert len(rejected) == 7
+    archive = {entry["raw_response_id"]: entry["raw_response"] for entry in (
+        json.loads(line) for line in archive_path.read_text(
+            encoding="utf-8").splitlines() if line.strip()
+    )}
+    manifest = json.loads((run_dir / ld.DIAGNOSTIC_MANIFEST_FILENAME).read_text(
+        encoding="utf-8"))
+    inputs = ls.load_packet_run(ROOT, ROOT / manifest["packet_manifest_path"])
+    packets = {(p["cik"], p["accession"]): p for p in inputs.packets}
+    template = (ROOT / ld.DIAGNOSTIC_PROMPT_TEMPLATE_RELATIVE_PATH).read_text(
+        encoding="utf-8")
+
+    repaired, still_rejected = [], []
+    for record in rejected:
+        packet = packets[(record["cik"], record["accession"])]
+        _, refs = ld.render_diagnostic_prompt_with_citation_refs(template, packet)
+        normalized = ld.resolve_diagnostic_citation_refs(
+            archive[record["raw_response_id"]], refs, packet
+        )
+        try:
+            ls._validate_row_output(normalized, packet)
+        except ls._RowValidationFailure as exc:
+            assert exc.reason_code == "quote_resolution_failure"
+            still_rejected.append(record["row_ordinal"])
+        else:
+            repaired.append(record["row_ordinal"])
+    assert repaired == [22]  # the sole long-source copying error
+    assert still_rejected == [13, 24, 26, 30, 48, 53]
 
 
 # --- The happy path and the partition -------------------------------------------------
