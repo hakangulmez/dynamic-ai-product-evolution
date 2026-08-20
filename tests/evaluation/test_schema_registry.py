@@ -174,6 +174,18 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-112 (a diagnostic canary measures the
+    # distribution, not the first defect): manifest_version 0.49.0 ->
+    # 0.50.0, 105 -> 108 entries, registering the three diagnostic
+    # contracts - universe_screen_diagnostic_record,
+    # universe_screen_diagnostic_manifest and
+    # universe_screen_diagnostic_authorization. Every authoritative
+    # screen contract, prompt and packet schema is byte-unchanged, and
+    # none of the three is added to EVALUATION_SCHEMA_CONTRACTS or
+    # RELEASED_EVALUATION_CONTRACTS below. This module and its four
+    # siblings now also own the registry version and entry count
+    # outright: ADR-112 removed the duplicate absolute assertions from
+    # tests/universe/test_lineage_screen.py. Before it,
     # Rebaselined by ADR-111 (the screen prompt states how evidence is
     # identified and quoted): manifest_version 0.48.0 -> 0.49.0,
     # 104 -> 105 entries, registering universe_screen_manifest_v4 -- the
@@ -356,7 +368,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "f9fdd90b3d7d60413c8ce204ab20620cee59065e99fb6971d2944f9de76ade7f"
+    "f1ff9cd490229b013285cdc03e8980e9c872c5fb4f0565f706b636ebd66c84b5"
 )
 
 

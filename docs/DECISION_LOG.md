@@ -7727,6 +7727,119 @@ recurring two-literal registry rebaseline in the ADR-108 test module. No
 validator, passage-generation, provider, extraction, governance-logic,
 predecessor-prompt, predecessor-schema or `data/runs` change.
 
+## ADR-112 — A diagnostic canary measures the distribution, not the first defect
+
+**Status.** Accepted. Fixture-first: no model call, no `data/runs` write, no
+retry of any prior canary. All three failed canary directories remain
+immutable and non-authoritative.
+
+**Measured cause.** Three governed canaries stopped at rows 1, 4 and 28.
+Each stop was correct and each fix was a prompt successor, never a relaxed
+validator: ADR-110 closed an out-of-vocabulary archetype, ADR-111 closed
+malformed evidence identity. Canary v3 then ran 27 rows fully clean, with
+105 of 105 citations resolving verbatim, before row 28 produced fabricated
+long quotes in a multi-subsidiary filing. The pattern is now clear and is
+not a defect in the fail-closed contract: an all-or-nothing 100-row run
+measures *the next remaining defect*, one per run, at four rows per
+discovery. It cannot report how often each failure mode occurs, in which
+filings, or at what cost.
+
+**Decision: a separate diagnostic successor, never a permissive variant.**
+`lineage_screen_diagnostic.py` screens one canary_100 selection and applies
+the **identical** strict row validator, imported unchanged from the live
+module — it is not more permissive per row, only more informative per
+cohort. What differs is the policy on a failed row: the authoritative runner
+aborts, the diagnostic runner records a `rejected_output` row and continues.
+`run_lineage_screen_live` and every artifact contract it consumes or emits
+are byte-unchanged, and the live module is SHA-pinned by the diagnostic test
+suite.
+
+**The continuation set is definitional.** A row is recorded and the run
+continues for exactly the reason codes the shared validator can raise —
+`invalid_model_json`, `adapter_rejection`, `quote_resolution_failure`,
+`temporal_violation` — and nothing else, because every other failure reaches
+the runner as a different exception type. Governance, binding and hash
+failures; provider terminal failures and retry exhaustion; envelope-level
+failures (blocked, empty, multi-candidate, part-less, malformed), which are
+transport-contract failures rather than model-output content; capture
+persistence and integrity failures; cap, budget and wall-clock breaches; and
+any write-once or reconciliation invariant all hard-stop the run with a
+governed receipt and no manifest, exactly as on the authoritative path. The
+two vocabularies are disjoint and a test proves it.
+
+**A rejected row carries no result.** `screen_output` is null and the record
+contract has no screen-status field at all, so nothing invalid can be read
+as an outcome. The detail is bounded to 600 characters and sanitized to name
+where validation failed; the full invalid payload is retained **only** in
+the hash-bound raw-response archive, which every row — rejected included —
+binds by id and SHA-256. Raw-before-parse is unchanged. Per-row attempts,
+measured input tokens, reported output tokens, usage verification and
+settled cost are recorded for both kinds, so the price of failure is
+measured alongside its frequency.
+
+**A circuit breaker, because a measurement is not a licence to spend.**
+`max_rejected_rows` is required in the authorization and is 25 for the
+100-row canary. Exceeding it hard-stops the run with the distribution
+measured so far retained as raw evidence. A breaker larger than the cohort
+is refused: one that can never trip is not a breaker.
+
+**Receipt counter semantics, stated exactly.** For every hard stop that
+fires *before* a row record exists — provider, envelope, capture, cap,
+budget — `stopping_row_index` is the row being attempted and
+`records_completed_before_failure` is the count of rows that finished
+before it, both derived as `len(records) + 1` and `len(records)`. The
+circuit breaker is the one case where that derivation is wrong: it fires
+only after its triggering row has been validated, archived and counted, so
+that row is already in `records`. It therefore passes both counters
+explicitly — `stopping_row_index` is the triggering row's own ordinal and
+`records_completed_before_failure` is one less. The triggering row remains
+counted in `rejected_rows` and present in the raw archive, because it was
+genuinely measured; what the failed run does not write is the records
+JSONL, the capture ledger and the manifest.
+
+**A separate authorization contract, decided honestly.** The live
+authorization is closed and carries no run-kind discriminator, so extending
+it was impossible and reusing it would have let an authorization minted for
+authoritative screening silently authorize diagnostic collection.
+`universe_screen_diagnostic_authorization@0.1.0` therefore stands beside it,
+carrying every binding the live contract carries — proven by a subset test
+over its property and required sets — plus `run_kind`, `diagnostic_only`,
+`promotable`, `output_contract` and `max_rejected_rows`. Neither runner can
+consume the other's authorization. The adapter enablement is reused
+unchanged: it governs which endpoints may exist at all, which is
+run-kind-agnostic, and it authorizes no run by itself.
+
+**Non-promotability is structural, not declarative.** Four independent
+mechanisms, any one sufficient: the outputs carry diagnostic filenames, so
+`require_authoritative_screen_run` and `require_promotable_screen_run`
+refuse the directory for having no `universe_screen_manifest.json` **with no
+code change**; the record and manifest contracts share no `$id` or field set
+with the authoritative ones and every schema is closed, so they mutually
+reject; the manifest pins `diagnostic_only`, `promotable`, `run_kind` and
+`selection_kind` as consts; and the authorization contract differs. A new
+`require_diagnostic_run` is the only loader that admits these directories,
+and it refuses receipt-bearing, manifest-less, authoritative and
+hash-mismatched runs alike.
+
+**The v3 prompt is deliberately unchanged.** The first diagnostic canary
+exists to measure the true remaining error distribution of the prompt that
+is committed today, not to hide it behind another successor.
+
+**A recurring coupling, resolved.** For four consecutive increments the
+ADR-108 test module has needed a two-literal registry rebaseline. Under
+explicit authorization its two absolute registry version and count
+assertions are now **removed permanently**; its schema-key assertions
+remain, and ownership of registry version and count moves to the five
+evaluation guard modules, which already carry the pinned manifest hash and
+the rebaseline history. Nothing else in that module changed.
+
+**Scope.** Fifteen paths: the diagnostic module, its three contracts, its
+test module, the pipeline entrypoint (mode count 22 to 23), the registry
+(0.49.0 to 0.50.0, 105 to 108), this log, `REPO_MANIFEST.md` (818 to 823),
+the five evaluation guards, and the ADR-108 literal removal. No provider,
+extraction, packet, passage, validator, live-runner, prompt, predecessor
+schema or `data/runs` change.
+
 ## Open decisions
 
 - Required source packet by firm-year.
@@ -7747,6 +7860,6 @@ predecessor-prompt, predecessor-schema or `data/runs` change.
 - Whether `Payments` is a genuine standalone product or a named feature of `Commerce Hub`. The source text presents it as included within Commerce Hub ("It includes an end-to-end payment solution, Payments…") and Commerce Hub's own "Features include" list sits beside it in the same sentence, but Payments alone carries a dedicated risk-factor paragraph (third-party payment facilitator, money-laundering/fraud liability) that none of Commerce Hub's other named features (payment links, invoicing, quoting) carry — a candidate signal for its own commercial/administrative boundary. Not resolved; the existing product boundary (both as separate Snapshot A members) is left unchanged for this round. Surfaced while deciding the first live `task_extraction` candidates, both of which cite Payments as their product.
 - Whether the exploratory extraction beyond ADR-030's admitted firm is to be brought onto the governed path, bounded, or discarded. ADR-030 admits one firm-year, HubSpot FY2024. Fifteen firms were subsequently ingested at one period each, and a five-year panel of eighty firm-periods was ingested and put through product extraction, entirely outside the governed path: packets were built ad hoc because `pilot_packet.py` is pinned to one CIK, no run wrote a governance chain, and no output entered a decision set, snapshot or universe. Eighty-six model calls carry no prompt hash, no packet hash and no run manifest, so none of their results is citable; counted as the scratchpad JSON files carrying `usageMetadata`, and costing 1,559,367 microdollars against the 362,721 of the thirty-five governed runs. An earlier revision of this entry said "roughly 121", a figure repeated from a review without checking it against the files. The corpus and the measurements exist; the admission does not. Recorded so that a later reader does not mistake the disk contents for an admitted universe.
 - Whether official-web collection is deferred, bounded to a validation-only role, or still required. ADR-033 records it as "required for corpus completeness" and treats `corpus_scope = sec_only_partial` as provisional, with `official_ir`, `product_pages`, `developer_docs` and `web_archives` at `not_attempted`; that ADR has not been superseded. The measured ground the deferral rested on is withdrawn. It counted URLs beneath a `/products` path -- a range of 8 to 167 across firms -- and those lists carry campaign-parameter duplicates and page types no reading would call products (`business-card-scanner-app`, `ui-builder`, `reporting`). The unit that answers the question is the firm's own product index, and reading one for three firms at temporally valid capture dates gives 6 products plus a bundle for HubSpot, 170 links for ServiceNow, and 16 for MongoDB. Those three captures also settle a narrower point: ADR-033's `not_attempted` cannot be read as `unavailable`, because the sources were located and retrieved -- `web.archive.org/web/20241102000438id_/https://www.hubspot.com/products` (sha256 `e0c6d27e…`, inside FY2024 and before the 2025-02-12 filing), `.../20260101061641id_/https://www.servicenow.com/products-by-category.html` (`d4ce4f08…`, before the 2026-01-29 filing), `.../20260118015728id_/https://www.mongodb.com/products` (`6f5c82cb…`, before the 2026-01-31 period end), and `.../20260101212852id_/https://www.servicenow.com/products/itsm.html` (`ea575c4f…`). All four are exploratory fetches outside the governed collection path, with no snapshot, passage identity or receipt, so none may be cited by an observation. What they measure is not quantity but role. `docs/SOURCE_POLICY.md` gives the product page two roles at once, "customer-facing capability and product packaging", and in these three firms the two do not arrive together: HubSpot's index labels every product "Free and premium plans" and describes no function; ServiceNow's ITSM page carries eighteen or more verb-object-outcome phrases and no commercial term at all -- `Prime`, `pricing`, `per user`, `SKU` and `license` are each zero -- and ServiceNow has no archived pricing page under any of the paths searched. The ablation's question is therefore not whether the site is better than Item 1 but which role it fills in which firm, and a single extraction contract will not cover all three. The counter-evidence is of a different kind, and it is about kind rather than quantity: `docs/SOURCE_POLICY.md` assigns capability to product pages rather than to filings, and Item 1 names features where a product page describes functions. HubSpot's Item 1 gives Marketing Hub four terms ("marketing automation and email, social media, SEO, and reporting and analytics"); the same product's current public pages describe scheduling and tracking posts across four named networks from one dashboard, behavioural workflow triggers, and multi-touch revenue attribution. Deriving a capability from the first requires inventing the verb; the second supplies it. That comparison is itself outside the corpus -- the pages are current, name Hubs that appear in no filing through FY2025, and can support no observation under Rule 3 -- so it bears on the source-scope question and on nothing else. `docs/methodology/VALIDATION_STRATEGY.md` and the ninety-day roadmap both ask for this to be settled by the "Item 1 only versus enriched official corpus" ablation, whose scoring depends on a gold set that does not yet exist. The deferral is therefore reasonable and unrecorded until now; it is not a decision.
-- Whether a per-row evidence or output-contract failure in the live screen should be a recorded row outcome rather than a run-stopping error. ADR-108's fail-closed contract stops the run at the first violating row, which is what caught both canary defects at a cost of one and four rows respectively; but it also means a 100-row canary cannot complete while any row can still violate a contract, so the run measures the first defect rather than the distribution of defects. A successor could keep the hard stop for governance, binding, capture and budget failures while recording adapter/quote failures as per-row outcomes with their raw responses retained. Not decided here (see ADR-111).
+- RESOLVED by ADR-112: a per-row model-output failure is a recorded outcome in a separate, structurally non-promotable diagnostic canary, while the authoritative screen keeps its all-or-nothing fail-closed contract unchanged. The authoritative path was not weakened; a second path was added beside it.
 - Which cases remain eligible for the frozen test partition after ADR-015 exposure. The product-stage predictions of all fifteen firms at their most recent period were inspected during design work and are permanently ever-exposed; no blind frozen case can be built from that stage at that period. Capability-stage output was inspected for two firms and task-stage output for one, and the 2021-2024 periods were examined only in aggregate. A frozen partition is therefore still constructible from the capability and task stages of the thirteen unexamined firms and from earlier periods, and does not require ingesting new firms. The partition membership itself is a case-set-manifest decision and is not settled here.
 - Whether a verb-less feature name is a capability. `docs/methodology/PRODUCT_CAPABILITY_TASK_ONTOLOGY.md` defines a capability as "a concrete function the product provides" and every one of its five examples is a verb phrase, but the definition sentence does not require one; the verb rule is stated in `capability_discovery_schema_v3` and nowhere in the governing documents. Measured on one filing, HubSpot FY2024, three readings put the capability count at 58, 66 and 69: the rule changes the recorded form rather than the count, because the registered prompt verbalises each noun one-for-one (`call tracking` becomes `track calls`). The structural divergence sits one layer down and is stated as a count rather than a rate: of the pipeline's 64 tasks, 60 reference exactly one capability. A single smoke run supports that count; it does not support a rate, and an earlier revision of this entry claimed a factor-of-two capability difference and a task-per-capability ratio without checking either against the outputs on disk. It is a construct decision and belongs to the methodology owner; recording it in the ontology rather than in a prompt is what would bind a gold annotation.

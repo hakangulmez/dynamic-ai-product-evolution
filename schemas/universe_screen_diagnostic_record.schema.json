@@ -1,0 +1,337 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_diagnostic_record.schema.json",
+  "title": "Universe screen diagnostic record (v0.1, canary measurement only)",
+  "description": "One row of a diagnostic canary run (ADR-112). This contract is deliberately separate from universe_screen_record@0.1.0 and shares no identity with it: an authoritative screen record can only be produced by the all-or-nothing authoritative runner, and nothing here may ever be mistaken for one. Exactly two closed kinds exist. A validated_screen row passed the same unchanged strict row validator the authoritative runner uses, and carries the ordinary validated screen output together with its packet, prompt and raw-response bindings. A rejected_output row failed that same validator: it carries no accepted screen result at all - screen_output is null and there is no screen_status field in this contract - only the closed rejection reason and a bounded, sanitized detail naming where validation failed. The full invalid payload is never copied here; it lives exclusively in the run's hash-bound raw-response archive, which every row binds by id and SHA-256, so nothing is lost and nothing invalid can be read as a result. Both kinds carry per-row measurement - attempts, measured input tokens, reported output tokens, whether usage verified, and settled cost - because the point of a diagnostic run is to measure the distribution of outcomes and their cost, including the cost of failures.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_contract",
+    "record_kind",
+    "row_ordinal",
+    "cik",
+    "company_id",
+    "accession",
+    "form",
+    "baseline_filing_date",
+    "source_id",
+    "packet_sha256",
+    "prompt_sha256",
+    "model_route",
+    "raw_response_id",
+    "raw_response_sha256",
+    "screen_output",
+    "rejection_reason_code",
+    "rejection_detail",
+    "attempts",
+    "measured_input_tokens",
+    "usage_output_tokens",
+    "usage_verified",
+    "cost_micros"
+  ],
+  "properties": {
+    "record_contract": {
+      "const": "universe_screen_diagnostic_record@0.1.0"
+    },
+    "record_kind": {
+      "enum": [
+        "validated_screen",
+        "rejected_output"
+      ]
+    },
+    "row_ordinal": {
+      "description": "1-based position in the selection's row order, so a rejection can be located in the raw archive and the capture tree.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "cik": {
+      "type": "string",
+      "pattern": "^\\d{10}$"
+    },
+    "company_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "accession": {
+      "type": "string",
+      "pattern": "^\\d{10}-\\d{2}-\\d{6}$"
+    },
+    "form": {
+      "enum": [
+        "10-K",
+        "10-KT"
+      ]
+    },
+    "baseline_filing_date": {
+      "description": "Always present: a diagnostic canary screens selected valid packets only, and every packet carries its filing date.",
+      "type": "string",
+      "format": "date"
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^sec-primary:\\d{10}:\\d{10}-\\d{2}-\\d{6}:.+$"
+    },
+    "packet_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prompt_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "model_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model_label"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "raw_response_id": {
+      "description": "Both kinds bind their raw response: a rejected row's evidence is retained in full in the archive, never summarized into this record.",
+      "type": "string",
+      "minLength": 1
+    },
+    "raw_response_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_output": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cik",
+            "company_id",
+            "screen_status",
+            "plausible_customer_facing_digital_product",
+            "candidate_customer_value_archetypes",
+            "positive_evidence",
+            "negative_or_boundary_evidence",
+            "missing_evidence",
+            "confidence"
+          ],
+          "properties": {
+            "cik": {
+              "type": "string",
+              "pattern": "^\\d{10}$"
+            },
+            "company_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "screen_status": {
+              "enum": [
+                "LIKELY_ELIGIBLE",
+                "LIKELY_INELIGIBLE",
+                "BOUNDARY_OR_UNCERTAIN"
+              ]
+            },
+            "plausible_customer_facing_digital_product": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "candidate_customer_value_archetypes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "FUNCTIONAL_SOFTWARE",
+                  "ADAPTIVE_DIGITAL_SERVICE",
+                  "DATA_ANALYTICS_PRODUCT",
+                  "TRANSACTION_INFRASTRUCTURE",
+                  "MARKETPLACE_COORDINATION",
+                  "CONTENT_CATALOG",
+                  "ATTENTION_SOCIAL_PLATFORM",
+                  "INTERACTIVE_ENTERTAINMENT",
+                  "HARDWARE_SOFTWARE_SYSTEM",
+                  "HUMAN_MANAGED_SERVICE",
+                  "ECOMMERCE_RETAIL",
+                  "PHYSICAL_SERVICE_NETWORK",
+                  "OTHER"
+                ]
+              }
+            },
+            "positive_evidence": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/screen_evidence"
+              }
+            },
+            "negative_or_boundary_evidence": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/screen_evidence"
+              }
+            },
+            "missing_evidence": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "confidence": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "screen_status": {
+                    "const": "LIKELY_ELIGIBLE"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "positive_evidence": {
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "rejection_reason_code": {
+      "description": "The closed set of model-output-level failures a diagnostic run records and continues past. Every other failure class hard-stops the run and produces a receipt, never a record.",
+      "enum": [
+        "invalid_model_json",
+        "adapter_rejection",
+        "quote_resolution_failure",
+        "temporal_violation",
+        null
+      ]
+    },
+    "rejection_detail": {
+      "description": "Bounded, sanitized diagnosis: which field or citation failed and how, never a copy of the model payload. Capped so a pathological response cannot inflate the records file.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 600
+    },
+    "attempts": {
+      "description": "Generate attempts spent on this row under the bounded transient retry policy; 1 unless a transient failure was retried.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "measured_input_tokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "usage_output_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "usage_verified": {
+      "type": "boolean"
+    },
+    "cost_micros": {
+      "description": "This row's settled cost under the committed exact-integer pricing rule: measured usage when it verified on a single attempt, else the per-attempt ceiling times attempts made.",
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "validated_screen"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "screen_output": {
+            "type": "object"
+          },
+          "rejection_reason_code": {
+            "type": "null"
+          },
+          "rejection_detail": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "rejected_output"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "screen_output": {
+            "type": "null"
+          },
+          "rejection_reason_code": {
+            "type": "string"
+          },
+          "rejection_detail": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "screen_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "passage_id",
+        "quote",
+        "supported_claim"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "passage_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 1
+        },
+        "supported_claim": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

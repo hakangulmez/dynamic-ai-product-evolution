@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Twenty-two mutually exclusive modes, selected by ``--mode`` (default
+Twenty-three mutually exclusive modes, selected by ``--mode`` (default
 ``sentinel`` so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -66,6 +66,15 @@ Twenty-two mutually exclusive modes, selected by ``--mode`` (default
   before a run directory, an SDK import, credential resolution or any
   network send exists. This increment ships offline only: no test builds a
   real SDK client.
+- ``screen-universe-lineage-diagnostic`` is the canary-only diagnostic
+  successor (ADR-112). It screens exactly one ``canary_100`` selection under
+  a *separate* diagnostic authorization contract, applies the identical
+  strict row validator, and records a rejected_output row instead of
+  aborting when a model output fails validation — so one run measures the
+  distribution of failures rather than the first one. It hard-stops exactly
+  as the authoritative route does on governance, provider, envelope,
+  capture, cap and budget failures, and on its declared rejected-row
+  circuit breaker. Its outputs are structurally non-promotable.
 - ``select-screen-rows`` builds one governed ``universe_screen_selection``
   artifact (ADR-109): a seeded, stratified, packet-native canary_100
   enumeration of exactly one hundred rows, or the explicitly different
@@ -205,6 +214,9 @@ from dynamic_ai_products.universe.lineage_screen import (  # noqa: E402
     ScreenInputError,
     run_lineage_screen,
 )
+from dynamic_ai_products.lineage_screen_diagnostic import (  # noqa: E402
+    run_lineage_screen_diagnostic,
+)
 from dynamic_ai_products.lineage_screen_live import (  # noqa: E402
     build_screen_selection,
     run_lineage_screen_live,
@@ -236,6 +248,7 @@ def build_parser() -> argparse.ArgumentParser:
                  "build-baseline-packets-lineage-v2",
                  "screen-universe-lineage",
                  "screen-universe-lineage-live",
+                 "screen-universe-lineage-diagnostic",
                  "select-screen-rows",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
@@ -574,6 +587,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
     screen_offenders: list[str] = []
     if args.mode not in ("screen-universe-lineage",
                          "screen-universe-lineage-live",
+                         "screen-universe-lineage-diagnostic",
                          "select-screen-rows"):
         screen_offenders += _present(
             (("--packet-manifest", args.packet_manifest),)
@@ -583,12 +597,14 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             (("--screen-fixture", args.screen_fixture),)
         )
     if args.mode not in ("screen-universe-lineage",
-                         "screen-universe-lineage-live"):
+                         "screen-universe-lineage-live",
+                         "screen-universe-lineage-diagnostic"):
         screen_offenders += _present((
             ("--logical-request-cap", args.logical_request_cap),
             ("--provider-attempt-cap", args.provider_attempt_cap),
         ))
-    if args.mode != "screen-universe-lineage-live":
+    if args.mode not in ("screen-universe-lineage-live",
+                         "screen-universe-lineage-diagnostic"):
         screen_offenders += _present((
             ("--selection-artifact", args.selection_artifact),
             ("--governance-root", args.governance_root),
@@ -944,6 +960,40 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         if missing:
             return (
                 "screen-universe-lineage-live mode requires: "
+                f"{', '.join(missing)}"
+            )
+        return None
+
+    if args.mode == "screen-universe-lineage-diagnostic":
+        offending = _present(
+            frame_flags + acquire_flags + dera_flags
+            # Same rule as the live route: the packet manifest, the selection
+            # artifact and the governance root are its only inputs, and the
+            # mock provider belongs to the fixture mode alone.
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+            + (("--input", args.input),)
+            + (("--seed", args.seed),)
+            + (("--provider", args.provider),)
+        )
+        if offending:
+            return (
+                "screen-universe-lineage-diagnostic mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--packet-manifest", args.packet_manifest),
+            ("--selection-artifact", args.selection_artifact),
+            ("--governance-root", args.governance_root),
+            ("--screen-authorization", args.screen_authorization),
+            ("--screen-authorization-sha256",
+             args.screen_authorization_sha256),
+            ("--logical-request-cap", args.logical_request_cap),
+            ("--provider-attempt-cap", args.provider_attempt_cap),
+        ))
+        if missing:
+            return (
+                "screen-universe-lineage-diagnostic mode requires: "
                 f"{', '.join(missing)}"
             )
         return None
@@ -2085,6 +2135,71 @@ def _main_screen_universe_lineage_live(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_screen_universe_lineage_diagnostic(args: argparse.Namespace) -> int:
+    packet_manifest = Path(args.packet_manifest)
+    selection_artifact = Path(args.selection_artifact)
+    governance_root = Path(args.governance_root)
+    for label, path in (("packet manifest", packet_manifest),
+                        ("selection artifact", selection_artifact)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    if not governance_root.is_dir():
+        print(f"ERROR: governance root not found: {governance_root}",
+              file=sys.stderr)
+        return 2
+    try:
+        result = run_lineage_screen_diagnostic(
+            repo_root=REPO_ROOT,
+            packet_manifest_path=packet_manifest,
+            selection_artifact_path=selection_artifact,
+            governance_root=governance_root,
+            authorization_reference=args.screen_authorization,
+            authorization_sha256=args.screen_authorization_sha256,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            logical_request_cap=args.logical_request_cap,
+            provider_attempt_cap=args.provider_attempt_cap,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid diagnostic screen input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "status": result.status,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "planned_screened": result.planned_screened,
+        "validated": result.validated,
+        "rejected": result.rejected,
+        "rejections_by_reason": result.rejections_by_reason,
+        "counts": result.counts,
+        "request_accounting": result.request_accounting,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+        "failure_receipt_path": (
+            str(result.failure_receipt_path)
+            if result.failure_receipt_path else None
+        ),
+        "receipt": result.receipt,
+    }
+    print(json.dumps(payload, indent=2))
+    if result.status == "failed":
+        print("ERROR: diagnostic run stopped with a failure receipt; the run "
+              "directory is incomplete and non-authoritative.", file=sys.stderr)
+        return 1
+    # Rejected rows are the measurement, not a run failure.
+    return 0
+
+
 def _main_select_screen_rows(args: argparse.Namespace) -> int:
     packet_manifest = Path(args.packet_manifest)
     if not packet_manifest.is_file():
@@ -2408,6 +2523,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_screen_universe_lineage(args)
     if args.mode == "screen-universe-lineage-live":
         return _main_screen_universe_lineage_live(args)
+    if args.mode == "screen-universe-lineage-diagnostic":
+        return _main_screen_universe_lineage_diagnostic(args)
     if args.mode == "select-screen-rows":
         return _main_select_screen_rows(args)
     if args.mode == "plan-acquisition-queue":

@@ -1873,13 +1873,13 @@ def test_adr108_predecessors_are_byte_identical():
             "066c49ed118125564fe16cbc57b413d7b96ea3d31bc47cf14a4e3b190693d253",
         "schemas/universe_screen_manifest.schema.json":
             "32e48d9a56bfa12115c3887b0944d0bb156f504c2ef6530401e500faf57e778d",
-        # Rebaselined twice, each time only in its registry test's two
-        # literals and nothing else (ADR-109: 0.46.0 -> 0.47.0, 99 -> 103;
-        # ADR-110: 0.47.0 -> 0.48.0, 103 -> 104; ADR-111: 0.48.0 -> 0.49.0,
-        # 104 -> 105). Every behavioral ADR-108
-        # assertion, and the mock path it exercises, is unchanged.
+        # Rebaselined for registry literals three times (ADR-109/110/111),
+        # then changed once more by ADR-112, which removed those two absolute
+        # assertions permanently and moved registry version/count ownership
+        # to the five evaluation guards. Every behavioral ADR-108 assertion,
+        # and the mock path it exercises, is unchanged throughout.
         "tests/universe/test_lineage_screen.py":
-            "3075bf2ad83db4944423cd7673cd3823bdf48b290b870f727d8c5a79c6cd37a8",
+            "e3f3691a297ce1949a93598569f72f720df4b4e2d793a4d3d02acfa295765671",
         # ADR-110 adds a successor prompt beside it; v1 itself never moves.
         "prompts/discovery/universe_high_recall_screen.md":
             "4ac95a4c4e6ffdfbc55de7aec98fe4d50b89c29fab79e75a10c07cc35d102194",
@@ -1900,9 +1900,10 @@ def test_registry_registers_the_four_live_screen_schemas():
         (ROOT / "schemas" / "schema_version_manifest.json")
         .read_text(encoding="utf-8"))
     # ADR-110 added the v0.3 live manifest successor (103 -> 104);
-    # ADR-111 adds v0.4 (104 -> 105).
-    assert registry["manifest_version"] == "0.49.0"
-    assert len(registry["schemas"]) == 105
+    # ADR-111 added v0.4 (104 -> 105); ADR-112 adds the three
+    # diagnostic-canary contracts (105 -> 108).
+    assert registry["manifest_version"] == "0.50.0"
+    assert len(registry["schemas"]) == 108
     assert registry["schemas"]["universe_screen_manifest_v3"] == "0.3.0"
     assert registry["schemas"]["universe_screen_manifest_v4"] == "0.4.0"
     assert registry["schemas"]["universe_screen_selection"] == "0.1.0"

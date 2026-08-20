@@ -1055,7 +1055,12 @@ def test_registry_registers_the_two_screen_schemas():
     registry = json.loads(
         (ROOT / "schemas" / "schema_version_manifest.json")
         .read_text(encoding="utf-8"))
-    assert registry["manifest_version"] == "0.49.0"
-    assert len(registry["schemas"]) == 105
+    # ADR-112: the absolute manifest_version and entry-count assertions are
+    # permanently removed here. They required a mechanical rebaseline in four
+    # consecutive increments while proving nothing this module is about;
+    # registry version and count are owned by the five evaluation guard
+    # modules, which pin the manifest hash itself. What remains is the only
+    # registry fact this module depends on -- that its own two schemas are
+    # registered at the versions it validates against.
     assert registry["schemas"]["universe_screen_record"] == "0.1.0"
     assert registry["schemas"]["universe_screen_manifest"] == "0.1.0"

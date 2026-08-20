@@ -665,6 +665,15 @@ def test_manifest_count():
     # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
     # v0.1.
+    # 823 = 818 + the five ADR-112 paths: the diagnostic-canary runner
+    # (src/dynamic_ai_products/lineage_screen_diagnostic.py), its three
+    # contracts (record, manifest, authorization) and its test module.
+    # It measures the distribution of model-output failures over one
+    # canary selection while the authoritative runner keeps its
+    # all-or-nothing fail-closed contract byte-unchanged. Schema
+    # registry: 0.49.0 -> 0.50.0, 105 -> 108 entries; none of the three
+    # is added to EVALUATION_SCHEMA_CONTRACTS or
+    # RELEASED_EVALUATION_CONTRACTS. Before it,
     # 818 = 816 + the two ADR-111 paths: the v3 screen prompt successor
     # (prompts/discovery/universe_high_recall_screen.v3.md), which states
     # how source_id, passage_id and the quote are copied and verified --
@@ -742,7 +751,7 @@ def test_manifest_count():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert declared == len(paths) == 818
+    assert declared == len(paths) == 823
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 
