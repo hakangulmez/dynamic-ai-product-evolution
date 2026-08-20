@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_live_authorization.v2.schema.json",
+  "title": "Universe screen live-call authorization (v0.2, evidence-safe successor)",
+  "description": "Per-run authorization for the ADR-116 authoritative V5 screen. It binds the V5 source-minimal prompt, packet cohort, selection, governance enablement, client contract, route and caps. max_model_evidence_unverified is a real circuit breaker: validation-content failures are persisted as MODEL_EVIDENCE_UNVERIFIED; provider, governance, capture, cap and budget faults remain run-fatal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["authorization_contract", "authorization_id", "authorized_by", "effective_at", "expires_at", "deployment_environment_id", "rollout_state", "screen_stage", "packet_manifest_sha256", "prompt_template_sha256", "selection_artifact_sha256", "selection_kind", "screen_adapter_enablement_reference", "screen_adapter_enablement_sha256", "provider_client_contract_reference", "provider_client_contract_sha256", "vertex_project", "vertex_location", "model_route", "endpoint_allowlist", "logical_request_cap", "provider_attempt_cap", "budget_max_external_requests", "budget_max_input_tokens", "budget_max_output_tokens", "budget_max_estimated_cost_micros", "budget_max_wall_clock_seconds", "retry_policy_version", "rate_limit_policy_version", "max_model_evidence_unverified"],
+  "properties": {
+    "authorization_contract": {"const": "universe_screen_live_authorization@0.2.0"},
+    "authorization_id": {"type": "string", "minLength": 1}, "authorized_by": {"type": "string", "minLength": 1},
+    "effective_at": {"type": "string", "minLength": 1}, "expires_at": {"type": "string", "minLength": 1},
+    "deployment_environment_id": {"type": "string", "minLength": 1},
+    "rollout_state": {"enum": ["controlled_pilot", "release_or_research_production"]},
+    "screen_stage": {"const": "universe_high_recall_screen"},
+    "packet_manifest_sha256": {"$ref": "#/$defs/sha256"}, "prompt_template_sha256": {"$ref": "#/$defs/sha256"}, "selection_artifact_sha256": {"$ref": "#/$defs/sha256"},
+    "selection_kind": {"enum": ["canary_100", "full_cohort"]},
+    "screen_adapter_enablement_reference": {"type": "string", "minLength": 1}, "screen_adapter_enablement_sha256": {"$ref": "#/$defs/sha256"},
+    "provider_client_contract_reference": {"type": "string", "minLength": 1}, "provider_client_contract_sha256": {"$ref": "#/$defs/sha256"},
+    "vertex_project": {"type": "string", "minLength": 1}, "vertex_location": {"type": "string", "minLength": 1},
+    "model_route": {"type": "object", "additionalProperties": false, "required": ["provider", "model_label"], "properties": {"provider": {"type": "string", "minLength": 1}, "model_label": {"type": "string", "minLength": 1}}},
+    "endpoint_allowlist": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string", "minLength": 1}},
+    "logical_request_cap": {"type": "integer", "minimum": 1}, "provider_attempt_cap": {"type": "integer", "minimum": 1}, "budget_max_external_requests": {"type": "integer", "minimum": 2},
+    "budget_max_input_tokens": {"type": "integer", "minimum": 1}, "budget_max_output_tokens": {"type": "integer", "minimum": 1}, "budget_max_estimated_cost_micros": {"type": "integer", "minimum": 1}, "budget_max_wall_clock_seconds": {"type": "integer", "minimum": 1},
+    "retry_policy_version": {"type": "string", "minLength": 1}, "rate_limit_policy_version": {"type": "string", "minLength": 1},
+    "max_model_evidence_unverified": {"type": "integer", "minimum": 0}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+  "allOf": [
+    {"if": {"properties": {"selection_kind": {"const": "canary_100"}}}, "then": {"properties": {"rollout_state": {"const": "controlled_pilot"}, "logical_request_cap": {"const": 100}, "provider_attempt_cap": {"const": 300}, "budget_max_external_requests": {"const": 400}}}},
+    {"if": {"properties": {"selection_kind": {"const": "full_cohort"}}}, "then": {"properties": {"rollout_state": {"const": "release_or_research_production"}}}}
+  ]
+}

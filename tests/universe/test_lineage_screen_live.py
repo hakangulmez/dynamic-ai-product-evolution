@@ -1925,9 +1925,10 @@ def test_registry_registers_the_four_live_screen_schemas():
     # ADR-111 added v0.4 (104 -> 105); ADR-112 adds the three
     # diagnostic-canary contracts (105 -> 108); ADR-113 adds the v0.5
     # live manifest successor (108 -> 109); ADR-115 adds the three
-    # diagnostic-repair contracts (109 -> 112).
-    assert registry["manifest_version"] == "0.52.0"
-    assert len(registry["schemas"]) == 112
+    # diagnostic-repair contracts (109 -> 112). ADR-116 adds the V5
+    # authoritative successor's record, authorization and manifest (112 -> 115).
+    assert registry["manifest_version"] == "0.55.0"
+    assert len(registry["schemas"]) == 115
     assert registry["schemas"]["universe_screen_manifest_v3"] == "0.3.0"
     assert registry["schemas"]["universe_screen_manifest_v4"] == "0.4.0"
     assert registry["schemas"]["universe_screen_manifest_v5"] == "0.5.0"
@@ -1935,3 +1936,6 @@ def test_registry_registers_the_four_live_screen_schemas():
     assert registry["schemas"]["universe_screen_adapter_enablement"] == "0.1.0"
     assert registry["schemas"]["universe_screen_live_authorization"] == "0.1.0"
     assert registry["schemas"]["universe_screen_manifest_v2"] == "0.2.0"
+    assert registry["schemas"]["universe_screen_record_v2"] == "0.2.0"
+    assert registry["schemas"]["universe_screen_live_authorization_v2"] == "0.2.0"
+    assert registry["schemas"]["universe_screen_manifest_v6"] == "0.6.0"

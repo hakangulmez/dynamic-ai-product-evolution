@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_record.v2.schema.json",
+  "title": "Universe high-recall screen record (v0.2, evidence-safe authoritative successor)",
+  "description": "One retained-row record for ADR-116. INSUFFICIENT_EVIDENCE remains reserved for a packet-build failure with no model call. MODEL_EVIDENCE_UNVERIFIED is distinct: a valid packet was model-called and its verbatim response is archive-bound, but one closed validation condition failed. It carries no screen result and is a non-negative review state, never an exclusion.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["record_contract", "record_kind", "cik", "company_id", "accession", "form", "baseline_filing_date", "source_id", "packet_sha256", "screen_status", "prompt_sha256", "model_route", "raw_response_id", "raw_response_sha256", "screen_output", "failure_reason_code", "failure_detail"],
+  "properties": {
+    "record_contract": {"const": "universe_screen_record@0.2.0"},
+    "record_kind": {"enum": ["screened_packet", "insufficient_evidence", "model_evidence_unverified"]},
+    "cik": {"type": "string", "pattern": "^\\d{10}$"},
+    "company_id": {"type": "string", "minLength": 1},
+    "accession": {"type": "string", "pattern": "^\\d{10}-\\d{2}-\\d{6}$"},
+    "form": {"enum": ["10-K", "10-KT"]},
+    "baseline_filing_date": {"type": ["string", "null"], "format": "date"},
+    "source_id": {"type": "string", "pattern": "^sec-primary:\\d{10}:\\d{10}-\\d{2}-\\d{6}:.+$"},
+    "packet_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "screen_status": {"enum": ["LIKELY_ELIGIBLE", "LIKELY_INELIGIBLE", "BOUNDARY_OR_UNCERTAIN", null]},
+    "prompt_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "model_route": {"type": ["object", "null"], "additionalProperties": false, "required": ["provider", "model_label"], "properties": {"provider": {"type": "string", "minLength": 1}, "model_label": {"type": "string", "minLength": 1}}},
+    "raw_response_id": {"type": ["string", "null"], "minLength": 1},
+    "raw_response_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "screen_output": {"type": ["object", "null"]},
+    "failure_reason_code": {"type": ["string", "null"], "minLength": 1},
+    "failure_detail": {"type": ["string", "null"], "maxLength": 600}
+  },
+  "allOf": [
+    {"if": {"properties": {"record_kind": {"const": "screened_packet"}}}, "then": {"properties": {"baseline_filing_date": {"type": "string"}, "packet_sha256": {"type": "string"}, "screen_status": {"enum": ["LIKELY_ELIGIBLE", "LIKELY_INELIGIBLE", "BOUNDARY_OR_UNCERTAIN"]}, "prompt_sha256": {"type": "string"}, "model_route": {"type": "object"}, "raw_response_id": {"type": "string"}, "raw_response_sha256": {"type": "string"}, "screen_output": {"type": "object"}, "failure_reason_code": {"type": "null"}, "failure_detail": {"type": "null"}}}},
+    {"if": {"properties": {"record_kind": {"const": "insufficient_evidence"}}}, "then": {"properties": {"baseline_filing_date": {"type": "null"}, "packet_sha256": {"type": "null"}, "screen_status": {"type": "null"}, "prompt_sha256": {"type": "null"}, "model_route": {"type": "null"}, "raw_response_id": {"type": "null"}, "raw_response_sha256": {"type": "null"}, "screen_output": {"type": "null"}, "failure_reason_code": {"type": "string"}, "failure_detail": {"type": "string"}}}},
+    {"if": {"properties": {"record_kind": {"const": "model_evidence_unverified"}}}, "then": {"properties": {"baseline_filing_date": {"type": "string"}, "packet_sha256": {"type": "string"}, "screen_status": {"type": "null"}, "prompt_sha256": {"type": "string"}, "model_route": {"type": "object"}, "raw_response_id": {"type": "string"}, "raw_response_sha256": {"type": "string"}, "screen_output": {"type": "null"}, "failure_reason_code": {"enum": ["invalid_model_json", "adapter_rejection", "quote_resolution_failure", "temporal_violation"]}, "failure_detail": {"type": "string"}}}}
+  ]
+}

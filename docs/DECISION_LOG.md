@@ -7981,6 +7981,62 @@ in the live and diagnostic screen test modules. `lineage_screen_live.py`,
 authoritative and diagnostic contract, and every `data/runs` artifact remain
 byte-identical.
 
+## ADR-116 — Authoritative V5 screen preserves model-evidence uncertainty
+
+**Status.** Accepted, fixture-first successor. This decision does not alter
+the all-or-nothing ADR-109 live route, its v0.1 record contract, or any
+completed diagnostic artifact.
+
+**Measured basis.** The V5 governed diagnostic canary completed all 100
+selected packet rows: 97 validated and 3 rejected for
+`quote_resolution_failure`. The three rejected outputs contained model text
+that could not be verified as a contiguous quote in the packet passage. The
+strict validator correctly rejected them; accepting them as a negative screen
+result would be unsafe. Conversely, stopping an entire 7,042-packet screen at
+the first such model-output defect would make the already measured error
+surface invisible and prevent an auditable full cohort result.
+
+**Decision.** `lineage_screen_live_v2.py` is an authoritative successor,
+bound to the V5 source-minimal passage-reference prompt. It applies the
+unchanged strict validator after deterministic `passage_ref` resolution and
+packet-owned source injection. A model-output validation failure in the
+closed vocabulary `invalid_model_json`, `adapter_rejection`,
+`quote_resolution_failure`, or `temporal_violation` produces one
+`universe_screen_record@0.2.0` row of kind
+`model_evidence_unverified`. The row binds its packet, rendered prompt,
+model route and pre-parse raw response, but has null `screen_status` and null
+`screen_output`; it is not a fourth model status and cannot be interpreted as
+`LIKELY_INELIGIBLE` or a sample exclusion. Its bounded reason/detail support
+a review queue; the full raw payload remains only in the hash-bound archive.
+
+**Existing missing-packet state remains distinct.** The 530 retained rows
+whose Item 1 packet could not be constructed remain
+`insufficient_evidence`: no model call, no prompt/raw binding, null filing
+date as imposed by the failure-row authority. The two states answer different
+questions and must never be merged.
+
+**Fail-safe firm roll-up.** The successor's raw-CIK order is
+`LIKELY_ELIGIBLE > BOUNDARY_OR_UNCERTAIN > MODEL_EVIDENCE_UNVERIFIED >
+LIKELY_INELIGIBLE > INSUFFICIENT_EVIDENCE`. Hence any valid packet whose
+model evidence is unverified blocks firm-negative treatment. The current
+cohort has one packet or failure per CIK, but this rule is explicit for later
+multi-observation cohorts.
+
+**No permissive transport change.** Governance, input binding, client
+contract/endpoint equality, provider and envelope failures, capture
+persistence/integrity, request caps, token/cost/wall-clock budgets, write-once
+failure and every reconciliation failure remain run-fatal and receipt-bearing.
+Only model-content failures that the existing strict validator can name are
+recorded. A per-run, authorization-bound `max_model_evidence_unverified`
+circuit breaker limits their number; the full-run numeric limit is a separate
+live authorization decision, not a source literal.
+
+**Contracts.** The successor adds v0.2 record and authorization contracts and
+a v0.6 manifest. Their closed names and schema versions prevent old loaders
+and authorizations from silently consuming this generation. V0.6 pins the V5
+prompt path and records the five-way row accounting, raw archive and capture
+ledger hashes.
+
 ## Open decisions
 
 - Required source packet by firm-year.

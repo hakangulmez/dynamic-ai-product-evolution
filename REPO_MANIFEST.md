@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **838**
+Total tracked/scaffold files listed: **843**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -461,12 +461,15 @@ Total tracked/scaffold files listed: **838**
 - `schemas/universe_screen_diagnostic_repair_manifest.schema.json`
 - `schemas/universe_screen_diagnostic_repair_selection.schema.json`
 - `schemas/universe_screen_live_authorization.schema.json`
+- `schemas/universe_screen_live_authorization.v2.schema.json`
 - `schemas/universe_screen_manifest.schema.json`
 - `schemas/universe_screen_manifest.v2.schema.json`
 - `schemas/universe_screen_manifest.v3.schema.json`
 - `schemas/universe_screen_manifest.v4.schema.json`
 - `schemas/universe_screen_manifest.v5.schema.json`
+- `schemas/universe_screen_manifest.v6.schema.json`
 - `schemas/universe_screen_record.schema.json`
+- `schemas/universe_screen_record.v2.schema.json`
 - `schemas/universe_screen_selection.schema.json`
 - `schemas/web_collection_receipt.schema.json`
 - `schemas/web_collection_request_plan.schema.json`
@@ -624,6 +627,7 @@ Total tracked/scaffold files listed: **838**
 - `src/dynamic_ai_products/lineage_screen_diagnostic.py`
 - `src/dynamic_ai_products/lineage_screen_diagnostic_repair.py`
 - `src/dynamic_ai_products/lineage_screen_live.py`
+- `src/dynamic_ai_products/lineage_screen_live_v2.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/providers/__init__.py`
 - `src/dynamic_ai_products/providers/authorization.py`
@@ -829,6 +833,7 @@ Total tracked/scaffold files listed: **838**
 - `tests/universe/test_lineage_screen_diagnostic.py`
 - `tests/universe/test_lineage_screen_diagnostic_repair.py`
 - `tests/universe/test_lineage_screen_live.py`
+- `tests/universe/test_lineage_screen_live_v2.py`
 - `tests/universe/test_pilot_packet.py`
 - `tests/universe/test_plain_text_primary.py`
 - `tests/universe/test_primary_document_acquisition.py`
