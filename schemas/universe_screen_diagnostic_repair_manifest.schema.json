@@ -1,0 +1,476 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_diagnostic_repair_manifest.schema.json",
+  "title": "Universe screen diagnostic seven-row repair run manifest (v0.1, non-promotable)",
+  "description": "Immutable record of one seven-row diagnostic repair run (ADR-115). A repair run re-screens, under the committed v5 diagnostic prompt, exactly the seven quote-resolution rejections of one completed, hash-bound source diagnostic run. It binds everything the 100-row diagnostic manifest binds - the v0.5 packet cohort, prompt path and hash, authorization, enablement, client-contract digest, the two operation endpoints, raw-response archive and capture-ledger hashes, request/token/cost accounting and a reconciliation block - and additionally binds its selection to the source run: the repair selection artifact carries the source diagnostic manifest path and SHA, the source records JSONL SHA, and the derivation rule under which the seven rows were selected, and the runner re-derives that selection from the source bytes at preflight. It is structurally unusable everywhere else: this file is written under a repair-specific name, so the authoritative, promotion and standard diagnostic loaders all refuse the directory outright; its contract consts (manifest_contract, run_kind diagnostic_repair_7, diagnostic_only true, promotable false, selection_kind repair_7) reject every other generation; and its record rows reuse universe_screen_diagnostic_record@0.1.0, which no authoritative loader accepts. A repair run is a measurement of whether the v5 prompt repairs previously rejected citations; no row of it may enter a SCREEN release, a classifier call list, or any later stage.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_contract",
+    "run_kind",
+    "diagnostic_only",
+    "promotable",
+    "output_contract",
+    "run_id",
+    "packet_manifest_path",
+    "packet_manifest_sha256",
+    "packet_run_id",
+    "packets_jsonl_sha256",
+    "packet_failures_jsonl_sha256",
+    "prompt_template_path",
+    "prompt_template_sha256",
+    "authorization_id",
+    "authorization_sha256",
+    "screen_adapter_enablement_sha256",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "endpoint_allowlist",
+    "envelope_text_extraction_rule",
+    "selection",
+    "provider",
+    "record_order",
+    "baseline_cutoff",
+    "counts",
+    "request_accounting",
+    "reconciliation",
+    "output_hashes",
+    "run_timestamp",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "manifest_contract": {
+      "const": "universe_screen_diagnostic_repair_manifest@0.1.0"
+    },
+    "run_kind": {
+      "const": "diagnostic_repair_7"
+    },
+    "diagnostic_only": {
+      "const": true
+    },
+    "promotable": {
+      "const": false
+    },
+    "output_contract": {
+      "const": "universe_screen_diagnostic_record@0.1.0"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "packet_manifest_path": {
+      "type": "string"
+    },
+    "packet_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_run_id": {
+      "type": "string"
+    },
+    "packets_jsonl_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_failures_jsonl_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prompt_template_path": {
+      "description": "Recorded, not pinned to one generation: a diagnostic run exists to measure whichever committed prompt the authorization binds, and the binding is enforced by the authorization's prompt_template_sha256 at preflight.",
+      "type": "string",
+      "minLength": 1
+    },
+    "prompt_template_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorization_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_adapter_enablement_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provider_client_contract_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_client_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "endpoint_allowlist": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "envelope_text_extraction_rule": {
+      "const": "vertex_generate_content_candidates0_text_parts@1"
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selection_artifact_path",
+        "selection_artifact_sha256",
+        "selection_kind",
+        "derivation_rule",
+        "rows_selected",
+        "source_diagnostic_manifest_path",
+        "source_diagnostic_manifest_sha256",
+        "source_records_jsonl_sha256",
+        "source_run_id"
+      ],
+      "properties": {
+        "selection_artifact_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "selection_artifact_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "selection_kind": {
+          "const": "repair_7"
+        },
+        "derivation_rule": {
+          "const": "rejected_quote_resolution_rows_ascending_ordinal@1"
+        },
+        "rows_selected": {
+          "const": 7
+        },
+        "source_diagnostic_manifest_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_diagnostic_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_records_jsonl_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_run_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "model_route"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_route": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "model_label"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model_label": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "record_order": {
+      "const": "selection_row_order"
+    },
+    "baseline_cutoff": {
+      "type": "string",
+      "format": "date"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rows_selected",
+        "validated",
+        "rejected",
+        "max_rejected_rows",
+        "by_screen_status",
+        "rejections_by_reason",
+        "firms_total"
+      ],
+      "properties": {
+        "rows_selected": {
+          "const": 7
+        },
+        "validated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_rejected_rows": {
+          "description": "The declared circuit breaker, bounded to the seven-row measurement.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7
+        },
+        "by_screen_status": {
+          "description": "Over validated rows only. A rejected row has no status to count.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "LIKELY_ELIGIBLE",
+            "LIKELY_INELIGIBLE",
+            "BOUNDARY_OR_UNCERTAIN"
+          ],
+          "properties": {
+            "LIKELY_ELIGIBLE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "LIKELY_INELIGIBLE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "BOUNDARY_OR_UNCERTAIN": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "rejections_by_reason": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "invalid_model_json",
+            "adapter_rejection",
+            "quote_resolution_failure",
+            "temporal_violation"
+          ],
+          "properties": {
+            "invalid_model_json": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "adapter_rejection": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "quote_resolution_failure": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "temporal_violation": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "firms_total": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "request_accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logical_request_cap",
+        "provider_attempt_cap",
+        "external_request_cap",
+        "generate_attempt_cap_per_row",
+        "logical_requests_made",
+        "provider_attempts_made",
+        "external_requests_made",
+        "count_captures",
+        "generate_captures",
+        "rows_retried",
+        "tokens_in_measured",
+        "tokens_out_reported",
+        "rows_usage_verified",
+        "cost_micros_settled",
+        "cost_micros_rejected_rows",
+        "budget_max_input_tokens",
+        "budget_max_output_tokens",
+        "budget_max_estimated_cost_micros",
+        "budget_max_wall_clock_seconds"
+      ],
+      "properties": {
+        "logical_request_cap": {
+          "const": 7
+        },
+        "provider_attempt_cap": {
+          "const": 21
+        },
+        "external_request_cap": {
+          "const": 28
+        },
+        "generate_attempt_cap_per_row": {
+          "const": 3
+        },
+        "logical_requests_made": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "provider_attempts_made": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "external_requests_made": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "count_captures": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "generate_captures": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rows_retried": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_in_measured": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_out_reported": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "rows_usage_verified": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost_micros_settled": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost_micros_rejected_rows": {
+          "description": "What the rejected rows cost. A diagnostic run measures the price of failure as well as its frequency.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "budget_max_input_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "budget_max_output_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "budget_max_estimated_cost_micros": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "budget_max_wall_clock_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 14,
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_screen_diagnostic_repair_records.jsonl",
+        "universe_screen_raw_responses.jsonl",
+        "universe_screen_capture_ledger.jsonl"
+      ],
+      "properties": {
+        "universe_screen_diagnostic_repair_records.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "universe_screen_raw_responses.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "universe_screen_capture_ledger.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_screen_diagnostic_record",
+        "universe_screen_diagnostic_repair_manifest",
+        "universe_screen_diagnostic_repair_selection",
+        "universe_screen_diagnostic_repair_authorization",
+        "universe_screen_adapter_enablement",
+        "baseline_packet_manifest_v5",
+        "universe_baseline_packet_v2"
+      ],
+      "properties": {
+        "universe_screen_diagnostic_record": {
+          "type": "string"
+        },
+        "universe_screen_diagnostic_repair_manifest": {
+          "type": "string"
+        },
+        "universe_screen_diagnostic_repair_selection": {
+          "type": "string"
+        },
+        "universe_screen_diagnostic_repair_authorization": {
+          "type": "string"
+        },
+        "universe_screen_adapter_enablement": {
+          "type": "string"
+        },
+        "baseline_packet_manifest_v5": {
+          "type": "string"
+        },
+        "universe_baseline_packet_v2": {
+          "type": "string"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

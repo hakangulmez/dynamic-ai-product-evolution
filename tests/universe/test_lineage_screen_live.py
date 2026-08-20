@@ -1923,9 +1923,11 @@ def test_registry_registers_the_four_live_screen_schemas():
         .read_text(encoding="utf-8"))
     # ADR-110 added the v0.3 live manifest successor (103 -> 104);
     # ADR-111 added v0.4 (104 -> 105); ADR-112 adds the three
-    # diagnostic-canary contracts (105 -> 108).
-    assert registry["manifest_version"] == "0.51.0"
-    assert len(registry["schemas"]) == 109
+    # diagnostic-canary contracts (105 -> 108); ADR-113 adds the v0.5
+    # live manifest successor (108 -> 109); ADR-115 adds the three
+    # diagnostic-repair contracts (109 -> 112).
+    assert registry["manifest_version"] == "0.52.0"
+    assert len(registry["schemas"]) == 112
     assert registry["schemas"]["universe_screen_manifest_v3"] == "0.3.0"
     assert registry["schemas"]["universe_screen_manifest_v4"] == "0.4.0"
     assert registry["schemas"]["universe_screen_manifest_v5"] == "0.5.0"

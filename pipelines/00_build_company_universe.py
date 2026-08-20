@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Twenty-three mutually exclusive modes, selected by ``--mode`` (default
+Twenty-five mutually exclusive modes, selected by ``--mode`` (default
 ``sentinel`` so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -75,6 +75,17 @@ Twenty-three mutually exclusive modes, selected by ``--mode`` (default
   as the authoritative route does on governance, provider, envelope,
   capture, cap and budget failures, and on its declared rejected-row
   circuit breaker. Its outputs are structurally non-promotable.
+- ``select-screen-repair-rows`` derives one governed seven-row
+  ``universe_screen_diagnostic_repair_selection`` artifact (ADR-115) from a
+  completed source diagnostic run: exactly its quote-resolution rejections,
+  in ascending source ordinal order, relationally re-proven against the
+  hash-bound source records. Deterministic; no model call, no network.
+- ``screen-universe-lineage-diagnostic-repair`` re-screens exactly those
+  seven derived rows under the committed v5 diagnostic prompt (ADR-115),
+  through a third, repair-specific authorization contract with caps pinned
+  to 7 logical / 21 attempts / 28 external requests. Diagnostic measurement
+  only: its outputs are structurally non-promotable and every other loader
+  refuses them.
 - ``select-screen-rows`` builds one governed ``universe_screen_selection``
   artifact (ADR-109): a seeded, stratified, packet-native canary_100
   enumeration of exactly one hundred rows, or the explicitly different
@@ -217,6 +228,10 @@ from dynamic_ai_products.universe.lineage_screen import (  # noqa: E402
 from dynamic_ai_products.lineage_screen_diagnostic import (  # noqa: E402
     run_lineage_screen_diagnostic,
 )
+from dynamic_ai_products.lineage_screen_diagnostic_repair import (  # noqa: E402
+    build_repair_selection,
+    run_lineage_screen_diagnostic_repair,
+)
 from dynamic_ai_products.lineage_screen_live import (  # noqa: E402
     build_screen_selection,
     run_lineage_screen_live,
@@ -249,6 +264,8 @@ def build_parser() -> argparse.ArgumentParser:
                  "screen-universe-lineage",
                  "screen-universe-lineage-live",
                  "screen-universe-lineage-diagnostic",
+                 "screen-universe-lineage-diagnostic-repair",
+                 "select-screen-repair-rows",
                  "select-screen-rows",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
@@ -471,6 +488,13 @@ def build_parser() -> argparse.ArgumentParser:
              "half of the handshake explicitly.",
     )
     parser.add_argument(
+        "--source-diagnostic-manifest", default=None,
+        help="Select-screen-repair-rows mode only: the completed source "
+             "diagnostic run's universe_screen_diagnostic_manifest.json. Its "
+             "hash-bound records are the sole population the seven repair "
+             "rows are derived from.",
+    )
+    parser.add_argument(
         "--selection-seed", type=int, default=None,
         help="Select-screen-rows mode only: the integer seed of the "
              "deterministic canary_100 sampler. Refused for full_cohort, "
@@ -588,6 +612,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
     if args.mode not in ("screen-universe-lineage",
                          "screen-universe-lineage-live",
                          "screen-universe-lineage-diagnostic",
+                         "screen-universe-lineage-diagnostic-repair",
+                         "select-screen-repair-rows",
                          "select-screen-rows"):
         screen_offenders += _present(
             (("--packet-manifest", args.packet_manifest),)
@@ -598,19 +624,26 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         )
     if args.mode not in ("screen-universe-lineage",
                          "screen-universe-lineage-live",
-                         "screen-universe-lineage-diagnostic"):
+                         "screen-universe-lineage-diagnostic",
+                         "screen-universe-lineage-diagnostic-repair"):
         screen_offenders += _present((
             ("--logical-request-cap", args.logical_request_cap),
             ("--provider-attempt-cap", args.provider_attempt_cap),
         ))
     if args.mode not in ("screen-universe-lineage-live",
-                         "screen-universe-lineage-diagnostic"):
+                         "screen-universe-lineage-diagnostic",
+                         "screen-universe-lineage-diagnostic-repair"):
         screen_offenders += _present((
             ("--selection-artifact", args.selection_artifact),
             ("--governance-root", args.governance_root),
             ("--screen-authorization", args.screen_authorization),
             ("--screen-authorization-sha256",
              args.screen_authorization_sha256),
+        ))
+    if args.mode != "select-screen-repair-rows":
+        screen_offenders += _present((
+            ("--source-diagnostic-manifest",
+             args.source_diagnostic_manifest),
         ))
     if args.mode != "select-screen-rows":
         screen_offenders += _present((
@@ -960,6 +993,63 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         if missing:
             return (
                 "screen-universe-lineage-live mode requires: "
+                f"{', '.join(missing)}"
+            )
+        return None
+
+    if args.mode == "screen-universe-lineage-diagnostic-repair":
+        offending = _present(
+            frame_flags + acquire_flags + dera_flags
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+            + (("--input", args.input),)
+            + (("--seed", args.seed),)
+            + (("--provider", args.provider),)
+        )
+        if offending:
+            return (
+                "screen-universe-lineage-diagnostic-repair mode does not "
+                f"accept: {', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--packet-manifest", args.packet_manifest),
+            ("--selection-artifact", args.selection_artifact),
+            ("--governance-root", args.governance_root),
+            ("--screen-authorization", args.screen_authorization),
+            ("--screen-authorization-sha256",
+             args.screen_authorization_sha256),
+            ("--logical-request-cap", args.logical_request_cap),
+            ("--provider-attempt-cap", args.provider_attempt_cap),
+        ))
+        if missing:
+            return (
+                "screen-universe-lineage-diagnostic-repair mode requires: "
+                f"{', '.join(missing)}"
+            )
+        return None
+
+    if args.mode == "select-screen-repair-rows":
+        offending = _present(
+            frame_flags + acquire_flags + dera_flags
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+            + (("--input", args.input),)
+            + (("--seed", args.seed),)
+            + (("--provider", args.provider),)
+        )
+        if offending:
+            return (
+                "select-screen-repair-rows mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--packet-manifest", args.packet_manifest),
+            ("--source-diagnostic-manifest",
+             args.source_diagnostic_manifest),
+        ))
+        if missing:
+            return (
+                "select-screen-repair-rows mode requires: "
                 f"{', '.join(missing)}"
             )
         return None
@@ -2135,6 +2225,111 @@ def _main_screen_universe_lineage_live(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_screen_universe_lineage_diagnostic_repair(
+        args: argparse.Namespace) -> int:
+    packet_manifest = Path(args.packet_manifest)
+    selection_artifact = Path(args.selection_artifact)
+    governance_root = Path(args.governance_root)
+    for label, path in (("packet manifest", packet_manifest),
+                        ("repair selection artifact", selection_artifact)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    if not governance_root.is_dir():
+        print(f"ERROR: governance root not found: {governance_root}",
+              file=sys.stderr)
+        return 2
+    try:
+        result = run_lineage_screen_diagnostic_repair(
+            repo_root=REPO_ROOT,
+            packet_manifest_path=packet_manifest,
+            selection_artifact_path=selection_artifact,
+            governance_root=governance_root,
+            authorization_reference=args.screen_authorization,
+            authorization_sha256=args.screen_authorization_sha256,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            logical_request_cap=args.logical_request_cap,
+            provider_attempt_cap=args.provider_attempt_cap,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid repair screen input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "status": result.status,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "planned_screened": result.planned_screened,
+        "validated": result.validated,
+        "rejected": result.rejected,
+        "rejections_by_reason": result.rejections_by_reason,
+        "counts": result.counts,
+        "request_accounting": result.request_accounting,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+        "failure_receipt_path": (
+            str(result.failure_receipt_path)
+            if result.failure_receipt_path else None
+        ),
+        "receipt": result.receipt,
+    }
+    print(json.dumps(payload, indent=2))
+    if result.status == "failed":
+        print("ERROR: repair run stopped with a failure receipt; the run "
+              "directory is incomplete and non-authoritative.", file=sys.stderr)
+        return 1
+    # Rejected rows are the measurement, not a run failure.
+    return 0
+
+
+def _main_select_screen_repair_rows(args: argparse.Namespace) -> int:
+    packet_manifest = Path(args.packet_manifest)
+    source_manifest = Path(args.source_diagnostic_manifest)
+    for label, path in (("packet manifest", packet_manifest),
+                        ("source diagnostic manifest", source_manifest)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    try:
+        result = build_repair_selection(
+            repo_root=REPO_ROOT,
+            source_diagnostic_manifest_path=source_manifest,
+            packet_manifest_path=packet_manifest,
+            output_dir=Path(args.output_dir),
+            run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid repair selection input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "run_id": result.run_id,
+        "dry_run": result.dry_run,
+        "status": result.status,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "counts": result.counts,
+        "selection_artifact": (
+            str(result.manifest_path) if result.manifest_path else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 def _main_screen_universe_lineage_diagnostic(args: argparse.Namespace) -> int:
     packet_manifest = Path(args.packet_manifest)
     selection_artifact = Path(args.selection_artifact)
@@ -2525,6 +2720,10 @@ def main(argv: list[str] | None = None) -> int:
         return _main_screen_universe_lineage_live(args)
     if args.mode == "screen-universe-lineage-diagnostic":
         return _main_screen_universe_lineage_diagnostic(args)
+    if args.mode == "screen-universe-lineage-diagnostic-repair":
+        return _main_screen_universe_lineage_diagnostic_repair(args)
+    if args.mode == "select-screen-repair-rows":
+        return _main_select_screen_repair_rows(args)
     if args.mode == "select-screen-rows":
         return _main_select_screen_rows(args)
     if args.mode == "plan-acquisition-queue":

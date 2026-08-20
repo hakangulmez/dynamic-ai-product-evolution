@@ -174,6 +174,16 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-115 (a repair measurement re-screens exactly the
+    # seven quote-resolution rejections of one completed diagnostic run,
+    # and stays diagnostic forever): manifest_version 0.51.0 -> 0.52.0,
+    # 109 -> 112 entries, registering the three diagnostic-repair
+    # contracts - universe_screen_diagnostic_repair_selection,
+    # universe_screen_diagnostic_repair_authorization and
+    # universe_screen_diagnostic_repair_manifest. Every authoritative
+    # screen contract, prompt and packet schema is byte-unchanged, and
+    # none of the three is added to EVALUATION_SCHEMA_CONTRACTS or
+    # RELEASED_EVALUATION_CONTRACTS below. Before it,
     # Rebaselined by ADR-113: manifest_version 0.50.0 -> 0.51.0,
     # 108 -> 109 entries, registering universe_screen_manifest_v5.
     # The v5 successor pins the v4 short-reference prompt; every predecessor
@@ -372,7 +382,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "b63df9d1cf2eb268761e3a03b36ab7421e79861aa7be165a413b6934c5df80d6"
+    "6285e41b61275ea327ac69e15202f48873562c7a6c5d20bd41e46ec8119966c8"
 )
 
 

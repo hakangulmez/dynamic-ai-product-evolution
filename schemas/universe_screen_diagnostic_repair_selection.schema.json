@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_diagnostic_repair_selection.schema.json",
+  "title": "Universe screen diagnostic repair selection (v0.1, seven derived rows)",
+  "description": "The hash-bound row authority for one seven-row diagnostic repair measurement (ADR-115). Its rows are never authored: they are derived relationally, under the named derivation rule, from one completed source diagnostic run - exactly the rows whose record_kind was rejected_output with rejection_reason_code quote_resolution_failure, in ascending source row-ordinal order. The artifact binds the source run three ways (manifest path, manifest bytes SHA, records JSONL SHA) and the v0.5 packet cohort two ways (manifest path, manifest bytes SHA), and every selected row carries the packet SHA the source record carried, so a drifted packet, a doctored source record, or a hand-typed row cannot survive the consuming runner's re-derivation. The builder refuses a source run that holds a failure receipt, fails any output-hash re-check, declares a foreign contract, has an incomplete or duplicated row partition, or whose eligible rejection count is anything other than exactly seven. A repair selection authorizes nothing by itself: a separate diagnostic repair authorization must bind this artifact's bytes by SHA before any run exists, and the run it enables is diagnostic-only and never promotable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "selection_contract",
+    "selection_id",
+    "selection_kind",
+    "derivation_rule",
+    "source_diagnostic_manifest_path",
+    "source_diagnostic_manifest_sha256",
+    "source_records_jsonl_sha256",
+    "source_run_id",
+    "packet_manifest_path",
+    "packet_manifest_sha256",
+    "rows",
+    "counts",
+    "run_timestamp",
+    "limitations"
+  ],
+  "properties": {
+    "selection_contract": {
+      "const": "universe_screen_diagnostic_repair_selection@0.1.0"
+    },
+    "selection_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selection_kind": {
+      "const": "repair_7"
+    },
+    "derivation_rule": {
+      "description": "The one closed rule under which rows were selected. Derived, never chosen: the rule names the population (rejected_output with quote_resolution_failure) and the order (ascending source row ordinal).",
+      "const": "rejected_quote_resolution_rows_ascending_ordinal@1"
+    },
+    "source_diagnostic_manifest_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_diagnostic_manifest_sha256": {
+      "description": "SHA-256 of the source diagnostic manifest bytes at derivation time. The consuming runner re-hashes the same file and refuses drift.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_records_jsonl_sha256": {
+      "description": "SHA-256 of the source run's records JSONL - the bytes the seven rows were derived from. Re-derived and re-checked by the consuming runner.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packet_manifest_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packet_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rows": {
+      "description": "Exactly the seven derived rows, in ascending source row-ordinal order. Each row records its source ordinal and the closed rejection reason as per-row proof of eligibility.",
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_row_ordinal",
+          "cik",
+          "accession",
+          "packet_sha256",
+          "source_record_kind",
+          "source_rejection_reason_code"
+        ],
+        "properties": {
+          "source_row_ordinal": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "cik": {
+            "type": "string",
+            "pattern": "^\\d{10}$"
+          },
+          "accession": {
+            "type": "string",
+            "pattern": "^\\d{10}-\\d{2}-\\d{6}$"
+          },
+          "packet_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "source_record_kind": {
+            "const": "rejected_output"
+          },
+          "source_rejection_reason_code": {
+            "const": "quote_resolution_failure"
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_rows_total",
+        "source_rejected_total",
+        "source_rejected_quote_resolution",
+        "rows_selected"
+      ],
+      "properties": {
+        "source_rows_total": {
+          "type": "integer",
+          "minimum": 7
+        },
+        "source_rejected_total": {
+          "type": "integer",
+          "minimum": 7
+        },
+        "source_rejected_quote_resolution": {
+          "const": 7
+        },
+        "rows_selected": {
+          "const": 7
+        }
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

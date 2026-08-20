@@ -7916,6 +7916,71 @@ A governed seven-row live repair measurement requires a separate selection
 and authorization successor: the current diagnostic contract intentionally
 pins a 100-row canary and is not bypassed here.
 
+## ADR-115 — Governed seven-row diagnostic repair measurement
+
+**Status.** Accepted, fixture-first. No live model call, no `data/runs`
+write, no change to any authoritative contract, and no promotion path: a
+repair run is a diagnostic measurement forever.
+
+**Question.** ADR-114's closing note left one gap open: the completed v2
+diagnostic canary (93 validated, 7 `quote_resolution_failure` rejections)
+measured the v4 prompt, while the committed v5 prompt that responds to those
+seven failures has never been exercised against the rows that motivated it.
+The existing diagnostic contract intentionally pins a 100-row canary
+selection and cannot re-screen seven rows without being loosened — which is
+exactly what must not happen.
+
+**Decision.** A third, structurally isolated run kind: `diagnostic_repair_7`.
+Its row authority is a new hash-bound artifact,
+`universe_screen_diagnostic_repair_selection@0.1.0`, whose seven rows are
+never authored but derived relationally from one completed source diagnostic
+run under the closed rule
+`rejected_quote_resolution_rows_ascending_ordinal@1`: exactly the rows whose
+`record_kind` was `rejected_output` with reason `quote_resolution_failure`,
+ascending by source row ordinal. The artifact binds the source run three
+ways (manifest path, manifest bytes SHA, records JSONL SHA) and the v0.5
+packet cohort two ways, and each row carries the packet SHA and a per-row
+eligibility proof (source ordinal, record kind const, reason const). The
+builder refuses a source run holding a failure receipt, any output-hash
+mismatch, a foreign contract, an incomplete or duplicated partition, a
+missing or drifted packet, and any eligible count other than exactly seven —
+another count is a different population needing its own contract.
+
+**Authorization.** A separate
+`universe_screen_diagnostic_repair_authorization@0.1.0` contract with
+run_kind const `diagnostic_repair_7`, `diagnostic_only` true and
+`promotable` false as consts, the V5 prompt hash binding, the repair
+selection SHA, provider/enablement/endpoint bindings, caps pinned by schema
+const to exactly 7 logical requests, 21 provider attempts and 28 external
+requests, and a rejected-row breaker bounded to [1, 7]. Neither the
+authoritative runner nor the 100-row diagnostic runner can consume this
+grant, and the repair runner refuses both of theirs.
+
+**Runner.** A separate module,
+`src/dynamic_ai_products/lineage_screen_diagnostic_repair.py`, with two CLI
+modes (`select-screen-repair-rows`, `screen-universe-lineage-diagnostic-repair`).
+It reuses the adapter, the unchanged strict validator, the v5
+renderer/resolver and the capture logic by import, and re-derives the seven
+rows from the bound source bytes at preflight, refusing a selection that no
+longer reproduces — a doctored selection fails even with a matching digest
+chain. Outputs are repair-named
+(`universe_screen_diagnostic_repair_records.jsonl`,
+`universe_screen_diagnostic_repair_manifest.json` under
+`universe_screen_diagnostic_repair_manifest@0.1.0`), so every other loader
+refuses a repair run structurally, and `require_diagnostic_repair_run`
+refuses receipts, authoritative and diagnostic directories, foreign
+contracts and output-hash drift.
+
+**Scope.** Sixteen paths: three repair schemas, the repair module, its
+fixture-only test module (fake client factory, no network), the CLI,
+`schemas/schema_version_manifest.json` (0.51.0 to 0.52.0, 109 to 112
+entries), this decision log, `REPO_MANIFEST.md` (833 to 838), the five
+manifest/registry guards, and the two-literal absolute registry assertions
+in the live and diagnostic screen test modules. `lineage_screen_live.py`,
+`lineage_screen_diagnostic.py`, the shared validator, every prompt, every
+authoritative and diagnostic contract, and every `data/runs` artifact remain
+byte-identical.
+
 ## Open decisions
 
 - Required source packet by firm-year.
