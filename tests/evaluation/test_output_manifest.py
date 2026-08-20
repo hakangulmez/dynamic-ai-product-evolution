@@ -951,6 +951,14 @@ def test_repo_manifest_count_and_paths():
     # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
     # v0.1.
+    # 816 = 814 + the two ADR-110 paths: the v2 screen prompt successor
+    # (prompts/discovery/universe_high_recall_screen.v2.md), which
+    # enumerates the closed candidate_customer_value_archetypes
+    # vocabulary the first governed canary proved v1 lacked, and the
+    # v0.3 live-manifest successor pinning it. The v1 prompt, the
+    # v0.1/v0.2 screen manifests and the mock runner are
+    # byte-unchanged. Schema registry: 0.47.0 -> 0.48.0,
+    # 103 -> 104 entries. Before it,
     # 814 = 808 + the six ADR-109 paths: the live-screen successor module
     # (src/dynamic_ai_products/lineage_screen_live.py, a top-level
     # composition module), its four
@@ -1012,7 +1020,7 @@ def test_repo_manifest_count_and_paths():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert "Total tracked/scaffold files listed: **814**" in text
+    assert "Total tracked/scaffold files listed: **816**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text

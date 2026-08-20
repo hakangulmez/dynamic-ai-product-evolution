@@ -174,6 +174,14 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-110 (the screen prompt names its own closed
+    # vocabulary): manifest_version 0.47.0 -> 0.48.0, 103 -> 104 entries,
+    # registering universe_screen_manifest_v3 -- the strict live-manifest
+    # successor whose prompt_template_path const names the v2 screen
+    # prompt. The v0.1/v0.2 screen manifests, the v1 prompt and every
+    # packet schema stay byte-unchanged, and the successor is not added
+    # to EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS
+    # below. Before it,
     # Rebaselined by ADR-109 (governed Vertex/Gemini binding for the
     # lineage screen): manifest_version 0.46.0 -> 0.47.0, 99 -> 103
     # entries, registering universe_screen_selection,
@@ -340,7 +348,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "fe2c15825216f1cbd149eb25d3748226a16cb3b8ba2021596cefd23d18d23ef9"
+    "04b379838aa21f1460d18619dd56439e381dd1ca4b4c37be06ca01daa2b53874"
 )
 
 

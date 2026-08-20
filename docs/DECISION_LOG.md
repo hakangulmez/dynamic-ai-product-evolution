@@ -7591,6 +7591,69 @@ Every post-limit external call is prevented, not detected after another
 generation. Input, cost, external-request, retry, archive, receipt and
 manifest semantics are byte-unchanged, and no schema moved.
 
+## ADR-110 — The screen prompt names its own closed vocabulary
+
+**Status.** Accepted. Fixture-first: no model call, no `data/runs` write, no
+retry of the failed canary. The first governed canary run remains immutable,
+non-authoritative evidence and is neither deleted nor reused.
+
+**Measured cause.** The first live Vertex/Gemini canary
+(`universe-high-recall-canary-v1-20260820`) stopped fail-closed at row 1 with
+`adapter_rejection`. The provider call itself was healthy — `countTokens`
+returned 5,478 tokens, `generateContent` returned `finishReason: STOP` with
+778 output tokens, well-formed JSON, a valid `screen_status`, and two quotes
+that resolved verbatim into the packet. Exactly one field failed:
+`candidate_customer_value_archetypes: ["Productivity/Efficiency"]`, which is
+not a member of the closed thirteen-value `Archetype` vocabulary. Grepped
+against the v1 template, "archetype" appears exactly once — as the empty
+array `"candidate_customer_value_archetypes": []` in the output block. The
+model was asked for a value from a vocabulary it was never shown, and
+supplied a plausible prose label. Total cost of the discovery: two external
+requests on one row.
+
+**Decision: fix the prompt, never the validator.** Relaxing the pydantic
+literal or widening the taxonomy would let unbounded free text into a field
+three later stages consume, and would silently convert a measurement error
+into permanent data. `prompts/discovery/universe_high_recall_screen.v2.md`
+is a successor that keeps v1's high-recall standard, temporal rule,
+evidence-minimal input contract, quote requirement and output field set
+verbatim, and adds the closed list of thirteen values with three explicit
+rules: copy values exactly, never invent synonyms or prose labels, and
+return `[]` when no listed archetype is directly supported (with `OTHER`
+reserved for a real but unnamed archetype, never as a substitute for `[]`).
+`Productivity/Efficiency` is named in the prompt as invalid and stays
+invalid in the validator; a regression test asserts the exact measured
+payload is still refused.
+
+**Successor-only evolution, on both axes.** The v1 template stays
+byte-identical and remains the mock route's only template, so the ADR-108
+path — module, schemas, tests and rendered bytes — does not move at all. The
+live route defines its own `LIVE_PROMPT_TEMPLATE_RELATIVE_PATH` rather than
+importing the predecessor's constant, and continues to reuse the predecessor
+renderer and row validator unchanged. Because `universe_screen_manifest@0.2.0`
+pins `prompt_template_path` as a const, a live manifest naming the v2 prompt
+cannot validate under it; rather than widen a released schema,
+`universe_screen_manifest.v3.schema.json` is added as a strict successor.
+The v0.2 and v0.3 schemas differ in exactly seven structural points — `$id`,
+`title`, `description`, the `prompt_template_path` const, and the
+`schema_versions` key rename — and mutually reject, proven by test. Registry
+0.47.0 → 0.48.0, 103 → 104 entries.
+
+**Consequence for governance.** Every previously minted live authorization
+binds the v1 prompt hash and is therefore stale under this ADR: preflight
+refuses it before any output directory, SDK import, credential resolution or
+network send, which a test pins directly. A future canary needs a fresh
+governance materialization carrying
+`prompt_template_sha256 = 8bf0e3010241efe9aafd7d41af2857764c48ce218a7aa0f009086ec69a5d6694`
+(the v2 template's bytes) and a fresh run id. The v1 governance artifacts
+and the canary selection are untouched and stay usable only as history.
+
+**Scope.** Seven paths: the v2 prompt, the v0.3 manifest schema,
+`lineage_screen_live.py`, its test module, the registry, this log, and
+`REPO_MANIFEST.md` (814 → 816), plus the mechanically required guard
+rebaselines. No provider, extraction, v0.1/v0.2 schema, v1 prompt, mock
+runner, selection or `data/runs` change.
+
 ## Open decisions
 
 - Required source packet by firm-year.

@@ -7,10 +7,22 @@ callable without a complete, hash-bound governance chain, and this increment
 ships **offline only**: every test injects a fake client factory, no real SDK
 client is ever built, no credential is resolved, and no network is reached.
 
+**Prompt generation (ADR-110).** The live route renders
+``prompts/discovery/universe_high_recall_screen.v2.md`` and emits
+``universe_screen_manifest@0.3.0``. The v1 template and the v0.1/v0.2
+manifest schemas are retained byte-identical: v1 remains the mock route's
+only template, and each manifest generation pins its own prompt path as a
+const, so the generations mutually reject. v2 exists because the first
+governed canary measured the gap: a well-formed live response was rejected
+for ``candidate_customer_value_archetypes: ["Productivity/Efficiency"]``,
+a label v1 never forbade because it never enumerated the closed vocabulary.
+The fix is the prompt, never a relaxed validator.
+
 **What a live authorization binds** (ADR-109, stated verbatim in the decision
 log): the packet cohort (``packet_manifest_sha256``) + the selected rows or
 full-cohort mode (``selection_artifact_sha256``, ``selection_kind``) + the
-prompt bytes (``prompt_template_sha256``) + the provider client contract
+prompt bytes (``prompt_template_sha256``, now the v2 template) + the
+provider client contract
 (canonical digest) + the enablement (reference plus sha) + the endpoints
 (allowlist equality across connector, authorization and enablement) + the
 model route + the caps and budgets. A run under any different value is a
@@ -107,7 +119,6 @@ from .universe.freeze import create_run_directory
 from .universe.lineage_screen import (
     FAILURE_RECEIPT_FILENAME,
     FIRM_ROLLUP_RULE,
-    PROMPT_TEMPLATE_RELATIVE_PATH,
     RAW_RESPONSES_FILENAME,
     RECORD_CONTRACT,
     RECORD_SCHEMA_RELATIVE_PATH,
@@ -141,8 +152,17 @@ SELECTION_FILENAME = "universe_screen_selection.json"
 SELECTION_CONTRACT = "universe_screen_selection@0.1.0"
 AUTHORIZATION_CONTRACT = "universe_screen_live_authorization@0.1.0"
 ENABLEMENT_CONTRACT = "universe_screen_adapter_enablement@0.1.0"
-SCREEN_MANIFEST_V2_CONTRACT = "universe_screen_manifest@0.2.0"
+SCREEN_MANIFEST_V3_CONTRACT = "universe_screen_manifest@0.3.0"
 SCREEN_STAGE = "universe_high_recall_screen"
+
+#: The live route's own prompt template (ADR-110). The predecessor's v1
+#: constant is deliberately not imported: the mock route keeps rendering v1
+#: byte-identically, and the two paths can never be confused for each other.
+#: v2 adds the closed candidate_customer_value_archetypes vocabulary whose
+#: absence the first governed canary measured as an adapter rejection.
+LIVE_PROMPT_TEMPLATE_RELATIVE_PATH = (
+    "prompts/discovery/universe_high_recall_screen.v2.md"
+)
 
 SELECTION_SCHEMA_RELATIVE_PATH = "schemas/universe_screen_selection.schema.json"
 AUTHORIZATION_SCHEMA_RELATIVE_PATH = (
@@ -151,7 +171,7 @@ AUTHORIZATION_SCHEMA_RELATIVE_PATH = (
 ENABLEMENT_SCHEMA_RELATIVE_PATH = (
     "schemas/universe_screen_adapter_enablement.schema.json"
 )
-MANIFEST_V2_SCHEMA_RELATIVE_PATH = "schemas/universe_screen_manifest.v2.schema.json"
+MANIFEST_V3_SCHEMA_RELATIVE_PATH = "schemas/universe_screen_manifest.v3.schema.json"
 
 #: The pinned deterministic envelope-to-text rule: exactly one candidate,
 #: every part a string ``text`` field, concatenated in order. Anything else —
@@ -1073,17 +1093,21 @@ def _preflight(
                 "operation endpoints derived from the client contract."
             )
     # (6) The prompt binding: committed bytes against the authorization.
-    template_path = root / PROMPT_TEMPLATE_RELATIVE_PATH
+    template_path = root / LIVE_PROMPT_TEMPLATE_RELATIVE_PATH
     if not template_path.is_file():
-        raise ScreenInputError(f"Screen prompt template not found: {template_path}")
+        raise ScreenInputError(
+            f"Live screen prompt template not found: {template_path}"
+        )
     template_raw = template_path.read_bytes()
     template_sha = _sha256(template_raw)
     if template_sha != authorization["prompt_template_sha256"]:
         raise ScreenInputError(
-            f"The committed screen prompt template hashes to {template_sha}, "
-            f"but the authorization binds "
+            f"The committed live screen prompt template "
+            f"({LIVE_PROMPT_TEMPLATE_RELATIVE_PATH}) hashes to "
+            f"{template_sha}, but the authorization binds "
             f"{authorization['prompt_template_sha256']}. A stale or "
-            "mismatched prompt authorization runs nothing."
+            "mismatched prompt authorization runs nothing -- including one "
+            "minted against the v1 template."
         )
     # (7) The cohort, the selection, and the stated caps.
     inputs = load_packet_run(root, packet_manifest_path)
@@ -1225,7 +1249,7 @@ def run_lineage_screen_live(
         len(pre.inputs.failures) if pre.include_insufficient else 0
     )
     record_schema = _load_schema(root, RECORD_SCHEMA_RELATIVE_PATH)
-    manifest_schema = _load_schema(root, MANIFEST_V2_SCHEMA_RELATIVE_PATH)
+    manifest_schema = _load_schema(root, MANIFEST_V3_SCHEMA_RELATIVE_PATH)
 
     if dry_run:
         for packet in pre.selected_packets:
@@ -1677,7 +1701,7 @@ def run_lineage_screen_live(
         "packet_run_id": pre.inputs.manifest["run_id"],
         "packets_jsonl_sha256": pre.inputs.packets_jsonl_sha256,
         "packet_failures_jsonl_sha256": pre.inputs.failures_jsonl_sha256,
-        "prompt_template_path": PROMPT_TEMPLATE_RELATIVE_PATH,
+        "prompt_template_path": LIVE_PROMPT_TEMPLATE_RELATIVE_PATH,
         "prompt_template_sha256": pre.prompt_template_sha256,
         "authorization_id": pre.authorization["authorization_id"],
         "authorization_sha256": authorization_sha256,
@@ -1712,7 +1736,7 @@ def run_lineage_screen_live(
         "run_timestamp": clock().isoformat(),
         "schema_versions": {
             "universe_screen_record": "0.1.0",
-            "universe_screen_manifest_v2": "0.2.0",
+            "universe_screen_manifest_v3": "0.3.0",
             "universe_screen_selection": "0.1.0",
             "universe_screen_live_authorization": "0.1.0",
             "universe_screen_adapter_enablement": "0.1.0",

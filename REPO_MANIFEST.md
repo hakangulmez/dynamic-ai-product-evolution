@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **814**
+Total tracked/scaffold files listed: **816**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -319,6 +319,7 @@ Total tracked/scaffold files listed: **814**
 - `prompts/discovery/official_source_discovery.md`
 - `prompts/discovery/universe_full_classification.md`
 - `prompts/discovery/universe_high_recall_screen.md`
+- `prompts/discovery/universe_high_recall_screen.v2.md`
 - `prompts/evaluation/output_critic.md`
 - `prompts/extraction/capability_discovery_schema_v1.md`
 - `prompts/extraction/capability_discovery_schema_v2.md`
@@ -446,6 +447,7 @@ Total tracked/scaffold files listed: **814**
 - `schemas/universe_screen_live_authorization.schema.json`
 - `schemas/universe_screen_manifest.schema.json`
 - `schemas/universe_screen_manifest.v2.schema.json`
+- `schemas/universe_screen_manifest.v3.schema.json`
 - `schemas/universe_screen_record.schema.json`
 - `schemas/universe_screen_selection.schema.json`
 - `schemas/web_collection_receipt.schema.json`

@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.47.0",
+  "manifest_version": "0.48.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -103,6 +103,7 @@
     "universe_screen_selection": "0.1.0",
     "universe_screen_adapter_enablement": "0.1.0",
     "universe_screen_live_authorization": "0.1.0",
-    "universe_screen_manifest_v2": "0.2.0"
+    "universe_screen_manifest_v2": "0.2.0",
+    "universe_screen_manifest_v3": "0.3.0"
   }
 }

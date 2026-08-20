@@ -67,6 +67,9 @@ TEXT_FIXTURES = ROOT / "evals" / "fixtures" / "plain_text_primary"
 MANIFEST_V2_SCHEMA = json.loads(
     (ROOT / "schemas" / "universe_screen_manifest.v2.schema.json")
     .read_text(encoding="utf-8"))
+MANIFEST_V3_SCHEMA = json.loads(
+    (ROOT / "schemas" / "universe_screen_manifest.v3.schema.json")
+    .read_text(encoding="utf-8"))
 SELECTION_SCHEMA = json.loads(
     (ROOT / "schemas" / "universe_screen_selection.schema.json")
     .read_text(encoding="utf-8"))
@@ -339,7 +342,7 @@ def _governance(tmp_path: Path, *, cohort, selection_path: Path,
                       + "\n").encode("utf-8")
     (root / "screen_adapter_enablement.json").write_bytes(enablement_raw)
     template_sha = sha256(
-        (ROOT / ls.PROMPT_TEMPLATE_RELATIVE_PATH).read_bytes()).hexdigest()
+        (ROOT / ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH).read_bytes()).hexdigest()
     authorization = {
         "authorization_contract": "universe_screen_live_authorization@0.1.0",
         "authorization_id": "screen-authorization-fixture",
@@ -735,7 +738,7 @@ def test_prompt_hash_binding_refuses_malformed_stale_and_mismatched(
     # Stale: minted for other template bytes (simulated by hashing altered
     # bytes into the authorization).
     stale = sha256(
-        (ROOT / ls.PROMPT_TEMPLATE_RELATIVE_PATH).read_bytes() + b"drift"
+        (ROOT / ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH).read_bytes() + b"drift"
     ).hexdigest()
     _expect_refusal(small, tmp_path / "b", "stale or\nmismatched|stale",
                     prompt_sha256=stale)
@@ -918,8 +921,11 @@ def test_live_full_cohort_run_end_to_end(small, tmp_path):
                for r in screened)
     manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     assert list(Draft202012Validator(
-        MANIFEST_V2_SCHEMA, format_checker=FormatChecker()
+        MANIFEST_V3_SCHEMA, format_checker=FormatChecker()
     ).iter_errors(manifest)) == []
+    assert manifest["prompt_template_path"] == (
+        "prompts/discovery/universe_high_recall_screen.v2.md")
+    assert manifest["schema_versions"]["universe_screen_manifest_v3"] == "0.3.0"
     # Three files bound, all re-hashing.
     for filename, recorded in manifest["output_hashes"].items():
         assert sha256((result.run_dir / filename).read_bytes()).hexdigest() \
@@ -1052,12 +1058,17 @@ def test_parity_with_the_mock_predecessor(small, tmp_path):
     for record in _records(live):
         twin = mock_by_key[(record["cik"], record["accession"])]
         for field in ("record_kind", "screen_status", "screen_output",
-                      "prompt_sha256", "packet_sha256",
-                      "baseline_filing_date", "raw_response_sha256",
-                      "failure_reason_code", "failure_detail"):
+                      "packet_sha256", "baseline_filing_date",
+                      "raw_response_sha256", "failure_reason_code",
+                      "failure_detail"):
             assert record[field] == twin[field], field
         if record["record_kind"] == "screened_packet":
             assert record["model_route"] != twin["model_route"]
+            # ADR-110: the routes render different templates by design, so
+            # the per-record prompt hash differs while every model-derived
+            # field above is identical. Both remain 64-hex and bound.
+            assert record["prompt_sha256"] != twin["prompt_sha256"]
+            assert len(record["prompt_sha256"]) == 64
     _assert_no_google_import()
 
 
@@ -1567,6 +1578,162 @@ def test_every_other_mode_refuses_the_live_screen_flags(tmp_path, mode):
 # --- Predecessor byte-identity and registry ---------------------------------------------
 
 
+# --- ADR-110: the v2 prompt successor and the v0.3 manifest ---------------------------
+
+
+ARCHETYPES = (
+    "FUNCTIONAL_SOFTWARE", "ADAPTIVE_DIGITAL_SERVICE", "DATA_ANALYTICS_PRODUCT",
+    "TRANSACTION_INFRASTRUCTURE", "MARKETPLACE_COORDINATION", "CONTENT_CATALOG",
+    "ATTENTION_SOCIAL_PLATFORM", "INTERACTIVE_ENTERTAINMENT",
+    "HARDWARE_SOFTWARE_SYSTEM", "HUMAN_MANAGED_SERVICE", "ECOMMERCE_RETAIL",
+    "PHYSICAL_SERVICE_NETWORK", "OTHER",
+)
+
+
+def test_the_live_route_renders_v2_and_the_mock_route_still_renders_v1():
+    assert ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH == (
+        "prompts/discovery/universe_high_recall_screen.v2.md")
+    assert ls.PROMPT_TEMPLATE_RELATIVE_PATH != (
+        ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH)
+    assert (ROOT / ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH).is_file()
+    # The live module owns its own path and does not import the
+    # predecessor's constant (checked structurally, not by substring: the
+    # live name legitimately ends with the predecessor's name).
+    import ast
+
+    tree = ast.parse((ROOT / "src" / "dynamic_ai_products"
+                      / "lineage_screen_live.py").read_text(encoding="utf-8"))
+    imported = {
+        alias.name for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) for alias in node.names
+    }
+    assert "PROMPT_TEMPLATE_RELATIVE_PATH" not in imported
+    # The renderer and row validator are still reused, never re-implemented.
+    assert {"render_lineage_screen_prompt", "_validate_row_output"} <= imported
+
+
+def test_v2_prompt_enumerates_the_closed_vocabulary_and_the_rules():
+    text = (ROOT / ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH).read_text(
+        encoding="utf-8")
+    # Exactly the thirteen taxonomy values, each present as an exact token.
+    from dynamic_ai_products.universe.models import Archetype
+    from typing import get_args
+
+    assert set(get_args(Archetype)) == set(ARCHETYPES)
+    for value in ARCHETYPES:
+        assert value in text, value
+    # No invented member sneaks into the list block.
+    block = text.split("```text", 1)[1].split("```", 1)[0]
+    assert [line.strip() for line in block.strip().splitlines()] == list(ARCHETYPES)
+    # The three explicit rules the canary proved were missing.
+    lowered = text.lower()
+    assert "never invent synonyms" in lowered
+    assert "return `[]`" in lowered or "return []" in lowered
+    assert "productivity/efficiency" in lowered  # named as invalid
+    # v1's semantics survive verbatim in the successor.
+    v1 = (ROOT / ls.PROMPT_TEMPLATE_RELATIVE_PATH).read_text(encoding="utf-8")
+    for sentence in (
+        "Use only the supplied baseline-dated SEC evidence.",
+        "Use a deliberately high-recall standard.",
+        "Every positive claim has a direct quote.",
+        "Internal software use alone does not create an eligible product.",
+        "BASELINE_SEC_PASSAGES:",
+    ):
+        assert sentence in v1 and sentence in text, sentence
+
+
+def test_the_closed_validator_still_rejects_the_measured_canary_label():
+    """The fix is the prompt, never a relaxed validator: the exact value the
+    first governed canary returned must still be refused."""
+    from pydantic import ValidationError
+
+    from dynamic_ai_products.universe.models import HighRecallScreenOutput
+
+    payload = {
+        "cik": "0000017843", "company_id": "CIK0000017843",
+        "screen_status": "BOUNDARY_OR_UNCERTAIN",
+        "plausible_customer_facing_digital_product": True,
+        "candidate_customer_value_archetypes": ["Productivity/Efficiency"],
+        "positive_evidence": [], "negative_or_boundary_evidence": [],
+        "missing_evidence": [], "confidence": "medium",
+    }
+    with pytest.raises(ValidationError, match="literal_error|Input should be"):
+        HighRecallScreenOutput.model_validate(payload)
+    # Every closed value validates, and an empty array is always valid.
+    for value in ARCHETYPES:
+        HighRecallScreenOutput.model_validate(
+            dict(payload, candidate_customer_value_archetypes=[value]))
+    HighRecallScreenOutput.model_validate(
+        dict(payload, candidate_customer_value_archetypes=[]))
+
+
+def test_an_authorization_bound_to_the_v1_prompt_refuses_before_anything(
+        small, tmp_path):
+    """A live authorization minted against the v1 template is stale under
+    ADR-110 and refuses before output, SDK import, or network."""
+    v1_sha = sha256(
+        (ROOT / ls.PROMPT_TEMPLATE_RELATIVE_PATH).read_bytes()).hexdigest()
+    selection_path = _selection(small, tmp_path, "full_cohort")
+    governance = _governance(tmp_path, cohort=small,
+                             selection_path=selection_path,
+                             selection_kind="full_cohort", logical=3,
+                             prompt_sha256=v1_sha)
+    with pytest.raises(ls.ScreenInputError, match="prompt|stale"):
+        _live(small, tmp_path, selection_path=selection_path,
+              governance=governance)
+    assert not (tmp_path / "screen").exists()
+    _assert_no_google_import()
+    # And the valid v2 binding is exactly the live template's bytes.
+    live_sha = sha256(
+        (ROOT / ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH).read_bytes()).hexdigest()
+    assert live_sha != v1_sha
+    ok = _governance(tmp_path / "ok", cohort=small,
+                     selection_path=selection_path,
+                     selection_kind="full_cohort", logical=3)
+    assert ok.authorization["prompt_template_sha256"] == live_sha
+
+
+def test_v2_and_v3_manifest_generations_mutually_reject(small, tmp_path):
+    selection_path, governance = _full_setup(small, tmp_path)
+    result, _ = _live(small, tmp_path, selection_path=selection_path,
+                      governance=governance)
+    assert result.status == "completed"
+    live = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    v2 = Draft202012Validator(MANIFEST_V2_SCHEMA, format_checker=FormatChecker())
+    v3 = Draft202012Validator(MANIFEST_V3_SCHEMA, format_checker=FormatChecker())
+    assert list(v3.iter_errors(live)) == []
+    assert list(v2.iter_errors(live))  # v0.2 refuses the v2-prompt manifest
+    # And a v0.2-shaped manifest is refused by v0.3.
+    as_v2 = dict(
+        live,
+        prompt_template_path="prompts/discovery/universe_high_recall_screen.md",
+        schema_versions={**{k: v for k, v in live["schema_versions"].items()
+                            if k != "universe_screen_manifest_v3"},
+                         "universe_screen_manifest_v2": "0.2.0"})
+    assert list(v3.iter_errors(as_v2))
+    assert list(v2.iter_errors(as_v2)) == []
+
+
+def test_v2_prompt_renders_through_the_predecessor_renderer(small):
+    """The live route reuses the predecessor renderer unchanged: the v2
+    template carries the same three placeholders and renders identically
+    evidence-minimal metadata."""
+    template = (ROOT / ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH).read_text(
+        encoding="utf-8")
+    packet = small.packets[0]
+    rendered = ls.render_lineage_screen_prompt(template, packet)
+    assert "{{" not in rendered
+    start = rendered.index("COMPANY_METADATA:\n") + len("COMPANY_METADATA:\n")
+    end = rendered.index("\n\nBASELINE_SEC_PASSAGES:")
+    assert rendered[start:end] == (
+        f"cik: {packet['cik']}\n"
+        f"accession: {packet['accession']}\n"
+        f"form: {packet['form']}\n"
+        f"filing_date: {packet['baseline_filing_date']}")
+    for value in ARCHETYPES:
+        assert value in rendered
+
+
 def test_adr108_predecessors_are_byte_identical():
     """ADR-109 may not move its predecessor: the v0.1 screen module, its two
     schemas and its test module are frozen at their ADR-108 bytes."""
@@ -1577,11 +1744,17 @@ def test_adr108_predecessors_are_byte_identical():
             "066c49ed118125564fe16cbc57b413d7b96ea3d31bc47cf14a4e3b190693d253",
         "schemas/universe_screen_manifest.schema.json":
             "32e48d9a56bfa12115c3887b0944d0bb156f504c2ef6530401e500faf57e778d",
-        # Rebaselined once, under explicit ADR-109 authorization: the module's
-        # registry test moved its two literals (0.46.0 -> 0.47.0, 99 -> 103)
-        # and nothing else. Every behavioral ADR-108 assertion is unchanged.
+        # Rebaselined twice, each time only in its registry test's two
+        # literals and nothing else (ADR-109: 0.46.0 -> 0.47.0, 99 -> 103;
+        # ADR-110: 0.47.0 -> 0.48.0, 103 -> 104). Every behavioral ADR-108
+        # assertion, and the mock path it exercises, is unchanged.
         "tests/universe/test_lineage_screen.py":
-            "45eff5847b399a4d0159cd6f86069ef7b10f72b2728dd545b46ee45d2b2e8445",
+            "ff1c4dba03f664de2e5e383e036d29e994a4dc4bceffe97b1c7616c88801587c",
+        # ADR-110 adds a successor prompt beside it; v1 itself never moves.
+        "prompts/discovery/universe_high_recall_screen.md":
+            "4ac95a4c4e6ffdfbc55de7aec98fe4d50b89c29fab79e75a10c07cc35d102194",
+        "schemas/universe_screen_manifest.v2.schema.json":
+            "d9ab3f69c58b29ad5ecbb4fa4c65c369cbf02b024cffa8ffe6b8570a8768bdff",
     }
     for path, expected in pins.items():
         assert sha256((ROOT / path).read_bytes()).hexdigest() == expected, path
@@ -1591,8 +1764,10 @@ def test_registry_registers_the_four_live_screen_schemas():
     registry = json.loads(
         (ROOT / "schemas" / "schema_version_manifest.json")
         .read_text(encoding="utf-8"))
-    assert registry["manifest_version"] == "0.47.0"
-    assert len(registry["schemas"]) == 103
+    # ADR-110 adds the v0.3 live manifest successor: 103 -> 104.
+    assert registry["manifest_version"] == "0.48.0"
+    assert len(registry["schemas"]) == 104
+    assert registry["schemas"]["universe_screen_manifest_v3"] == "0.3.0"
     assert registry["schemas"]["universe_screen_selection"] == "0.1.0"
     assert registry["schemas"]["universe_screen_adapter_enablement"] == "0.1.0"
     assert registry["schemas"]["universe_screen_live_authorization"] == "0.1.0"
