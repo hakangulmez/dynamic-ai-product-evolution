@@ -7,9 +7,9 @@ callable without a complete, hash-bound governance chain, and this increment
 ships **offline only**: every test injects a fake client factory, no real SDK
 client is ever built, no credential is resolved, and no network is reached.
 
-**Prompt generation (ADR-110/111).** The live route renders
-``prompts/discovery/universe_high_recall_screen.v3.md`` and emits
-``universe_screen_manifest@0.4.0``. Every predecessor template and manifest
+**Prompt generation (ADR-110/111/113).** The live route renders
+``prompts/discovery/universe_high_recall_screen.v4.md`` and emits
+``universe_screen_manifest@0.5.0``. Every predecessor template and manifest
 schema is retained byte-identical: v1 remains the mock route's only
 template, and each manifest generation pins its own prompt path as a const,
 so the generations mutually reject. Two governed canaries measured the two
@@ -20,8 +20,9 @@ v2 enumerates it. The second passed three rows and then cited evidence
 whose ``source_id`` carried the whole header, whose ``passage_id`` belonged
 to another passage, and whose quote did not occur in the passage cited; v3
 states how the two identifiers and the quote are copied and requires the
-triple to be verified before output. Both fixes are the prompt, never a
-relaxed validator: ``_validate_row_output`` is reused unchanged.
+triple to be verified before output. ADR-112 then measured that opaque hash
+copying remained the dominant address failure, so v4 exposes short P001-style
+references and resolves them deterministically before the same validator.
 
 **What a live authorization binds** (ADR-109, stated verbatim in the decision
 log): the packet cohort (``packet_manifest_sha256``) + the selected rows or
@@ -157,7 +158,7 @@ SELECTION_FILENAME = "universe_screen_selection.json"
 SELECTION_CONTRACT = "universe_screen_selection@0.1.0"
 AUTHORIZATION_CONTRACT = "universe_screen_live_authorization@0.1.0"
 ENABLEMENT_CONTRACT = "universe_screen_adapter_enablement@0.1.0"
-SCREEN_MANIFEST_V4_CONTRACT = "universe_screen_manifest@0.4.0"
+SCREEN_MANIFEST_V5_CONTRACT = "universe_screen_manifest@0.5.0"
 SCREEN_STAGE = "universe_high_recall_screen"
 
 #: The live route's own prompt template (ADR-110/111). The predecessor's v1
@@ -165,11 +166,12 @@ SCREEN_STAGE = "universe_high_recall_screen"
 #: byte-identically, and the paths can never be confused for each other.
 #: v2 added the closed candidate_customer_value_archetypes vocabulary whose
 #: absence the first governed canary measured as an adapter rejection; v3
-#: adds the evidence identity and quote-binding rule whose absence the
-#: second canary measured as a quote-resolution failure. Both fixes are
-#: instruction, never validator relaxation.
+#: adds short deterministic citation references (``P001`` etc.) so the model
+#: no longer has to reproduce a 32-character opaque passage hash. The adapter
+#: resolves each short reference back to its original hash before the existing
+#: strict validator sees it; this is address simplification, never relaxation.
 LIVE_PROMPT_TEMPLATE_RELATIVE_PATH = (
-    "prompts/discovery/universe_high_recall_screen.v3.md"
+    "prompts/discovery/universe_high_recall_screen.v4.md"
 )
 
 SELECTION_SCHEMA_RELATIVE_PATH = "schemas/universe_screen_selection.schema.json"
@@ -179,7 +181,52 @@ AUTHORIZATION_SCHEMA_RELATIVE_PATH = (
 ENABLEMENT_SCHEMA_RELATIVE_PATH = (
     "schemas/universe_screen_adapter_enablement.schema.json"
 )
-MANIFEST_V4_SCHEMA_RELATIVE_PATH = "schemas/universe_screen_manifest.v4.schema.json"
+MANIFEST_V5_SCHEMA_RELATIVE_PATH = "schemas/universe_screen_manifest.v5.schema.json"
+
+
+def render_live_prompt_with_citation_refs(
+    template_text: str, packet: dict
+) -> tuple[str, dict[str, str]]:
+    """Render one packet with short, deterministic model-facing references.
+
+    ``P001`` is only a presentation handle. The returned mapping is derived
+    from the packet's ordered passages and resolves it back to the immutable
+    passage hash before strict quote validation and record persistence.
+    """
+    refs: dict[str, str] = {}
+    displayed_passages: list[dict] = []
+    for ordinal, passage in enumerate(packet["passages"], start=1):
+        ref = f"P{ordinal:03d}"
+        refs[ref] = passage["passage_id"]
+        displayed_passages.append({**passage, "passage_id": ref})
+    rendered = render_lineage_screen_prompt(
+        template_text, {**packet, "passages": displayed_passages}
+    )
+    return rendered, refs
+
+
+def resolve_live_citation_refs(raw_response: str, refs: dict[str, str]) -> str:
+    """Replace known model-facing refs before the unchanged strict validator.
+
+    Invalid JSON and unknown references are deliberately passed through: the
+    predecessor validator remains the sole authority that rejects them.
+    The raw archive is written before this transformation and preserves the
+    model's original response byte-for-byte.
+    """
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError:
+        return raw_response
+    if not isinstance(payload, dict):
+        return raw_response
+    for field in ("positive_evidence", "negative_or_boundary_evidence"):
+        evidence = payload.get(field)
+        if not isinstance(evidence, list):
+            continue
+        for item in evidence:
+            if isinstance(item, dict) and item.get("passage_id") in refs:
+                item["passage_id"] = refs[item["passage_id"]]
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 #: The pinned deterministic envelope-to-text rule: exactly one candidate,
 #: every part a string ``text`` field, concatenated in order. Anything else —
@@ -1257,7 +1304,7 @@ def run_lineage_screen_live(
         len(pre.inputs.failures) if pre.include_insufficient else 0
     )
     record_schema = _load_schema(root, RECORD_SCHEMA_RELATIVE_PATH)
-    manifest_schema = _load_schema(root, MANIFEST_V4_SCHEMA_RELATIVE_PATH)
+    manifest_schema = _load_schema(root, MANIFEST_V5_SCHEMA_RELATIVE_PATH)
 
     if dry_run:
         for packet in pre.selected_packets:
@@ -1396,7 +1443,9 @@ def run_lineage_screen_live(
         return result
 
     for packet in pre.selected_packets:
-        rendered = render_lineage_screen_prompt(pre.prompt_template_text, packet)
+        rendered, citation_refs = render_live_prompt_with_citation_refs(
+            pre.prompt_template_text, packet
+        )
         prompt_sha256 = _sha256(rendered.encode("utf-8"))
         logical_requests_made += 1
         try:
@@ -1433,7 +1482,9 @@ def run_lineage_screen_live(
         raw_responses_captured += 1
 
         try:
-            output = _validate_row_output(raw_response, packet)
+            output = _validate_row_output(
+                resolve_live_citation_refs(raw_response, citation_refs), packet
+            )
         except _RowValidationFailure as exc:
             return _fail(exc.reason_code, exc.detail, packet)
 
@@ -1744,7 +1795,7 @@ def run_lineage_screen_live(
         "run_timestamp": clock().isoformat(),
         "schema_versions": {
             "universe_screen_record": "0.1.0",
-            "universe_screen_manifest_v4": "0.4.0",
+            "universe_screen_manifest_v5": "0.5.0",
             "universe_screen_selection": "0.1.0",
             "universe_screen_live_authorization": "0.1.0",
             "universe_screen_adapter_enablement": "0.1.0",

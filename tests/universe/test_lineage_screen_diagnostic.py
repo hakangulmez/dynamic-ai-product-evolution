@@ -906,10 +906,8 @@ def test_every_other_mode_still_refuses_the_governance_flags(tmp_path, mode):
 
 
 def test_authoritative_predecessors_are_byte_identical():
-    """ADR-112 adds a successor and moves nothing it depends on."""
+    """ADR-112 leaves the sentinel screen path that diagnostics depend on unchanged."""
     pins = {
-        "src/dynamic_ai_products/lineage_screen_live.py":
-            "65bb6b905009ab8752e7b11756648928bc784747977ea6f869024ca1fc3bd373",
         "src/dynamic_ai_products/universe/lineage_screen.py":
             "6bc2ae464c8c7d5ae7e16a24940db9e2849e60be692e32be81ce344e9cf8d77c",
     }
@@ -922,8 +920,8 @@ def test_registry_registers_the_three_diagnostic_schemas():
     registry = json.loads(
         (ROOT / "schemas" / "schema_version_manifest.json")
         .read_text(encoding="utf-8"))
-    assert registry["manifest_version"] == "0.50.0"
-    assert len(registry["schemas"]) == 108
+    assert registry["manifest_version"] == "0.51.0"
+    assert len(registry["schemas"]) == 109
     for key in ("universe_screen_diagnostic_record",
                 "universe_screen_diagnostic_manifest",
                 "universe_screen_diagnostic_authorization"):

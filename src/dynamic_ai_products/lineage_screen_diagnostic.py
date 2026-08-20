@@ -80,9 +80,9 @@ from dynamic_ai_products.providers.retry_policy import (
 from dynamic_ai_products.providers.vertex_gemini_v2 import VertexGeminiProviderV2
 from dynamic_ai_products.provenance import WriteOnceError, write_bytes_once
 
-# Reused unchanged from the authoritative live route. Importing is not
-# modifying: `lineage_screen_live` stays byte-identical and is pinned by SHA
-# in the test suite.
+# The diagnostic successor shares the authoritative route's model-facing
+# citation-reference rendering and deterministic resolution. Both paths keep
+# the same strict row validator; only their cohort-level failure policy differs.
 from .lineage_screen_live import (
     CAPTURE_LEDGER_FILENAME,
     CAPTURES_DIRNAME,
@@ -97,6 +97,8 @@ from .lineage_screen_live import (
     _hydrate_pinned,
     _parse_moment,
     load_screen_selection,
+    render_live_prompt_with_citation_refs,
+    resolve_live_citation_refs,
 )
 from .universe.freeze import create_run_directory
 from .universe.lineage_screen import (
@@ -116,7 +118,6 @@ from .universe.lineage_screen import (
     _validate,
     _validate_row_output,
     load_packet_run,
-    render_lineage_screen_prompt,
 )
 
 __all__ = [
@@ -555,7 +556,7 @@ def run_lineage_screen_diagnostic(
 
     if dry_run:
         for packet in pre.selected_packets:
-            render_lineage_screen_prompt(pre.prompt_template_text, packet)
+            render_live_prompt_with_citation_refs(pre.prompt_template_text, packet)
         return DiagnosticRunResult(
             run_id=run_id, run_dir=None, dry_run=True, status="dry_run",
             planned_screened=len(pre.selected_packets),
@@ -721,7 +722,9 @@ def run_lineage_screen_diagnostic(
         return result
 
     for ordinal, packet in enumerate(pre.selected_packets, start=1):
-        rendered = render_lineage_screen_prompt(pre.prompt_template_text, packet)
+        rendered, citation_refs = render_live_prompt_with_citation_refs(
+            pre.prompt_template_text, packet
+        )
         prompt_sha256 = _sha256(rendered.encode("utf-8"))
         logical_requests_made += 1
         # Snapshotted BEFORE the send: the adapter settles this row's cost
@@ -782,7 +785,9 @@ def run_lineage_screen_diagnostic(
         }
         try:
             # The identical strict validator the authoritative runner uses.
-            output = _validate_row_output(raw_response, packet)
+            output = _validate_row_output(
+                resolve_live_citation_refs(raw_response, citation_refs), packet
+            )
         except _RowValidationFailure as exc:
             rejections[exc.reason_code] = rejections.get(exc.reason_code, 0) + 1
             row.update(record_kind="rejected_output", screen_output=None,

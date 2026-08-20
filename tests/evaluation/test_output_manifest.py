@@ -1040,7 +1040,7 @@ def test_repo_manifest_count_and_paths():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert "Total tracked/scaffold files listed: **830**" in text
+    assert "Total tracked/scaffold files listed: **832**" in text
     assert "`src/dynamic_ai_products/evaluation/output_manifest.py`" in text
     assert "`tests/evaluation/test_output_manifest.py`" in text
     assert "`src/dynamic_ai_products/evaluation/validation_inputs.py`" in text
@@ -1048,6 +1048,8 @@ def test_repo_manifest_count_and_paths():
     assert "`docs/PROJECT_PLAN.md`" in text
     assert "`docs/planning/README.md`" in text
     assert "`notebooks/01_STAGE00_UNIVERSE_AND_SCREEN_REPRODUCIBILITY.ipynb`" in text
+    assert "`prompts/discovery/universe_high_recall_screen.v4.md`" in text
+    assert "`schemas/universe_screen_manifest.v5.schema.json`" in text
     assert (
         "`evals/fixtures/evaluation_harness/validator_parameters_v2/"
         "validator_rule_parameters.v2.json`"

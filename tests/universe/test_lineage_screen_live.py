@@ -73,6 +73,9 @@ MANIFEST_V3_SCHEMA = json.loads(
 MANIFEST_V4_SCHEMA = json.loads(
     (ROOT / "schemas" / "universe_screen_manifest.v4.schema.json")
     .read_text(encoding="utf-8"))
+MANIFEST_V5_SCHEMA = json.loads(
+    (ROOT / "schemas" / "universe_screen_manifest.v5.schema.json")
+    .read_text(encoding="utf-8"))
 SELECTION_SCHEMA = json.loads(
     (ROOT / "schemas" / "universe_screen_selection.schema.json")
     .read_text(encoding="utf-8"))
@@ -924,11 +927,11 @@ def test_live_full_cohort_run_end_to_end(small, tmp_path):
                for r in screened)
     manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     assert list(Draft202012Validator(
-        MANIFEST_V4_SCHEMA, format_checker=FormatChecker()
+        MANIFEST_V5_SCHEMA, format_checker=FormatChecker()
     ).iter_errors(manifest)) == []
     assert manifest["prompt_template_path"] == (
-        "prompts/discovery/universe_high_recall_screen.v3.md")
-    assert manifest["schema_versions"]["universe_screen_manifest_v4"] == "0.4.0"
+        "prompts/discovery/universe_high_recall_screen.v4.md")
+    assert manifest["schema_versions"]["universe_screen_manifest_v5"] == "0.5.0"
     # Three files bound, all re-hashing.
     for filename, recorded in manifest["output_hashes"].items():
         assert sha256((result.run_dir / filename).read_bytes()).hexdigest() \
@@ -1595,7 +1598,7 @@ ARCHETYPES = (
 
 def test_the_live_route_renders_v3_and_the_mock_route_still_renders_v1():
     assert ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH == (
-        "prompts/discovery/universe_high_recall_screen.v3.md")
+        "prompts/discovery/universe_high_recall_screen.v4.md")
     assert ls.PROMPT_TEMPLATE_RELATIVE_PATH != (
         ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH)
     assert (ROOT / ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH).is_file()
@@ -1673,6 +1676,7 @@ def test_the_closed_validator_still_rejects_the_measured_canary_label():
 @pytest.mark.parametrize("stale_template", [
     "prompts/discovery/universe_high_recall_screen.md",
     "prompts/discovery/universe_high_recall_screen.v2.md",
+    "prompts/discovery/universe_high_recall_screen.v3.md",
 ])
 def test_an_authorization_bound_to_a_superseded_prompt_refuses_before_anything(
         small, tmp_path, stale_template):
@@ -1710,8 +1714,10 @@ def test_manifest_generations_mutually_reject(small, tmp_path):
     v2 = Draft202012Validator(MANIFEST_V2_SCHEMA, format_checker=FormatChecker())
     v3 = Draft202012Validator(MANIFEST_V3_SCHEMA, format_checker=FormatChecker())
     v4 = Draft202012Validator(MANIFEST_V4_SCHEMA, format_checker=FormatChecker())
-    # The live v0.4 manifest validates only under v0.4.
-    assert list(v4.iter_errors(live)) == []
+    v5 = Draft202012Validator(MANIFEST_V5_SCHEMA, format_checker=FormatChecker())
+    # The live v0.5 manifest validates only under v0.5.
+    assert list(v5.iter_errors(live)) == []
+    assert list(v4.iter_errors(live))
     assert list(v3.iter_errors(live))
     assert list(v2.iter_errors(live))
 
@@ -1726,6 +1732,7 @@ def test_manifest_generations_mutually_reject(small, tmp_path):
                     "universe_screen_manifest_v3", "0.3.0")
     assert list(v3.iter_errors(as_v3)) == []
     assert list(v4.iter_errors(as_v3))
+    assert list(v5.iter_errors(as_v3))
     assert list(v2.iter_errors(as_v3))
 
     as_v2 = reshape("prompts/discovery/universe_high_recall_screen.md",
@@ -1733,6 +1740,7 @@ def test_manifest_generations_mutually_reject(small, tmp_path):
     assert list(v2.iter_errors(as_v2)) == []
     assert list(v3.iter_errors(as_v2))
     assert list(v4.iter_errors(as_v2))
+    assert list(v5.iter_errors(as_v2))
 
 
 def test_live_prompt_renders_through_the_predecessor_renderer(small):
@@ -1755,34 +1763,48 @@ def test_live_prompt_renders_through_the_predecessor_renderer(small):
         assert value in rendered
 
 
+def test_short_citation_refs_resolve_before_the_unchanged_strict_validator(small):
+    """P001 is model-facing only; accepted records still bind hash ids."""
+    packet = small.packets[0]
+    template = (ROOT / ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH).read_text(
+        encoding="utf-8")
+    rendered, refs = ll.render_live_prompt_with_citation_refs(template, packet)
+    assert "passage_id=P001" in rendered
+    assert packet["passages"][0]["passage_id"] not in rendered
+    quote = packet["passages"][0]["text"][:40]
+    raw = json.dumps({
+        "screen_status": "BOUNDARY_OR_UNCERTAIN",
+        "plausible_customer_facing_digital_product": True,
+        "candidate_customer_value_archetypes": [],
+        "positive_evidence": [{
+            "source_id": packet["source_id"], "passage_id": "P001",
+            "quote": quote, "supported_claim": "Fixture claim.",
+        }],
+        "negative_or_boundary_evidence": [], "missing_evidence": [],
+        "confidence": "medium",
+    })
+    resolved = ll.resolve_live_citation_refs(raw, refs)
+    output = ls._validate_row_output(resolved, packet)
+    assert output.positive_evidence[0].passage_id == packet["passages"][0]["passage_id"]
+    unknown = raw.replace("P001", "P999")
+    with pytest.raises(ls._RowValidationFailure, match="passage_id"):
+        ls._validate_row_output(ll.resolve_live_citation_refs(unknown, refs), packet)
+
+
 # --- ADR-111: evidence identity and quote binding -------------------------------------
 
 
-def test_v3_prompt_states_the_evidence_identity_rules():
+def test_v4_prompt_states_the_short_reference_and_quote_rules():
     text = (ROOT / ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH).read_text(
         encoding="utf-8")
-    assert "## Evidence identity and quote binding" in text
-    # The rules are prose and wrap across lines, so phrase assertions run
-    # against a whitespace-collapsed view; exact tokens still use `text`.
     flat = " ".join(text.split())
     lowered = flat.lower()
-    # Two distinct fields, each copied from its own header token.
-    assert "two distinct fields" in lowered
-    assert "`source_id` is exactly and only the text that follows `source_id=`" \
-        in flat
-    assert "`passage_id` is exactly and only the text that follows " \
-        "`passage_id=`" in flat
-    # No concatenation, same header, no foreign id.
-    assert "never concatenate two header fields into one value" in lowered
-    assert "containing the substring `passage_id=`" in flat
-    assert "never take `source_id` from one header and `passage_id` from a" \
-        in lowered
-    assert "must come from the same displayed passage" in lowered
-    # Quote lives in the body of that same passage, verified before output.
-    assert "contiguous verbatim substring of that same passage's body" in lowered
-    assert "never the header line, never text from a different passage" in lowered
-    assert "verify each `(source_id, passage_id, quote)` triple" in flat
-    # No invention when nothing resolves.
+    assert "short deterministic citation reference" in lowered
+    assert "P001" in text and "P017" in text
+    assert "never invent, alter, pad, truncate, or substitute a reference" in lowered
+    assert "contiguous, verbatim substring" in lowered
+    assert "normally no more than 280 characters" in lowered
+    assert "correct it or drop that evidence object" in lowered
     assert "do not invent an identifier" in lowered
     assert "an empty evidence array is always better than an unverifiable" \
         in lowered
@@ -1902,10 +1924,11 @@ def test_registry_registers_the_four_live_screen_schemas():
     # ADR-110 added the v0.3 live manifest successor (103 -> 104);
     # ADR-111 added v0.4 (104 -> 105); ADR-112 adds the three
     # diagnostic-canary contracts (105 -> 108).
-    assert registry["manifest_version"] == "0.50.0"
-    assert len(registry["schemas"]) == 108
+    assert registry["manifest_version"] == "0.51.0"
+    assert len(registry["schemas"]) == 109
     assert registry["schemas"]["universe_screen_manifest_v3"] == "0.3.0"
     assert registry["schemas"]["universe_screen_manifest_v4"] == "0.4.0"
+    assert registry["schemas"]["universe_screen_manifest_v5"] == "0.5.0"
     assert registry["schemas"]["universe_screen_selection"] == "0.1.0"
     assert registry["schemas"]["universe_screen_adapter_enablement"] == "0.1.0"
     assert registry["schemas"]["universe_screen_live_authorization"] == "0.1.0"

@@ -174,6 +174,10 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-113: manifest_version 0.50.0 -> 0.51.0,
+    # 108 -> 109 entries, registering universe_screen_manifest_v5.
+    # The v5 successor pins the v4 short-reference prompt; every predecessor
+    # schema remains byte-identical. Before it,
     # Rebaselined by ADR-112 (a diagnostic canary measures the
     # distribution, not the first defect): manifest_version 0.49.0 ->
     # 0.50.0, 105 -> 108 entries, registering the three diagnostic
@@ -368,7 +372,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "f1ff9cd490229b013285cdc03e8980e9c872c5fb4f0565f706b636ebd66c84b5"
+    "b63df9d1cf2eb268761e3a03b36ab7421e79861aa7be165a413b6934c5df80d6"
 )
 
 

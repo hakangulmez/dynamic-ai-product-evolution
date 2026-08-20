@@ -7840,6 +7840,38 @@ the five evaluation guards, and the ADR-108 literal removal. No provider,
 extraction, packet, passage, validator, live-runner, prompt, predecessor
 schema or `data/runs` change.
 
+## ADR-113 — Short deterministic passage references preserve strict evidence
+
+**Status.** Accepted from the completed ADR-112 diagnostic canary. The canary
+validated 90 of 100 rows and rejected 10. Of 14 defective evidence objects,
+10 contained a quote that resolved exactly somewhere in the same Item 1 packet
+but carried either a corrupted opaque passage hash or a hash for another
+passage. Four quotes were non-verbatim and one output omitted a required
+claim field. The evidence validator correctly refused every one; it is not
+weakened.
+
+**Decision.** The v4 prompt presents ordered packet passages with short
+deterministic `P001`-style references in the model-facing `passage_id` slot.
+The live and diagnostic runners derive a one-to-one reference-to-immutable
+hash map from the packet's ordered passages, archive the model response before
+any transformation, then resolve a known short reference to the original hash
+before calling the unchanged `_validate_row_output`. An unknown reference,
+malformed response, non-verbatim quote, or wrong source remains a strict
+rejection. Accepted records therefore preserve real immutable passage hashes,
+while the raw archive preserves exactly what the model returned.
+
+**Why not one whole Item 1 passage.** A single huge passage would remove an
+addressing problem by discarding the evidence granularity needed for audit and
+would not fix non-verbatim constructed quotes. The diagnostic evidence instead
+supports simplifying the model-facing address, not removing passage-level
+provenance.
+
+**Succession.** `universe_high_recall_screen.v4.md` and
+`universe_screen_manifest.v5.schema.json` are successors. v0.5 pins the v4
+prompt path; v0.1–v0.4 schemas and prompts remain byte-identical and mutually
+reject. A new fixture-only validation run is required before any new model
+canary authorization.
+
 ## Open decisions
 
 - Required source packet by firm-year.
