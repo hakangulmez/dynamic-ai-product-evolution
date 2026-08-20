@@ -1,0 +1,437 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_manifest.v4.schema.json",
+  "title": "Universe high-recall screen run manifest (v0.4, live governed provider, v3 prompt)",
+  "description": "Immutable record of one live screen run under the governed Vertex connector, rendering the v3 screen prompt (ADR-109/110/111). The v0.2 and v0.3 predecessors are retained byte-identical and remain the only validators of runs that rendered the v1 and v2 templates; every generation pins its own prompt_template_path as a const and additionalProperties is false, so they mutually reject. The single substantive difference from v0.3 is that authority: a v0.4 manifest attests that the bytes actually sent were prompts/discovery/universe_high_recall_screen.v3.md, whose evidence identity and quote-binding rule is what the second governed canary measured as missing - a response concatenated a passage header\u0027s source_id and passage_id into one field, cited a foreign passage id, and quoted text absent from the passage it cited. Validation refused it fail-closed and is unchanged; the prompt is what moved. Everything else - the governance chain, capture ledger, raw archive, request accounting, reconciliation, selection binding and promotion semantics - is unchanged from v0.3. The v0.2 predecessor is retained byte-identical and remains the only validator of runs that rendered the v1 template; the two generations mutually reject, because each pins its own prompt_template_path as a const and additionalProperties is false. The single substantive difference is that authority: a v0.3 manifest attests that the bytes actually sent were prompts/discovery/universe_high_recall_screen.v2.md, whose closed candidate_customer_value_archetypes vocabulary is what the first governed canary proved the v1 template lacked. Everything else - the governance chain, capture ledger, raw archive, request accounting, reconciliation, selection binding and promotion semantics - is unchanged from v0.2. The v0.1 predecessor describes the mock fixture-replay path and is retained byte-identical; the provider kind decides the generation and the two schemas mutually reject. Everything v0.1 binds still binds here, and four authorities join it: the screen live authorization (by digest, with its prompt_template_sha256 re-verified against the committed template bytes at preflight and recorded again here), the adapter enablement (by digest), the canonical client-contract digest, and the selection artifact (by digest and kind - a canary_100 manifest is structurally non-promotable to a SCREEN release; promotion requires full_cohort). output_hashes covers three files: the records JSONL, the final-text raw archive, and the capture ledger, whose lines are the complete mapping of every wire-envelope capture file written under provider_captures/ - one line per attempt, each carrying the file's reference and SHA-256, re-hashed file by file before this manifest is written, with an orphan walk proving no unlisted file exists. Authority split: records plus raw archive are the row-level model-output authority; the capture ledger plus envelope files are the attempt-level wire authority for external requests, tokens and cost. Reconciliation proves count captures plus generate captures equal external requests made, generate captures equal provider attempts, and every archived raw response equals the text deterministically extracted from its row's terminal hash-verified envelope under the named extraction rule.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "packet_manifest_path",
+    "packet_manifest_sha256",
+    "packet_run_id",
+    "packets_jsonl_sha256",
+    "packet_failures_jsonl_sha256",
+    "prompt_template_path",
+    "prompt_template_sha256",
+    "authorization_id",
+    "authorization_sha256",
+    "screen_adapter_enablement_sha256",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "envelope_text_extraction_rule",
+    "selection",
+    "provider",
+    "screen_record_order",
+    "firm_rollup_rule",
+    "baseline_cutoff",
+    "counts",
+    "request_accounting",
+    "reconciliation",
+    "output_hashes",
+    "run_timestamp",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "packet_manifest_path": {
+      "type": "string"
+    },
+    "packet_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_run_id": {
+      "type": "string"
+    },
+    "packets_jsonl_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_failures_jsonl_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prompt_template_path": {
+      "const": "prompts/discovery/universe_high_recall_screen.v3.md"
+    },
+    "prompt_template_sha256": {
+      "description": "Recomputed over the committed template bytes at run time; required to equal the authorization's prompt_template_sha256. A stale or mismatched authorization refuses at preflight.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorization_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_adapter_enablement_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provider_client_contract_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_client_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "envelope_text_extraction_rule": {
+      "const": "vertex_generate_content_candidates0_text_parts@1"
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selection_artifact_path",
+        "selection_artifact_sha256",
+        "selection_kind",
+        "sampling_algorithm",
+        "seed",
+        "rows_selected"
+      ],
+      "properties": {
+        "selection_artifact_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "selection_artifact_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "selection_kind": {
+          "enum": [
+            "canary_100",
+            "full_cohort"
+          ]
+        },
+        "sampling_algorithm": {
+          "enum": [
+            "seeded_stratified_quartiles@1",
+            "full_cohort@1"
+          ]
+        },
+        "seed": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rows_selected": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "model_route"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_route": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "model_label"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model_label": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "screen_record_order": {
+      "const": "packet_rows_in_packet_file_order_then_failure_rows_in_failure_file_order"
+    },
+    "firm_rollup_rule": {
+      "const": "eligible_over_boundary_over_ineligible_failsafe@1"
+    },
+    "baseline_cutoff": {
+      "type": "string",
+      "format": "date"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planned_rows",
+        "screened_packets",
+        "insufficient_evidence",
+        "by_screen_status",
+        "firms_total",
+        "firm_rollup"
+      ],
+      "properties": {
+        "planned_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "screened_packets": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "insufficient_evidence": {
+          "description": "Zero on a canary run by construction: a canary screens selected packets only, and the insufficient-evidence rows belong to full-cohort runs. Never model-called in any mode.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_screen_status": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "LIKELY_ELIGIBLE",
+            "LIKELY_INELIGIBLE",
+            "BOUNDARY_OR_UNCERTAIN"
+          ],
+          "properties": {
+            "LIKELY_ELIGIBLE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "LIKELY_INELIGIBLE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "BOUNDARY_OR_UNCERTAIN": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "firms_total": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "firm_rollup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "LIKELY_ELIGIBLE",
+            "LIKELY_INELIGIBLE",
+            "BOUNDARY_OR_UNCERTAIN",
+            "INSUFFICIENT_EVIDENCE"
+          ],
+          "properties": {
+            "LIKELY_ELIGIBLE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "LIKELY_INELIGIBLE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "BOUNDARY_OR_UNCERTAIN": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "INSUFFICIENT_EVIDENCE": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "request_accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logical_request_cap",
+        "provider_attempt_cap",
+        "external_request_cap",
+        "generate_attempt_cap_per_row",
+        "logical_requests_made",
+        "provider_attempts_made",
+        "external_requests_made",
+        "count_captures",
+        "generate_captures",
+        "rows_retried",
+        "tokens_in_measured",
+        "tokens_out_reported",
+        "rows_usage_verified",
+        "cost_micros_settled",
+        "budget_max_input_tokens",
+        "budget_max_output_tokens",
+        "budget_max_estimated_cost_micros",
+        "budget_max_wall_clock_seconds"
+      ],
+      "properties": {
+        "logical_request_cap": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "provider_attempt_cap": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "external_request_cap": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "generate_attempt_cap_per_row": {
+          "const": 3
+        },
+        "logical_requests_made": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "provider_attempts_made": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "external_requests_made": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "count_captures": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "generate_captures": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rows_retried": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_in_measured": {
+          "description": "Sum of the per-row counts derived from the archived countTokens bytes and reconciled against the SDK witness.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_out_reported": {
+          "description": "Sum of usageMetadata candidate-token counts over rows whose usage verified; null unless every screened row's usage verified.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "rows_usage_verified": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost_micros_settled": {
+          "description": "Cohort cost under the committed exact-integer pricing rule: per row, the usage cost when usage verified, else the per-attempt ceiling times the attempts actually made.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "budget_max_input_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "budget_max_output_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "budget_max_estimated_cost_micros": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "budget_max_wall_clock_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 14,
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_screen_records.jsonl",
+        "universe_screen_raw_responses.jsonl",
+        "universe_screen_capture_ledger.jsonl"
+      ],
+      "properties": {
+        "universe_screen_records.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "universe_screen_raw_responses.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "universe_screen_capture_ledger.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "run_timestamp": {
+      "type": "string"
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_screen_record",
+        "universe_screen_manifest_v4",
+        "universe_screen_selection",
+        "universe_screen_live_authorization",
+        "universe_screen_adapter_enablement",
+        "baseline_packet_manifest_v5",
+        "universe_baseline_packet_v2"
+      ],
+      "properties": {
+        "universe_screen_record": {
+          "type": "string"
+        },
+        "universe_screen_manifest_v4": {
+          "type": "string"
+        },
+        "universe_screen_selection": {
+          "type": "string"
+        },
+        "universe_screen_live_authorization": {
+          "type": "string"
+        },
+        "universe_screen_adapter_enablement": {
+          "type": "string"
+        },
+        "baseline_packet_manifest_v5": {
+          "type": "string"
+        },
+        "universe_baseline_packet_v2": {
+          "type": "string"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

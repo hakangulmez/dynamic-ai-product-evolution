@@ -7,16 +7,21 @@ callable without a complete, hash-bound governance chain, and this increment
 ships **offline only**: every test injects a fake client factory, no real SDK
 client is ever built, no credential is resolved, and no network is reached.
 
-**Prompt generation (ADR-110).** The live route renders
-``prompts/discovery/universe_high_recall_screen.v2.md`` and emits
-``universe_screen_manifest@0.3.0``. The v1 template and the v0.1/v0.2
-manifest schemas are retained byte-identical: v1 remains the mock route's
-only template, and each manifest generation pins its own prompt path as a
-const, so the generations mutually reject. v2 exists because the first
-governed canary measured the gap: a well-formed live response was rejected
-for ``candidate_customer_value_archetypes: ["Productivity/Efficiency"]``,
-a label v1 never forbade because it never enumerated the closed vocabulary.
-The fix is the prompt, never a relaxed validator.
+**Prompt generation (ADR-110/111).** The live route renders
+``prompts/discovery/universe_high_recall_screen.v3.md`` and emits
+``universe_screen_manifest@0.4.0``. Every predecessor template and manifest
+schema is retained byte-identical: v1 remains the mock route's only
+template, and each manifest generation pins its own prompt path as a const,
+so the generations mutually reject. Two governed canaries measured the two
+gaps the successors close. The first was rejected for
+``candidate_customer_value_archetypes: ["Productivity/Efficiency"]``, a
+label v1 never forbade because it never enumerated the closed vocabulary;
+v2 enumerates it. The second passed three rows and then cited evidence
+whose ``source_id`` carried the whole header, whose ``passage_id`` belonged
+to another passage, and whose quote did not occur in the passage cited; v3
+states how the two identifiers and the quote are copied and requires the
+triple to be verified before output. Both fixes are the prompt, never a
+relaxed validator: ``_validate_row_output`` is reused unchanged.
 
 **What a live authorization binds** (ADR-109, stated verbatim in the decision
 log): the packet cohort (``packet_manifest_sha256``) + the selected rows or
@@ -152,16 +157,19 @@ SELECTION_FILENAME = "universe_screen_selection.json"
 SELECTION_CONTRACT = "universe_screen_selection@0.1.0"
 AUTHORIZATION_CONTRACT = "universe_screen_live_authorization@0.1.0"
 ENABLEMENT_CONTRACT = "universe_screen_adapter_enablement@0.1.0"
-SCREEN_MANIFEST_V3_CONTRACT = "universe_screen_manifest@0.3.0"
+SCREEN_MANIFEST_V4_CONTRACT = "universe_screen_manifest@0.4.0"
 SCREEN_STAGE = "universe_high_recall_screen"
 
-#: The live route's own prompt template (ADR-110). The predecessor's v1
+#: The live route's own prompt template (ADR-110/111). The predecessor's v1
 #: constant is deliberately not imported: the mock route keeps rendering v1
-#: byte-identically, and the two paths can never be confused for each other.
-#: v2 adds the closed candidate_customer_value_archetypes vocabulary whose
-#: absence the first governed canary measured as an adapter rejection.
+#: byte-identically, and the paths can never be confused for each other.
+#: v2 added the closed candidate_customer_value_archetypes vocabulary whose
+#: absence the first governed canary measured as an adapter rejection; v3
+#: adds the evidence identity and quote-binding rule whose absence the
+#: second canary measured as a quote-resolution failure. Both fixes are
+#: instruction, never validator relaxation.
 LIVE_PROMPT_TEMPLATE_RELATIVE_PATH = (
-    "prompts/discovery/universe_high_recall_screen.v2.md"
+    "prompts/discovery/universe_high_recall_screen.v3.md"
 )
 
 SELECTION_SCHEMA_RELATIVE_PATH = "schemas/universe_screen_selection.schema.json"
@@ -171,7 +179,7 @@ AUTHORIZATION_SCHEMA_RELATIVE_PATH = (
 ENABLEMENT_SCHEMA_RELATIVE_PATH = (
     "schemas/universe_screen_adapter_enablement.schema.json"
 )
-MANIFEST_V3_SCHEMA_RELATIVE_PATH = "schemas/universe_screen_manifest.v3.schema.json"
+MANIFEST_V4_SCHEMA_RELATIVE_PATH = "schemas/universe_screen_manifest.v4.schema.json"
 
 #: The pinned deterministic envelope-to-text rule: exactly one candidate,
 #: every part a string ``text`` field, concatenated in order. Anything else —
@@ -1249,7 +1257,7 @@ def run_lineage_screen_live(
         len(pre.inputs.failures) if pre.include_insufficient else 0
     )
     record_schema = _load_schema(root, RECORD_SCHEMA_RELATIVE_PATH)
-    manifest_schema = _load_schema(root, MANIFEST_V3_SCHEMA_RELATIVE_PATH)
+    manifest_schema = _load_schema(root, MANIFEST_V4_SCHEMA_RELATIVE_PATH)
 
     if dry_run:
         for packet in pre.selected_packets:
@@ -1736,7 +1744,7 @@ def run_lineage_screen_live(
         "run_timestamp": clock().isoformat(),
         "schema_versions": {
             "universe_screen_record": "0.1.0",
-            "universe_screen_manifest_v3": "0.3.0",
+            "universe_screen_manifest_v4": "0.4.0",
             "universe_screen_selection": "0.1.0",
             "universe_screen_live_authorization": "0.1.0",
             "universe_screen_adapter_enablement": "0.1.0",

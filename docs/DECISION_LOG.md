@@ -7654,6 +7654,79 @@ and the canary selection are untouched and stay usable only as history.
 rebaselines. No provider, extraction, v0.1/v0.2 schema, v1 prompt, mock
 runner, selection or `data/runs` change.
 
+## ADR-111 — The screen prompt states how evidence is identified and quoted
+
+**Status.** Accepted. Fixture-first: no model call, no `data/runs` write, no
+retry of either failed canary. Both canary directories remain immutable,
+non-authoritative evidence.
+
+**Measured cause.** The second governed canary
+(`universe-high-recall-canary-v2-20260820`) ran under the ADR-110 v2 prompt
+and **passed rows 1-3** — the archetype defect that stopped the first canary
+did not recur, and the three completed rows returned exact closed-vocabulary
+values (`[]`, and two four-element lists). It stopped fail-closed at row 4
+(CIK 0000811156) with `quote_resolution_failure`. The response was otherwise
+sound: a valid `screen_status`, a correct empty archetype array. The evidence
+object was not. The rendered passage header is one line —
+`[source_id=<S> passage_id=<P> section=<SEC>]` — and the model returned
+`source_id` = `"<S> passage_id=<P>"`, both header fields concatenated into
+one; it then cited a `passage_id` belonging to a different passage, and its
+quote did not occur in the passage it cited. Cost of the discovery: four
+rows, 55,855 input and 9,071 output tokens, 39,435 microdollars.
+
+**Decision: instruct, never relax.** The validator behaved correctly — a
+citation whose quote does not exist in the cited passage must be refused,
+and `_validate_row_output` is reused byte-unchanged. What was missing is
+instruction: v2 displayed the header format but never said that `source_id`
+and `passage_id` are two separate values, each copied from its own token of
+one same header, nor that the quote must come from that passage's body.
+`prompts/discovery/universe_high_recall_screen.v3.md` adds an "Evidence
+identity and quote binding" section stating exactly that: two distinct
+fields; each copied only from the text following its own `=`; never
+concatenated; never drawn from different headers; brackets, field names and
+`section` never copied in; the quote a contiguous verbatim substring of that
+passage's body, never the header and never another passage; the
+`(source_id, passage_id, quote)` triple verified independently before
+output; and, when nothing resolves, an empty evidence array with
+`missing_evidence` rather than an invented identifier or reconstructed
+quote. Every other v2 section — governing spec, role, temporal rule,
+screening question, non-inference list, the closed archetype vocabulary, the
+input template and the required output — is carried over **byte-identical**,
+proven section by section in test.
+
+**Successor-only on both axes, again.** v1 and v2 templates and the v0.2 and
+v0.3 manifest schemas are retained byte-identical and stay pinned by SHA;
+v1 remains the mock route's only template. Because `universe_screen_manifest@0.3.0`
+pins `prompt_template_path` as a const, `universe_screen_manifest.v4.schema.json`
+is added as a strict successor whose only structural differences from v0.3
+are `$id`, `title`, `description`, that const, and the `schema_versions` key
+rename — seven points, verified by a structural diff, with all four
+generations mutually rejecting. Registry 0.48.0 -> 0.49.0, 104 -> 105.
+
+**Consequence for governance.** The v3 governance pair minted for the second
+canary binds the v2 prompt hash and is now stale: preflight refuses it
+before any output directory, SDK import, credential resolution or network
+send, pinned by a parametrized test over both superseded templates. A third
+canary needs a fresh governance materialization carrying
+`prompt_template_sha256 = 1d371255d9b650bd5ff6ffd1d58d6a42b649436cfbcaf905bf3e53c5a7a58c78`
+and a fresh run id; the v5 cohort and the 100-row selection artifact remain
+valid and unchanged.
+
+**A question this does not settle.** Two canaries have now halted on one bad
+row out of the first four, which is the fail-closed contract working as
+designed but is not a measurement strategy: a 100-row canary will keep
+stopping at whichever row first violates a contract. Whether per-row
+evidence failures should become a recorded row outcome instead of a
+run-stopping error is a substantive change to ADR-108's fail-closed
+semantics, is not made here, and is recorded in the open decisions.
+
+**Scope.** Thirteen paths: the v3 prompt, the v0.4 manifest schema,
+`lineage_screen_live.py`, its test module, the registry, this log,
+`REPO_MANIFEST.md` (816 -> 818), the five evaluation guards, and the
+recurring two-literal registry rebaseline in the ADR-108 test module. No
+validator, passage-generation, provider, extraction, governance-logic,
+predecessor-prompt, predecessor-schema or `data/runs` change.
+
 ## Open decisions
 
 - Required source packet by firm-year.
@@ -7674,5 +7747,6 @@ runner, selection or `data/runs` change.
 - Whether `Payments` is a genuine standalone product or a named feature of `Commerce Hub`. The source text presents it as included within Commerce Hub ("It includes an end-to-end payment solution, Payments…") and Commerce Hub's own "Features include" list sits beside it in the same sentence, but Payments alone carries a dedicated risk-factor paragraph (third-party payment facilitator, money-laundering/fraud liability) that none of Commerce Hub's other named features (payment links, invoicing, quoting) carry — a candidate signal for its own commercial/administrative boundary. Not resolved; the existing product boundary (both as separate Snapshot A members) is left unchanged for this round. Surfaced while deciding the first live `task_extraction` candidates, both of which cite Payments as their product.
 - Whether the exploratory extraction beyond ADR-030's admitted firm is to be brought onto the governed path, bounded, or discarded. ADR-030 admits one firm-year, HubSpot FY2024. Fifteen firms were subsequently ingested at one period each, and a five-year panel of eighty firm-periods was ingested and put through product extraction, entirely outside the governed path: packets were built ad hoc because `pilot_packet.py` is pinned to one CIK, no run wrote a governance chain, and no output entered a decision set, snapshot or universe. Eighty-six model calls carry no prompt hash, no packet hash and no run manifest, so none of their results is citable; counted as the scratchpad JSON files carrying `usageMetadata`, and costing 1,559,367 microdollars against the 362,721 of the thirty-five governed runs. An earlier revision of this entry said "roughly 121", a figure repeated from a review without checking it against the files. The corpus and the measurements exist; the admission does not. Recorded so that a later reader does not mistake the disk contents for an admitted universe.
 - Whether official-web collection is deferred, bounded to a validation-only role, or still required. ADR-033 records it as "required for corpus completeness" and treats `corpus_scope = sec_only_partial` as provisional, with `official_ir`, `product_pages`, `developer_docs` and `web_archives` at `not_attempted`; that ADR has not been superseded. The measured ground the deferral rested on is withdrawn. It counted URLs beneath a `/products` path -- a range of 8 to 167 across firms -- and those lists carry campaign-parameter duplicates and page types no reading would call products (`business-card-scanner-app`, `ui-builder`, `reporting`). The unit that answers the question is the firm's own product index, and reading one for three firms at temporally valid capture dates gives 6 products plus a bundle for HubSpot, 170 links for ServiceNow, and 16 for MongoDB. Those three captures also settle a narrower point: ADR-033's `not_attempted` cannot be read as `unavailable`, because the sources were located and retrieved -- `web.archive.org/web/20241102000438id_/https://www.hubspot.com/products` (sha256 `e0c6d27e…`, inside FY2024 and before the 2025-02-12 filing), `.../20260101061641id_/https://www.servicenow.com/products-by-category.html` (`d4ce4f08…`, before the 2026-01-29 filing), `.../20260118015728id_/https://www.mongodb.com/products` (`6f5c82cb…`, before the 2026-01-31 period end), and `.../20260101212852id_/https://www.servicenow.com/products/itsm.html` (`ea575c4f…`). All four are exploratory fetches outside the governed collection path, with no snapshot, passage identity or receipt, so none may be cited by an observation. What they measure is not quantity but role. `docs/SOURCE_POLICY.md` gives the product page two roles at once, "customer-facing capability and product packaging", and in these three firms the two do not arrive together: HubSpot's index labels every product "Free and premium plans" and describes no function; ServiceNow's ITSM page carries eighteen or more verb-object-outcome phrases and no commercial term at all -- `Prime`, `pricing`, `per user`, `SKU` and `license` are each zero -- and ServiceNow has no archived pricing page under any of the paths searched. The ablation's question is therefore not whether the site is better than Item 1 but which role it fills in which firm, and a single extraction contract will not cover all three. The counter-evidence is of a different kind, and it is about kind rather than quantity: `docs/SOURCE_POLICY.md` assigns capability to product pages rather than to filings, and Item 1 names features where a product page describes functions. HubSpot's Item 1 gives Marketing Hub four terms ("marketing automation and email, social media, SEO, and reporting and analytics"); the same product's current public pages describe scheduling and tracking posts across four named networks from one dashboard, behavioural workflow triggers, and multi-touch revenue attribution. Deriving a capability from the first requires inventing the verb; the second supplies it. That comparison is itself outside the corpus -- the pages are current, name Hubs that appear in no filing through FY2025, and can support no observation under Rule 3 -- so it bears on the source-scope question and on nothing else. `docs/methodology/VALIDATION_STRATEGY.md` and the ninety-day roadmap both ask for this to be settled by the "Item 1 only versus enriched official corpus" ablation, whose scoring depends on a gold set that does not yet exist. The deferral is therefore reasonable and unrecorded until now; it is not a decision.
+- Whether a per-row evidence or output-contract failure in the live screen should be a recorded row outcome rather than a run-stopping error. ADR-108's fail-closed contract stops the run at the first violating row, which is what caught both canary defects at a cost of one and four rows respectively; but it also means a 100-row canary cannot complete while any row can still violate a contract, so the run measures the first defect rather than the distribution of defects. A successor could keep the hard stop for governance, binding, capture and budget failures while recording adapter/quote failures as per-row outcomes with their raw responses retained. Not decided here (see ADR-111).
 - Which cases remain eligible for the frozen test partition after ADR-015 exposure. The product-stage predictions of all fifteen firms at their most recent period were inspected during design work and are permanently ever-exposed; no blind frozen case can be built from that stage at that period. Capability-stage output was inspected for two firms and task-stage output for one, and the 2021-2024 periods were examined only in aggregate. A frozen partition is therefore still constructible from the capability and task stages of the thirteen unexamined firms and from earlier periods, and does not require ingesting new firms. The partition membership itself is a case-set-manifest decision and is not settled here.
 - Whether a verb-less feature name is a capability. `docs/methodology/PRODUCT_CAPABILITY_TASK_ONTOLOGY.md` defines a capability as "a concrete function the product provides" and every one of its five examples is a verb phrase, but the definition sentence does not require one; the verb rule is stated in `capability_discovery_schema_v3` and nowhere in the governing documents. Measured on one filing, HubSpot FY2024, three readings put the capability count at 58, 66 and 69: the rule changes the recorded form rather than the count, because the registered prompt verbalises each noun one-for-one (`call tracking` becomes `track calls`). The structural divergence sits one layer down and is stated as a count rather than a rate: of the pipeline's 64 tasks, 60 reference exactly one capability. A single smoke run supports that count; it does not support a rate, and an earlier revision of this entry claimed a factor-of-two capability difference and a task-per-capability ratio without checking either against the outputs on disk. It is a construct decision and belongs to the methodology owner; recording it in the ontology rather than in a prompt is what would bind a gold annotation.

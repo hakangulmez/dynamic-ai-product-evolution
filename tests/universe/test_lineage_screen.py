@@ -1055,7 +1055,7 @@ def test_registry_registers_the_two_screen_schemas():
     registry = json.loads(
         (ROOT / "schemas" / "schema_version_manifest.json")
         .read_text(encoding="utf-8"))
-    assert registry["manifest_version"] == "0.48.0"
-    assert len(registry["schemas"]) == 104
+    assert registry["manifest_version"] == "0.49.0"
+    assert len(registry["schemas"]) == 105
     assert registry["schemas"]["universe_screen_record"] == "0.1.0"
     assert registry["schemas"]["universe_screen_manifest"] == "0.1.0"

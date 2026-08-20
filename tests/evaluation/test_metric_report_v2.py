@@ -665,6 +665,14 @@ def test_manifest_count():
     # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
     # v0.1.
+    # 818 = 816 + the two ADR-111 paths: the v3 screen prompt successor
+    # (prompts/discovery/universe_high_recall_screen.v3.md), which states
+    # how source_id, passage_id and the quote are copied and verified --
+    # the gap the second governed canary measured as a
+    # quote-resolution failure -- and the v0.4 live-manifest successor
+    # pinning it. The v1/v2 prompts, the v0.1-v0.3 screen manifests, the
+    # strict row validator and the mock runner are byte-unchanged.
+    # Schema registry: 0.48.0 -> 0.49.0, 104 -> 105 entries. Before it,
     # 816 = 814 + the two ADR-110 paths: the v2 screen prompt successor
     # (prompts/discovery/universe_high_recall_screen.v2.md), which
     # enumerates the closed candidate_customer_value_archetypes
@@ -734,7 +742,7 @@ def test_manifest_count():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert declared == len(paths) == 816
+    assert declared == len(paths) == 818
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

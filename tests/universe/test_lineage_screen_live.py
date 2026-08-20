@@ -70,6 +70,9 @@ MANIFEST_V2_SCHEMA = json.loads(
 MANIFEST_V3_SCHEMA = json.loads(
     (ROOT / "schemas" / "universe_screen_manifest.v3.schema.json")
     .read_text(encoding="utf-8"))
+MANIFEST_V4_SCHEMA = json.loads(
+    (ROOT / "schemas" / "universe_screen_manifest.v4.schema.json")
+    .read_text(encoding="utf-8"))
 SELECTION_SCHEMA = json.loads(
     (ROOT / "schemas" / "universe_screen_selection.schema.json")
     .read_text(encoding="utf-8"))
@@ -921,11 +924,11 @@ def test_live_full_cohort_run_end_to_end(small, tmp_path):
                for r in screened)
     manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     assert list(Draft202012Validator(
-        MANIFEST_V3_SCHEMA, format_checker=FormatChecker()
+        MANIFEST_V4_SCHEMA, format_checker=FormatChecker()
     ).iter_errors(manifest)) == []
     assert manifest["prompt_template_path"] == (
-        "prompts/discovery/universe_high_recall_screen.v2.md")
-    assert manifest["schema_versions"]["universe_screen_manifest_v3"] == "0.3.0"
+        "prompts/discovery/universe_high_recall_screen.v3.md")
+    assert manifest["schema_versions"]["universe_screen_manifest_v4"] == "0.4.0"
     # Three files bound, all re-hashing.
     for filename, recorded in manifest["output_hashes"].items():
         assert sha256((result.run_dir / filename).read_bytes()).hexdigest() \
@@ -1590,9 +1593,9 @@ ARCHETYPES = (
 )
 
 
-def test_the_live_route_renders_v2_and_the_mock_route_still_renders_v1():
+def test_the_live_route_renders_v3_and_the_mock_route_still_renders_v1():
     assert ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH == (
-        "prompts/discovery/universe_high_recall_screen.v2.md")
+        "prompts/discovery/universe_high_recall_screen.v3.md")
     assert ls.PROMPT_TEMPLATE_RELATIVE_PATH != (
         ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH)
     assert (ROOT / ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH).is_file()
@@ -1612,7 +1615,7 @@ def test_the_live_route_renders_v2_and_the_mock_route_still_renders_v1():
     assert {"render_lineage_screen_prompt", "_validate_row_output"} <= imported
 
 
-def test_v2_prompt_enumerates_the_closed_vocabulary_and_the_rules():
+def test_live_prompt_enumerates_the_closed_vocabulary_and_the_rules():
     text = (ROOT / ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH).read_text(
         encoding="utf-8")
     # Exactly the thirteen taxonomy values, each present as an exact token.
@@ -1667,12 +1670,15 @@ def test_the_closed_validator_still_rejects_the_measured_canary_label():
         dict(payload, candidate_customer_value_archetypes=[]))
 
 
-def test_an_authorization_bound_to_the_v1_prompt_refuses_before_anything(
-        small, tmp_path):
-    """A live authorization minted against the v1 template is stale under
-    ADR-110 and refuses before output, SDK import, or network."""
-    v1_sha = sha256(
-        (ROOT / ls.PROMPT_TEMPLATE_RELATIVE_PATH).read_bytes()).hexdigest()
+@pytest.mark.parametrize("stale_template", [
+    "prompts/discovery/universe_high_recall_screen.md",
+    "prompts/discovery/universe_high_recall_screen.v2.md",
+])
+def test_an_authorization_bound_to_a_superseded_prompt_refuses_before_anything(
+        small, tmp_path, stale_template):
+    """A live authorization minted against any superseded template is stale
+    and refuses before output, SDK import, or network (ADR-110/111)."""
+    v1_sha = sha256((ROOT / stale_template).read_bytes()).hexdigest()
     selection_path = _selection(small, tmp_path, "full_cohort")
     governance = _governance(tmp_path, cohort=small,
                              selection_path=selection_path,
@@ -1693,7 +1699,9 @@ def test_an_authorization_bound_to_the_v1_prompt_refuses_before_anything(
     assert ok.authorization["prompt_template_sha256"] == live_sha
 
 
-def test_v2_and_v3_manifest_generations_mutually_reject(small, tmp_path):
+def test_manifest_generations_mutually_reject(small, tmp_path):
+    """Every generation pins its own prompt path as a const, so a manifest
+    written under one is refused by all the others (ADR-109/110/111)."""
     selection_path, governance = _full_setup(small, tmp_path)
     result, _ = _live(small, tmp_path, selection_path=selection_path,
                       governance=governance)
@@ -1701,20 +1709,33 @@ def test_v2_and_v3_manifest_generations_mutually_reject(small, tmp_path):
     live = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     v2 = Draft202012Validator(MANIFEST_V2_SCHEMA, format_checker=FormatChecker())
     v3 = Draft202012Validator(MANIFEST_V3_SCHEMA, format_checker=FormatChecker())
-    assert list(v3.iter_errors(live)) == []
-    assert list(v2.iter_errors(live))  # v0.2 refuses the v2-prompt manifest
-    # And a v0.2-shaped manifest is refused by v0.3.
-    as_v2 = dict(
-        live,
-        prompt_template_path="prompts/discovery/universe_high_recall_screen.md",
-        schema_versions={**{k: v for k, v in live["schema_versions"].items()
-                            if k != "universe_screen_manifest_v3"},
-                         "universe_screen_manifest_v2": "0.2.0"})
-    assert list(v3.iter_errors(as_v2))
+    v4 = Draft202012Validator(MANIFEST_V4_SCHEMA, format_checker=FormatChecker())
+    # The live v0.4 manifest validates only under v0.4.
+    assert list(v4.iter_errors(live)) == []
+    assert list(v3.iter_errors(live))
+    assert list(v2.iter_errors(live))
+
+    def reshape(prompt_path, key, version):
+        return dict(live, prompt_template_path=prompt_path,
+                    schema_versions={
+                        **{k: v for k, v in live["schema_versions"].items()
+                           if not k.startswith("universe_screen_manifest_v")},
+                        key: version})
+
+    as_v3 = reshape("prompts/discovery/universe_high_recall_screen.v2.md",
+                    "universe_screen_manifest_v3", "0.3.0")
+    assert list(v3.iter_errors(as_v3)) == []
+    assert list(v4.iter_errors(as_v3))
+    assert list(v2.iter_errors(as_v3))
+
+    as_v2 = reshape("prompts/discovery/universe_high_recall_screen.md",
+                    "universe_screen_manifest_v2", "0.2.0")
     assert list(v2.iter_errors(as_v2)) == []
+    assert list(v3.iter_errors(as_v2))
+    assert list(v4.iter_errors(as_v2))
 
 
-def test_v2_prompt_renders_through_the_predecessor_renderer(small):
+def test_live_prompt_renders_through_the_predecessor_renderer(small):
     """The live route reuses the predecessor renderer unchanged: the v2
     template carries the same three placeholders and renders identically
     evidence-minimal metadata."""
@@ -1734,6 +1755,114 @@ def test_v2_prompt_renders_through_the_predecessor_renderer(small):
         assert value in rendered
 
 
+# --- ADR-111: evidence identity and quote binding -------------------------------------
+
+
+def test_v3_prompt_states_the_evidence_identity_rules():
+    text = (ROOT / ll.LIVE_PROMPT_TEMPLATE_RELATIVE_PATH).read_text(
+        encoding="utf-8")
+    assert "## Evidence identity and quote binding" in text
+    # The rules are prose and wrap across lines, so phrase assertions run
+    # against a whitespace-collapsed view; exact tokens still use `text`.
+    flat = " ".join(text.split())
+    lowered = flat.lower()
+    # Two distinct fields, each copied from its own header token.
+    assert "two distinct fields" in lowered
+    assert "`source_id` is exactly and only the text that follows `source_id=`" \
+        in flat
+    assert "`passage_id` is exactly and only the text that follows " \
+        "`passage_id=`" in flat
+    # No concatenation, same header, no foreign id.
+    assert "never concatenate two header fields into one value" in lowered
+    assert "containing the substring `passage_id=`" in flat
+    assert "never take `source_id` from one header and `passage_id` from a" \
+        in lowered
+    assert "must come from the same displayed passage" in lowered
+    # Quote lives in the body of that same passage, verified before output.
+    assert "contiguous verbatim substring of that same passage's body" in lowered
+    assert "never the header line, never text from a different passage" in lowered
+    assert "verify each `(source_id, passage_id, quote)` triple" in flat
+    # No invention when nothing resolves.
+    assert "do not invent an identifier" in lowered
+    assert "an empty evidence array is always better than an unverifiable" \
+        in lowered
+    # v2's semantics survive verbatim in the successor.
+    v2 = (ROOT / "prompts" / "discovery"
+          / "universe_high_recall_screen.v2.md").read_text(encoding="utf-8")
+    for value in ARCHETYPES:
+        assert value in text
+    for sentence in (
+        "Use only the supplied baseline-dated SEC evidence.",
+        "Use a deliberately high-recall standard.",
+        "Never invent synonyms, prose labels, descriptive phrases, or new",
+        "Every positive claim has a direct quote.",
+        "BASELINE_SEC_PASSAGES:",
+    ):
+        assert sentence in v2 and sentence in text, sentence
+
+
+def test_the_measured_evidence_defects_are_all_refused(small, tmp_path):
+    """The three shapes the second canary produced must each stop the run,
+    with the strict validator unchanged: a header-contaminated source_id, a
+    passage_id belonging to another passage, and a quote that occurs only
+    elsewhere."""
+    selection_path, governance = _full_setup(small, tmp_path)
+    packet = small.packets[0]
+    passage = packet["passages"][0]
+    other_packet = small.packets[1]
+    other_passage = other_packet["passages"][0]
+
+    def with_evidence(source_id, passage_id, quote):
+        payload = json.loads(_model_output(packet, "LIKELY_ELIGIBLE"))
+        payload["positive_evidence"] = [{
+            "source_id": source_id, "passage_id": passage_id,
+            "quote": quote, "supported_claim": "A claim.",
+        }]
+        return json.dumps(payload)
+
+    cases = {
+        # Exactly the row-4 shape: the header's two fields concatenated.
+        "header_contaminated_source_id": with_evidence(
+            f"{packet['source_id']} passage_id={passage['passage_id']}",
+            passage["passage_id"], passage["text"][:60]),
+        # An id from a different passage of a different packet.
+        "foreign_passage_id": with_evidence(
+            packet["source_id"], other_passage["passage_id"],
+            passage["text"][:60]),
+        # A quote that exists only in another passage's body.
+        "quote_from_another_passage": with_evidence(
+            packet["source_id"], passage["passage_id"],
+            other_passage["text"][:60]),
+        # A quote taken from the rendered header rather than the body.
+        "quote_from_the_header": with_evidence(
+            packet["source_id"], passage["passage_id"],
+            f"source_id={packet['source_id']}"),
+    }
+    for name, raw in cases.items():
+        script = _script_for(small.packets)
+        script[packet["cik"]]["text"] = raw
+        result, factory = _live(small, tmp_path / name,
+                                selection_path=selection_path,
+                                governance=governance, script=script,
+                                run_id=f"ev-{name[:12]}")
+        assert result.status == "failed", name
+        assert result.receipt["reason_code"] == "quote_resolution_failure", name
+        assert result.receipt["stopping_row_index"] == 1, name
+        assert result.receipt["records_completed_before_failure"] == 0, name
+        # Archived before parsing, and no post-stop send happened.
+        assert result.receipt["raw_responses_captured"] == 1, name
+        assert factory.generate_calls == 1, name
+        assert not (result.run_dir / ls.SCREEN_MANIFEST_FILENAME).exists(), name
+    # The well-formed triple still passes, so the guard is not vacuous.
+    script = _script_for(small.packets)
+    script[packet["cik"]]["text"] = with_evidence(
+        packet["source_id"], passage["passage_id"], passage["text"][:60])
+    ok, _ = _live(small, tmp_path / "valid", selection_path=selection_path,
+                  governance=governance, run_id="ev-valid", script=script)
+    assert ok.status == "completed"
+    _assert_no_google_import()
+
+
 def test_adr108_predecessors_are_byte_identical():
     """ADR-109 may not move its predecessor: the v0.1 screen module, its two
     schemas and its test module are frozen at their ADR-108 bytes."""
@@ -1746,15 +1875,21 @@ def test_adr108_predecessors_are_byte_identical():
             "32e48d9a56bfa12115c3887b0944d0bb156f504c2ef6530401e500faf57e778d",
         # Rebaselined twice, each time only in its registry test's two
         # literals and nothing else (ADR-109: 0.46.0 -> 0.47.0, 99 -> 103;
-        # ADR-110: 0.47.0 -> 0.48.0, 103 -> 104). Every behavioral ADR-108
+        # ADR-110: 0.47.0 -> 0.48.0, 103 -> 104; ADR-111: 0.48.0 -> 0.49.0,
+        # 104 -> 105). Every behavioral ADR-108
         # assertion, and the mock path it exercises, is unchanged.
         "tests/universe/test_lineage_screen.py":
-            "ff1c4dba03f664de2e5e383e036d29e994a4dc4bceffe97b1c7616c88801587c",
+            "3075bf2ad83db4944423cd7673cd3823bdf48b290b870f727d8c5a79c6cd37a8",
         # ADR-110 adds a successor prompt beside it; v1 itself never moves.
         "prompts/discovery/universe_high_recall_screen.md":
             "4ac95a4c4e6ffdfbc55de7aec98fe4d50b89c29fab79e75a10c07cc35d102194",
         "schemas/universe_screen_manifest.v2.schema.json":
             "d9ab3f69c58b29ad5ecbb4fa4c65c369cbf02b024cffa8ffe6b8570a8768bdff",
+        # ADR-111 adds v3 beside them; v1, v2 and v0.3 never move.
+        "prompts/discovery/universe_high_recall_screen.v2.md":
+            "8bf0e3010241efe9aafd7d41af2857764c48ce218a7aa0f009086ec69a5d6694",
+        "schemas/universe_screen_manifest.v3.schema.json":
+            "72ece2c61b285c89b44c2319cfd6e1767d868ae1839bb22a8a7e8c7b7f2812ec",
     }
     for path, expected in pins.items():
         assert sha256((ROOT / path).read_bytes()).hexdigest() == expected, path
@@ -1764,10 +1899,12 @@ def test_registry_registers_the_four_live_screen_schemas():
     registry = json.loads(
         (ROOT / "schemas" / "schema_version_manifest.json")
         .read_text(encoding="utf-8"))
-    # ADR-110 adds the v0.3 live manifest successor: 103 -> 104.
-    assert registry["manifest_version"] == "0.48.0"
-    assert len(registry["schemas"]) == 104
+    # ADR-110 added the v0.3 live manifest successor (103 -> 104);
+    # ADR-111 adds v0.4 (104 -> 105).
+    assert registry["manifest_version"] == "0.49.0"
+    assert len(registry["schemas"]) == 105
     assert registry["schemas"]["universe_screen_manifest_v3"] == "0.3.0"
+    assert registry["schemas"]["universe_screen_manifest_v4"] == "0.4.0"
     assert registry["schemas"]["universe_screen_selection"] == "0.1.0"
     assert registry["schemas"]["universe_screen_adapter_enablement"] == "0.1.0"
     assert registry["schemas"]["universe_screen_live_authorization"] == "0.1.0"
