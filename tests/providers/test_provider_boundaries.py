@@ -123,6 +123,10 @@ def _code_tokens(tree: ast.AST) -> tuple[set[str], list[str]]:
 
 
 def test_package_is_enumerable():
+    # ADR-118 adds screen_count_retry_policy.py and vertex_gemini_screen_v4.py:
+    # 13 -> 15. Both are screen-only successors again: the V3 connector keeps
+    # sending countTokens exactly once, and this pair bounds that call for the
+    # continuation route alone. Before it,
     # ADR-117 adds screen_retry_policy.py and vertex_gemini_screen_v3.py:
     # 11 -> 13. Both are screen-only successors that sit beside the committed
     # modules rather than changing them: retry_policy.py keeps publishing the
@@ -132,7 +136,7 @@ def test_package_is_enumerable():
     # vertex_gemini_v2.py: 8 -> 11. Each is a successor rather than a rewrite,
     # because the released v1 modules keep publishing the contract they were
     # built for and their instances are hash-pinned by existing governance.
-    assert len(MODULES) == 13
+    assert len(MODULES) == 15
     assert (PACKAGE / "__init__.py") in MODULES
 
 

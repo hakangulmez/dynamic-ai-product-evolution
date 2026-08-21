@@ -1,0 +1,424 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_record.v3.schema.json",
+  "title": "Universe high-recall screen record (v0.3, continuation provenance)",
+  "description": "One retained-row record for ADR-118. The row semantics are the v0.2 ones unchanged - screened_packet, model_evidence_unverified and insufficient_evidence mean exactly what they meant - and what this generation adds is row_provenance: whether the row's model output was produced by this run or revalidated from a named, hash-bound prior run that failed before completing the cohort. A reused row is never a weaker row: it is re-parsed, re-resolved and re-validated by the same strict rules as a fresh one before it may appear here, and it carries the source run id, the source archive digest, the source receipt digest and its original raw_response_id so the evidence it rests on stays addressable. A row that was never model-called carries no provenance identifiers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_contract",
+    "record_kind",
+    "cik",
+    "company_id",
+    "accession",
+    "form",
+    "baseline_filing_date",
+    "source_id",
+    "packet_sha256",
+    "screen_status",
+    "prompt_sha256",
+    "model_route",
+    "raw_response_id",
+    "raw_response_sha256",
+    "screen_output",
+    "failure_reason_code",
+    "failure_detail",
+    "row_provenance"
+  ],
+  "properties": {
+    "record_contract": {
+      "const": "universe_screen_record@0.3.0"
+    },
+    "record_kind": {
+      "enum": [
+        "screened_packet",
+        "insufficient_evidence",
+        "model_evidence_unverified"
+      ]
+    },
+    "cik": {
+      "type": "string",
+      "pattern": "^\\d{10}$"
+    },
+    "company_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "accession": {
+      "type": "string",
+      "pattern": "^\\d{10}-\\d{2}-\\d{6}$"
+    },
+    "form": {
+      "enum": [
+        "10-K",
+        "10-KT"
+      ]
+    },
+    "baseline_filing_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^sec-primary:\\d{10}:\\d{10}-\\d{2}-\\d{6}:.+$"
+    },
+    "packet_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_status": {
+      "enum": [
+        "LIKELY_ELIGIBLE",
+        "LIKELY_INELIGIBLE",
+        "BOUNDARY_OR_UNCERTAIN",
+        null
+      ]
+    },
+    "prompt_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "model_route": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model_label"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "raw_response_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "raw_response_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_output": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "failure_reason_code": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "failure_detail": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 600
+    },
+    "row_provenance": {
+      "description": "Where this row's model output came from. Orthogonal to record_kind: a reused row and a fresh row may both be screened_packet, and both are held to the identical validator.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin",
+        "source_run_id",
+        "source_raw_response_id",
+        "source_raw_responses_sha256",
+        "source_receipt_sha256"
+      ],
+      "properties": {
+        "origin": {
+          "enum": [
+            "reused_source_prefix",
+            "model_called",
+            "packet_build_failure"
+          ]
+        },
+        "source_run_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "source_raw_response_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "source_raw_responses_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_receipt_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "screened_packet"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "baseline_filing_date": {
+            "type": "string"
+          },
+          "packet_sha256": {
+            "type": "string"
+          },
+          "screen_status": {
+            "enum": [
+              "LIKELY_ELIGIBLE",
+              "LIKELY_INELIGIBLE",
+              "BOUNDARY_OR_UNCERTAIN"
+            ]
+          },
+          "prompt_sha256": {
+            "type": "string"
+          },
+          "model_route": {
+            "type": "object"
+          },
+          "raw_response_id": {
+            "type": "string"
+          },
+          "raw_response_sha256": {
+            "type": "string"
+          },
+          "screen_output": {
+            "type": "object"
+          },
+          "failure_reason_code": {
+            "type": "null"
+          },
+          "failure_detail": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "insufficient_evidence"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "baseline_filing_date": {
+            "type": "null"
+          },
+          "packet_sha256": {
+            "type": "null"
+          },
+          "screen_status": {
+            "type": "null"
+          },
+          "prompt_sha256": {
+            "type": "null"
+          },
+          "model_route": {
+            "type": "null"
+          },
+          "raw_response_id": {
+            "type": "null"
+          },
+          "raw_response_sha256": {
+            "type": "null"
+          },
+          "screen_output": {
+            "type": "null"
+          },
+          "failure_reason_code": {
+            "type": "string"
+          },
+          "failure_detail": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "model_evidence_unverified"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "baseline_filing_date": {
+            "type": "string"
+          },
+          "packet_sha256": {
+            "type": "string"
+          },
+          "screen_status": {
+            "type": "null"
+          },
+          "prompt_sha256": {
+            "type": "string"
+          },
+          "model_route": {
+            "type": "object"
+          },
+          "raw_response_id": {
+            "type": "string"
+          },
+          "raw_response_sha256": {
+            "type": "string"
+          },
+          "screen_output": {
+            "type": "null"
+          },
+          "failure_reason_code": {
+            "enum": [
+              "invalid_model_json",
+              "adapter_rejection",
+              "quote_resolution_failure",
+              "temporal_violation"
+            ]
+          },
+          "failure_detail": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "row_provenance": {
+            "properties": {
+              "origin": {
+                "const": "reused_source_prefix"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "row_provenance": {
+            "properties": {
+              "source_run_id": {
+                "type": "string"
+              },
+              "source_raw_response_id": {
+                "type": "string"
+              },
+              "source_raw_responses_sha256": {
+                "type": "string"
+              },
+              "source_receipt_sha256": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "row_provenance": {
+            "properties": {
+              "origin": {
+                "enum": [
+                  "model_called",
+                  "packet_build_failure"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "row_provenance": {
+            "properties": {
+              "source_run_id": {
+                "type": "null"
+              },
+              "source_raw_response_id": {
+                "type": "null"
+              },
+              "source_raw_responses_sha256": {
+                "type": "null"
+              },
+              "source_receipt_sha256": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "insufficient_evidence"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "row_provenance": {
+            "properties": {
+              "origin": {
+                "const": "packet_build_failure"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

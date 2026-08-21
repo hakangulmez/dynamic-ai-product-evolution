@@ -8112,7 +8112,120 @@ registry assertions in the three sibling screen suites. The CLI docstring's
 mode count is corrected from twenty-five to twenty-seven; it had gone stale
 when the v2 route landed without updating it.
 
+## ADR-118 — A failed run's completed prefix is evidence, not waste
+
+**Status.** Accepted, fixture-first. No live model call, no `data/runs` write,
+and no change to the V3 route, its generate policy, its connector, any earlier
+contract, any prompt, or the failed run this successor is designed to continue.
+
+**Measured input.** The V3 full-cohort run completed 3,939 of 7,042 rows and
+stopped because one `countTokens` call timed out after 300 seconds. Under
+ADR-117 that call is a single un-retried send, so the run did exactly what it
+was told; the cost was 3,939 rows of finished work with no way to keep them,
+because the governance model has no artifact between "failure receipt" and
+"complete authoritative manifest". Offline revalidation of the archive shows
+the work is intact: all 3,939 responses re-hash, the archive is a contiguous
+prefix of the selection in order, and re-rendering each packet reproduces every
+row's outcome — 3,644 `screened_packet` and 295 `model_evidence_unverified`.
+
+**Decision, part one: reuse is earned.** A continuation route revalidates the
+prefix of one **explicitly named** failed run and model-calls only the suffix.
+There is no discovery: the source directory and its receipt digest are stated
+on the command line and pinned in the grant. Nothing about the parent is
+trusted. Every reused response is re-parsed, re-reference-resolved against a
+freshly derived `P001` map and re-validated by the unchanged strict validator,
+so a reused row is held to the identical standard as a fresh one and its
+outcome is recomputed rather than copied. Reuse is admitted only for the one
+enumerated failure shape — a provider timeout with a contiguous completed
+prefix and no archived response for the stopping row — and every other shape,
+including an exhausted model-evidence breaker, is refused rather than assumed
+safe.
+
+**What is proven before a run directory, an SDK import or a send exists:** the
+receipt matches its pin and its enumerated shape; the archive matches its pin
+line for line and hash for hash; the archive maps in selection order onto a
+contiguous prefix with nothing skipped, reordered, duplicated, foreign or
+drawn from the suffix; the parent ran under a grant whose packet, selection,
+prompt, route, contract and endpoint bindings are identical to this run's; and
+every reused response still validates.
+
+**Decision, part two: countTokens gets a bounded retry.**
+`universe_screen_count_retry_policy_v1` — three total attempts at 15s and 30s,
+screen-only, on the same declared transient class the generate policy uses,
+reached through the committed `should_retry` object rather than a restatement.
+The measurement call is idempotent, so retrying it invents no evidence and
+changes no model output; it remains a precondition, and generation still does
+not begin until a count has succeeded. The V3 connector keeps sending it
+exactly once, and the V4 connector inherits `complete_v8` unchanged, so the
+five-attempt 15/30/60/120 generate chain is the same code.
+
+**Honest telemetry.** A failed run leaves no capture ledger, so no per-attempt
+token, cost or wire accounting exists for the prefix. The manifest records the
+parent receipt's aggregates and pins `per_attempt_telemetry_available` false
+rather than inventing them; `request_accounting` describes this run's own sends
+only; and the capture ledger beside the manifest covers model-called rows only,
+with cohort-numbered ordinals. The new archive opens with the parent's bytes
+verbatim — each reused line keeps the id it was written under, so its
+provenance is readable rather than asserted — and a reconciliation identity
+proves the byte-identical prefix.
+
+**"All quotes resolve", stated exactly.** Every `screened_packet` record's
+quotes resolve verbatim; every quote, adapter or JSON failure is persisted as
+an explicit `model_evidence_unverified` record naming its closed reason; no
+unverified row may be represented as screened or silently omitted. A reused row
+that no longer validates therefore becomes an unverified record, not a
+refusal — the one exception being that a prefix whose unverified rows already
+exceed the authorized breaker refuses before any network, because such a
+continuation cannot complete and should not spend.
+
+**The breaker is a governance number.** The prefix alone carries 295 unverified
+rows, and the parent's grant allowed 300, so continuing under it would trip
+after roughly 67 of the 3,103 remaining rows. The parent was five rows from
+dying on its own breaker when the timeout arrived; "retry and it will finish"
+was never true. The continuation contract therefore carries its own
+whole-cohort breaker, counting reused rows, set for the live case at 700
+against a projected ~527 — measured headroom, not a quality target, and still
+stopping a materially worse regime near 10% of the cohort.
+
+**Contracts.** `universe_screen_record@0.3.0` adds `row_provenance` and changes
+nothing else; `universe_screen_continuation_authorization@0.1.0` binds the
+source four ways and splits the accounting into cohort rows, reused rows,
+model-called rows and the three send ceilings derived from the called rows
+alone; `universe_screen_manifest@0.8.0` separates the two populations and the
+two telemetries. Per-row multipliers are schema consts; row counts never are,
+and no live cohort size appears in any source file or schema.
+
+**The parent stays what it is.** Receipt-bearing, immutable, and permanently
+non-authoritative. Only the continuation's own manifest may be consumed, and a
+continuation that itself fails is equally non-authoritative even though its
+directory holds the reused prefix bytes.
+
+**Scope.** Twenty-one paths: two provider modules, the continuation runner,
+three schemas, its fixture-only test module, the CLI mode, the registry
+(0.56.0 to 0.57.0, 117 to 120), this decision log, `REPO_MANIFEST.md` (849 to
+856), the five registry/manifest guards, the provider boundary count, and the
+absolute registry literals in the four screen suites.
+
 ## Open decisions
+
+- **Why 7.5% of V5 screen rows fail quote validation.** Read-only
+  sub-classification of the 295 unverified prefix rows, recorded here as
+  evidence for the next review gate and acted on in no way by ADR-118: 78%
+  are non-verbatim edits, where the model rewrites a quote it could have
+  copied; 19% cite the wrong passage while quoting text that appears verbatim
+  in another passage of the same packet; 1.7% cite a reference that does not
+  exist, and the observed forms are malformed rather than absent (`P06`, `P03`
+  where the renderer emits three digits, and an out-of-range `P046`); the
+  remainder are one concatenation across passages, one unparseable payload and
+  one out-of-vocabulary status. The unverified population is systematically
+  denser than the validated one — 6.28 evidence items versus 4.14, 24.1
+  passages per packet versus 18.1 — so the failure correlates with packet
+  length rather than with any firm characteristic. The measured 7.5% is 2.5x
+  the 3% the 100-row V5 diagnostic canary showed, which is itself evidence
+  that a 100-row canary cannot size this rate. Three of these classes are
+  addressable without weakening verbatim strictness — the reference format,
+  the wrong-passage attribution, and the copy-versus-write instruction — and
+  none may be addressed by repairing model output after the fact.
 
 - Required source packet by firm-year.
 - Frontier-registry granularity.
