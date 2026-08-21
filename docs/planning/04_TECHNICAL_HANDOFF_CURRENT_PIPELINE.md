@@ -1,7 +1,7 @@
 # Technical Handoff — Current Pipeline State
 
-**Snapshot:** 20 August 2026, after ADR-112 was committed and pushed at
-`ca7538bf07a4a853f740db204071701c3c020f6d`.
+**Snapshot:** 21 August 2026, after ADR-118 was committed and pushed at
+`687b90cf4d98ae8b4e9649375765aea7bf4db9b0`.
 
 ## Authority order
 
@@ -18,8 +18,13 @@ not an authority and not permission to run a command.
 | asset-backed determination | 351 true; manifest hash starts `a4b2f339` |
 | packet corpus | v0.5 manifest hash `516b7020c657a7b656880444e0f98479c1aa46dca80bda9a1beafd846d7d88d8` |
 | v5 packet counts | 1,146 union exclusions; 7,572 retained; 7,042 packets; 530 failures |
-| selection | `canary_100`, SHA `26bd88052a4efd9c8b5580411c7fd9a2054d27314bae277799a0a7a0a4b0d570` |
-| live prompt | v3 prompt SHA `1d371255d9b650bd5ff6ffd1d58d6a42b649436cfbcaf905bf3e53c5a7a58c78` |
+| live prompt | V5 prompt SHA `fee42d939f9eab590fdcbf055e7b2039e8a33a410dfc12257a47291d7a77d558` |
+| failed parent archive | raw-response SHA `08679414440968d9cbb77227fe0d6584803b9841232a6473620d482ad9078c34` |
+
+The full-cohort selection artifact lives under
+`data/runs/universe-screen-selections/universe-screen-full-selection-v1-20260820/`.
+Its digest is not restated here: a run binds it by SHA in its own
+authorization, and that binding is the authority.
 
 The v5 packet manifest is under
 `data/runs/baseline-packets/baseline-packets-domestic-text-lineage-v5-20260819/`.
@@ -28,32 +33,63 @@ shards, and records `item_one_span_v3`.
 
 ## High-recall contract state
 
-- ADR-108: hash-bound packet authority loader, mock route, record/manifest
-  contracts, raw archive, all-or-nothing authoritative semantics.
-- ADR-109: separate live provider composition route with selection,
-  authorization, enablement, endpoint, capture, and cap bindings.
-- ADR-110: prompt v2 enumerated the closed archetype vocabulary.
-- ADR-111: prompt v3 requires exact separate source/passage identifiers and a
-  contiguous verbatim quote from the cited passage.
-- ADR-112: diagnostic-only canary successor; same validator, diagnostic rows
-  for output failures, separate authorization, non-promotable outputs, and a
-  25-rejection breaker.
+- ADR-108/109: hash-bound packet authority loader, record and manifest
+  contracts, raw archive, and the governed live Vertex route with selection,
+  authorization, enablement, endpoint, capture and cap bindings.
+- ADR-110/111/113/114: the prompt line ending at **V5**, which shows the model
+  short deterministic passage references (`P001`) and asks it to copy a
+  contiguous verbatim span, with no source identifier to reproduce.
+- ADR-112/115: the diagnostic and seven-row repair routes, both structurally
+  non-promotable and refused by the authoritative and promotion loaders.
+- ADR-116: the authoritative route records a model-content failure as a
+  `model_evidence_unverified` row instead of aborting the cohort. It is a
+  review state, not a negative screen result.
+- ADR-117: five `generateContent` attempts per row with fixed 15, 30, 60 and
+  120 second waits, on the declared transient class including HTTP 429.
+- ADR-118: a bounded `countTokens` retry — three attempts at 15 and 30
+  seconds — and the governed continuation route described below.
 
-The authoritative route is still all-or-nothing. The diagnostic route is not a
-shortcut to SCREEN_v1 and its manifest/records are structurally refused by the
-authoritative and promotion loaders.
+The V5 prompt is what all three current routes render.
+
+## The failed parent run
+
+`data/runs/universe-screens/universe-high-recall-full-v4-20260821/` completed
+3,939 of 7,042 rows and stopped at row 3,940 on a 300-second `countTokens`
+timeout, which that route sends exactly once.
+
+**This directory cannot be consumed directly.** It holds a failure receipt and
+a raw-response archive, and no manifest, records JSONL or capture ledger.
+`require_authoritative_screen_run` and `require_promotable_screen_run` both
+refuse it, and that refusal is permanent rather than a state to be cleared.
+Only a fresh completed continuation manifest can be authoritative.
+
+What the directory does hold is usable evidence, but only through the
+continuation route, which revalidates every reused response against its packet
+with the unchanged strict validator rather than trusting that the parent once
+accepted it.
 
 ## Safe next operation
 
-Use a fresh diagnostic governance root containing the separate diagnostic
-authorization. Bind the canonical v5 manifest, the selection SHA, prompt v3
-SHA, provider contract/endpoints, and the declared 100/300/400 request caps
-plus `max_rejected_rows: 25`. Run a fresh diagnostic identifier exactly once.
+Two separately authorized steps, in this order.
 
-Afterward, verify its schema, output/capture hashes, row partition,
-validated/rejected reason distribution, token/cost accounting, and receipt or
-manifest path. Only then decide whether the prompt can advance to a new
-authoritative canary.
+First, materialize a fresh continuation governance pair: an enablement and a
+`universe_screen_continuation_authorization@0.1.0` grant binding the named
+failed run by its receipt and archive digests, the parent grant it ran under,
+the canonical v5 packet manifest, the full-cohort selection, the V5 prompt
+bytes, the provider contract and endpoints, and a whole-cohort
+model-evidence breaker. The send ceilings are derived from the remaining
+suffix rather than stated, and the runner re-derives and refuses drift.
+
+Second, run the explicit continuation CLI mode
+(`--mode screen-universe-lineage-continuation`), which requires the source run
+directory and its pinned receipt digest to be named on the command line. There
+is no discovery, no globbing and no "latest failed run" behaviour.
+
+No command line is given here, and neither step is performed by reading this
+file. Afterward, verify the new manifest's schema, its output and capture
+hashes, the record partition across reused and model-called rows, the
+byte-identical archive prefix, the request accounting, and the reconciliation
+block before treating anything as a release candidate.
 
 ## Handoff rules
 

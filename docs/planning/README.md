@@ -16,10 +16,18 @@ what may safely happen next.
 
 ## Snapshot
 
-This version is current through the acceptance and push of ADR-112 at commit
-`ca7538bf07a4a853f740db204071701c3c020f6d` (20 August 2026). It is updated
+This version is current through the acceptance and push of ADR-118 at commit
+`687b90cf4d98ae8b4e9649375765aea7bf4db9b0` (21 August 2026). It is updated
 only after an accepted decision or major governed gate, not after exploratory
 commands or an unreviewed worktree edit.
+
+Two things follow from that date and should be read together. Eleven accepted
+decisions, ADR-108 through ADR-118, have built the high-recall instrument, and
+**no completed authoritative screen release exists yet**. The most recent
+full-cohort attempt stopped partway and left a failure receipt; its directory
+holds real model responses and is nevertheless not a result. Only a manifest
+written by a run that reconciled its whole cohort can be cited, and none has
+been written.
 
 ## Reading order
 
@@ -39,7 +47,10 @@ commands or an unreviewed worktree edit.
 - Preserve uncertainty rather than forcing an entity link, task match, or
   software classification.
 - A model response, an unmanifested scratch file, or a failed run directory is
-  not a research output.
+  not a research output. This is a structural rule, not a caution: a run that
+  stopped writes a receipt and no manifest, and the loaders refuse the
+  directory. Reusing such evidence requires the governed continuation route,
+  which revalidates it rather than trusting it.
 
 ## Related repository documents
 
