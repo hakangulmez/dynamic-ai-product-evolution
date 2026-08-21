@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Twenty-eight mutually exclusive modes, selected by ``--mode`` (default
+Twenty-nine mutually exclusive modes, selected by ``--mode`` (default
 ``sentinel`` so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -109,6 +109,14 @@ Twenty-eight mutually exclusive modes, selected by ``--mode`` (default
   immutable and permanently non-authoritative; only the new manifest may be
   consumed. There is no discovery: the source run and its receipt digest are
   named on the command line.
+- ``screen-universe-lineage-continuation-v2`` continues a run that stopped
+  because ``generateContent`` returned an empty body (ADR-119). Its connector
+  treats that one anomaly as retryable through the unchanged ADR-117 schedule,
+  and its source loader admits an empty-body-stopped continuation only after
+  proving the shape from the source's own captures: a real countTokens body for
+  the stopping row and no persisted generate body at all. It writes its manifest
+  under its own filename, so the earlier authoritative loaders refuse the
+  directory until a promotion decision is taken deliberately.
 - ``select-screen-rows`` builds one governed ``universe_screen_selection``
   artifact (ADR-109): a seeded, stratified, packet-native canary_100
   enumeration of exactly one hundred rows, or the explicitly different
@@ -268,6 +276,9 @@ from dynamic_ai_products.lineage_screen_live_v3 import (  # noqa: E402
 from dynamic_ai_products.lineage_screen_continuation import (  # noqa: E402
     run_lineage_screen_continuation,
 )
+from dynamic_ai_products.lineage_screen_continuation_v2 import (  # noqa: E402
+    run_lineage_screen_continuation_v2,
+)
 from dynamic_ai_products.universe.runner import (  # noqa: E402
     FixtureError,
     run_universe_sentinel,
@@ -298,6 +309,7 @@ def build_parser() -> argparse.ArgumentParser:
                  "screen-universe-lineage-live-v2",
                  "screen-universe-lineage-live-v3",
                  "screen-universe-lineage-continuation",
+                 "screen-universe-lineage-continuation-v2",
                  "screen-universe-lineage-diagnostic",
                  "screen-universe-lineage-diagnostic-repair",
                  "select-screen-repair-rows",
@@ -661,6 +673,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "screen-universe-lineage-live-v2",
                          "screen-universe-lineage-live-v3",
                          "screen-universe-lineage-continuation",
+                         "screen-universe-lineage-continuation-v2",
                          "screen-universe-lineage-diagnostic",
                          "screen-universe-lineage-diagnostic-repair",
                          "select-screen-repair-rows",
@@ -686,6 +699,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "screen-universe-lineage-live-v2",
                          "screen-universe-lineage-live-v3",
                          "screen-universe-lineage-continuation",
+                         "screen-universe-lineage-continuation-v2",
                          "screen-universe-lineage-diagnostic",
                          "screen-universe-lineage-diagnostic-repair"):
         screen_offenders += _present((
@@ -700,7 +714,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             ("--source-diagnostic-manifest",
              args.source_diagnostic_manifest),
         ))
-    if args.mode != "screen-universe-lineage-continuation":
+    if args.mode not in ("screen-universe-lineage-continuation",
+                         "screen-universe-lineage-continuation-v2"):
         screen_offenders += _present((
             ("--source-run-dir", args.source_run_dir),
             ("--source-receipt-sha256", args.source_receipt_sha256),
@@ -1117,7 +1132,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             )
         return None
 
-    if args.mode == "screen-universe-lineage-continuation":
+    if args.mode in ("screen-universe-lineage-continuation",
+                     "screen-universe-lineage-continuation-v2"):
         offending = _present(
             frame_flags + acquire_flags + dera_flags
             + (("--bundle-dir", args.bundle_dir),)
@@ -1127,10 +1143,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             + (("--provider", args.provider),)
         )
         if offending:
-            return (
-                "screen-universe-lineage-continuation mode does not accept: "
-                f"{', '.join(offending)}"
-            )
+            return f"{args.mode} mode does not accept: {', '.join(offending)}"
         missing = _missing((
             ("--packet-manifest", args.packet_manifest),
             ("--selection-artifact", args.selection_artifact),
@@ -1141,10 +1154,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             ("--source-receipt-sha256", args.source_receipt_sha256),
         ))
         if missing:
-            return (
-                "screen-universe-lineage-continuation mode requires: "
-                f"{', '.join(missing)}"
-            )
+            return f"{args.mode} mode requires: {', '.join(missing)}"
         return None
 
     if args.mode == "screen-universe-lineage-diagnostic-repair":
@@ -2537,6 +2547,60 @@ def _main_screen_universe_lineage_continuation(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_screen_universe_lineage_continuation_v2(args: argparse.Namespace) -> int:
+    """CLI boundary for the ADR-119 empty-body-tolerant continuation."""
+    packet_manifest = Path(args.packet_manifest)
+    selection_artifact = Path(args.selection_artifact)
+    governance_root = Path(args.governance_root)
+    source_run_dir = Path(args.source_run_dir)
+    for label, path in (("packet manifest", packet_manifest),
+                        ("selection artifact", selection_artifact)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    for label, path in (("governance root", governance_root),
+                        ("source run directory", source_run_dir)):
+        if not path.is_dir():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    try:
+        result = run_lineage_screen_continuation_v2(
+            repo_root=REPO_ROOT, packet_manifest_path=packet_manifest,
+            selection_artifact_path=selection_artifact,
+            governance_root=governance_root,
+            authorization_reference=args.screen_authorization,
+            authorization_sha256=args.screen_authorization_sha256,
+            source_run_dir=source_run_dir,
+            source_receipt_sha256=args.source_receipt_sha256,
+            output_dir=Path(args.output_dir), run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid continuation v2 input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "run_id": result.run_id, "dry_run": result.dry_run,
+        "status": result.status,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "planned_screened": result.planned_screened,
+        "planned_insufficient": result.planned_insufficient,
+        "counts": result.counts, "request_accounting": result.request_accounting,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (str(result.manifest_path) if result.manifest_path else None),
+        "failure_receipt_path": (str(result.failure_receipt_path)
+                                 if result.failure_receipt_path else None),
+        "receipt": result.receipt,
+    }, indent=2))
+    if result.status == "failed":
+        print("ERROR: continuation v2 stopped with a failure receipt; the run is "
+              "non-authoritative.", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _main_screen_universe_lineage_diagnostic_repair(
         args: argparse.Namespace) -> int:
     packet_manifest = Path(args.packet_manifest)
@@ -3036,6 +3100,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_screen_universe_lineage_live_v3(args)
     if args.mode == "screen-universe-lineage-continuation":
         return _main_screen_universe_lineage_continuation(args)
+    if args.mode == "screen-universe-lineage-continuation-v2":
+        return _main_screen_universe_lineage_continuation_v2(args)
     if args.mode == "screen-universe-lineage-diagnostic":
         return _main_screen_universe_lineage_diagnostic(args)
     if args.mode == "screen-universe-lineage-diagnostic-repair":

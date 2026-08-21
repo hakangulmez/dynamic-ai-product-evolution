@@ -848,7 +848,7 @@ def test_no_static_schema_added_and_schema_manifest_unchanged():
     # successor).
     assert not (ROOT / "schemas" / "evaluation_run_manifest.v2.schema.json").exists()
     got = sha256_bytes((ROOT / "schemas" / "schema_version_manifest.json").read_bytes())
-    assert got == "5dc50633c0c9b6194d7d5b23bee25199e9e6b6de2360b7d65e7a2f2aaf894690"
+    assert got == "b50fa05d506802086f4b5685f473eaa702da790ff1f8074f562146a0e27ee0b8"
 
 
 def test_protected_identities_unchanged():

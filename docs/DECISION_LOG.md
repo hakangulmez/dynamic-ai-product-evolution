@@ -8206,6 +8206,87 @@ three schemas, its fixture-only test module, the CLI mode, the registry
 856), the five registry/manifest guards, the provider boundary count, and the
 absolute registry literals in the four screen suites.
 
+## ADR-119 — An empty successful response is an absence, not an answer
+
+**Status.** Accepted, fixture-first. No live model call, no `data/runs` write,
+and no change to the V3 or V4 routes, either screen retry policy, any prompt,
+any earlier contract, or either immutable failed run.
+
+**Measured input.** The ADR-118 continuation reused 3,939 rows, added 358 more,
+and stopped at cohort row 4,298 when `generateContent` **returned** with an
+empty entity body. The evidence is unambiguous: the stopping row holds a
+157-byte `countTokens` capture and no generate body at all, and the receipt's
+360 generate attempts exceed its 358 completed rows by exactly two — one 429
+that recovered on its first 15-second wait, and the stopping row's single call.
+Neither retry policy was at fault and neither could have helped. ADR-117
+answers a raised transient failure; ADR-118 answers a measurement timeout; an
+HTTP-successful empty response raises nothing, so it reached the terminal check
+directly. Three consecutive full-cohort attempts have now died three different
+ways, which is itself the finding: each stop was a real defect, and each was
+outside what the previous decision had made survivable.
+
+**Decision, part one: the anomaly is retryable, and only it.** A screen-only
+connector successor detects an empty generate body **before** any persistence
+or parse is attempted, classifies it `empty_generate_body`, and retries it
+through the **unchanged** ADR-117 schedule — five total attempts at 15s, 30s,
+60s and 120s. No new schedule and no second budget are introduced. Everything
+else keeps its meaning: a malformed, blocked, truncated, part-less, non-text or
+invalid-JSON response is still terminal on its first occurrence, because those
+are answers rather than the absence of one, and a capture, validation, quote,
+evidence, governance, cap or budget failure remains outside the predicate by
+construction. `countTokens` is inherited unchanged, so an empty body never
+re-measures the input.
+
+**Nothing empty is ever hashed.** An empty body is never written and never
+digested — that was already true, and it is why the run stopped rather than
+publishing a valid-looking digest for content that never existed. What this
+decision adds is that the attempt stays auditable: each empty attempt writes a
+ledger event with a null raw reference, a null hash, and the explicit
+`empty_generate_body` reason, so an attempted external call is visible without
+inventing evidence for it.
+
+**Why the provider error enum is not widened.** `ProviderError` carries a
+closed `reason_code` pinned to the released `extraction_provider_error_record`
+enum. Adding a term would change a released contract, so exhaustion is reported
+as `provider_response_unusable` — literally "the provider outcome could not be
+used" — while the distinct classification lives where this successor owns the
+contract: the ledger event and a terminal receipt reason of
+`empty_generate_body_exhausted`.
+
+**Decision, part two: the stop is reusable, narrowly.** A successor loader
+admits an empty-body-stopped continuation as a source, and the admission is not
+"any `provider_response_unusable`". Seven independent proofs must hold, and the
+two decisive ones are read from the source's own captures rather than from its
+reason string: the stopping row must carry a real, non-empty `countTokens`
+capture, and it must carry no persisted generate body at all. A source that
+stopped for another reason, that persisted a body it could not use, whose
+archive is not a contiguous unique prefix in selection order, whose responses
+no longer re-hash, or whose counters do not close, is refused before a run
+directory or any SDK or network access exists.
+
+**Contracts and structural isolation.** `universe_screen_continuation_authorization@0.2.0`
+adds a `source_kind` const naming the one newly admitted state and pins the
+empty-body ceiling to the existing five-attempt schedule; the v0.9 manifest
+adds `empty_generate_body_telemetry` — attempts, rows affected, rows recovered
+— and is written under its own filename, so the v0.5 through v0.8 loaders
+refuse the directory outright. Promoting an ADR-119 run to a SCREEN release is
+therefore a deliberate loader decision with its own tests, not something
+inherited by filename. The v0.3 record contract is reused unchanged: reuse
+provenance already carries the source run, archive digest and receipt digest,
+and a reused row keeps the `raw_response_id` it was first written under, which
+may name a run earlier than its immediate source.
+
+**What this does not settle.** The empty-body rate is unknown — one occurrence
+in 359 model-called rows is a sample of one — and a fourth distinct failure
+mode remains possible. Nothing here promises the next full-cohort attempt
+completes; it removes one specific way of losing finished work.
+
+**Scope.** Nineteen paths: the connector, the continuation successor, two
+schemas, its fixture-only test module, the CLI mode, the registry (0.57.0 to
+0.58.0, 120 to 122), this decision log, `REPO_MANIFEST.md` (856 to 861), the
+five registry/manifest guards, the provider boundary count, and the absolute
+registry literals in five screen suites.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only

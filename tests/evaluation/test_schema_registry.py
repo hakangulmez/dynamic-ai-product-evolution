@@ -174,6 +174,14 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-119 (an empty successful response is an absence,
+    # not an answer): manifest_version 0.57.0 -> 0.58.0, 120 -> 122
+    # entries, registering the v0.2 continuation authorization and the
+    # v0.9 continuation manifest. The V3/V4 connectors, both screen retry
+    # policies, the v0.3 record and every earlier contract are
+    # byte-unchanged, and neither new contract is added to
+    # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS below.
+    # Before it,
     # Rebaselined by ADR-118 (a failed run's completed prefix is evidence, not
     # waste): manifest_version 0.56.0 -> 0.57.0, 117 -> 120 entries,
     # registering universe_screen_record_v3, which carries row provenance, and
@@ -400,7 +408,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "5dc50633c0c9b6194d7d5b23bee25199e9e6b6de2360b7d65e7a2f2aaf894690"
+    "b50fa05d506802086f4b5685f473eaa702da790ff1f8074f562146a0e27ee0b8"
 )
 
 

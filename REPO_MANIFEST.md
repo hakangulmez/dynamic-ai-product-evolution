@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **856**
+Total tracked/scaffold files listed: **861**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -471,7 +471,9 @@ Total tracked/scaffold files listed: **856**
 - `schemas/universe_screen_manifest.v6.schema.json`
 - `schemas/universe_screen_manifest.v7.schema.json`
 - `schemas/universe_screen_continuation_authorization.schema.json`
+- `schemas/universe_screen_continuation_authorization.v2.schema.json`
 - `schemas/universe_screen_continuation_manifest.schema.json`
+- `schemas/universe_screen_continuation_manifest.v2.schema.json`
 - `schemas/universe_screen_record.schema.json`
 - `schemas/universe_screen_record.v2.schema.json`
 - `schemas/universe_screen_record.v3.schema.json`
@@ -634,6 +636,7 @@ Total tracked/scaffold files listed: **856**
 - `src/dynamic_ai_products/lineage_screen_live.py`
 - `src/dynamic_ai_products/lineage_screen_live_v2.py`
 - `src/dynamic_ai_products/lineage_screen_continuation.py`
+- `src/dynamic_ai_products/lineage_screen_continuation_v2.py`
 - `src/dynamic_ai_products/lineage_screen_live_v3.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/providers/__init__.py`
@@ -650,6 +653,7 @@ Total tracked/scaffold files listed: **856**
 - `src/dynamic_ai_products/providers/vertex_gemini.py`
 - `src/dynamic_ai_products/providers/vertex_gemini_screen_v3.py`
 - `src/dynamic_ai_products/providers/vertex_gemini_screen_v4.py`
+- `src/dynamic_ai_products/providers/vertex_gemini_screen_v5.py`
 - `src/dynamic_ai_products/providers/vertex_gemini_v2.py`
 - `src/dynamic_ai_products/sec_document_transport.py`
 - `src/dynamic_ai_products/sec_index_transport.py`
@@ -846,6 +850,7 @@ Total tracked/scaffold files listed: **856**
 - `tests/universe/test_lineage_screen_live.py`
 - `tests/universe/test_lineage_screen_live_v2.py`
 - `tests/universe/test_lineage_screen_continuation.py`
+- `tests/universe/test_lineage_screen_continuation_v2.py`
 - `tests/universe/test_lineage_screen_live_v3.py`
 - `tests/universe/test_pilot_packet.py`
 - `tests/universe/test_plain_text_primary.py`
