@@ -1,8 +1,9 @@
-"""ADR-119 tests: an empty generate body is survivable, and its stop is reusable.
+"""ADR-121 tests: an exhausted provider path is a row, not a lost cohort.
 
-Everything is offline. The transport is a fake that can return an empty body on
-demand, every wait is a recorded call rather than a sleep, and no test builds a
-``genai.Client``, resolves a credential, or opens a socket.
+Everything is offline. The transport is a fake that can return an empty body
+from either operation on demand, every wait is a recorded call rather than a
+sleep, and no test builds a ``genai.Client``, resolves a credential, or opens a
+socket. ADR-119's generate behaviour is exercised here too, unchanged.
 """
 
 from __future__ import annotations
@@ -19,20 +20,24 @@ from types import SimpleNamespace
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
-from dynamic_ai_products import lineage_screen_continuation as lc1
-from dynamic_ai_products import lineage_screen_continuation_v2 as lc2
+from dynamic_ai_products import lineage_screen_continuation_v3 as lc3
+from dynamic_ai_products import lineage_screen_continuation_v4 as lc4
 from dynamic_ai_products import lineage_screen_live as ll
 from dynamic_ai_products.providers import screen_count_retry_policy as cp
 from dynamic_ai_products.providers import screen_retry_policy as gp
 from dynamic_ai_products.providers.client_contract_v2 import CLIENT_CONTRACT_V2_ID
 from dynamic_ai_products.providers.errors import ProviderError
-from dynamic_ai_products.providers.vertex_gemini_screen_v4 import VertexGeminiScreenV4
 from dynamic_ai_products.providers.vertex_gemini_screen_v5 import (
-    EMPTY_GENERATE_BODY_REASON,
     EmptyGenerateBody,
     VertexGeminiScreenV5,
     execute_with_empty_body_retry,
-    is_screen_retryable_v5,
+)
+from dynamic_ai_products.providers.vertex_gemini_screen_v6 import (
+    EMPTY_COUNT_BODY_REASON,
+    EmptyCountBody,
+    VertexGeminiScreenV6,
+    execute_with_empty_count_retry,
+    is_count_retryable_v6,
 )
 from dynamic_ai_products.universe import lineage_screen as ls
 
@@ -66,16 +71,16 @@ FIXED_CLOCK = lambda: datetime(2026, 8, 22, 9, 0, 0, tzinfo=timezone.utc)  # noq
 PREFIX_ROWS = 4
 
 MANIFEST_V2_SCHEMA = json.loads(
-    (ROOT / "schemas" / "universe_screen_continuation_manifest.v2.schema.json")
+    (ROOT / "schemas" / "universe_screen_continuation_manifest.v4.schema.json")
     .read_text(encoding="utf-8"))
 MANIFEST_V1_SCHEMA = json.loads(
-    (ROOT / "schemas" / "universe_screen_continuation_manifest.schema.json")
+    (ROOT / "schemas" / "universe_screen_continuation_manifest.v3.schema.json")
     .read_text(encoding="utf-8"))
 AUTH_V2_SCHEMA = json.loads(
-    (ROOT / "schemas" / "universe_screen_continuation_authorization.v2.schema.json")
+    (ROOT / "schemas" / "universe_screen_continuation_authorization.v4.schema.json")
     .read_text(encoding="utf-8"))
 AUTH_V1_SCHEMA = json.loads(
-    (ROOT / "schemas" / "universe_screen_continuation_authorization.schema.json")
+    (ROOT / "schemas" / "universe_screen_continuation_authorization.v3.schema.json")
     .read_text(encoding="utf-8"))
 
 _GOOGLE_BASELINE: set[str] | None = None
@@ -128,6 +133,11 @@ class _EmptyBodyModels:
     def count_tokens(self, *, model, contents, config):
         self.count_calls += 1
         entry = self._entry(contents)
+        if entry.get("empty_counts", 0) > 0:
+            entry["empty_counts"] -= 1
+            # HTTP-successful, and carrying nothing at all.
+            self._capture.record_send("count_tokens", b"", "ok")
+            return SimpleNamespace()
         if entry.get("count_timeouts", 0) > 0:
             entry["count_timeouts"] -= 1
             self._capture.record_send("count_tokens", None,
@@ -202,11 +212,15 @@ def _archive_line(run_id, packet, payload):
 def _failed_continuation(tmp_path: Path, cohort, *, prefix_rows=PREFIX_ROWS,
                          run_id="source-continuation", authorization_sha256: str,
                          payloads=None, mutate_receipt=None, mutate_entries=None,
-                         stopping_count_body=b'{"totalTokens": 120}',
-                         stopping_generate_body=None,
+                         stopping_captures=None,
                          reason_code="provider_error",
                          detail="Governed provider failure (provider_response_unusable)."):
-    """A run that stopped when generateContent returned an empty body."""
+    """A run that stopped when countTokens returned with no usable body.
+
+    Its stopping row persists nothing at all: the measurement returned
+    nothing, so the generation was never attempted and no capture directory
+    was ever created for it.
+    """
     directory = tmp_path / "failed" / run_id
     directory.mkdir(parents=True, exist_ok=True)
     packets = cohort.packets[:prefix_rows]
@@ -226,9 +240,13 @@ def _failed_continuation(tmp_path: Path, cohort, *, prefix_rows=PREFIX_ROWS,
         "stopping_row_index": prefix_rows + 1,
         "records_completed_before_failure": prefix_rows,
         "reused_prefix_rows": 0, "model_called_rows_attempted": prefix_rows + 1,
-        "external_requests_made": (prefix_rows + 1) * 2,
+        # one count per attempted row; one generate per COMPLETED row only,
+        # because the stopping row never reached the generation
         "count_attempts_made": prefix_rows + 1,
-        "provider_attempts_made": prefix_rows + 1,
+        "provider_attempts_made": prefix_rows,
+        "external_requests_made": (prefix_rows + 1) + prefix_rows,
+        "empty_generate_body_attempts": 0,
+        "empty_count_body_attempts": 1,
         "authorization_sha256": authorization_sha256,
         "source_run_id": "grandparent-run",
         "source_receipt_sha256": "0" * 64,
@@ -239,15 +257,14 @@ def _failed_continuation(tmp_path: Path, cohort, *, prefix_rows=PREFIX_ROWS,
         mutate_receipt(receipt)
     receipt_bytes = (json.dumps(receipt, indent=2, sort_keys=True) + "\n").encode()
     (directory / ls.FAILURE_RECEIPT_FILENAME).write_bytes(receipt_bytes)
-    # the stopping row's captures: a real count body, and no generate body
-    cap = (directory / ll.CAPTURES_DIRNAME
-           / f"{receipt['stopping_row_index']:05d}-{receipt['stopping_cik']}"
-             f"-{receipt['stopping_accession']}")
-    cap.mkdir(parents=True, exist_ok=True)
-    if stopping_count_body is not None:
-        (cap / "count-attempt-01.bin").write_bytes(stopping_count_body)
-    if stopping_generate_body is not None:
-        (cap / "generate-attempt-01.bin").write_bytes(stopping_generate_body)
+    # Optional tamper: a stopping-row capture that should not exist.
+    if stopping_captures:
+        cap = (directory / ll.CAPTURES_DIRNAME
+               / f"{receipt['stopping_row_index']:05d}-{receipt['stopping_cik']}"
+                 f"-{receipt['stopping_accession']}")
+        cap.mkdir(parents=True, exist_ok=True)
+        for name, body in stopping_captures.items():
+            (cap / name).write_bytes(body)
     return SimpleNamespace(dir=directory, run_id=run_id, receipt=receipt,
                            receipt_sha256=sha256(receipt_bytes).hexdigest(),
                            archive_sha256=sha256(archive).hexdigest(),
@@ -261,7 +278,7 @@ def _grant(governance, *, cohort, source, reused, selection_path, breaker=4,
         (ROOT / "prompts/discovery/universe_high_recall_screen.v5.md").read_bytes()
     ).hexdigest()
     payload = {
-        "authorization_contract": "universe_screen_continuation_authorization@0.2.0",
+        "authorization_contract": "universe_screen_continuation_authorization@0.4.0",
         "authorization_id": "continuation-v2-fixture",
         "authorized_by": "fixture-governance",
         "effective_at": "2026-08-01T00:00:00+00:00",
@@ -270,7 +287,7 @@ def _grant(governance, *, cohort, source, reused, selection_path, breaker=4,
         "rollout_state": "release_or_research_production",
         "run_kind": "full_cohort_continuation",
         "screen_stage": "universe_high_recall_screen",
-        "source_kind": "failed_continuation_empty_generate_body",
+        "source_kind": "failed_continuation_empty_count_body",
         "source_run_id": source.run_id, "source_run_path": str(source.dir),
         "source_receipt_sha256": source.receipt_sha256,
         "source_raw_responses_sha256": source.archive_sha256,
@@ -297,6 +314,8 @@ def _grant(governance, *, cohort, source, reused, selection_path, breaker=4,
         "count_attempts_per_row": 3, "generate_attempts_per_row": 5,
         "external_requests_per_row": 8,
         "max_empty_generate_body_retries_per_row": 5,
+        "max_empty_count_body_retries_per_row": 3,
+        "max_provider_unresolved": 25,
         "budget_max_input_tokens": 10_000_000,
         "budget_max_output_tokens": 100_000_000,
         "budget_max_estimated_cost_micros": 1_000_000_000,
@@ -310,9 +329,9 @@ def _grant(governance, *, cohort, source, reused, selection_path, breaker=4,
     if mutate is not None:
         mutate(payload)
     raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
-    (governance.root / "screen_continuation_v2_authorization.json").write_bytes(raw)
+    (governance.root / "screen_continuation_v4_authorization.json").write_bytes(raw)
     return SimpleNamespace(root=governance.root,
-                           reference="screen_continuation_v2_authorization.json",
+                           reference="screen_continuation_v4_authorization.json",
                            sha256=sha256(raw).hexdigest(), authorization=payload)
 
 
@@ -342,7 +361,7 @@ def _run(cohort, tmp_path, setup, *, script=None, run_id="cont2", dry_run=False)
 
     factory = _EmptyBodyFactory(
         script if script is not None else _script(cohort.packets), events)
-    result = lc2.run_lineage_screen_continuation_v2(
+    result = lc4.run_lineage_screen_continuation_v4(
         repo_root=ROOT, packet_manifest_path=cohort.manifest_path,
         selection_artifact_path=setup.selection,
         governance_root=setup.grant.root,
@@ -358,7 +377,7 @@ def _run(cohort, tmp_path, setup, *, script=None, run_id="cont2", dry_run=False)
 
 def _records(result):
     return [json.loads(x) for x in
-            (result.run_dir / lc2.CONTINUATION_V2_RECORDS_FILENAME)
+            (result.run_dir / lc4.CONTINUATION_V4_RECORDS_FILENAME)
             .read_text(encoding="utf-8").splitlines() if x.strip()]
 
 
@@ -371,36 +390,35 @@ def _ledger(result):
 # --- 1. one empty body, then a valid one -------------------------------------------
 
 
-def test_one_empty_body_then_valid_yields_one_record(cohort, tmp_path):
+def test_one_empty_count_then_valid_count_then_generate(cohort, tmp_path):
     setup = _setup(cohort, tmp_path)
     flaky = cohort.packets[PREFIX_ROWS]["cik"]
     run = _run(cohort, tmp_path, setup,
-               script=_script(cohort.packets, **{flaky: {"empty_bodies": 1}}))
+               script=_script(cohort.packets, **{flaky: {"empty_counts": 1}}))
     result = run.result
     assert result.status == "completed", result.receipt
 
-    # exactly one wait, from the unchanged ADR-117 schedule
-    assert run.waits == [15.0]
-    assert run.factory.generate_calls == 2 + 1     # flaky row twice, other row once
-    assert run.factory.count_calls == 2            # the count is never re-sent
+    assert run.waits == [15.0]                  # the unchanged count schedule
+    assert run.factory.count_calls == 2 + 1     # flaky row measured twice
+    assert run.factory.generate_calls == 2      # each row generated once
 
-    # the send/capture/wait sequence for the flaky row, in full
+    # The flaky row's stream in full: the empty measurement is followed by a
+    # wait and a second measurement, and the generation happens only once the
+    # input has actually been measured.
     expected = [("send", "count_tokens"), ("capture", "count_tokens"),
-                ("send", "generate_content"), ("capture", "generate_content"),
                 ("wait", 15.0),
+                ("send", "count_tokens"), ("capture", "count_tokens"),
                 ("send", "generate_content"), ("capture", "generate_content")]
     assert run.events[:len(expected)] == expected
 
-    # the empty attempt is an auditable event with no response
     ledger = _ledger(result)
     empties = [e for e in ledger
-               if e.get("provider_reason_code") == EMPTY_GENERATE_BODY_REASON]
+               if e.get("provider_reason_code") == EMPTY_COUNT_BODY_REASON]
     assert len(empties) == 1
     assert empties[0]["capture_disposition"] == "empty_entity_body_not_persisted"
     assert empties[0]["raw_reference"] is None and empties[0]["raw_sha256"] is None
-    assert empties[0]["operation_label"] == "generate_content"
+    assert empties[0]["operation_label"] == "count_tokens"
 
-    # one logical record for that row, and exactly one archived response
     records = _records(result)
     row = [r for r in records if r["cik"] == flaky]
     assert len(row) == 1 and row[0]["record_kind"] == "screened_packet"
@@ -411,68 +429,101 @@ def test_one_empty_body_then_valid_yields_one_record(cohort, tmp_path):
 
     manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     Draft202012Validator(MANIFEST_V2_SCHEMA, format_checker=FormatChecker()).validate(manifest)
-    assert manifest["empty_generate_body_telemetry"] == {
+    assert manifest["empty_count_body_telemetry"] == {
         "empty_body_attempts": 1, "rows_with_empty_body": 1,
-        "rows_recovered_after_empty_body": 1, "max_retries_per_row": 5}
+        "rows_recovered_after_empty_body": 1, "max_retries_per_row": 3}
+    assert manifest["empty_generate_body_telemetry"]["empty_body_attempts"] == 0
+    assert manifest["inherited_source_limitations"]
     assert all(manifest["reconciliation"].values())
 
 
-# --- 2. five empty bodies --------------------------------------------------------
-
-
-def test_five_empty_bodies_stop_fail_closed_with_a_distinct_reason(cohort, tmp_path):
+def test_three_empty_counts_become_one_provider_unresolved_row(cohort, tmp_path):
+    """The ADR-120 stop becomes an ADR-121 record, and the run continues."""
     setup = _setup(cohort, tmp_path)
     stuck = cohort.packets[PREFIX_ROWS]["cik"]
     run = _run(cohort, tmp_path, setup,
-               script=_script(cohort.packets, **{stuck: {"empty_bodies": 99}}))
+               script=_script(cohort.packets, **{stuck: {"empty_counts": 99}}))
     result = run.result
-    assert result.status == "failed"
-    assert run.factory.generate_calls == 5
-    assert run.waits == [15.0, 30.0, 60.0, 120.0]
+    assert result.status == "completed", result.receipt
+    assert run.factory.count_calls == 3 + 1     # the stuck row, then the next one
+    assert run.waits == [15.0, 30.0]
 
-    receipt = result.receipt
-    assert receipt["reason_code"] == lc2.EMPTY_BODY_TERMINAL_REASON
-    assert "empty body" in receipt["detail"]
-    assert receipt["empty_generate_body_attempts"] == 5
-    assert receipt["stopping_cik"] == stuck
+    records = _records(result)
+    unresolved = [r for r in records if r["record_kind"] == "provider_unresolved"]
+    assert len(unresolved) == 1
+    row = unresolved[0]
+    assert row["cik"] == stuck
+    assert row["failure_reason_code"] == "empty_count_body_exhausted"
+    assert row["screen_status"] is None and row["screen_output"] is None
+    assert row["raw_response_id"] is None and row["raw_response_sha256"] is None
+    assert row["packet_sha256"] and row["prompt_sha256"]     # identity is kept
+    assert row["provider_attempt_telemetry"] == {
+        "count_attempts": 3, "generate_attempts": 0,
+        "capture_files_persisted": 0, "empty_count_bodies": 3,
+        "empty_generate_bodies": 0,
+        "provider_reason_code": "empty_count_body_exhausted"}
 
-    # no normal raw response for the stopping row, and no manifest at all
-    archive = (result.run_dir / ls.RAW_RESPONSES_FILENAME).read_text(encoding="utf-8")
-    assert stuck not in archive
-    assert not (result.run_dir / lc2.CONTINUATION_V2_MANIFEST_FILENAME).exists()
-    assert not (result.run_dir / lc2.CONTINUATION_V2_RECORDS_FILENAME).exists()
-    assert not (result.run_dir / ll.CAPTURE_LEDGER_FILENAME).exists()
-    with pytest.raises(ls.ScreenInputError):
-        lc2.require_continuation_v2_run(result.run_dir)
+    # the later row still ran
+    assert len([r for r in records if r["record_kind"] == "screened_packet"]) >= 1
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["counts"]["provider_unresolved"] == 1
+    assert manifest["counts"]["provider_unresolved_by_reason"] == {
+        "empty_count_body_exhausted": 1}
+    assert all(manifest["reconciliation"].values())
 
 
-def test_the_empty_body_ceiling_is_the_unchanged_generate_schedule():
+def test_the_empty_count_ceiling_is_the_unchanged_count_schedule():
+    waits, calls = [], {"n": 0}
+
+    def always_empty():
+        calls["n"] += 1
+        raise EmptyCountBody()
+
+    with pytest.raises(ProviderError) as excinfo:
+        execute_with_empty_count_retry(always_empty, sleep=waits.append,
+                                       max_attempts=99)
+    assert excinfo.value.reason_code == "provider_response_unusable"
+    assert calls["n"] == cp.SCREEN_COUNT_MAX_ATTEMPTS_V2 == 3
+    assert waits == list(map(float, cp.SCREEN_COUNT_RETRY_DELAYS_SECONDS))
+
+
+def test_adr119_generate_empty_body_behaviour_is_preserved(cohort, tmp_path):
+    """The inherited half still works, unchanged."""
+    setup = _setup(cohort, tmp_path)
+    flaky = cohort.packets[PREFIX_ROWS]["cik"]
+    run = _run(cohort, tmp_path, setup,
+               script=_script(cohort.packets, **{flaky: {"empty_bodies": 1}}))
+    assert run.result.status == "completed", run.result.receipt
+    assert run.waits == [15.0]
+    assert run.factory.generate_calls == 3 and run.factory.count_calls == 2
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["empty_generate_body_telemetry"]["empty_body_attempts"] == 1
+    assert manifest["empty_count_body_telemetry"]["empty_body_attempts"] == 0
+    assert VertexGeminiScreenV6.complete_v8 is VertexGeminiScreenV5.complete_v8
+
     waits, calls = [], {"n": 0}
 
     def always_empty():
         calls["n"] += 1
         raise EmptyGenerateBody()
 
-    with pytest.raises(ProviderError) as excinfo:
-        execute_with_empty_body_retry(always_empty, sleep=waits.append, max_attempts=99)
-    assert excinfo.value.reason_code == "provider_response_unusable"
-    assert calls["n"] == gp.SCREEN_GENERATE_MAX_ATTEMPTS == 5
-    assert waits == list(map(float, gp.SCREEN_GENERATE_RETRY_DELAYS_SECONDS))
+    with pytest.raises(ProviderError):
+        execute_with_empty_body_retry(always_empty, sleep=waits.append)
+    assert calls["n"] == 5 and waits == [15.0, 30.0, 60.0, 120.0]
 
 
-# --- 3. the anomaly is narrow ------------------------------------------------------
-
-
-def test_an_empty_body_never_retries_counttokens(cohort, tmp_path):
+def test_an_empty_count_never_invokes_generate_on_that_attempt(cohort, tmp_path):
     setup = _setup(cohort, tmp_path)
     flaky = cohort.packets[PREFIX_ROWS]["cik"]
     run = _run(cohort, tmp_path, setup,
-               script=_script(cohort.packets, **{flaky: {"empty_bodies": 3}}))
+               script=_script(cohort.packets, **{flaky: {"empty_counts": 2}}))
     assert run.result.status == "completed"
     ledger = _ledger(run.result)
-    counts = [e for e in ledger if e["operation_label"] == "count_tokens"]
-    assert len(counts) == 2 and all(e["attempt_ordinal"] == 1 for e in counts)
-    assert VertexGeminiScreenV5.count_tokens is VertexGeminiScreenV4.count_tokens
+    row = [e for e in ledger if e["row_ordinal"] == PREFIX_ROWS + 1]
+    assert [e["operation_label"] for e in row] == (
+        ["count_tokens"] * 3 + ["generate_content"])
+    assert [e["attempt_ordinal"] for e in row] == [1, 2, 3, 1]
+    assert run.waits == [15.0, 30.0]
 
 
 @pytest.mark.parametrize("flavour", ["malformed", "blocked"])
@@ -488,18 +539,20 @@ def test_a_content_failure_is_still_terminal_on_its_first_attempt(
     assert run.result.receipt["reason_code"] == "provider_error"
 
 
-def test_the_retry_predicate_adds_only_the_empty_body(cohort, tmp_path):
+def test_the_count_retry_predicate_adds_only_the_empty_count(cohort, tmp_path):
     class Whatever(Exception):
         pass
 
-    assert is_screen_retryable_v5(EmptyGenerateBody()) is True
-    assert is_screen_retryable_v5(Whatever()) is False
-    assert is_screen_retryable_v5(_Fake429()) is True          # inherited, unchanged
     from dynamic_ai_products.extraction.provider_adapter import CaptureSinkError
-    assert is_screen_retryable_v5(CaptureSinkError(
-        operation_label="generate_content", attempt_ordinal=1,
+    assert is_count_retryable_v6(EmptyCountBody()) is True
+    assert is_count_retryable_v6(Whatever()) is False
+    assert is_count_retryable_v6(_Fake429()) is True      # inherited, unchanged
+    assert is_count_retryable_v6(CaptureSinkError(
+        operation_label="count_tokens", attempt_ordinal=1,
         persistence_reason_code="write_error", provider_reason_code=None)) is False
-    assert is_screen_retryable_v5(ls.ScreenInputError("governance")) is False
+    assert is_count_retryable_v6(ls.ScreenInputError("governance")) is False
+    # an empty generate body is not a count-retry reason
+    assert is_count_retryable_v6(EmptyGenerateBody()) is False
 
 
 def test_a_quote_failure_is_recorded_not_retried(cohort, tmp_path):
@@ -522,36 +575,34 @@ def test_a_quote_failure_is_recorded_not_retried(cohort, tmp_path):
 
 def test_the_empty_body_source_shape_is_accepted(cohort, tmp_path):
     setup = _setup(cohort, tmp_path)
-    prefix = lc2.load_continuation_source_v2(
+    prefix = lc4.load_continuation_source_v3(
         setup.source.dir, source_receipt_sha256=setup.source.receipt_sha256)
     assert len(prefix.entries) == PREFIX_ROWS
     assert prefix.archive_sha256 == setup.source.archive_sha256
     assert prefix.receipt["reason_code"] == "provider_error"
 
 
-def test_the_real_failed_continuation_is_accepted_when_present():
-    """The live 4,297-row source, read only, skipped when absent."""
+def test_the_real_empty_count_source_is_accepted_when_present():
+    """The live 4,821-row source, read only, skipped when absent."""
     directory = (ROOT / "data/runs/universe-screens"
-                 / "universe-high-recall-continuation-v1-20260821")
+                 / "universe-high-recall-continuation-v2-20260822")
     if not directory.is_dir():
-        pytest.skip("the live continuation source is not present in this checkout")
+        pytest.skip("the live empty-count source is not present in this checkout")
     receipt_sha = sha256(
         (directory / ls.FAILURE_RECEIPT_FILENAME).read_bytes()).hexdigest()
-    prefix = lc2.load_continuation_source_v2(
+    # ADR-121 reuses ADR-120's loader unchanged, so both accept this source.
+    prefix = lc4.load_continuation_source_v3(
         directory, source_receipt_sha256=receipt_sha)
     assert len(prefix.entries) == prefix.receipt["records_completed_before_failure"]
     assert prefix.receipt["stopping_row_index"] == len(prefix.entries) + 1
-    # and the ADR-118 loader still refuses it, which is why this ADR exists.
-    # It refuses on the receipt shape before it even reaches the reason string:
-    # a continuation receipt is not the V3-route receipt that loader continues.
+    assert lc3.load_continuation_source_v3(
+        directory, source_receipt_sha256=receipt_sha).archive_sha256 == prefix.archive_sha256
+
+    # the ADR-119 loader still refuses it: it demands a stopping-row count body
+    from dynamic_ai_products import lineage_screen_continuation_v2 as adr119
     with pytest.raises(ls.ScreenInputError) as refusal:
-        lc1.load_continuation_source(directory, source_receipt_sha256=receipt_sha)
-    assert "V3-route receipt shape" in str(refusal.value)
-    # and the empty-body reason is not in its accepted signature either
-    assert lc1.ACCEPTED_SOURCE_FAILURE_SIGNATURE == "provider_timeout"
-
-
-# --- 5. every source proof refuses before output or network -------------------------
+        adr119.load_continuation_source_v2(directory, source_receipt_sha256=receipt_sha)
+    assert "countTokens capture" in str(refusal.value)
 
 
 def _refuses(cohort, tmp_path, match, **setup_kwargs):
@@ -560,7 +611,7 @@ def _refuses(cohort, tmp_path, match, **setup_kwargs):
     events: list = []
     factory = _EmptyBodyFactory(_script(cohort.packets), events)
     with pytest.raises(ls.ScreenInputError, match=match):
-        lc2.run_lineage_screen_continuation_v2(
+        lc4.run_lineage_screen_continuation_v4(
             repo_root=ROOT, packet_manifest_path=cohort.manifest_path,
             selection_artifact_path=setup.selection,
             governance_root=setup.grant.root,
@@ -577,14 +628,15 @@ def _refuses(cohort, tmp_path, match, **setup_kwargs):
 
 
 def test_archive_gap_reorder_and_hash_drift_are_refused(cohort, tmp_path):
+    # counters kept internally consistent, so the ORDER check is what fires
     _refuses(cohort, tmp_path / "gap", "maps onto the selection in order",
              source_kwargs={"mutate_entries": lambda e: e[:2] + e[3:],
                             "mutate_receipt": lambda r: r.update(
                                 records_completed_before_failure=3,
                                 stopping_row_index=4,
                                 model_called_rows_attempted=4,
-                                count_attempts_made=4, provider_attempts_made=4,
-                                external_requests_made=8)})
+                                count_attempts_made=4, provider_attempts_made=3,
+                                external_requests_made=7)})
     _refuses(cohort, tmp_path / "order", "maps onto the selection in order",
              source_kwargs={"mutate_entries": lambda e: [e[1], e[0]] + e[2:]})
 
@@ -609,13 +661,32 @@ def test_receipt_counter_drift_is_refused(cohort, tmp_path):
                  model_called_rows_attempted=r["model_called_rows_attempted"] + 3)})
 
 
-def test_missing_count_capture_or_present_generate_body_is_refused(cohort, tmp_path):
-    _refuses(cohort, tmp_path / "nocount", "no non-empty countTokens capture",
-             source_kwargs={"stopping_count_body": None})
-    _refuses(cohort, tmp_path / "emptycount", "no non-empty countTokens capture",
-             source_kwargs={"stopping_count_body": b""})
-    _refuses(cohort, tmp_path / "gen", "persisted 1 generate body",
-             source_kwargs={"stopping_generate_body": b'{"candidates": []}'})
+def test_any_stopping_row_capture_is_refused(cohort, tmp_path):
+    """An empty-count stop persists nothing for its stopping row."""
+    _refuses(cohort, tmp_path / "count", "persisted 1 capture file",
+             source_kwargs={"stopping_captures": {"count-attempt-01.bin": b'{"totalTokens": 9}'}})
+    _refuses(cohort, tmp_path / "gen", "persisted 1 capture file",
+             source_kwargs={"stopping_captures": {"generate-attempt-01.bin": b'{"candidates": []}'}})
+
+
+def test_stopping_row_counter_shape_is_refused_when_wrong(cohort, tmp_path):
+    # a generate attempt for the stopping row means it failed elsewhere
+    _refuses(cohort, tmp_path / "genattempt", "never reaches the generation",
+             source_kwargs={"mutate_receipt": lambda r: r.update(
+                 provider_attempts_made=r["provider_attempts_made"] + 1,
+                 external_requests_made=r["external_requests_made"] + 1)})
+    # more than one count attempt under the legacy shape
+    _refuses(cohort, tmp_path / "counts", "this terminal shape spends exactly",
+             source_kwargs={"mutate_receipt": lambda r: r.update(
+                 count_attempts_made=r["count_attempts_made"] + 2,
+                 external_requests_made=r["external_requests_made"] + 2)})
+
+
+def test_an_empty_generate_body_in_the_source_is_refused(cohort, tmp_path):
+    """A run that met both anomalies is a different, untested case."""
+    _refuses(cohort, tmp_path, "empty generate bodies",
+             source_kwargs={"mutate_receipt": lambda r: r.update(
+                 empty_generate_body_attempts=2)})
 
 
 def test_a_wrong_terminal_code_is_refused(cohort, tmp_path):
@@ -653,8 +724,8 @@ def test_the_full_cohort_closes_without_source_literals(cohort, tmp_path):
     # the production code carries no literal from any live run
     for path in ("src/dynamic_ai_products/lineage_screen_continuation_v2.py",
                  "src/dynamic_ai_products/providers/vertex_gemini_screen_v5.py",
-                 "schemas/universe_screen_continuation_authorization.v2.schema.json",
-                 "schemas/universe_screen_continuation_manifest.v2.schema.json"):
+                 "schemas/universe_screen_continuation_authorization.v4.schema.json",
+                 "schemas/universe_screen_continuation_manifest.v4.schema.json"):
         text = (ROOT / path).read_text(encoding="utf-8")
         for literal in ("4297", "2745", "7042", "3939", "3103"):
             assert literal not in text, f"{path} hard-codes {literal}"
@@ -670,7 +741,7 @@ def test_manifest_generations_and_grants_mutually_reject(cohort, tmp_path):
     for loader in (ls.require_authoritative_screen_run, ll.require_promotable_screen_run):
         with pytest.raises(ls.ScreenInputError):
             loader(run.result.run_dir)
-    lc2.require_continuation_v2_run(run.result.run_dir)
+    lc4.require_continuation_v4_run(run.result.run_dir)
 
 
 def test_the_source_run_is_never_modified(cohort, tmp_path):
@@ -729,16 +800,27 @@ def test_the_v3_and_v4_routes_keep_their_policies():
     assert cp.SCREEN_COUNT_MAX_ATTEMPTS_V2 == 3
     assert cp.SCREEN_COUNT_RETRY_DELAYS_SECONDS == (15, 30)
     # ADR-119 introduced no new schedule and no new budget.
-    assert lc2.EMPTY_BODY_TERMINAL_REASON == "empty_generate_body_exhausted"
+    # ADR-120 introduces no new schedule and no new budget: both anomalies are
+    # answered by the ceilings already in force.
+    assert lc4.EMPTY_COUNT_TERMINAL_REASON == "empty_count_body_exhausted"
+    assert lc4.EMPTY_GENERATE_TERMINAL_REASON == "empty_generate_body_exhausted"
     assert AUTH_V2_SCHEMA["properties"][
         "max_empty_generate_body_retries_per_row"]["const"] == 5
+    assert AUTH_V2_SCHEMA["properties"][
+        "max_empty_count_body_retries_per_row"]["const"] == 3
 
 
-def test_registry_registers_the_two_v2_continuation_schemas():
+def test_registry_registers_the_three_v4_continuation_schemas():
     registry = json.loads(
         (ROOT / "schemas" / "schema_version_manifest.json").read_text(encoding="utf-8"))
     assert registry["manifest_version"] == "0.60.0"
     assert len(registry["schemas"]) == 127
+    assert registry["schemas"]["universe_screen_record_v4"] == "0.4.0"
+    assert registry["schemas"]["universe_screen_continuation_authorization_v4"] == "0.4.0"
+    assert registry["schemas"]["universe_screen_continuation_manifest_v4"] == "0.11.0"
+    assert registry["schemas"]["universe_screen_continuation_authorization_v3"] == "0.3.0"
+    assert registry["schemas"]["universe_screen_continuation_manifest_v3"] == "0.10.0"
+    # predecessors unchanged
     assert registry["schemas"]["universe_screen_continuation_authorization_v2"] == "0.2.0"
     assert registry["schemas"]["universe_screen_continuation_manifest_v2"] == "0.9.0"
 
@@ -747,9 +829,9 @@ def test_fresh_process_never_imports_google(tmp_path):
     script = f"""
 import sys
 sys.path.insert(0, {str(ROOT / "src")!r})
-from dynamic_ai_products import lineage_screen_continuation_v2 as lc2
+from dynamic_ai_products import lineage_screen_continuation_v4 as lc4
 try:
-    lc2.load_continuation_source_v2({str(tmp_path / "missing")!r},
+    lc4.load_continuation_source_v3({str(tmp_path / "missing")!r},
                                     source_receipt_sha256="0" * 64)
 except Exception:
     pass
@@ -765,9 +847,9 @@ def _cli(*args):
                           capture_output=True, text=True)
 
 
-def test_cli_v2_mode_gating(cohort, tmp_path):
+def test_cli_v4_mode_gating(cohort, tmp_path):
     setup = _setup(cohort, tmp_path)
-    done = _cli("--mode", "screen-universe-lineage-continuation-v2",
+    done = _cli("--mode", "screen-universe-lineage-continuation-v4",
                 "--packet-manifest", str(cohort.manifest_path),
                 "--selection-artifact", str(setup.selection),
                 "--governance-root", str(setup.grant.root),
@@ -780,10 +862,178 @@ def test_cli_v2_mode_gating(cohort, tmp_path):
     assert json.loads(done.stdout)["status"] == "dry_run"
     assert not (tmp_path / "cli").exists()
 
-    missing = _cli("--mode", "screen-universe-lineage-continuation-v2",
+    missing = _cli("--mode", "screen-universe-lineage-continuation-v4",
                    "--output-dir", str(tmp_path), "--run-id", "r")
     assert missing.returncode == 2 and "--source-run-dir" in missing.stderr
     for flag in ("--logical-request-cap", "--selection-seed"):
-        bad = _cli("--mode", "screen-universe-lineage-continuation-v2",
+        bad = _cli("--mode", "screen-universe-lineage-continuation-v4",
                    "--output-dir", str(tmp_path), "--run-id", "r", flag, "3")
         assert bad.returncode == 2 and "does not accept" in bad.stderr
+
+
+# --- ADR-121: the bounded provider-unresolved outcome --------------------------------
+
+
+@pytest.fixture(scope="module")
+def wide(tmp_path_factory):
+    """34 valid packets + 1 failure: prefix 4, suffix 30 — enough to cross 25."""
+    source, template = _fixture_doc(PACKET_FIXTURES, "primary_10k_ixbrl.htm")
+    docs = []
+    for index in range(34):
+        cik = f"{7300000000 + index:010d}"
+        docs.append((source, dict(template, cik=cik, accession=f"{cik}-22-000001")))
+    docs.append(_fixture_doc(PACKET_FIXTURES, "primary_missing_item1.htm"))
+    built = _v5_run(tmp_path_factory.mktemp("v4-wide"), [docs])
+    assert len(built.packets) == 34 and len(built.failures) == 1
+    return built
+
+
+def test_an_exhausted_quota_row_is_recorded_and_later_rows_continue(cohort, tmp_path):
+    setup = _setup(cohort, tmp_path)
+    doomed = cohort.packets[PREFIX_ROWS]["cik"]
+    run = _run(cohort, tmp_path, setup,
+               script=_script(cohort.packets, **{doomed: {"quota_failures": 99}}))
+    result = run.result
+    assert result.status == "completed", result.receipt
+    assert run.waits == [15.0, 30.0, 60.0, 120.0]     # the full generate chain
+
+    records = _records(result)
+    unresolved = [r for r in records if r["record_kind"] == "provider_unresolved"]
+    assert len(unresolved) == 1
+    assert unresolved[0]["cik"] == doomed
+    assert unresolved[0]["failure_reason_code"] == "vertex_quota_exhausted"
+    assert unresolved[0]["provider_attempt_telemetry"]["generate_attempts"] == 5
+    # the row after it was still screened
+    later = [r for r in records if r["cik"] == cohort.packets[PREFIX_ROWS + 1]["cik"]]
+    assert later and later[0]["record_kind"] == "screened_packet"
+
+
+def test_twenty_five_unresolved_complete_and_the_twenty_sixth_stops(wide, tmp_path):
+    doomed = {p["cik"]: {"quota_failures": 99} for p in wide.packets[PREFIX_ROWS:]}
+
+    # 25 unresolved rows: the run may finish authoritatively
+    setup = _setup(wide, tmp_path / "at25")
+    ok = _run(wide, tmp_path / "at25", setup,
+              script=_script(wide.packets, **dict(list(doomed.items())[:25])))
+    assert ok.result.status == "completed", ok.result.receipt
+    manifest = json.loads(ok.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["counts"]["provider_unresolved"] == 25
+    assert manifest["counts"]["max_provider_unresolved"] == 25
+    assert all(manifest["reconciliation"].values())
+
+    # 26 of them: the twenty-sixth stops the run, and nothing is written
+    setup2 = _setup(wide, tmp_path / "at26")
+    stopped = _run(wide, tmp_path / "at26", setup2,
+                   script=_script(wide.packets, **dict(list(doomed.items())[:26])))
+    assert stopped.result.status == "failed"
+    receipt = stopped.result.receipt
+    assert receipt["reason_code"] == "provider_unresolved_budget_exhausted"
+    assert receipt["provider_unresolved_rows"] == 25
+    assert receipt["max_provider_unresolved"] == 25
+    assert not (stopped.result.run_dir / lc4.CONTINUATION_V4_MANIFEST_FILENAME).exists()
+    assert not (stopped.result.run_dir / lc4.CONTINUATION_V4_RECORDS_FILENAME).exists()
+    # no send happened for any row after the stop
+    assert stopped.factory.generate_calls <= 26 * 5
+
+
+@pytest.mark.parametrize("flavour,expected", [
+    ("malformed", "provider_error"),
+    ("blocked", "provider_error"),
+])
+def test_content_failures_can_never_become_provider_unresolved(
+        cohort, tmp_path, flavour, expected):
+    setup = _setup(cohort, tmp_path / flavour)
+    bad = cohort.packets[PREFIX_ROWS]["cik"]
+    run = _run(cohort, tmp_path / flavour, setup,
+               script=_script(cohort.packets, **{bad: {flavour: 9}}))
+    assert run.result.status == "failed"
+    assert run.result.receipt["reason_code"] == expected
+    assert run.factory.generate_calls == 1, "a returned answer is never retried"
+    assert not (run.result.run_dir / lc4.CONTINUATION_V4_MANIFEST_FILENAME).exists()
+
+
+def test_a_quote_failure_is_still_model_evidence_unverified(cohort, tmp_path):
+    """Evidence failures keep their own kind and never become unresolved."""
+    setup = _setup(cohort, tmp_path)
+    bad = cohort.packets[PREFIX_ROWS]["cik"]
+    payload = _v5_evidence_payload(cohort.packets[PREFIX_ROWS],
+                                   quote="text that appears in no passage")
+    run = _run(cohort, tmp_path, setup,
+               script=_script(cohort.packets, **{bad: {"text": payload}}))
+    assert run.result.status == "completed"
+    records = _records(run.result)
+    assert not [r for r in records if r["record_kind"] == "provider_unresolved"]
+    unverified = [r for r in records if r["record_kind"] == "model_evidence_unverified"]
+    assert len(unverified) == 1
+    assert unverified[0]["provider_attempt_telemetry"] is None
+
+
+def test_the_classifier_requires_an_exhausted_provider_cause():
+    """A first-attempt provider error, or any non-provider cause, is a stop."""
+    from dynamic_ai_products.extraction.provider_adapter import CaptureSinkError
+
+    def spent(counts=0, generates=0, empty_counts=0, empty_generates=0):
+        rows = []
+        for i in range(counts):
+            rows.append({"operation_label": "count_tokens",
+                         "capture_disposition": "raw_persisted",
+                         "provider_reason_code": (
+                             EMPTY_COUNT_BODY_REASON if i < empty_counts else None)})
+        for i in range(generates):
+            rows.append({"operation_label": "generate_content",
+                         "capture_disposition": "raw_persisted",
+                         "provider_reason_code": (
+                             "empty_generate_body" if i < empty_generates else None)})
+        return rows
+
+    def terminal(cause):
+        exc = ls.ScreenProviderTerminalError("x")
+        exc.__cause__ = cause
+        return exc
+
+    quota = ProviderError("vertex_quota_exhausted", attempt_count=5)
+    # exhausted generate path -> unresolved
+    assert lc4._classify_provider_unresolved(
+        terminal(quota), spent(counts=1, generates=5)) is not None
+    # the same error after ONE attempt is not "unresolved after trying"
+    assert lc4._classify_provider_unresolved(
+        terminal(quota), spent(counts=1, generates=1)) is None
+    # a capture failure is never a provider-unresolved row
+    assert lc4._classify_provider_unresolved(
+        terminal(CaptureSinkError(operation_label="generate_content",
+                                  attempt_ordinal=1,
+                                  persistence_reason_code="write_error",
+                                  provider_reason_code=None)),
+        spent(counts=1, generates=5)) is None
+    # no cause at all (an envelope failure) is never unresolved
+    assert lc4._classify_provider_unresolved(
+        terminal(None), spent(counts=1, generates=5)) is None
+    # a reason outside the closed set is never unresolved
+    assert lc4._classify_provider_unresolved(
+        terminal(ProviderError("vertex_permission_denied")),
+        spent(counts=1, generates=5)) is None
+
+
+def test_unresolved_rows_are_excluded_from_status_counts_and_call_lists(
+        cohort, tmp_path):
+    setup = _setup(cohort, tmp_path)
+    doomed = cohort.packets[PREFIX_ROWS]["cik"]
+    run = _run(cohort, tmp_path, setup,
+               script=_script(cohort.packets, **{doomed: {"quota_failures": 99}}))
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    records = _records(run.result)
+    unresolved = [r for r in records if r["record_kind"] == "provider_unresolved"]
+    screened = [r for r in records if r["record_kind"] == "screened_packet"]
+
+    # not in any valid-status count
+    assert sum(manifest["counts"]["by_screen_status"].values()) == len(screened)
+    assert all(r["screen_status"] is None for r in unresolved)
+    # a classifier call list is exactly the screened rows: an unresolved row
+    # has no evidence to classify, so it cannot appear in one
+    call_list = [r for r in records if r["screen_status"] is not None]
+    assert {r["cik"] for r in unresolved}.isdisjoint({r["cik"] for r in call_list})
+    # and the four populations close over the cohort
+    c = manifest["counts"]
+    assert (c["screened_packets"] + c["model_evidence_unverified"]
+            + c["insufficient_evidence"] + c["provider_unresolved"]
+            == c["planned_rows"])

@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.59.0",
+  "manifest_version": "0.60.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -114,11 +114,14 @@
     "universe_screen_continuation_authorization": "0.1.0",
     "universe_screen_continuation_authorization_v2": "0.2.0",
     "universe_screen_continuation_authorization_v3": "0.3.0",
+    "universe_screen_continuation_authorization_v4": "0.4.0",
     "universe_screen_continuation_manifest": "0.8.0",
     "universe_screen_continuation_manifest_v2": "0.9.0",
     "universe_screen_continuation_manifest_v3": "0.10.0",
+    "universe_screen_continuation_manifest_v4": "0.11.0",
     "universe_screen_record_v2": "0.2.0",
     "universe_screen_record_v3": "0.3.0",
+    "universe_screen_record_v4": "0.4.0",
     "universe_screen_diagnostic_record": "0.1.0",
     "universe_screen_diagnostic_manifest": "0.1.0",
     "universe_screen_diagnostic_authorization": "0.1.0",

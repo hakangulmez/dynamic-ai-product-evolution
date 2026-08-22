@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **866**
+Total tracked/scaffold files listed: **871**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -473,12 +473,15 @@ Total tracked/scaffold files listed: **866**
 - `schemas/universe_screen_continuation_authorization.schema.json`
 - `schemas/universe_screen_continuation_authorization.v2.schema.json`
 - `schemas/universe_screen_continuation_authorization.v3.schema.json`
+- `schemas/universe_screen_continuation_authorization.v4.schema.json`
 - `schemas/universe_screen_continuation_manifest.schema.json`
 - `schemas/universe_screen_continuation_manifest.v2.schema.json`
 - `schemas/universe_screen_continuation_manifest.v3.schema.json`
+- `schemas/universe_screen_continuation_manifest.v4.schema.json`
 - `schemas/universe_screen_record.schema.json`
 - `schemas/universe_screen_record.v2.schema.json`
 - `schemas/universe_screen_record.v3.schema.json`
+- `schemas/universe_screen_record.v4.schema.json`
 - `schemas/universe_screen_selection.schema.json`
 - `schemas/web_collection_receipt.schema.json`
 - `schemas/web_collection_request_plan.schema.json`
@@ -640,6 +643,7 @@ Total tracked/scaffold files listed: **866**
 - `src/dynamic_ai_products/lineage_screen_continuation.py`
 - `src/dynamic_ai_products/lineage_screen_continuation_v2.py`
 - `src/dynamic_ai_products/lineage_screen_continuation_v3.py`
+- `src/dynamic_ai_products/lineage_screen_continuation_v4.py`
 - `src/dynamic_ai_products/lineage_screen_live_v3.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/providers/__init__.py`
@@ -856,6 +860,7 @@ Total tracked/scaffold files listed: **866**
 - `tests/universe/test_lineage_screen_continuation.py`
 - `tests/universe/test_lineage_screen_continuation_v2.py`
 - `tests/universe/test_lineage_screen_continuation_v3.py`
+- `tests/universe/test_lineage_screen_continuation_v4.py`
 - `tests/universe/test_lineage_screen_live_v3.py`
 - `tests/universe/test_pilot_packet.py`
 - `tests/universe/test_plain_text_primary.py`

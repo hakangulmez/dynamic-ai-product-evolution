@@ -8339,6 +8339,68 @@ schemas, its fixture-only test module, the CLI mode, the registry (0.58.0 to
 five registry/manifest guards, the provider boundary count, and the absolute
 registry literals in six screen suites.
 
+## ADR-121 — One unresolvable row must not cost a cohort
+
+**Status.** Accepted, fixture-first. No live model call, no `data/runs` write,
+and no change to any existing connector, runner, prompt, schema or failed run.
+
+**Measured basis.** Four full-cohort attempts have stopped four ways, and three
+of those stops were a single row whose provider transport failed *after* the
+retries this project had already authorized were spent: quota exhaustion at
+row 24 and 119, a count timeout at 3,940, an empty generate body at 4,298, an
+empty count body at 4,822. ADR-117 through ADR-120 each removed one mechanism
+of failure. None of them addressed the *shape* of the loss, which is that one
+row the provider will not resolve discards every completed row with it.
+
+**Decision.** A fourth row outcome, `PROVIDER_UNRESOLVED`, for one closed
+class: a provider or transport condition that has already exhausted an
+authorized retry path. Exhausted quota and transient retries, a governed
+terminal timeout after its eligible retries, `empty_generate_body_exhausted`
+and `empty_count_body_exhausted` qualify. Nothing else does — not invalid
+JSON, an adapter rejection, a quote or evidence failure, a malformed or
+blocked response, a capture failure, a governance or binding failure, a budget
+or cap breach, nor any content ambiguity. Those remain run-fatal.
+
+**The classification is structural, not textual.** The shared adapter re-raises
+a `ProviderError` as the `__cause__` of its terminal error, so a capture-sink
+failure, a count-reconciliation failure and an envelope failure each carry a
+different cause or none, and are excluded by construction. On top of that, the
+failing operation's attempts must actually be exhausted: the same provider
+error on its first attempt is a stop, because it was never retried.
+
+**What such a row is, and is not.** It stays in the cohort with its exact
+identity, its closed provider reason and its attempt telemetry. It carries no
+screen status, no evidence, no archetypes and no archived response, because
+none exists. It is not negative, not an exclusion, and not
+`model_evidence_unverified` — that kind means a response *arrived* and failed
+validation, which is the opposite situation. It is excluded from classifier
+call lists and from every valid-status count, and it is named rather than
+dropped, so the gap is auditable instead of inferred from an absence.
+
+**The tolerance is bounded and authorized.** The grant must pin
+`max_provider_unresolved` at 25; the run may finish authoritatively only while
+such rows number 25 or fewer; the twenty-sixth stops it fail-closed with no
+manifest. A provider failing that often is a systematic condition, not a stray
+row, and the run should end rather than quietly produce a cohort full of
+holes. The manifest records the count, the breakdown by closed reason, and the
+threshold the run finished under, and the reconciliation proves the cohort
+closes over all four populations: screened, model-evidence-unverified,
+insufficient-evidence and provider-unresolved.
+
+**Honest limits.** This makes a cohort survivable, not correct. Twenty-five
+unresolved rows are twenty-five rows about which nothing is known, and a
+release built on such a cohort inherits that hole. The threshold is a
+governance choice about what a cohort may tolerate, not a measurement, and
+whether 25 is the right number for a 7,042-row frame is a question the first
+completed run should be used to revisit.
+
+**Scope.** Twenty-one paths: the continuation successor, three schemas, its
+fixture-only test module, the CLI mode, the registry (0.59.0 to 0.60.0, 124 to
+127), this decision log, `REPO_MANIFEST.md` (866 to 871), the five
+registry/manifest guards, and the absolute registry literals in seven screen
+suites. No new provider module is added: the classification is a runner
+decision, so the connector line is untouched.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only
