@@ -174,6 +174,17 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-122 (a row the model never finished is an
+    # outcome, not a stop): manifest_version 0.60.0 -> 0.61.0, 127 -> 130
+    # entries, registering the v0.5 record, the v0.5 continuation
+    # authorization and the v0.12 continuation manifest. The v0.5 record
+    # adds a fifth row kind, MODEL_OUTPUT_TRUNCATED, for a row whose
+    # single candidate returned finishReason MAX_TOKENS; it carries the
+    # digest of the envelope that proves it, is never re-sent, and is a
+    # named review population, never a screen result. Every earlier
+    # contract is byte-unchanged and none of the three joins
+    # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS below.
+    # Before it,
     # Rebaselined by ADR-121 (one unresolvable row must not cost a
     # cohort): manifest_version 0.59.0 -> 0.60.0, 124 -> 127 entries,
     # registering the v0.4 record, the v0.4 continuation authorization and
@@ -426,7 +437,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "1346c98acc235132a62c440f1e1077fd98f65400237b12074b78abc1c2259f85"
+    "a36b969c77f764928ffb4e95de2d0845b2328a27e86ef2c252e7de12abc28fb7"
 )
 
 

@@ -1,0 +1,745 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_record.v5.schema.json",
+  "title": "Universe high-recall screen record (v0.5, truncated model output)",
+  "description": "One retained-row record for ADR-122. The v0.4 kinds keep their meanings exactly, and this generation adds a fifth: MODEL_OUTPUT_TRUNCATED, for a row whose generateContent call returned a well-formed transport envelope that the model did not finish - exactly one candidate carrying finishReason MAX_TOKENS. That is neither a provider failure nor a validation failure: the transport worked and the content never completed, so no screen JSON exists to judge. It is distinct from PROVIDER_UNRESOLVED, where nothing usable came back at all; from model_evidence_unverified, where a complete response failed the strict validator; and from INSUFFICIENT_EVIDENCE, where no model call was made. It carries identity, the closed reason max_tokens, attempt telemetry and the capture reference and digest of the truncated envelope, so the evidence stays addressable. It carries no status, no screen output, no archetypes, no evidence and no confidence, is excluded from every valid-status count and from classifier call lists, and is a named review population.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_contract",
+    "record_kind",
+    "cik",
+    "company_id",
+    "accession",
+    "form",
+    "baseline_filing_date",
+    "source_id",
+    "packet_sha256",
+    "screen_status",
+    "prompt_sha256",
+    "model_route",
+    "raw_response_id",
+    "raw_response_sha256",
+    "screen_output",
+    "failure_reason_code",
+    "failure_detail",
+    "row_provenance",
+    "provider_attempt_telemetry",
+    "truncation_evidence"
+  ],
+  "properties": {
+    "record_contract": {
+      "const": "universe_screen_record@0.5.0"
+    },
+    "record_kind": {
+      "enum": [
+        "screened_packet",
+        "insufficient_evidence",
+        "model_evidence_unverified",
+        "provider_unresolved",
+        "model_output_truncated"
+      ]
+    },
+    "cik": {
+      "type": "string",
+      "pattern": "^\\d{10}$"
+    },
+    "company_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "accession": {
+      "type": "string",
+      "pattern": "^\\d{10}-\\d{2}-\\d{6}$"
+    },
+    "form": {
+      "enum": [
+        "10-K",
+        "10-KT"
+      ]
+    },
+    "baseline_filing_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^sec-primary:\\d{10}:\\d{10}-\\d{2}-\\d{6}:.+$"
+    },
+    "packet_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_status": {
+      "enum": [
+        "LIKELY_ELIGIBLE",
+        "LIKELY_INELIGIBLE",
+        "BOUNDARY_OR_UNCERTAIN",
+        null
+      ]
+    },
+    "prompt_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "model_route": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model_label"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "raw_response_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "raw_response_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_output": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "failure_reason_code": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "failure_detail": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 600
+    },
+    "row_provenance": {
+      "description": "Where this row's model output came from. Orthogonal to record_kind: a reused row and a fresh row may both be screened_packet, and both are held to the identical validator.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin",
+        "source_run_id",
+        "source_raw_response_id",
+        "source_raw_responses_sha256",
+        "source_receipt_sha256"
+      ],
+      "properties": {
+        "origin": {
+          "enum": [
+            "reused_source_prefix",
+            "model_called",
+            "packet_build_failure"
+          ]
+        },
+        "source_run_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "source_raw_response_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "source_raw_responses_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_receipt_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "provider_attempt_telemetry": {
+      "description": "What the row actually spent before the provider path was exhausted. Present only for provider_unresolved rows.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "count_attempts",
+        "generate_attempts",
+        "capture_files_persisted",
+        "empty_count_bodies",
+        "empty_generate_bodies",
+        "provider_reason_code"
+      ],
+      "properties": {
+        "count_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "generate_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capture_files_persisted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "empty_count_bodies": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "empty_generate_bodies": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider_reason_code": {
+          "enum": [
+            "vertex_quota_exhausted",
+            "vertex_unavailable",
+            "provider_timeout",
+            "provider_response_unusable",
+            "empty_generate_body_exhausted",
+            "empty_count_body_exhausted"
+          ]
+        }
+      }
+    },
+    "truncation_evidence": {
+      "description": "The captured envelope that proves the truncation. Present only for model_output_truncated rows.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "reason_code",
+        "finish_reason",
+        "capture_reference",
+        "capture_sha256",
+        "count_attempts",
+        "generate_attempts",
+        "candidate_token_count"
+      ],
+      "properties": {
+        "reason_code": {
+          "const": "max_tokens"
+        },
+        "finish_reason": {
+          "const": "MAX_TOKENS"
+        },
+        "capture_reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capture_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "count_attempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "generate_attempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "candidate_token_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "screened_packet"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "baseline_filing_date": {
+            "type": "string"
+          },
+          "packet_sha256": {
+            "type": "string"
+          },
+          "screen_status": {
+            "enum": [
+              "LIKELY_ELIGIBLE",
+              "LIKELY_INELIGIBLE",
+              "BOUNDARY_OR_UNCERTAIN"
+            ]
+          },
+          "prompt_sha256": {
+            "type": "string"
+          },
+          "model_route": {
+            "type": "object"
+          },
+          "raw_response_id": {
+            "type": "string"
+          },
+          "raw_response_sha256": {
+            "type": "string"
+          },
+          "screen_output": {
+            "type": "object"
+          },
+          "failure_reason_code": {
+            "type": "null"
+          },
+          "failure_detail": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "insufficient_evidence"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "baseline_filing_date": {
+            "type": "null"
+          },
+          "packet_sha256": {
+            "type": "null"
+          },
+          "screen_status": {
+            "type": "null"
+          },
+          "prompt_sha256": {
+            "type": "null"
+          },
+          "model_route": {
+            "type": "null"
+          },
+          "raw_response_id": {
+            "type": "null"
+          },
+          "raw_response_sha256": {
+            "type": "null"
+          },
+          "screen_output": {
+            "type": "null"
+          },
+          "failure_reason_code": {
+            "type": "string"
+          },
+          "failure_detail": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "model_evidence_unverified"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "baseline_filing_date": {
+            "type": "string"
+          },
+          "packet_sha256": {
+            "type": "string"
+          },
+          "screen_status": {
+            "type": "null"
+          },
+          "prompt_sha256": {
+            "type": "string"
+          },
+          "model_route": {
+            "type": "object"
+          },
+          "raw_response_id": {
+            "type": "string"
+          },
+          "raw_response_sha256": {
+            "type": "string"
+          },
+          "screen_output": {
+            "type": "null"
+          },
+          "failure_reason_code": {
+            "enum": [
+              "invalid_model_json",
+              "adapter_rejection",
+              "quote_resolution_failure",
+              "temporal_violation"
+            ]
+          },
+          "failure_detail": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "row_provenance": {
+            "properties": {
+              "origin": {
+                "const": "reused_source_prefix"
+              }
+            }
+          },
+          "record_kind": {
+            "not": {
+              "const": "model_output_truncated"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "row_provenance": {
+            "properties": {
+              "source_run_id": {
+                "type": "string"
+              },
+              "source_raw_response_id": {
+                "type": "string"
+              },
+              "source_raw_responses_sha256": {
+                "type": "string"
+              },
+              "source_receipt_sha256": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "row_provenance": {
+            "properties": {
+              "origin": {
+                "enum": [
+                  "model_called",
+                  "packet_build_failure"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "row_provenance": {
+            "properties": {
+              "source_run_id": {
+                "type": "null"
+              },
+              "source_raw_response_id": {
+                "type": "null"
+              },
+              "source_raw_responses_sha256": {
+                "type": "null"
+              },
+              "source_receipt_sha256": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "insufficient_evidence"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "row_provenance": {
+            "properties": {
+              "origin": {
+                "const": "packet_build_failure"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "provider_unresolved"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "baseline_filing_date": {
+            "type": "string"
+          },
+          "packet_sha256": {
+            "type": "string"
+          },
+          "screen_status": {
+            "type": "null"
+          },
+          "prompt_sha256": {
+            "type": "string"
+          },
+          "model_route": {
+            "type": "object"
+          },
+          "raw_response_id": {
+            "type": "null"
+          },
+          "raw_response_sha256": {
+            "type": "null"
+          },
+          "screen_output": {
+            "type": "null"
+          },
+          "failure_reason_code": {
+            "enum": [
+              "vertex_quota_exhausted",
+              "vertex_unavailable",
+              "provider_timeout",
+              "provider_response_unusable",
+              "empty_generate_body_exhausted",
+              "empty_count_body_exhausted"
+            ]
+          },
+          "failure_detail": {
+            "type": "string"
+          },
+          "provider_attempt_telemetry": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "enum": [
+              "screened_packet",
+              "insufficient_evidence",
+              "model_evidence_unverified"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "provider_attempt_telemetry": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "model_output_truncated"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "baseline_filing_date": {
+            "type": "string"
+          },
+          "packet_sha256": {
+            "type": "string"
+          },
+          "screen_status": {
+            "type": "null"
+          },
+          "prompt_sha256": {
+            "type": "string"
+          },
+          "model_route": {
+            "type": "object"
+          },
+          "raw_response_id": {
+            "type": "null"
+          },
+          "raw_response_sha256": {
+            "type": "null"
+          },
+          "screen_output": {
+            "type": "null"
+          },
+          "failure_reason_code": {
+            "const": "max_tokens"
+          },
+          "failure_detail": {
+            "type": "string"
+          },
+          "provider_attempt_telemetry": {
+            "type": "null"
+          },
+          "truncation_evidence": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "enum": [
+              "screened_packet",
+              "insufficient_evidence",
+              "model_evidence_unverified",
+              "provider_unresolved"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "truncation_evidence": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "model_output_truncated"
+          }
+        },
+        "required": [
+          "record_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "row_provenance": {
+            "properties": {
+              "origin": {
+                "enum": [
+                  "reused_source_prefix",
+                  "model_called"
+                ]
+              },
+              "source_raw_response_id": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "properties": {
+              "record_kind": {
+                "const": "model_output_truncated"
+              }
+            },
+            "required": [
+              "record_kind"
+            ]
+          },
+          {
+            "properties": {
+              "row_provenance": {
+                "properties": {
+                  "origin": {
+                    "const": "reused_source_prefix"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "row_provenance": {
+            "properties": {
+              "source_run_id": {
+                "type": "string"
+              },
+              "source_raw_responses_sha256": {
+                "type": "string"
+              },
+              "source_receipt_sha256": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

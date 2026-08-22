@@ -1,4 +1,4 @@
-"""ADR-121 tests: an exhausted provider path is a row, not a lost cohort.
+"""ADR-122 tests: an unfinished answer is a row, not a lost cohort.
 
 Everything is offline. The transport is a fake that can return an empty body
 from either operation on demand, every wait is a recorded call rather than a
@@ -20,8 +20,8 @@ from types import SimpleNamespace
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
-from dynamic_ai_products import lineage_screen_continuation_v3 as lc3
 from dynamic_ai_products import lineage_screen_continuation_v4 as lc4
+from dynamic_ai_products import lineage_screen_continuation_v5 as lc5
 from dynamic_ai_products import lineage_screen_live as ll
 from dynamic_ai_products.providers import screen_count_retry_policy as cp
 from dynamic_ai_products.providers import screen_retry_policy as gp
@@ -69,18 +69,21 @@ from test_lineage_screen_live_v3 import (  # noqa: E402
 CLI = ROOT / "pipelines" / "00_build_company_universe.py"
 FIXED_CLOCK = lambda: datetime(2026, 8, 22, 9, 0, 0, tzinfo=timezone.utc)  # noqa: E731
 PREFIX_ROWS = 4
+# ADR-122: the source's stopping row is re-derived from its capture, never
+# re-sent, so the first row this run actually sends is the one after it.
+FIRST_LIVE = PREFIX_ROWS + 1
 
 MANIFEST_V2_SCHEMA = json.loads(
-    (ROOT / "schemas" / "universe_screen_continuation_manifest.v4.schema.json")
+    (ROOT / "schemas" / "universe_screen_continuation_manifest.v5.schema.json")
     .read_text(encoding="utf-8"))
 MANIFEST_V1_SCHEMA = json.loads(
-    (ROOT / "schemas" / "universe_screen_continuation_manifest.v3.schema.json")
+    (ROOT / "schemas" / "universe_screen_continuation_manifest.v4.schema.json")
     .read_text(encoding="utf-8"))
 AUTH_V2_SCHEMA = json.loads(
-    (ROOT / "schemas" / "universe_screen_continuation_authorization.v4.schema.json")
+    (ROOT / "schemas" / "universe_screen_continuation_authorization.v5.schema.json")
     .read_text(encoding="utf-8"))
 AUTH_V1_SCHEMA = json.loads(
-    (ROOT / "schemas" / "universe_screen_continuation_authorization.v3.schema.json")
+    (ROOT / "schemas" / "universe_screen_continuation_authorization.v4.schema.json")
     .read_text(encoding="utf-8"))
 
 _GOOGLE_BASELINE: set[str] | None = None
@@ -105,15 +108,15 @@ def _assert_no_google() -> None:
 
 @pytest.fixture(scope="module")
 def cohort(tmp_path_factory):
-    """6 valid packets + 1 packet failure: prefix 4, suffix 2."""
+    """7 valid packets + 1 packet failure: prefix 4, derived 1, suffix 2."""
     source, template = _fixture_doc(PACKET_FIXTURES, "primary_10k_ixbrl.htm")
     docs = []
-    for index in range(6):
+    for index in range(7):
         cik = f"{7200000000 + index:010d}"
         docs.append((source, dict(template, cik=cik, accession=f"{cik}-22-000001")))
     docs.append(_fixture_doc(PACKET_FIXTURES, "primary_missing_item1.htm"))
     built = _v5_run(tmp_path_factory.mktemp("cont2-cohort"), [docs])
-    assert len(built.packets) == 6 and len(built.failures) == 1
+    assert len(built.packets) == 7 and len(built.failures) == 1
     return built
 
 
@@ -161,6 +164,12 @@ class _EmptyBodyModels:
             self._capture.record_send("generate_content", None,
                                       "no_response_transport_failure")
             raise _Fake429("scripted 429")
+        if entry.get("truncated", 0) > 0:
+            entry["truncated"] -= 1
+            # a well-formed envelope the model never finished
+            self._capture.record_send("generate_content",
+                                      _truncated_envelope_bytes(), "ok")
+            return SimpleNamespace()
         if entry.get("malformed", 0) > 0:
             entry["malformed"] -= 1
             self._capture.record_send("generate_content", b"this is not json", "ok")
@@ -209,17 +218,28 @@ def _archive_line(run_id, packet, payload):
     }, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
+def _truncated_envelope_bytes(text: str = "{\"screen_status\": \"LIKELY_ELI",
+                              tokens: int = 16384) -> bytes:
+    """A well-formed transport envelope the model never finished."""
+    return json.dumps({
+        "candidates": [{"content": {"parts": [{"text": text}]},
+                        "finishReason": "MAX_TOKENS"}],
+        "usageMetadata": {"promptTokenCount": 10921,
+                          "candidatesTokenCount": tokens,
+                          "thoughtsTokenCount": 0},
+    }).encode()
+
+
 def _failed_continuation(tmp_path: Path, cohort, *, prefix_rows=PREFIX_ROWS,
                          run_id="source-continuation", authorization_sha256: str,
                          payloads=None, mutate_receipt=None, mutate_entries=None,
                          stopping_captures=None,
                          reason_code="provider_error",
-                         detail="Governed provider failure (provider_response_unusable)."):
-    """A run that stopped when countTokens returned with no usable body.
+                         detail="The candidate finished abnormally: 'MAX_TOKENS'."):
+    """A run that stopped on a captured, unfinished model answer.
 
-    Its stopping row persists nothing at all: the measurement returned
-    nothing, so the generation was never attempted and no capture directory
-    was ever created for it.
+    Its stopping row persisted both captures: the input was measured, the
+    generation returned, and the answer simply stopped mid-JSON.
     """
     directory = tmp_path / "failed" / run_id
     directory.mkdir(parents=True, exist_ok=True)
@@ -240,13 +260,13 @@ def _failed_continuation(tmp_path: Path, cohort, *, prefix_rows=PREFIX_ROWS,
         "stopping_row_index": prefix_rows + 1,
         "records_completed_before_failure": prefix_rows,
         "reused_prefix_rows": 0, "model_called_rows_attempted": prefix_rows + 1,
-        # one count per attempted row; one generate per COMPLETED row only,
-        # because the stopping row never reached the generation
+        # the stopping row measured once and generated once
         "count_attempts_made": prefix_rows + 1,
-        "provider_attempts_made": prefix_rows,
-        "external_requests_made": (prefix_rows + 1) + prefix_rows,
+        "provider_attempts_made": prefix_rows + 1,
+        "external_requests_made": (prefix_rows + 1) * 2,
         "empty_generate_body_attempts": 0,
-        "empty_count_body_attempts": 1,
+        "empty_count_body_attempts": 0,
+        "provider_unresolved_rows": 0,
         "authorization_sha256": authorization_sha256,
         "source_run_id": "grandparent-run",
         "source_receipt_sha256": "0" * 64,
@@ -257,28 +277,36 @@ def _failed_continuation(tmp_path: Path, cohort, *, prefix_rows=PREFIX_ROWS,
         mutate_receipt(receipt)
     receipt_bytes = (json.dumps(receipt, indent=2, sort_keys=True) + "\n").encode()
     (directory / ls.FAILURE_RECEIPT_FILENAME).write_bytes(receipt_bytes)
-    # Optional tamper: a stopping-row capture that should not exist.
-    if stopping_captures:
-        cap = (directory / ll.CAPTURES_DIRNAME
-               / f"{receipt['stopping_row_index']:05d}-{receipt['stopping_cik']}"
-                 f"-{receipt['stopping_accession']}")
+    cap = (directory / ll.CAPTURES_DIRNAME
+           / f"{receipt['stopping_row_index']:05d}-{receipt['stopping_cik']}"
+             f"-{receipt['stopping_accession']}")
+    files = ({"count-attempt-01.bin": b'{"totalTokens": 10921}',
+              "generate-attempt-01.bin": _truncated_envelope_bytes()}
+             if stopping_captures is None else stopping_captures)
+    if files:
         cap.mkdir(parents=True, exist_ok=True)
-        for name, body in stopping_captures.items():
+        for name, body in files.items():
             (cap / name).write_bytes(body)
     return SimpleNamespace(dir=directory, run_id=run_id, receipt=receipt,
                            receipt_sha256=sha256(receipt_bytes).hexdigest(),
                            archive_sha256=sha256(archive).hexdigest(),
-                           archive_bytes=archive, prefix_rows=prefix_rows)
+                           archive_bytes=archive, prefix_rows=prefix_rows,
+                           stopping_capture_sha256=sha256(
+                               files.get("generate-attempt-01.bin", b"")).hexdigest()
+                           if files else None)
 
 
 def _grant(governance, *, cohort, source, reused, selection_path, breaker=4,
            mutate=None):
+    # ADR-122: "reused" covers the archived prefix plus the one row re-derived
+    # from the source's capture, so the caller passes prefix_rows and we add it.
+    reused = reused + 1
     called = len(cohort.packets) - reused
     prompt_sha = sha256(
         (ROOT / "prompts/discovery/universe_high_recall_screen.v5.md").read_bytes()
     ).hexdigest()
     payload = {
-        "authorization_contract": "universe_screen_continuation_authorization@0.4.0",
+        "authorization_contract": "universe_screen_continuation_authorization@0.5.0",
         "authorization_id": "continuation-v2-fixture",
         "authorized_by": "fixture-governance",
         "effective_at": "2026-08-01T00:00:00+00:00",
@@ -287,7 +315,7 @@ def _grant(governance, *, cohort, source, reused, selection_path, breaker=4,
         "rollout_state": "release_or_research_production",
         "run_kind": "full_cohort_continuation",
         "screen_stage": "universe_high_recall_screen",
-        "source_kind": "failed_continuation_empty_count_body",
+        "source_kind": "failed_continuation_model_output_truncated",
         "source_run_id": source.run_id, "source_run_path": str(source.dir),
         "source_receipt_sha256": source.receipt_sha256,
         "source_raw_responses_sha256": source.archive_sha256,
@@ -316,6 +344,7 @@ def _grant(governance, *, cohort, source, reused, selection_path, breaker=4,
         "max_empty_generate_body_retries_per_row": 5,
         "max_empty_count_body_retries_per_row": 3,
         "max_provider_unresolved": 25,
+        "max_model_output_truncated": 25,
         "budget_max_input_tokens": 10_000_000,
         "budget_max_output_tokens": 100_000_000,
         "budget_max_estimated_cost_micros": 1_000_000_000,
@@ -329,9 +358,9 @@ def _grant(governance, *, cohort, source, reused, selection_path, breaker=4,
     if mutate is not None:
         mutate(payload)
     raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
-    (governance.root / "screen_continuation_v4_authorization.json").write_bytes(raw)
+    (governance.root / "screen_continuation_v5_authorization.json").write_bytes(raw)
     return SimpleNamespace(root=governance.root,
-                           reference="screen_continuation_v4_authorization.json",
+                           reference="screen_continuation_v5_authorization.json",
                            sha256=sha256(raw).hexdigest(), authorization=payload)
 
 
@@ -361,7 +390,7 @@ def _run(cohort, tmp_path, setup, *, script=None, run_id="cont2", dry_run=False)
 
     factory = _EmptyBodyFactory(
         script if script is not None else _script(cohort.packets), events)
-    result = lc4.run_lineage_screen_continuation_v4(
+    result = lc5.run_lineage_screen_continuation_v5(
         repo_root=ROOT, packet_manifest_path=cohort.manifest_path,
         selection_artifact_path=setup.selection,
         governance_root=setup.grant.root,
@@ -377,7 +406,7 @@ def _run(cohort, tmp_path, setup, *, script=None, run_id="cont2", dry_run=False)
 
 def _records(result):
     return [json.loads(x) for x in
-            (result.run_dir / lc4.CONTINUATION_V4_RECORDS_FILENAME)
+            (result.run_dir / lc5.CONTINUATION_V5_RECORDS_FILENAME)
             .read_text(encoding="utf-8").splitlines() if x.strip()]
 
 
@@ -392,7 +421,7 @@ def _ledger(result):
 
 def test_one_empty_count_then_valid_count_then_generate(cohort, tmp_path):
     setup = _setup(cohort, tmp_path)
-    flaky = cohort.packets[PREFIX_ROWS]["cik"]
+    flaky = cohort.packets[FIRST_LIVE]["cik"]
     run = _run(cohort, tmp_path, setup,
                script=_script(cohort.packets, **{flaky: {"empty_counts": 1}}))
     result = run.result
@@ -440,7 +469,7 @@ def test_one_empty_count_then_valid_count_then_generate(cohort, tmp_path):
 def test_three_empty_counts_become_one_provider_unresolved_row(cohort, tmp_path):
     """The ADR-120 stop becomes an ADR-121 record, and the run continues."""
     setup = _setup(cohort, tmp_path)
-    stuck = cohort.packets[PREFIX_ROWS]["cik"]
+    stuck = cohort.packets[FIRST_LIVE]["cik"]
     run = _run(cohort, tmp_path, setup,
                script=_script(cohort.packets, **{stuck: {"empty_counts": 99}}))
     result = run.result
@@ -490,7 +519,7 @@ def test_the_empty_count_ceiling_is_the_unchanged_count_schedule():
 def test_adr119_generate_empty_body_behaviour_is_preserved(cohort, tmp_path):
     """The inherited half still works, unchanged."""
     setup = _setup(cohort, tmp_path)
-    flaky = cohort.packets[PREFIX_ROWS]["cik"]
+    flaky = cohort.packets[FIRST_LIVE]["cik"]
     run = _run(cohort, tmp_path, setup,
                script=_script(cohort.packets, **{flaky: {"empty_bodies": 1}}))
     assert run.result.status == "completed", run.result.receipt
@@ -514,12 +543,12 @@ def test_adr119_generate_empty_body_behaviour_is_preserved(cohort, tmp_path):
 
 def test_an_empty_count_never_invokes_generate_on_that_attempt(cohort, tmp_path):
     setup = _setup(cohort, tmp_path)
-    flaky = cohort.packets[PREFIX_ROWS]["cik"]
+    flaky = cohort.packets[FIRST_LIVE]["cik"]
     run = _run(cohort, tmp_path, setup,
                script=_script(cohort.packets, **{flaky: {"empty_counts": 2}}))
     assert run.result.status == "completed"
     ledger = _ledger(run.result)
-    row = [e for e in ledger if e["row_ordinal"] == PREFIX_ROWS + 1]
+    row = [e for e in ledger if e["row_ordinal"] == FIRST_LIVE + 1]
     assert [e["operation_label"] for e in row] == (
         ["count_tokens"] * 3 + ["generate_content"])
     assert [e["attempt_ordinal"] for e in row] == [1, 2, 3, 1]
@@ -530,7 +559,7 @@ def test_an_empty_count_never_invokes_generate_on_that_attempt(cohort, tmp_path)
 def test_a_content_failure_is_still_terminal_on_its_first_attempt(
         cohort, tmp_path, flavour):
     setup = _setup(cohort, tmp_path / flavour)
-    bad = cohort.packets[PREFIX_ROWS]["cik"]
+    bad = cohort.packets[FIRST_LIVE]["cik"]
     run = _run(cohort, tmp_path / flavour, setup,
                script=_script(cohort.packets, **{bad: {flavour: 9}}))
     assert run.result.status == "failed"
@@ -557,8 +586,8 @@ def test_the_count_retry_predicate_adds_only_the_empty_count(cohort, tmp_path):
 
 def test_a_quote_failure_is_recorded_not_retried(cohort, tmp_path):
     setup = _setup(cohort, tmp_path)
-    bad = cohort.packets[PREFIX_ROWS]["cik"]
-    payload = _v5_evidence_payload(cohort.packets[PREFIX_ROWS],
+    bad = cohort.packets[FIRST_LIVE]["cik"]
+    payload = _v5_evidence_payload(cohort.packets[FIRST_LIVE],
                                    quote="text that appears in no passage")
     run = _run(cohort, tmp_path, setup,
                script=_script(cohort.packets, **{bad: {"text": payload}}))
@@ -575,34 +604,43 @@ def test_a_quote_failure_is_recorded_not_retried(cohort, tmp_path):
 
 def test_the_empty_body_source_shape_is_accepted(cohort, tmp_path):
     setup = _setup(cohort, tmp_path)
-    prefix = lc4.load_continuation_source_v3(
+    prefix = lc5.load_continuation_source_v5(
         setup.source.dir, source_receipt_sha256=setup.source.receipt_sha256)
     assert len(prefix.entries) == PREFIX_ROWS
     assert prefix.archive_sha256 == setup.source.archive_sha256
     assert prefix.receipt["reason_code"] == "provider_error"
 
 
-def test_the_real_empty_count_source_is_accepted_when_present():
-    """The live 4,821-row source, read only, skipped when absent."""
+def test_the_real_truncated_source_is_accepted_when_present():
+    """The live 4,892-row truncated-output source, read only, skipped if absent."""
     directory = (ROOT / "data/runs/universe-screens"
-                 / "universe-high-recall-continuation-v2-20260822")
+                 / "universe-high-recall-continuation-v4-20260822")
     if not directory.is_dir():
-        pytest.skip("the live empty-count source is not present in this checkout")
+        pytest.skip("the live truncated-output source is not present in this checkout")
     receipt_sha = sha256(
         (directory / ls.FAILURE_RECEIPT_FILENAME).read_bytes()).hexdigest()
-    # ADR-121 reuses ADR-120's loader unchanged, so both accept this source.
-    prefix = lc4.load_continuation_source_v3(
+    prefix = lc5.load_continuation_source_v5(
         directory, source_receipt_sha256=receipt_sha)
     assert len(prefix.entries) == prefix.receipt["records_completed_before_failure"]
-    assert prefix.receipt["stopping_row_index"] == len(prefix.entries) + 1
-    assert lc3.load_continuation_source_v3(
-        directory, source_receipt_sha256=receipt_sha).archive_sha256 == prefix.archive_sha256
+    assert len(prefix.entries) == 4892
+    assert prefix.receipt["stopping_row_index"] == 4893
+    # the stopping row's own capture is what proves the truncation
+    evidence = prefix.stopping_truncation
+    assert evidence["finish_reason"] == "MAX_TOKENS"
+    assert evidence["candidate_token_count"] == 16384
+    assert evidence["count_attempts"] == 1 and evidence["generate_attempts"] == 1
+    assert (directory / evidence["capture_reference"]).is_file()
+    assert sha256((directory / evidence["capture_reference"]).read_bytes()
+                  ).hexdigest() == evidence["capture_sha256"]
 
-    # the ADR-119 loader still refuses it: it demands a stopping-row count body
+    # every earlier loader refuses it: they all require a stopping row that
+    # captured nothing, and this one captured the answer.
+    with pytest.raises(ls.ScreenInputError) as adr121:
+        lc4.load_continuation_source_v3(directory, source_receipt_sha256=receipt_sha)
+    assert "stop only" in str(adr121.value)
     from dynamic_ai_products import lineage_screen_continuation_v2 as adr119
-    with pytest.raises(ls.ScreenInputError) as refusal:
+    with pytest.raises(ls.ScreenInputError):
         adr119.load_continuation_source_v2(directory, source_receipt_sha256=receipt_sha)
-    assert "countTokens capture" in str(refusal.value)
 
 
 def _refuses(cohort, tmp_path, match, **setup_kwargs):
@@ -611,7 +649,7 @@ def _refuses(cohort, tmp_path, match, **setup_kwargs):
     events: list = []
     factory = _EmptyBodyFactory(_script(cohort.packets), events)
     with pytest.raises(ls.ScreenInputError, match=match):
-        lc4.run_lineage_screen_continuation_v4(
+        lc5.run_lineage_screen_continuation_v5(
             repo_root=ROOT, packet_manifest_path=cohort.manifest_path,
             selection_artifact_path=setup.selection,
             governance_root=setup.grant.root,
@@ -635,8 +673,8 @@ def test_archive_gap_reorder_and_hash_drift_are_refused(cohort, tmp_path):
                                 records_completed_before_failure=3,
                                 stopping_row_index=4,
                                 model_called_rows_attempted=4,
-                                count_attempts_made=4, provider_attempts_made=3,
-                                external_requests_made=7)})
+                                count_attempts_made=4, provider_attempts_made=4,
+                                external_requests_made=8)})
     _refuses(cohort, tmp_path / "order", "maps onto the selection in order",
              source_kwargs={"mutate_entries": lambda e: [e[1], e[0]] + e[2:]})
 
@@ -661,38 +699,79 @@ def test_receipt_counter_drift_is_refused(cohort, tmp_path):
                  model_called_rows_attempted=r["model_called_rows_attempted"] + 3)})
 
 
-def test_any_stopping_row_capture_is_refused(cohort, tmp_path):
-    """An empty-count stop persists nothing for its stopping row."""
-    _refuses(cohort, tmp_path / "count", "persisted 1 capture file",
-             source_kwargs={"stopping_captures": {"count-attempt-01.bin": b'{"totalTokens": 9}'}})
-    _refuses(cohort, tmp_path / "gen", "persisted 1 capture file",
-             source_kwargs={"stopping_captures": {"generate-attempt-01.bin": b'{"candidates": []}'}})
+def test_a_stopping_row_that_captured_no_answer_is_refused(cohort, tmp_path):
+    """A truncated answer is proven by its own captured envelope."""
+    _refuses(cohort, tmp_path / "none", "has no capture directory",
+             source_kwargs={"stopping_captures": {}})
+    _refuses(cohort, tmp_path / "countonly", "persisted no generateContent capture",
+             source_kwargs={"stopping_captures": {
+                 "count-attempt-01.bin": b'{"totalTokens": 9}'}})
+    _refuses(cohort, tmp_path / "genonly", "carries no non-empty countTokens",
+             source_kwargs={"stopping_captures": {
+                 "generate-attempt-01.bin": _truncated_envelope_bytes()}})
+    _refuses(cohort, tmp_path / "emptycount", "carries no non-empty countTokens",
+             source_kwargs={"stopping_captures": {
+                 "count-attempt-01.bin": b"",
+                 "generate-attempt-01.bin": _truncated_envelope_bytes()}})
+
+
+@pytest.mark.parametrize("label,body", [
+    ("empty", b""),
+    ("malformed", b"{not json"),
+    ("not-a-dict", b"[]"),
+    ("no-candidates", b'{"candidates": []}'),
+    ("blocked", b'{"promptFeedback": {"blockReason": "SAFETY"}, "candidates": []}'),
+    ("two-candidates", json.dumps({"candidates": [
+        {"finishReason": "MAX_TOKENS"}, {"finishReason": "MAX_TOKENS"}]}).encode()),
+    ("finished-normally", json.dumps({"candidates": [
+        {"content": {"parts": [{"text": "{}"}]}, "finishReason": "STOP"}]}).encode()),
+    ("other-abnormal", json.dumps({"candidates": [
+        {"finishReason": "SAFETY"}]}).encode()),
+])
+def test_only_a_single_max_tokens_envelope_is_a_truncation(cohort, tmp_path,
+                                                           label, body):
+    """Every other envelope shape is some other failure, and is refused."""
+    _refuses(cohort, tmp_path / label,
+             "not a single-candidate MAX_TOKENS response",
+             source_kwargs={"stopping_captures": {
+                 "count-attempt-01.bin": b'{"totalTokens": 9}',
+                 "generate-attempt-01.bin": body}})
 
 
 def test_stopping_row_counter_shape_is_refused_when_wrong(cohort, tmp_path):
-    # a generate attempt for the stopping row means it failed elsewhere
-    _refuses(cohort, tmp_path / "genattempt", "never reaches the generation",
+    """A returned answer is never retried, so the stopping row spent one of each."""
+    _refuses(cohort, tmp_path / "genattempt", "spent 2 generate attempt",
              source_kwargs={"mutate_receipt": lambda r: r.update(
                  provider_attempts_made=r["provider_attempts_made"] + 1,
                  external_requests_made=r["external_requests_made"] + 1)})
-    # more than one count attempt under the legacy shape
+    _refuses(cohort, tmp_path / "nogen", "spent 0 generate attempt",
+             source_kwargs={"mutate_receipt": lambda r: r.update(
+                 provider_attempts_made=r["provider_attempts_made"] - 1,
+                 external_requests_made=r["external_requests_made"] - 1)})
     _refuses(cohort, tmp_path / "counts", "this terminal shape spends exactly",
              source_kwargs={"mutate_receipt": lambda r: r.update(
                  count_attempts_made=r["count_attempts_made"] + 2,
                  external_requests_made=r["external_requests_made"] + 2)})
 
 
-def test_an_empty_generate_body_in_the_source_is_refused(cohort, tmp_path):
-    """A run that met both anomalies is a different, untested case."""
-    _refuses(cohort, tmp_path, "empty generate bodies",
-             source_kwargs={"mutate_receipt": lambda r: r.update(
-                 empty_generate_body_attempts=2)})
+def test_an_earlier_empty_body_recovery_does_not_disqualify_the_source(cohort,
+                                                                      tmp_path):
+    """ADR-122 drops ADR-120's zero-empty-bodies proof, deliberately.
+
+    Since ADR-119/ADR-120 an empty body is a recovered, archived row like any
+    other, and every reused row is revalidated offline regardless.
+    """
+    setup = _setup(cohort, tmp_path, source_kwargs={
+        "mutate_receipt": lambda r: r.update(empty_generate_body_attempts=2,
+                                             empty_count_body_attempts=1)})
+    run = _run(cohort, tmp_path, setup, script=_script(cohort.packets))
+    assert run.result.status == "completed", run.result.receipt
 
 
 def test_a_wrong_terminal_code_is_refused(cohort, tmp_path):
-    _refuses(cohort, tmp_path / "timeout", "continues an empty-generate-body stop only",
+    _refuses(cohort, tmp_path / "timeout", "continues a truncated-output stop only",
              source_kwargs={"detail": "Governed provider failure (provider_timeout)."})
-    _refuses(cohort, tmp_path / "breaker", "continues an empty-generate-body stop only",
+    _refuses(cohort, tmp_path / "breaker", "continues a truncated-output stop only",
              source_kwargs={"reason_code": "model_evidence_budget_exhausted",
                             "detail": "breaker exceeded"})
 
@@ -724,8 +803,8 @@ def test_the_full_cohort_closes_without_source_literals(cohort, tmp_path):
     # the production code carries no literal from any live run
     for path in ("src/dynamic_ai_products/lineage_screen_continuation_v2.py",
                  "src/dynamic_ai_products/providers/vertex_gemini_screen_v5.py",
-                 "schemas/universe_screen_continuation_authorization.v4.schema.json",
-                 "schemas/universe_screen_continuation_manifest.v4.schema.json"):
+                 "schemas/universe_screen_continuation_authorization.v5.schema.json",
+                 "schemas/universe_screen_continuation_manifest.v5.schema.json"):
         text = (ROOT / path).read_text(encoding="utf-8")
         for literal in ("4297", "2745", "7042", "3939", "3103"):
             assert literal not in text, f"{path} hard-codes {literal}"
@@ -741,7 +820,7 @@ def test_manifest_generations_and_grants_mutually_reject(cohort, tmp_path):
     for loader in (ls.require_authoritative_screen_run, ll.require_promotable_screen_run):
         with pytest.raises(ls.ScreenInputError):
             loader(run.result.run_dir)
-    lc4.require_continuation_v4_run(run.result.run_dir)
+    lc5.require_continuation_v5_run(run.result.run_dir)
 
 
 def test_the_source_run_is_never_modified(cohort, tmp_path):
@@ -766,9 +845,195 @@ def test_dry_run_and_write_once(cohort, tmp_path):
         _run(cohort, tmp_path, setup)
 
 
+# --- ADR-122: the truncated-output outcome -----------------------------------------
+
+
+def test_the_stopping_row_is_re_derived_and_never_re_sent(cohort, tmp_path):
+    """The source's answer is already on disk; a second send would invent nothing."""
+    setup = _setup(cohort, tmp_path)
+    stopping = cohort.packets[PREFIX_ROWS]
+    run = _run(cohort, tmp_path, setup)
+    assert run.result.status == "completed", run.result.receipt
+
+    records = _records(run.result)
+    assert len(records) == len(cohort.packets) + len(cohort.failures)
+    truncated = [r for r in records if r["record_kind"] == "model_output_truncated"]
+    assert len(truncated) == 1
+    row = truncated[0]
+    assert (row["cik"], row["accession"]) == (stopping["cik"], stopping["accession"])
+    # re-derived, so it cost this run no send at all
+    assert run.factory.generate_calls == len(cohort.packets) - PREFIX_ROWS - 1
+    assert run.factory.count_calls == len(cohort.packets) - PREFIX_ROWS - 1
+    assert all(e["row_ordinal"] > FIRST_LIVE for e in _ledger(run.result))
+
+    # its provenance is the source, and its evidence is the source's capture
+    assert row["row_provenance"]["origin"] == "reused_source_prefix"
+    assert row["row_provenance"]["source_run_id"] == setup.source.run_id
+    assert row["row_provenance"]["source_raw_response_id"] is None
+    evidence = row["truncation_evidence"]
+    assert evidence["reason_code"] == "max_tokens"
+    assert evidence["finish_reason"] == "MAX_TOKENS"
+    assert evidence["candidate_token_count"] == 16384
+    assert evidence["capture_sha256"] == setup.source.stopping_capture_sha256
+    # and it carries no answer of any kind
+    assert row["screen_status"] is None and row["screen_output"] is None
+    assert row["raw_response_id"] is None and row["raw_response_sha256"] is None
+    assert row["provider_attempt_telemetry"] is None
+    assert row["failure_reason_code"] == "max_tokens"
+    # the archive holds no line for it
+    archive = (run.result.run_dir / ls.RAW_RESPONSES_FILENAME).read_bytes()
+    assert archive.startswith(setup.source.archive_bytes)
+    assert stopping["accession"].encode() not in archive
+
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    counts = manifest["counts"]
+    assert counts["model_output_truncated"] == 1
+    assert counts["model_output_truncated_reused_from_source"] == 1
+    assert counts["max_model_output_truncated"] == 25
+    # the archived prefix plus the one re-derived stopping row
+    assert counts["reused_prefix_rows"] == PREFIX_ROWS + 1
+    assert manifest["truncated_output_policy"]["retried"] is False
+    assert manifest["continuation"]["first_model_called_row_ordinal"] == FIRST_LIVE + 1
+    assert all(manifest["reconciliation"].values())
+    assert len(manifest["reconciliation"]) >= 20
+    _assert_no_google()
+
+
+def test_a_live_truncated_answer_is_recorded_once_and_not_retried(cohort, tmp_path):
+    """The model returned. Repeating the identical request invents nothing."""
+    setup = _setup(cohort, tmp_path)
+    doomed = cohort.packets[FIRST_LIVE]["cik"]
+    run = _run(cohort, tmp_path, setup,
+               script=_script(cohort.packets, **{doomed: {"truncated": 9}}))
+    assert run.result.status == "completed", run.result.receipt
+    assert run.waits == [], "a returned answer is never retried"
+
+    records = _records(run.result)
+    truncated = [r for r in records if r["record_kind"] == "model_output_truncated"]
+    # the re-derived stopping row, plus this live one
+    assert len(truncated) == 2
+    live = [r for r in truncated if r["cik"] == doomed]
+    assert len(live) == 1
+    row = live[0]
+    assert row["row_provenance"]["origin"] == "model_called"
+    assert row["truncation_evidence"]["generate_attempts"] == 1
+    assert row["truncation_evidence"]["finish_reason"] == "MAX_TOKENS"
+    assert row["screen_status"] is None and row["provider_attempt_telemetry"] is None
+    # its captured envelope is addressable from the run it happened in
+    capture = run.result.run_dir / row["truncation_evidence"]["capture_reference"]
+    assert capture.is_file()
+    assert sha256(capture.read_bytes()).hexdigest() == \
+        row["truncation_evidence"]["capture_sha256"]
+
+    # exactly one generate for that row: no retry chain
+    ledger = [e for e in _ledger(run.result)
+              if e["row_ordinal"] == FIRST_LIVE + 1
+              and e["operation_label"] == "generate_content"]
+    assert len(ledger) == 1
+    # and it is in no classifier call list and no status count
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    screened = [r for r in records if r["record_kind"] == "screened_packet"]
+    assert sum(manifest["counts"]["by_screen_status"].values()) == len(screened)
+    assert doomed not in {r["cik"] for r in records if r["screen_status"] is not None}
+    assert manifest["counts"]["model_output_truncated"] == 2
+    assert manifest["counts"]["model_output_truncated_reused_from_source"] == 1
+    assert all(manifest["reconciliation"].values())
+
+
+def test_the_row_after_a_truncated_one_is_screened_normally(cohort, tmp_path):
+    setup = _setup(cohort, tmp_path)
+    doomed = cohort.packets[FIRST_LIVE]["cik"]
+    run = _run(cohort, tmp_path, setup,
+               script=_script(cohort.packets, **{doomed: {"truncated": 9}}))
+    records = _records(run.result)
+    later = [r for r in records if r["cik"] == cohort.packets[FIRST_LIVE + 1]["cik"]]
+    assert later and later[0]["record_kind"] == "screened_packet"
+
+
+def test_twenty_five_truncated_complete_and_the_twenty_sixth_stops(wide, tmp_path):
+    """A model truncating that often is systematic, not a stray long answer."""
+    # the re-derived stopping row is one of the twenty-five
+    doomed = {p["cik"]: {"truncated": 9} for p in wide.packets[FIRST_LIVE:]}
+
+    setup = _setup(wide, tmp_path / "at25")
+    ok = _run(wide, tmp_path / "at25", setup,
+              script=_script(wide.packets, **dict(list(doomed.items())[:24])))
+    assert ok.result.status == "completed", ok.result.receipt
+    manifest = json.loads(ok.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["counts"]["model_output_truncated"] == 25
+    assert manifest["counts"]["max_model_output_truncated"] == 25
+    assert all(manifest["reconciliation"].values())
+
+    setup2 = _setup(wide, tmp_path / "at26")
+    stopped = _run(wide, tmp_path / "at26", setup2,
+                   script=_script(wide.packets, **dict(list(doomed.items())[:25])))
+    assert stopped.result.status == "failed"
+    receipt = stopped.result.receipt
+    assert receipt["reason_code"] == "model_output_truncated_budget_exhausted"
+    assert receipt["model_output_truncated_rows"] == 25
+    assert receipt["max_model_output_truncated"] == 25
+    assert not (stopped.result.run_dir / lc5.CONTINUATION_V5_MANIFEST_FILENAME).exists()
+    assert not (stopped.result.run_dir / lc5.CONTINUATION_V5_RECORDS_FILENAME).exists()
+
+
+@pytest.mark.parametrize("flavour", ["malformed", "blocked"])
+def test_no_other_content_failure_becomes_truncated(cohort, tmp_path, flavour):
+    """Only a MAX_TOKENS envelope is a truncation; everything else is what it was."""
+    setup = _setup(cohort, tmp_path / flavour)
+    bad = cohort.packets[FIRST_LIVE]["cik"]
+    run = _run(cohort, tmp_path / flavour, setup,
+               script=_script(cohort.packets, **{bad: {flavour: 9}}))
+    assert run.result.status == "failed"
+    assert run.result.receipt["reason_code"] != "max_tokens"
+    assert not (run.result.run_dir / lc5.CONTINUATION_V5_MANIFEST_FILENAME).exists()
+
+
+def test_an_exhausted_empty_body_row_stays_provider_unresolved(cohort, tmp_path):
+    """ADR-121's outcome keeps its own kind: nothing returned is not truncation."""
+    setup = _setup(cohort, tmp_path)
+    bad = cohort.packets[FIRST_LIVE]["cik"]
+    run = _run(cohort, tmp_path, setup,
+               script=_script(cohort.packets, **{bad: {"empty_bodies": 9}}))
+    assert run.result.status == "completed", run.result.receipt
+    kinds = {r["cik"]: r["record_kind"] for r in _records(run.result)}
+    assert kinds[bad] == "provider_unresolved"
+
+
+def test_a_quote_failure_never_becomes_truncated(cohort, tmp_path):
+    setup = _setup(cohort, tmp_path)
+    bad = cohort.packets[FIRST_LIVE]["cik"]
+    payload = _v5_evidence_payload(cohort.packets[FIRST_LIVE],
+                                   quote="text that appears in no passage")
+    run = _run(cohort, tmp_path, setup,
+               script=_script(cohort.packets, **{bad: {"text": payload}}))
+    records = _records(run.result)
+    assert [r["record_kind"] for r in records if r["cik"] == bad] \
+        == ["model_evidence_unverified"]
+    truncated = [r for r in records if r["record_kind"] == "model_output_truncated"]
+    assert len(truncated) == 1 and truncated[0]["cik"] != bad
+
+
+def test_the_five_populations_close_over_the_cohort(cohort, tmp_path):
+    setup = _setup(cohort, tmp_path)
+    doomed = cohort.packets[FIRST_LIVE]["cik"]
+    run = _run(cohort, tmp_path, setup,
+               script=_script(cohort.packets, **{doomed: {"quota_failures": 99}}))
+    c = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))["counts"]
+    assert (c["screened_packets"] + c["model_evidence_unverified"]
+            + c["insufficient_evidence"] + c["provider_unresolved"]
+            + c["model_output_truncated"] == c["planned_rows"])
+    assert c["planned_rows"] == len(cohort.packets) + len(cohort.failures)
+
+
 def test_predecessors_are_byte_identical():
-    """ADR-119 adds beside; it moves nothing that already shipped."""
+    """ADR-122 adds beside; it moves nothing that already shipped."""
     pins = {
+        "src/dynamic_ai_products/lineage_screen_continuation_v2.py":
+            "a9d916c417bc28b36bb3a6de00c0a2abb27ba23406e368fc718aa2278f0cfb84",
+        "src/dynamic_ai_products/lineage_screen_continuation_v3.py":
+            "52a21d20749ee7c34a61d33eedd4c858e5475faddcf77aca7983f36b2739a37e",
+        "src/dynamic_ai_products/lineage_screen_continuation_v4.py":
+            "727986ddcc84e62a4ae7aa9548c65fba6802cedf7f5db4177e7fd8014f19eb1f",
         "src/dynamic_ai_products/lineage_screen_live.py":
             "795dddb081629ddba184f52070011f1c42a61a669698f3643694a7cceb73c2c2",
         "src/dynamic_ai_products/lineage_screen_live_v3.py":
@@ -802,8 +1067,8 @@ def test_the_v3_and_v4_routes_keep_their_policies():
     # ADR-119 introduced no new schedule and no new budget.
     # ADR-120 introduces no new schedule and no new budget: both anomalies are
     # answered by the ceilings already in force.
-    assert lc4.EMPTY_COUNT_TERMINAL_REASON == "empty_count_body_exhausted"
-    assert lc4.EMPTY_GENERATE_TERMINAL_REASON == "empty_generate_body_exhausted"
+    assert lc5.EMPTY_COUNT_TERMINAL_REASON == "empty_count_body_exhausted"
+    assert lc5.EMPTY_GENERATE_TERMINAL_REASON == "empty_generate_body_exhausted"
     assert AUTH_V2_SCHEMA["properties"][
         "max_empty_generate_body_retries_per_row"]["const"] == 5
     assert AUTH_V2_SCHEMA["properties"][
@@ -829,9 +1094,9 @@ def test_fresh_process_never_imports_google(tmp_path):
     script = f"""
 import sys
 sys.path.insert(0, {str(ROOT / "src")!r})
-from dynamic_ai_products import lineage_screen_continuation_v4 as lc4
+from dynamic_ai_products import lineage_screen_continuation_v5 as lc5
 try:
-    lc4.load_continuation_source_v3({str(tmp_path / "missing")!r},
+    lc5.load_continuation_source_v5({str(tmp_path / "missing")!r},
                                     source_receipt_sha256="0" * 64)
 except Exception:
     pass
@@ -847,9 +1112,9 @@ def _cli(*args):
                           capture_output=True, text=True)
 
 
-def test_cli_v4_mode_gating(cohort, tmp_path):
+def test_cli_v5_mode_gating(cohort, tmp_path):
     setup = _setup(cohort, tmp_path)
-    done = _cli("--mode", "screen-universe-lineage-continuation-v4",
+    done = _cli("--mode", "screen-universe-lineage-continuation-v5",
                 "--packet-manifest", str(cohort.manifest_path),
                 "--selection-artifact", str(setup.selection),
                 "--governance-root", str(setup.grant.root),
@@ -862,11 +1127,11 @@ def test_cli_v4_mode_gating(cohort, tmp_path):
     assert json.loads(done.stdout)["status"] == "dry_run"
     assert not (tmp_path / "cli").exists()
 
-    missing = _cli("--mode", "screen-universe-lineage-continuation-v4",
+    missing = _cli("--mode", "screen-universe-lineage-continuation-v5",
                    "--output-dir", str(tmp_path), "--run-id", "r")
     assert missing.returncode == 2 and "--source-run-dir" in missing.stderr
     for flag in ("--logical-request-cap", "--selection-seed"):
-        bad = _cli("--mode", "screen-universe-lineage-continuation-v4",
+        bad = _cli("--mode", "screen-universe-lineage-continuation-v5",
                    "--output-dir", str(tmp_path), "--run-id", "r", flag, "3")
         assert bad.returncode == 2 and "does not accept" in bad.stderr
 
@@ -890,7 +1155,7 @@ def wide(tmp_path_factory):
 
 def test_an_exhausted_quota_row_is_recorded_and_later_rows_continue(cohort, tmp_path):
     setup = _setup(cohort, tmp_path)
-    doomed = cohort.packets[PREFIX_ROWS]["cik"]
+    doomed = cohort.packets[FIRST_LIVE]["cik"]
     run = _run(cohort, tmp_path, setup,
                script=_script(cohort.packets, **{doomed: {"quota_failures": 99}}))
     result = run.result
@@ -904,12 +1169,12 @@ def test_an_exhausted_quota_row_is_recorded_and_later_rows_continue(cohort, tmp_
     assert unresolved[0]["failure_reason_code"] == "vertex_quota_exhausted"
     assert unresolved[0]["provider_attempt_telemetry"]["generate_attempts"] == 5
     # the row after it was still screened
-    later = [r for r in records if r["cik"] == cohort.packets[PREFIX_ROWS + 1]["cik"]]
+    later = [r for r in records if r["cik"] == cohort.packets[FIRST_LIVE + 1]["cik"]]
     assert later and later[0]["record_kind"] == "screened_packet"
 
 
 def test_twenty_five_unresolved_complete_and_the_twenty_sixth_stops(wide, tmp_path):
-    doomed = {p["cik"]: {"quota_failures": 99} for p in wide.packets[PREFIX_ROWS:]}
+    doomed = {p["cik"]: {"quota_failures": 99} for p in wide.packets[FIRST_LIVE:]}
 
     # 25 unresolved rows: the run may finish authoritatively
     setup = _setup(wide, tmp_path / "at25")
@@ -930,8 +1195,8 @@ def test_twenty_five_unresolved_complete_and_the_twenty_sixth_stops(wide, tmp_pa
     assert receipt["reason_code"] == "provider_unresolved_budget_exhausted"
     assert receipt["provider_unresolved_rows"] == 25
     assert receipt["max_provider_unresolved"] == 25
-    assert not (stopped.result.run_dir / lc4.CONTINUATION_V4_MANIFEST_FILENAME).exists()
-    assert not (stopped.result.run_dir / lc4.CONTINUATION_V4_RECORDS_FILENAME).exists()
+    assert not (stopped.result.run_dir / lc5.CONTINUATION_V5_MANIFEST_FILENAME).exists()
+    assert not (stopped.result.run_dir / lc5.CONTINUATION_V5_RECORDS_FILENAME).exists()
     # no send happened for any row after the stop
     assert stopped.factory.generate_calls <= 26 * 5
 
@@ -943,20 +1208,20 @@ def test_twenty_five_unresolved_complete_and_the_twenty_sixth_stops(wide, tmp_pa
 def test_content_failures_can_never_become_provider_unresolved(
         cohort, tmp_path, flavour, expected):
     setup = _setup(cohort, tmp_path / flavour)
-    bad = cohort.packets[PREFIX_ROWS]["cik"]
+    bad = cohort.packets[FIRST_LIVE]["cik"]
     run = _run(cohort, tmp_path / flavour, setup,
                script=_script(cohort.packets, **{bad: {flavour: 9}}))
     assert run.result.status == "failed"
     assert run.result.receipt["reason_code"] == expected
     assert run.factory.generate_calls == 1, "a returned answer is never retried"
-    assert not (run.result.run_dir / lc4.CONTINUATION_V4_MANIFEST_FILENAME).exists()
+    assert not (run.result.run_dir / lc5.CONTINUATION_V5_MANIFEST_FILENAME).exists()
 
 
 def test_a_quote_failure_is_still_model_evidence_unverified(cohort, tmp_path):
     """Evidence failures keep their own kind and never become unresolved."""
     setup = _setup(cohort, tmp_path)
-    bad = cohort.packets[PREFIX_ROWS]["cik"]
-    payload = _v5_evidence_payload(cohort.packets[PREFIX_ROWS],
+    bad = cohort.packets[FIRST_LIVE]["cik"]
+    payload = _v5_evidence_payload(cohort.packets[FIRST_LIVE],
                                    quote="text that appears in no passage")
     run = _run(cohort, tmp_path, setup,
                script=_script(cohort.packets, **{bad: {"text": payload}}))
@@ -993,23 +1258,23 @@ def test_the_classifier_requires_an_exhausted_provider_cause():
 
     quota = ProviderError("vertex_quota_exhausted", attempt_count=5)
     # exhausted generate path -> unresolved
-    assert lc4._classify_provider_unresolved(
+    assert lc5._classify_provider_unresolved(
         terminal(quota), spent(counts=1, generates=5)) is not None
     # the same error after ONE attempt is not "unresolved after trying"
-    assert lc4._classify_provider_unresolved(
+    assert lc5._classify_provider_unresolved(
         terminal(quota), spent(counts=1, generates=1)) is None
     # a capture failure is never a provider-unresolved row
-    assert lc4._classify_provider_unresolved(
+    assert lc5._classify_provider_unresolved(
         terminal(CaptureSinkError(operation_label="generate_content",
                                   attempt_ordinal=1,
                                   persistence_reason_code="write_error",
                                   provider_reason_code=None)),
         spent(counts=1, generates=5)) is None
     # no cause at all (an envelope failure) is never unresolved
-    assert lc4._classify_provider_unresolved(
+    assert lc5._classify_provider_unresolved(
         terminal(None), spent(counts=1, generates=5)) is None
     # a reason outside the closed set is never unresolved
-    assert lc4._classify_provider_unresolved(
+    assert lc5._classify_provider_unresolved(
         terminal(ProviderError("vertex_permission_denied")),
         spent(counts=1, generates=5)) is None
 
@@ -1017,7 +1282,7 @@ def test_the_classifier_requires_an_exhausted_provider_cause():
 def test_unresolved_rows_are_excluded_from_status_counts_and_call_lists(
         cohort, tmp_path):
     setup = _setup(cohort, tmp_path)
-    doomed = cohort.packets[PREFIX_ROWS]["cik"]
+    doomed = cohort.packets[FIRST_LIVE]["cik"]
     run = _run(cohort, tmp_path, setup,
                script=_script(cohort.packets, **{doomed: {"quota_failures": 99}}))
     manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
@@ -1032,8 +1297,8 @@ def test_unresolved_rows_are_excluded_from_status_counts_and_call_lists(
     # has no evidence to classify, so it cannot appear in one
     call_list = [r for r in records if r["screen_status"] is not None]
     assert {r["cik"] for r in unresolved}.isdisjoint({r["cik"] for r in call_list})
-    # and the four populations close over the cohort
+    # and the five populations close over the cohort
     c = manifest["counts"]
     assert (c["screened_packets"] + c["model_evidence_unverified"]
             + c["insufficient_evidence"] + c["provider_unresolved"]
-            == c["planned_rows"])
+            + c["model_output_truncated"] == c["planned_rows"])

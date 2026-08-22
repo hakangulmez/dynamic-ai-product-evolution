@@ -8401,6 +8401,80 @@ registry/manifest guards, and the absolute registry literals in seven screen
 suites. No new provider module is added: the classification is a runner
 decision, so the connector line is untouched.
 
+## ADR-122 — A row the model never finished is an outcome, not a stop
+
+**Status.** Accepted, fixture-first. No live model call, no `data/runs` write,
+no governance materialization, and no change to any existing connector,
+runner, prompt, released schema or failed run.
+
+**Measured basis.** The fifth full-cohort attempt stopped at row 4,893 of
+7,042, and it was the first stop that was not a transport problem. The request
+succeeded, the envelope was well-formed, and it carried exactly one candidate
+with `finishReason: MAX_TOKENS` — 16,384 candidate tokens and 72,928
+characters of unfinished JSON. ADR-121's tolerance correctly did not apply:
+its classification is structural, and an envelope failure carries no
+`ProviderError` cause. The transport worked; the model simply did not finish.
+
+**Decision.** A fifth row outcome, `MODEL_OUTPUT_TRUNCATED`, for exactly one
+condition: a generation returning a single candidate whose `finishReason` is
+`MAX_TOKENS`. The row keeps its identity, the closed reason `max_tokens`, its
+attempt counts, and the reference and digest of the captured envelope that
+proves it. It carries no status, no output, no evidence, no archetypes and no
+archived response line, because there is no finished answer to record. It is
+excluded from classifier call lists and from every valid-status count.
+
+**A truncated answer is never re-sent.** The model returned. Repeating the
+identical request under the identical `max_output_tokens` invents nothing and
+costs a second generation. `max_output_tokens` is unchanged and the client
+contract is untouched: raising the ceiling is a separate decision with its own
+cost and its own evidence, and it is not taken here.
+
+**The stopping row is re-derived, not re-called.** The failed run's own
+capture is hash-verified evidence of what the model returned, so the successor
+reconstructs row 4,893 from that capture and issues live calls only for rows
+4,894 through 7,042 — 2,149 rows rather than 2,150. Reusing 4,892 archived
+rows and re-deriving one costs no send at all, and every reused row is still
+revalidated offline through the unchanged strict validator.
+
+**The source proof is inverted, deliberately.** Every earlier continuation
+source proved itself by what its stopping row did *not* capture. This one
+proves itself by what it did: a non-empty countTokens capture, a
+generateContent capture whose bytes parse to exactly one `MAX_TOKENS`
+candidate, a terminal detail naming that finish reason, and counters showing
+exactly one count and one generate attempt for the stopping row. A malformed,
+blocked, multi-candidate or normally finished envelope is not a truncation and
+is refused before a run directory exists. ADR-120's "zero empty generate
+bodies anywhere in the run" proof is *not* carried forward: since ADR-119 and
+ADR-120 an empty body is a recovered, archived row like any other, and every
+reused row is revalidated regardless, so requiring zero would refuse a sound
+source for a condition its own prefix already answers.
+
+**The tolerance is bounded and authorized.** The grant must pin
+`max_model_output_truncated` at 25, alongside the unchanged
+`max_provider_unresolved` of 25 and `max_model_evidence_unverified` of 900.
+The twenty-sixth truncated row stops the run fail-closed with no manifest. The
+manifest records the count, how many were re-derived from the source, the
+threshold the run finished under, and that no truncated row was retried; the
+reconciliation proves the cohort closes over all five populations: screened,
+model-evidence-unverified, insufficient-evidence, provider-unresolved and
+model-output-truncated.
+
+**Honest limits.** This records the loss; it does not reduce it. A truncated
+row is a row about which nothing is known, and it is a *model* condition
+rather than a provider one — the same packet may truncate again on any later
+run. Whether 16,384 output tokens is the right ceiling for the densest packets
+in this frame is the question this stop actually raises, and it is not
+answered here; the first completed run should be used to size it. Nor is the
+count of one a rate: a single truncated row in 4,893 says almost nothing about
+what the remaining 2,149 will do.
+
+**Scope.** Twenty-two paths: the continuation successor, three schemas, its
+fixture-only test module, the CLI mode, the registry (0.60.0 to 0.61.0, 127 to
+130), this decision log, `REPO_MANIFEST.md` (871 to 876), the five
+registry/manifest guards, and the absolute registry literals in eight screen
+suites. No new provider module is added: the classification is a runner
+decision, so the connector line is untouched.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only
