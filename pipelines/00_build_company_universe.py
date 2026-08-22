@@ -738,6 +738,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "screen-universe-lineage-continuation-v3",
                          "screen-universe-lineage-continuation-v4",
                          "screen-universe-lineage-continuation-v5",
+                         "screen-universe-unverified-repair",
                          "screen-universe-lineage-diagnostic",
                          "screen-universe-lineage-diagnostic-repair",
                          "select-screen-repair-rows",
@@ -767,6 +768,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "screen-universe-lineage-continuation-v3",
                          "screen-universe-lineage-continuation-v4",
                          "screen-universe-lineage-continuation-v5",
+                         "screen-universe-unverified-repair",
                          "screen-universe-lineage-diagnostic",
                          "screen-universe-lineage-diagnostic-repair"):
         screen_offenders += _present((

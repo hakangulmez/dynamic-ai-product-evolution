@@ -566,6 +566,117 @@ def test_a_foreign_grant_is_refused(source, tmp_path):
         _run(source, selection, grant, tmp_path)
 
 
+# --- the CLI boundary -------------------------------------------------------------
+
+
+def _cli_module():
+    """Import the pipeline CLI once, by path, without executing main()."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "adr123_cli", ROOT / "pipelines" / "00_build_company_universe.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _repair_argv(tmp_path):
+    return [
+        "--mode", "screen-universe-unverified-repair",
+        "--packet-manifest", str(tmp_path / "packets.json"),
+        "--selection-artifact", str(tmp_path / "selection.json"),
+        "--source-screen-manifest", str(tmp_path / "source.json"),
+        "--governance-root", str(tmp_path / "gov"),
+        "--screen-authorization", "screen_repair_authorization.json",
+        "--screen-authorization-sha256", "0" * 64,
+        "--output-dir", str(tmp_path / "out"),
+        "--run-id", "cli-gating-fixture",
+    ]
+
+
+def test_the_repair_mode_accepts_its_five_screen_flags(tmp_path):
+    """ADR-123 bugfix: the mode was unreachable with the flags it requires.
+
+    The allow-lists governing --packet-manifest and the four
+    selection/governance flags did not name this mode, so every invocation was
+    rejected before preflight. Nothing downstream runs here: only the argument
+    gate is exercised.
+    """
+    cli = _cli_module()
+    args = cli.build_parser().parse_args(_repair_argv(tmp_path))
+    assert cli._reject_cross_mode_flags(args) is None
+    _assert_no_google()
+
+
+@pytest.mark.parametrize("flag", [
+    "--packet-manifest", "--selection-artifact", "--governance-root",
+    "--screen-authorization", "--screen-authorization-sha256",
+])
+def test_each_required_repair_flag_is_individually_accepted(tmp_path, flag):
+    """Each of the five is separately proven, so one allow-list cannot regress."""
+    cli = _cli_module()
+    argv = _repair_argv(tmp_path)
+    args = cli.build_parser().parse_args(argv)
+    verdict = cli._reject_cross_mode_flags(args)
+    assert verdict is None, verdict
+    assert flag not in (verdict or "")
+
+
+def test_the_repair_mode_still_requires_all_five(tmp_path):
+    """Accepting the flags must not make them optional."""
+    cli = _cli_module()
+    argv = _repair_argv(tmp_path)
+    index = argv.index("--governance-root")
+    del argv[index:index + 2]
+    args = cli.build_parser().parse_args(argv)
+    verdict = cli._reject_cross_mode_flags(args)
+    assert verdict is not None and "--governance-root" in verdict
+
+
+def test_the_selection_mode_still_rejects_the_packet_manifest(tmp_path):
+    """The builder derives from the source run; it consumes no packet cohort."""
+    cli = _cli_module()
+    args = cli.build_parser().parse_args([
+        "--mode", "select-screen-unverified-repair-rows",
+        "--source-screen-manifest", str(tmp_path / "source.json"),
+        "--packet-manifest", str(tmp_path / "packets.json"),
+        "--output-dir", str(tmp_path / "out"),
+        "--run-id", "cli-gating-fixture",
+    ])
+    verdict = cli._reject_cross_mode_flags(args)
+    assert verdict is not None and "--packet-manifest" in verdict
+
+
+def test_the_repair_cli_reaches_the_runner_without_touching_the_provider(
+        tmp_path, monkeypatch):
+    """The CLI hands off to the runner and nothing else happens.
+
+    The runner is replaced at the CLI's own seam, so no preflight, no write, no
+    SDK import and no Vertex call can occur; what is proven is that the
+    arguments now arrive at the boundary they were being rejected before.
+    """
+    cli = _cli_module()
+    for name in ("packets.json", "selection.json", "source.json"):
+        (tmp_path / name).write_text("{}")
+    (tmp_path / "gov").mkdir()
+    seen = {}
+
+    def _stub(**kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(
+            run_id=kwargs["run_id"], dry_run=False, status="completed",
+            run_dir=None, counts={}, request_accounting={}, reconciliation={},
+            manifest_path=None, failure_receipt_path=None, receipt=None)
+
+    monkeypatch.setattr(cli, "run_lineage_screen_repair", _stub)
+    assert cli.main(_repair_argv(tmp_path)) == 0
+    assert seen["run_id"] == "cli-gating-fixture"
+    assert seen["authorization_reference"] == "screen_repair_authorization.json"
+    assert seen["authorization_sha256"] == "0" * 64
+    assert seen["dry_run"] is False
+    assert Path(seen["governance_root"]).name == "gov"
+    _assert_no_google()
+
+
 def test_predecessors_are_byte_identical():
     """ADR-123 adds beside; it moves nothing that already shipped."""
     pins = {
