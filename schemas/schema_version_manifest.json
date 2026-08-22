@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.61.0",
+  "manifest_version": "0.62.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -125,10 +125,14 @@
     "universe_screen_record_v3": "0.3.0",
     "universe_screen_record_v4": "0.4.0",
     "universe_screen_record_v5": "0.5.0",
+    "universe_screen_record_v6": "0.6.0",
     "universe_screen_diagnostic_record": "0.1.0",
     "universe_screen_diagnostic_manifest": "0.1.0",
     "universe_screen_diagnostic_authorization": "0.1.0",
     "universe_screen_diagnostic_repair_selection": "0.1.0",
+    "universe_screen_repair_authorization": "0.1.0",
+    "universe_screen_repair_manifest": "0.1.0",
+    "universe_screen_repair_selection": "0.1.0",
     "universe_screen_diagnostic_repair_authorization": "0.1.0",
     "universe_screen_diagnostic_repair_manifest": "0.1.0"
   }

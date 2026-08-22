@@ -8475,6 +8475,85 @@ registry/manifest guards, and the absolute registry literals in eight screen
 suites. No new provider module is added: the classification is a runner
 decision, so the connector line is untouched.
 
+## ADR-123 — An unverified row is re-asked, never edited
+
+**Status.** Accepted, fixture-first. No live model call, no `data/runs` write,
+no governance materialization, and no change to any existing prompt, runner,
+validator, connector, retry policy or promotion loader.
+
+**Measured basis.** The first complete full-cohort screen
+(`universe-high-recall-continuation-v5b-20260822`, 6,467 screened rows) left
+**574** rows `model_evidence_unverified`: 570 `quote_resolution_failure`, three
+`adapter_rejection` and one `invalid_model_json`. Replaying the committed
+resolver and the unchanged strict validator offline over the archived bytes
+reproduces all 574 exactly, with zero rows revalidating clean, so the
+population is a property of the evidence on disk rather than of the run.
+Sub-classified at row level: **451** rows contain at least one quote that
+appears verbatim in no passage of their packet, and **119** cite a passage that
+does not contain the quote while another passage in the same packet does.
+
+**Decision.** Every unverified row is re-asked. The 119 wrong-passage rows are
+**not** repaired by re-attribution, although they could be closed with no model
+call: substituting a passage manufactures an attribution no model ever made,
+and repairing model output after the fact is what this project forbids. They
+are recorded as measured evidence of a prompt defect and re-asked like the rest.
+
+**The selection is derived and unfiltered.** Population: every
+`model_evidence_unverified` record, ascending by source row ordinal, under
+`unverified_rows_ascending_ordinal@1`. No status-based filter is applied, and
+this is a substantive choice rather than a simplification: the claimed status
+inside a rejected payload is an assertion that failed validation, and letting
+it choose which rows get a second chance would make selection depend on the
+outcome being measured. It would also bias the result — the unverified rows
+claim `LIKELY_ELIGIBLE` at 54.2% against the validated cohort's 44.4%.
+
+**A repair is a fresh observation.** The prompt receives the packet and nothing
+else: no earlier status, quote, `passage_ref`, failure reason, or retry
+identity. The prompt's own title was changed from a "repair" wording during
+implementation for exactly this reason — the model must not learn that the row
+was screened before.
+
+**A narrow prompt successor.** `universe_high_recall_screen_repair.v1.md`
+differs from the committed V5 screen prompt in exactly two places: a five-step
+ordering requiring the model to find the span first and read `passage_ref` off
+the body it copied from, and a sentence making omission the outcome when no
+contiguous span exists. Every other section is byte-identical, asserted
+section-by-section, along with the status vocabulary, the closed archetype list
+in order, the JSON output block and the placeholders. The grant pins the repair
+prompt's digest; the manifest records the V5 prompt's digest beside it.
+
+**Scope stops at the measurement.** ADR-123 ends with a completed,
+structurally non-promotable repair run. `promotable` is false in both grant and
+manifest, the outputs carry repair-only filenames, and the authoritative,
+promotion, diagnostic, diagnostic-repair and continuation-v5 loaders all refuse
+the directory. Reconciliation into a SCREEN release is a separate ADR taken
+after this measurement is read.
+
+**One tolerance, and no others.** A row failing validation again stays
+`model_evidence_unverified` up to the grant's `max_repair_unverified`; above it
+the run stops fail-closed. Provider failures are deliberately **not** tolerated
+here: ADR-121's and ADR-122's outcomes exist because losing a cohort run costs
+thousands of rows, and a 574-row repair is cheaper to re-authorize than to
+absorb. Importing those tolerances would widen thresholds this ADR did not
+measure.
+
+**Honest limits.** ADR-114 already strengthened copy discipline, and the
+unverified rate rose afterwards: 3% on the 100-row canary, 7.5% at 3,939 rows,
+8.2% across the full cohort. 451 of 570 failures are the model rewriting text
+it was told to copy — the class a prompt instruction has already failed to fix
+once. This ADR is a measurement of whether prompt strengthening moves that
+rate, not a repair expected to recover most of the 574. A separate observation,
+deliberately left unaddressed: the three `adapter_rejection` rows put the
+archetype `HARDWARE_SOFTWARE_SYSTEM` into `screen_status`, which the approved
+diff does not cover and which no prompt change here attempts to fix.
+
+**Scope.** Twenty-six paths: the repair prompt successor, four schemas, the
+repair module, two fixture-only test modules, two CLI modes, the registry
+(0.61.0 to 0.62.0, 130 to 134), this decision log, `REPO_MANIFEST.md` (876 to
+884), the five registry/manifest guards, and the absolute registry literals in
+nine screen suites. No new provider module and no prompt edit: the V5 screen
+prompt is byte-identical and SHA-pinned in the new suite.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only

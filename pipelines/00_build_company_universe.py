@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Thirty-two mutually exclusive modes, selected by ``--mode`` (default
+Thirty-four mutually exclusive modes, selected by ``--mode`` (default
 ``sentinel`` so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -133,6 +133,16 @@ Thirty-two mutually exclusive modes, selected by ``--mode`` (default
   tolerance is 25 rows and the twenty-sixth stops the run fail-closed. Content,
   evidence, capture, governance and budget failures remain run-fatal and can
   never become provider-unresolved.
+- ``select-screen-unverified-repair-rows`` derives, from one completed
+  continuation-v5 screen, the rows whose evidence never verified. The
+  population is every ``model_evidence_unverified`` record, ascending by source
+  row ordinal, under the closed rule ``unverified_rows_ascending_ordinal@1``
+  and with no status-based filter; the artifact is written write-once and no
+  model is called.
+- ``screen-universe-unverified-repair`` re-asks exactly those rows under the
+  narrow evidence-binding prompt successor. Each row is screened afresh from
+  its packet: no earlier status, quote, reference or failure reason reaches the
+  model. The run is structurally non-promotable and produces no release.
 - ``screen-universe-lineage-continuation-v5`` adds a bounded, visible
   ``MODEL_OUTPUT_TRUNCATED`` row outcome (ADR-122). A generation that returns
   one candidate with ``finishReason: MAX_TOKENS`` produced a well-formed
@@ -310,6 +320,11 @@ from dynamic_ai_products.lineage_screen_continuation_v3 import (  # noqa: E402
 from dynamic_ai_products.lineage_screen_continuation_v4 import (  # noqa: E402
     run_lineage_screen_continuation_v4,
 )
+from dynamic_ai_products.lineage_screen_repair import (  # noqa: E402
+    REPAIR_SELECTION_FILENAME,
+    build_repair_selection as build_unverified_repair_selection,
+    run_lineage_screen_repair,
+)
 from dynamic_ai_products.lineage_screen_continuation_v5 import (  # noqa: E402
     run_lineage_screen_continuation_v5,
 )
@@ -351,6 +366,8 @@ def build_parser() -> argparse.ArgumentParser:
                  "screen-universe-lineage-diagnostic-repair",
                  "select-screen-repair-rows",
                  "select-screen-rows",
+                 "select-screen-unverified-repair-rows",
+                 "screen-universe-unverified-repair",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
                  "aggregate-acquisition-lineage"],
@@ -584,6 +601,13 @@ def build_parser() -> argparse.ArgumentParser:
              "which failure is being continued.",
     )
     parser.add_argument(
+        "--source-screen-manifest", default=None,
+        help="Unverified-repair modes only: the completed source screen's "
+             "universe_screen_continuation_v5_manifest.json. Its hash-bound "
+             "records are the sole population the repair rows are derived "
+             "from, and the runner re-derives them from those bytes.",
+    )
+    parser.add_argument(
         "--source-diagnostic-manifest", default=None,
         help="Select-screen-repair-rows mode only: the completed source "
              "diagnostic run's universe_screen_diagnostic_manifest.json. Its "
@@ -758,6 +782,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
              args.source_diagnostic_manifest),
         ))
     if args.mode not in ("screen-universe-lineage-continuation",
+                         "screen-universe-unverified-repair",
+                         "select-screen-unverified-repair-rows",
                          "screen-universe-lineage-continuation-v2",
                          "screen-universe-lineage-continuation-v3",
                          "screen-universe-lineage-continuation-v4",
@@ -1233,6 +1259,61 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         if missing:
             return (
                 "screen-universe-lineage-diagnostic-repair mode requires: "
+                f"{', '.join(missing)}"
+            )
+        return None
+
+    if args.mode == "select-screen-unverified-repair-rows":
+        offending = _present(
+            frame_flags + acquire_flags + dera_flags
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+            + (("--input", args.input),)
+            + (("--seed", args.seed),)
+            + (("--provider", args.provider),)
+        )
+        if offending:
+            return (
+                "select-screen-unverified-repair-rows mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--source-screen-manifest", args.source_screen_manifest),
+            ("--output-dir", args.output_dir),
+            ("--run-id", args.run_id),
+        ))
+        if missing:
+            return (
+                "select-screen-unverified-repair-rows mode requires: "
+                f"{', '.join(missing)}"
+            )
+        return None
+
+    if args.mode == "screen-universe-unverified-repair":
+        offending = _present(
+            frame_flags + acquire_flags + dera_flags
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+            + (("--input", args.input),)
+            + (("--seed", args.seed),)
+            + (("--provider", args.provider),)
+        )
+        if offending:
+            return (
+                "screen-universe-unverified-repair mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--packet-manifest", args.packet_manifest),
+            ("--selection-artifact", args.selection_artifact),
+            ("--source-screen-manifest", args.source_screen_manifest),
+            ("--governance-root", args.governance_root),
+            ("--screen-authorization", args.screen_authorization),
+            ("--screen-authorization-sha256", args.screen_authorization_sha256),
+        ))
+        if missing:
+            return (
+                "screen-universe-unverified-repair mode requires: "
                 f"{', '.join(missing)}"
             )
         return None
@@ -2812,6 +2893,89 @@ def _main_screen_universe_lineage_continuation_v5(args: argparse.Namespace) -> i
     return 0
 
 
+def _main_select_screen_unverified_repair_rows(args: argparse.Namespace) -> int:
+    """CLI boundary for ADR-123 Stage 1. Derives rows; calls no model."""
+    source_manifest = Path(args.source_screen_manifest)
+    if not source_manifest.is_file():
+        print(f"ERROR: source screen manifest not found: {source_manifest}",
+              file=sys.stderr)
+        return 2
+    output_path = Path(args.output_dir) / args.run_id / REPAIR_SELECTION_FILENAME
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        selection = build_unverified_repair_selection(
+            repo_root=REPO_ROOT, source_manifest_path=source_manifest,
+            output_path=output_path, selection_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc))
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid repair selection input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "selection_id": selection["selection_id"],
+        "selection_kind": selection["selection_kind"],
+        "derivation_rule": selection["derivation_rule"],
+        "source_run_id": selection["source_run_id"],
+        "selection_artifact": str(output_path),
+        "counts": selection["counts"],
+    }, indent=2))
+    return 0
+
+
+def _main_screen_universe_unverified_repair(args: argparse.Namespace) -> int:
+    """CLI boundary for ADR-123 Stage 2. Re-asks; never edits."""
+    packet_manifest = Path(args.packet_manifest)
+    selection_artifact = Path(args.selection_artifact)
+    source_manifest = Path(args.source_screen_manifest)
+    governance_root = Path(args.governance_root)
+    for label, path in (("packet manifest", packet_manifest),
+                        ("selection artifact", selection_artifact),
+                        ("source screen manifest", source_manifest)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    if not governance_root.is_dir():
+        print(f"ERROR: governance root not found: {governance_root}",
+              file=sys.stderr)
+        return 2
+    try:
+        result = run_lineage_screen_repair(
+            repo_root=REPO_ROOT, packet_manifest_path=packet_manifest,
+            selection_artifact_path=selection_artifact,
+            source_manifest_path=source_manifest,
+            governance_root=governance_root,
+            authorization_reference=args.screen_authorization,
+            authorization_sha256=args.screen_authorization_sha256,
+            output_dir=Path(args.output_dir), run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid repair input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "run_id": result.run_id, "dry_run": result.dry_run,
+        "status": result.status,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "counts": result.counts, "request_accounting": result.request_accounting,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (str(result.manifest_path) if result.manifest_path
+                          else None),
+        "failure_receipt_path": (str(result.failure_receipt_path)
+                                 if result.failure_receipt_path else None),
+        "receipt": result.receipt,
+    }, indent=2))
+    if result.status == "failed":
+        print("ERROR: repair run stopped with a failure receipt; the run is "
+              "non-authoritative.", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _main_screen_universe_lineage_diagnostic_repair(
         args: argparse.Namespace) -> int:
     packet_manifest = Path(args.packet_manifest)
@@ -3323,6 +3487,10 @@ def main(argv: list[str] | None = None) -> int:
         return _main_screen_universe_lineage_diagnostic(args)
     if args.mode == "screen-universe-lineage-diagnostic-repair":
         return _main_screen_universe_lineage_diagnostic_repair(args)
+    if args.mode == "select-screen-unverified-repair-rows":
+        return _main_select_screen_unverified_repair_rows(args)
+    if args.mode == "screen-universe-unverified-repair":
+        return _main_screen_universe_unverified_repair(args)
     if args.mode == "select-screen-repair-rows":
         return _main_select_screen_repair_rows(args)
     if args.mode == "select-screen-rows":

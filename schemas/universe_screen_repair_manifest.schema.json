@@ -1,0 +1,408 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_screen_repair_manifest.schema.json",
+  "title": "Universe screen repair manifest v0.1.0",
+  "description": "ADR-123 Stage 2 output. Written under its own filename, so the authoritative, promotion, diagnostic, diagnostic-repair and continuation loaders all refuse the directory with no change on their side. A repair run measures whether a strengthened evidence-binding prompt recovers rows that failed verbatim validation; it is not a screen release and states so structurally: promotable is false and no SCREEN release may be built from it. Reconciliation is a separate decision with its own loader.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_contract",
+    "run_id",
+    "run_kind",
+    "run_timestamp",
+    "promotable",
+    "authorization_id",
+    "authorization_sha256",
+    "selection",
+    "source",
+    "prompt_template_path",
+    "prompt_template_sha256",
+    "screen_prompt_not_used",
+    "packet_manifest_path",
+    "packet_manifest_sha256",
+    "packet_run_id",
+    "provider",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "screen_adapter_enablement_sha256",
+    "endpoint_allowlist",
+    "envelope_text_extraction_rule",
+    "output_contract",
+    "output_hashes",
+    "record_order",
+    "counts",
+    "request_accounting",
+    "reconciliation",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "manifest_contract": {
+      "const": "universe_screen_repair_manifest@0.1.0"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_kind": {
+      "const": "unverified_repair"
+    },
+    "run_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "promotable": {
+      "const": false
+    },
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorization_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selection_kind",
+        "selection_artifact_sha256",
+        "derivation_rule",
+        "selected_rows",
+        "rederived_at_preflight"
+      ],
+      "properties": {
+        "selection_kind": {
+          "const": "unverified_repair"
+        },
+        "selection_artifact_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "derivation_rule": {
+          "const": "unverified_rows_ascending_ordinal@1"
+        },
+        "selected_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rederived_at_preflight": {
+          "const": true
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_run_id",
+        "source_manifest_sha256",
+        "source_records_jsonl_sha256",
+        "source_raw_responses_jsonl_sha256",
+        "source_unmodified",
+        "earlier_output_withheld_from_prompt"
+      ],
+      "properties": {
+        "source_run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_records_jsonl_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_raw_responses_jsonl_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_unmodified": {
+          "const": true
+        },
+        "earlier_output_withheld_from_prompt": {
+          "description": "The repair prompt receives the packet only. No earlier status, quote, passage_ref, failure reason or retry identity reaches the model, so a repair is a fresh observation rather than a correction.",
+          "const": true
+        }
+      }
+    },
+    "prompt_template_path": {
+      "const": "prompts/discovery/universe_high_recall_screen_repair.v1.md"
+    },
+    "prompt_template_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_prompt_not_used": {
+      "description": "The authoritative V5 screen prompt, recorded here by digest to prove the repair route did not run under it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "const": "prompts/discovery/universe_high_recall_screen.v5.md"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "packet_manifest_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packet_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model_label"
+      ],
+      "properties": {
+        "provider": {
+          "const": "google_vertex_ai"
+        },
+        "model_label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "provider_client_contract_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_client_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_adapter_enablement_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "endpoint_allowlist": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "envelope_text_extraction_rule": {
+      "type": "string",
+      "minLength": 1
+    },
+    "output_contract": {
+      "const": "universe_screen_record@0.6.0"
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_screen_repair_records.jsonl",
+        "universe_screen_raw_responses.jsonl",
+        "universe_screen_capture_ledger.jsonl"
+      ],
+      "properties": {
+        "universe_screen_repair_records.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "universe_screen_raw_responses.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "universe_screen_capture_ledger.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "record_order": {
+      "const": "selection_row_order"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_rows",
+        "repaired_rows",
+        "still_unverified_rows",
+        "max_repair_unverified",
+        "by_screen_status",
+        "still_unverified_by_reason",
+        "recovered_by_source_reason"
+      ],
+      "properties": {
+        "selected_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "repaired_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "still_unverified_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_repair_unverified": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "by_screen_status": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "still_unverified_by_reason": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "recovered_by_source_reason": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "request_accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logical_row_cap",
+        "count_attempt_cap",
+        "provider_attempt_cap",
+        "external_request_cap",
+        "count_attempts_made",
+        "provider_attempts_made",
+        "external_requests_made",
+        "rows_count_retried",
+        "rows_generate_retried",
+        "tokens_in_measured",
+        "tokens_out_reported",
+        "rows_usage_verified",
+        "cost_micros_settled",
+        "budget_max_input_tokens",
+        "budget_max_output_tokens",
+        "budget_max_estimated_cost_micros",
+        "budget_max_wall_clock_seconds"
+      ],
+      "properties": {
+        "logical_row_cap": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "count_attempt_cap": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider_attempt_cap": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "external_request_cap": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "count_attempts_made": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider_attempts_made": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "external_requests_made": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_count_retried": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_generate_retried": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_in_measured": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_out_reported": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_usage_verified": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost_micros_settled": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "budget_max_input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "budget_max_output_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "budget_max_estimated_cost_micros": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "budget_max_wall_clock_seconds": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 18,
+      "additionalProperties": {
+        "const": true
+      }
+    },
+    "schema_versions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -174,6 +174,17 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-123 (an unverified row is re-asked, never
+    # edited): manifest_version 0.61.0 -> 0.62.0, 130 -> 134 entries,
+    # registering the v0.6 record and the three repair contracts. The v0.6
+    # record adds row-level repair provenance so a later reconciliation can
+    # tell an original observation from a re-asked one; the repair
+    # selection, authorization and manifest govern a structurally
+    # non-promotable measurement run that re-screens the rows a completed
+    # screen could not verify. Every earlier contract is byte-unchanged,
+    # the V5 screen prompt is byte-unchanged, and none of the four joins
+    # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS below.
+    # Before it,
     # Rebaselined by ADR-122 (a row the model never finished is an
     # outcome, not a stop): manifest_version 0.60.0 -> 0.61.0, 127 -> 130
     # entries, registering the v0.5 record, the v0.5 continuation
@@ -437,7 +448,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "a36b969c77f764928ffb4e95de2d0845b2328a27e86ef2c252e7de12abc28fb7"
+    "c0f902703cbc96fe70db452f1b7544408450d3d602be839023295b76818b6ca2"
 )
 
 
