@@ -174,6 +174,15 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-120 (the same absence, on the other operation):
+    # manifest_version 0.58.0 -> 0.59.0, 122 -> 124 entries, registering
+    # the v0.3 continuation authorization and the v0.10 continuation
+    # manifest. ADR-119 closed the empty-body gap for generateContent and
+    # left countTokens out of scope; the next run stopped on exactly that.
+    # Every earlier contract, both connectors and both retry policies are
+    # byte-unchanged, and neither new contract joins
+    # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS below.
+    # Before it,
     # Rebaselined by ADR-119 (an empty successful response is an absence,
     # not an answer): manifest_version 0.57.0 -> 0.58.0, 120 -> 122
     # entries, registering the v0.2 continuation authorization and the
@@ -408,7 +417,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "b50fa05d506802086f4b5685f473eaa702da790ff1f8074f562146a0e27ee0b8"
+    "109e1fdb95ce0929c3c6a12ef81cfbe41aab8101a41e7576308b4181ea73013b"
 )
 
 

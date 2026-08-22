@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_continuation_authorization.v3.schema.json",
+  "title": "Universe screen continuation authorization (v0.3, empty-count-tolerant source)",
+  "description": "Per-run authorization for the ADR-120 continuation successor. It binds what the v0.2 grant binds and differs in two ways. source_kind names the one newly admitted state - a failed continuation that stopped because countTokens returned with no usable body - and that admission is proven from the source's own captures and counters rather than from a reason string: exactly one count attempt for the stopping row, zero generate attempts, no stopping-row capture at all, and zero empty generate bodies anywhere. max_empty_count_body_retries_per_row is pinned to the existing three-attempt count ceiling, so the anomaly is answered by the schedule already in force and never by a new budget. Row counts are never consts: cohort, reused and model-called populations are re-derived from the bound source archive and the current selection at preflight.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorization_contract",
+    "authorization_id",
+    "authorized_by",
+    "effective_at",
+    "expires_at",
+    "deployment_environment_id",
+    "rollout_state",
+    "run_kind",
+    "screen_stage",
+    "source_run_id",
+    "source_run_path",
+    "source_receipt_sha256",
+    "source_raw_responses_sha256",
+    "source_authorization_reference",
+    "source_authorization_sha256",
+    "packet_manifest_sha256",
+    "prompt_template_sha256",
+    "selection_artifact_sha256",
+    "selection_kind",
+    "screen_adapter_enablement_reference",
+    "screen_adapter_enablement_sha256",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "vertex_project",
+    "vertex_location",
+    "model_route",
+    "endpoint_allowlist",
+    "logical_row_cap",
+    "reused_prefix_row_cap",
+    "model_called_row_cap",
+    "count_attempt_cap",
+    "provider_attempt_cap",
+    "budget_max_external_requests",
+    "count_attempts_per_row",
+    "generate_attempts_per_row",
+    "external_requests_per_row",
+    "budget_max_input_tokens",
+    "budget_max_output_tokens",
+    "budget_max_estimated_cost_micros",
+    "budget_max_wall_clock_seconds",
+    "retry_policy_version",
+    "rate_limit_policy_version",
+    "screen_generate_retry_policy_version",
+    "screen_count_retry_policy_version",
+    "max_model_evidence_unverified",
+    "source_kind",
+    "max_empty_generate_body_retries_per_row",
+    "max_empty_count_body_retries_per_row"
+  ],
+  "properties": {
+    "authorization_contract": {
+      "const": "universe_screen_continuation_authorization@0.3.0"
+    },
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorized_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "effective_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expires_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "deployment_environment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rollout_state": {
+      "const": "release_or_research_production"
+    },
+    "run_kind": {
+      "const": "full_cohort_continuation"
+    },
+    "screen_stage": {
+      "const": "universe_high_recall_screen"
+    },
+    "source_run_id": {
+      "description": "The failed run whose completed prefix is reused. Named, never discovered.",
+      "type": "string",
+      "minLength": 1
+    },
+    "source_run_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_receipt_sha256": {
+      "description": "SHA-256 of the parent failure receipt bytes. The parent must hold a receipt: a manifest-bearing run is complete and is not a continuation source.",
+      "$ref": "#/$defs/sha256"
+    },
+    "source_raw_responses_sha256": {
+      "description": "SHA-256 of the parent raw-response archive, the only row-level evidence a failed run leaves. Re-hashed at preflight and carried into the new archive as a byte-identical prefix.",
+      "$ref": "#/$defs/sha256"
+    },
+    "source_authorization_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_authorization_sha256": {
+      "description": "SHA-256 of the grant the parent ran under. Must equal the receipt's own authorization_sha256, and its packet, selection, prompt, route and contract bindings must equal this grant's, or the prefix was produced under different rules and is not reusable.",
+      "$ref": "#/$defs/sha256"
+    },
+    "packet_manifest_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "prompt_template_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "selection_artifact_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "selection_kind": {
+      "const": "full_cohort"
+    },
+    "screen_adapter_enablement_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "screen_adapter_enablement_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "provider_client_contract_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_client_contract_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "vertex_project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vertex_location": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model_label"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "endpoint_allowlist": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "logical_row_cap": {
+      "description": "Every valid packet row of the cohort. Equals reused_prefix_row_cap plus model_called_row_cap, checked at preflight.",
+      "type": "integer",
+      "minimum": 2
+    },
+    "reused_prefix_row_cap": {
+      "description": "Rows revalidated from the parent archive. No model call is made for any of them.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "model_called_row_cap": {
+      "description": "The suffix this run actually sends. Every send ceiling below derives from this number alone.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "count_attempt_cap": {
+      "description": "model_called_row_cap times three.",
+      "type": "integer",
+      "minimum": 3
+    },
+    "provider_attempt_cap": {
+      "description": "model_called_row_cap times the unchanged five-attempt generate ceiling.",
+      "type": "integer",
+      "minimum": 5
+    },
+    "budget_max_external_requests": {
+      "description": "model_called_row_cap times eight: three countTokens attempts plus five generateContent attempts per row.",
+      "type": "integer",
+      "minimum": 8
+    },
+    "count_attempts_per_row": {
+      "const": 3
+    },
+    "generate_attempts_per_row": {
+      "const": 5
+    },
+    "external_requests_per_row": {
+      "const": 8
+    },
+    "budget_max_input_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_output_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_estimated_cost_micros": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_wall_clock_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "retry_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rate_limit_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "screen_generate_retry_policy_version": {
+      "const": "universe_screen_generate_retry_policy_v1"
+    },
+    "screen_count_retry_policy_version": {
+      "description": "Pinned by const so a grant minted for the un-retried countTokens route cannot be executed here.",
+      "const": "universe_screen_count_retry_policy_v1"
+    },
+    "max_model_evidence_unverified": {
+      "description": "The whole-cohort breaker, reused rows included. Sized to measured reality by the authorizing operator; it is a stopping threshold, never a quality target.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "source_kind": {
+      "description": "An empty-generate-body source remains the ADR-119 route's business; this contract does not widen to arbitrary failures.",
+      "const": "failed_continuation_empty_count_body"
+    },
+    "max_empty_generate_body_retries_per_row": {
+      "description": "Pinned to the ADR-117 generate ceiling: an empty body is answered by the existing schedule, never by a separate allowance.",
+      "const": 5
+    },
+    "max_empty_count_body_retries_per_row": {
+      "description": "Pinned to the ADR-118 count ceiling: answered by the existing schedule, never by a separate allowance.",
+      "const": 3
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

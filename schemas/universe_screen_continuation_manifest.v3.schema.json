@@ -1,0 +1,562 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "universe_screen_continuation_manifest.v3.schema.json",
+  "title": "Universe high-recall screen run manifest (v0.10, empty-count-tolerant continuation)",
+  "description": "Immutable output manifest for ADR-120. Row semantics are unchanged from v0.9. What this generation adds is empty_count_body_telemetry beside the generate one, so the two anomalies are reported separately and neither is mistaken for a response: an empty body is an attempted external call that returned nothing, counted as an attempt and never archived or hashed. inherited_source_limitations records, in order, the failed runs whose evidence this cohort rests on, because a reused row may have been first written several runs earlier. The manifest keeps its own filename, so every earlier loader refuses the directory: promotion to a SCREEN release stays a deliberate decision with its own tests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_contract",
+    "run_kind",
+    "run_id",
+    "packet_manifest_path",
+    "packet_manifest_sha256",
+    "packet_run_id",
+    "packets_jsonl_sha256",
+    "packet_failures_jsonl_sha256",
+    "prompt_template_path",
+    "prompt_template_sha256",
+    "authorization_id",
+    "authorization_sha256",
+    "screen_adapter_enablement_sha256",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "envelope_text_extraction_rule",
+    "selection",
+    "continuation",
+    "parent_telemetry",
+    "provider",
+    "generate_retry_policy",
+    "count_retry_policy",
+    "screen_record_order",
+    "firm_rollup_rule",
+    "baseline_cutoff",
+    "counts",
+    "request_accounting",
+    "reconciliation",
+    "output_hashes",
+    "run_timestamp",
+    "schema_versions",
+    "limitations",
+    "empty_generate_body_telemetry",
+    "empty_count_body_telemetry",
+    "inherited_source_limitations"
+  ],
+  "properties": {
+    "manifest_contract": {
+      "const": "universe_screen_continuation_manifest@0.10.0"
+    },
+    "run_kind": {
+      "const": "full_cohort_continuation"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packet_manifest_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packet_manifest_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "packet_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packets_jsonl_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "packet_failures_jsonl_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "prompt_template_path": {
+      "const": "prompts/discovery/universe_high_recall_screen.v5.md"
+    },
+    "prompt_template_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorization_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "screen_adapter_enablement_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "provider_client_contract_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_client_contract_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "envelope_text_extraction_rule": {
+      "const": "vertex_generate_content_candidates0_text_parts@1"
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selection_artifact_path",
+        "selection_artifact_sha256",
+        "selection_kind",
+        "sampling_algorithm",
+        "seed",
+        "rows_selected"
+      ],
+      "properties": {
+        "selection_artifact_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "selection_artifact_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "selection_kind": {
+          "const": "full_cohort"
+        },
+        "sampling_algorithm": {
+          "type": "string",
+          "minLength": 1
+        },
+        "seed": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rows_selected": {
+          "type": "integer",
+          "minimum": 2
+        }
+      }
+    },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_run_id",
+        "source_run_path",
+        "source_receipt_sha256",
+        "source_raw_responses_sha256",
+        "source_authorization_sha256",
+        "reused_prefix_rows",
+        "first_model_called_row_ordinal",
+        "source_archive_is_byte_identical_prefix",
+        "source_kind"
+      ],
+      "properties": {
+        "source_run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_run_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source_raw_responses_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source_authorization_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "reused_prefix_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "first_model_called_row_ordinal": {
+          "description": "The cohort ordinal of the first row this run sent. Equals reused_prefix_rows plus one.",
+          "type": "integer",
+          "minimum": 2
+        },
+        "source_archive_is_byte_identical_prefix": {
+          "description": "Proven, not asserted: this run's archive bytes begin with the parent archive's bytes exactly.",
+          "const": true
+        },
+        "source_kind": {
+          "const": "failed_continuation_empty_count_body"
+        }
+      }
+    },
+    "parent_telemetry": {
+      "description": "Only what the parent receipt recorded. A failed run writes no capture ledger, so nothing per-attempt is claimed here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "per_attempt_telemetry_available",
+        "records_completed_before_failure",
+        "raw_responses_captured",
+        "external_requests_made",
+        "provider_attempts_made",
+        "reason_code",
+        "stopping_row_index"
+      ],
+      "properties": {
+        "per_attempt_telemetry_available": {
+          "const": false
+        },
+        "records_completed_before_failure": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "raw_responses_captured": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "external_requests_made": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "provider_attempts_made": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reason_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stopping_row_index": {
+          "type": "integer",
+          "minimum": 2
+        }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "connector",
+        "model_route"
+      ],
+      "properties": {
+        "name": {
+          "const": "vertex_gemini_v2"
+        },
+        "connector": {
+          "const": "vertex_gemini_screen_v6"
+        },
+        "model_route": {
+          "type": "object"
+        }
+      }
+    },
+    "generate_retry_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy_version",
+        "generate_max_attempts",
+        "generate_retry_delays_seconds",
+        "jitter"
+      ],
+      "properties": {
+        "policy_version": {
+          "const": "universe_screen_generate_retry_policy_v1"
+        },
+        "generate_max_attempts": {
+          "const": 5
+        },
+        "generate_retry_delays_seconds": {
+          "const": [
+            15,
+            30,
+            60,
+            120
+          ]
+        },
+        "jitter": {
+          "const": false
+        }
+      }
+    },
+    "count_retry_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy_version",
+        "count_max_attempts",
+        "count_retry_delays_seconds",
+        "jitter"
+      ],
+      "properties": {
+        "policy_version": {
+          "const": "universe_screen_count_retry_policy_v1"
+        },
+        "count_max_attempts": {
+          "const": 3
+        },
+        "count_retry_delays_seconds": {
+          "const": [
+            15,
+            30
+          ]
+        },
+        "jitter": {
+          "const": false
+        }
+      }
+    },
+    "screen_record_order": {
+      "const": "selected_packets_then_packet_failures@2"
+    },
+    "firm_rollup_rule": {
+      "const": "eligible_over_boundary_over_model_evidence_unverified_over_ineligible_over_insufficient@1"
+    },
+    "baseline_cutoff": {
+      "type": "string",
+      "format": "date"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planned_rows",
+        "cohort_rows",
+        "reused_prefix_rows",
+        "model_called_rows",
+        "screened_packets",
+        "model_evidence_unverified",
+        "insufficient_evidence",
+        "reused_screened_packets",
+        "reused_model_evidence_unverified",
+        "rejections_by_reason",
+        "by_screen_status",
+        "firm_rollup",
+        "max_model_evidence_unverified"
+      ],
+      "properties": {
+        "planned_rows": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "cohort_rows": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "reused_prefix_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "model_called_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "screened_packets": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_evidence_unverified": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "insufficient_evidence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reused_screened_packets": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reused_model_evidence_unverified": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejections_by_reason": {
+          "type": "object"
+        },
+        "by_screen_status": {
+          "type": "object"
+        },
+        "firm_rollup": {
+          "type": "object"
+        },
+        "max_model_evidence_unverified": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "request_accounting": {
+      "description": "This run's own sends only. The reused prefix cost this run nothing.",
+      "type": "object",
+      "required": [
+        "model_called_row_cap",
+        "count_attempt_cap",
+        "provider_attempt_cap",
+        "external_request_cap",
+        "count_attempts_per_row",
+        "generate_attempts_per_row",
+        "external_requests_per_row",
+        "count_attempts_made",
+        "provider_attempts_made",
+        "external_requests_made",
+        "rows_count_retried",
+        "rows_generate_retried"
+      ],
+      "properties": {
+        "count_attempts_per_row": {
+          "const": 3
+        },
+        "generate_attempts_per_row": {
+          "const": 5
+        },
+        "external_requests_per_row": {
+          "const": 8
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 16,
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_screen_continuation_v3_records.jsonl",
+        "universe_screen_raw_responses.jsonl",
+        "universe_screen_capture_ledger.jsonl"
+      ],
+      "properties": {
+        "universe_screen_continuation_v3_records.jsonl": {
+          "$ref": "#/$defs/sha256"
+        },
+        "universe_screen_raw_responses.jsonl": {
+          "$ref": "#/$defs/sha256"
+        },
+        "universe_screen_capture_ledger.jsonl": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "run_timestamp": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_screen_record_v3",
+        "universe_screen_continuation_manifest_v3",
+        "universe_screen_continuation_authorization_v3",
+        "universe_screen_selection",
+        "universe_screen_adapter_enablement",
+        "baseline_packet_manifest_v5",
+        "universe_baseline_packet_v2"
+      ],
+      "properties": {
+        "universe_screen_record_v3": {
+          "const": "0.3.0"
+        },
+        "universe_screen_continuation_manifest_v3": {
+          "const": "0.10.0"
+        },
+        "universe_screen_continuation_authorization_v3": {
+          "const": "0.3.0"
+        },
+        "universe_screen_selection": {
+          "const": "0.1.0"
+        },
+        "universe_screen_adapter_enablement": {
+          "const": "0.1.0"
+        },
+        "baseline_packet_manifest_v5": {
+          "const": "0.5.0"
+        },
+        "universe_baseline_packet_v2": {
+          "const": "0.2.0"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "empty_generate_body_telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "empty_body_attempts",
+        "rows_with_empty_body",
+        "rows_recovered_after_empty_body",
+        "max_retries_per_row"
+      ],
+      "properties": {
+        "empty_body_attempts": {
+          "description": "External calls that returned nothing. Counted as attempts, never as responses.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_with_empty_body": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_recovered_after_empty_body": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_retries_per_row": {
+          "const": 5
+        }
+      }
+    },
+    "empty_count_body_telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "empty_body_attempts",
+        "rows_with_empty_body",
+        "rows_recovered_after_empty_body",
+        "max_retries_per_row"
+      ],
+      "properties": {
+        "empty_body_attempts": {
+          "description": "countTokens calls that returned nothing. Attempts, never responses.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_with_empty_body": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_recovered_after_empty_body": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_retries_per_row": {
+          "const": 3
+        }
+      }
+    },
+    "inherited_source_limitations": {
+      "description": "The chain of failed runs this cohort's reused evidence passed through, oldest first. None of them is authoritative.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

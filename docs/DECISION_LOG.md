@@ -8287,6 +8287,58 @@ schemas, its fixture-only test module, the CLI mode, the registry (0.57.0 to
 five registry/manifest guards, the provider boundary count, and the absolute
 registry literals in five screen suites.
 
+## ADR-120 — The same absence, on the other operation
+
+**Status.** Accepted, fixture-first. No live model call, no `data/runs` write,
+and no change to any earlier connector, runner, prompt, schema or failed run.
+
+**Measured input.** ADR-119's continuation reused 4,297 rows and added 524 more
+before `countTokens` returned once with no usable body. The receipt arithmetic
+names the operation exactly: one count attempt for the stopping row, zero
+generate attempts, and no capture directory at all. The bounded count retry
+never engaged, because a call that returns raises nothing — the identical
+structural gap ADR-119 closed for the generation, on the operation it
+deliberately left out of scope. **The ADR-119 fix was correct and incomplete,
+and the next run found the half left open.**
+
+**Decision, part one: the counterpart anomaly is retryable, and only it.** A
+connector successor detects an empty count body before any persistence or
+parse, classifies it `empty_count_body`, and retries it through the
+**unchanged** ADR-118 count schedule — three attempts at 15s and 30s. ADR-119's
+generate behaviour is preserved by inheritance rather than restatement. An
+empty count never invokes the generation on that attempt: the measurement is a
+precondition, so the connector raises before the adapter can proceed. Nothing
+else becomes retryable, and the released `ProviderError` enum stays closed —
+the operation-specific state lives in the ledger event and the receipt.
+
+**Decision, part two: the stop is reusable, narrowly.** The successor loader
+admits an empty-count-stopped continuation only on proofs read from the
+source's own counters and captures: exactly one count attempt for the stopping
+row, zero generate attempts for it, no stopping-row capture of any kind, and
+zero empty generate bodies anywhere in the run. A generic
+`provider_response_unusable`, an arbitrarily missing capture directory, or a
+run that met both anomalies is refused.
+
+**Contracts.** `universe_screen_continuation_authorization@0.3.0` and
+`universe_screen_continuation_manifest@0.10.0`, under their own filenames, so
+every earlier loader refuses the directory. The manifest reports the two
+anomalies separately and adds `inherited_source_limitations`, naming the chain
+of failed runs whose evidence a reused row rests on — that chain is now three
+deep, and a reader should not have to reconstruct it.
+
+**What this does not settle.** Four full-cohort attempts have now stopped four
+ways, three of them single-row provider anomalies rather than systematic
+defects. Each decision removed one way of losing finished work; none of them
+makes completion likely by itself. Whether a per-row abandonment budget belongs
+in the design — so that one unusable row costs one row rather than a run — is
+the open question this sequence keeps raising, and it is not answered here.
+
+**Scope.** Twenty-one paths: the connector, the continuation successor, two
+schemas, its fixture-only test module, the CLI mode, the registry (0.58.0 to
+0.59.0, 122 to 124), this decision log, `REPO_MANIFEST.md` (861 to 866), the
+five registry/manifest guards, the provider boundary count, and the absolute
+registry literals in six screen suites.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only
