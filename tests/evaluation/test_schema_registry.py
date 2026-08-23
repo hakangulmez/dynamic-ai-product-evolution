@@ -174,6 +174,17 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-124 (the first reconciled SCREEN release):
+    # manifest_version 0.62.0 -> 0.63.0, 134 -> 136 entries, registering the
+    # release record and release manifest contracts. A release is a
+    # derivation from two hash-bound completed runs with no model call and no
+    # authorization; a repair output supersedes a base row only where that
+    # repair validated, both provenance chains survive on every reconciled
+    # row, and the residual tolerance is a const rather than an inherited
+    # run-time breaker. Every earlier contract is byte-unchanged and neither
+    # new contract joins EVALUATION_SCHEMA_CONTRACTS or
+    # RELEASED_EVALUATION_CONTRACTS below.
+    # Before it,
     # Rebaselined by ADR-123 (an unverified row is re-asked, never
     # edited): manifest_version 0.61.0 -> 0.62.0, 130 -> 134 entries,
     # registering the v0.6 record and the three repair contracts. The v0.6
@@ -448,7 +459,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "c0f902703cbc96fe70db452f1b7544408450d3d602be839023295b76818b6ca2"
+    "bb57a958d7a801a0df2e90a1e13570470b89a1acde0e4c0da5e3c9c549ee59f9"
 )
 
 

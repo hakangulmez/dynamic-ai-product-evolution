@@ -8554,6 +8554,73 @@ repair module, two fixture-only test modules, two CLI modes, the registry
 nine screen suites. No new provider module and no prompt edit: the V5 screen
 prompt is byte-identical and SHA-pinned in the new suite.
 
+## ADR-124 — The first SCREEN release is a derivation, not a judgement
+
+**Status.** Accepted, fixture-first. No live model call, no network, no
+governance artifact, no `data/runs` release written during implementation, and
+no change to any prompt, provider, retry policy, existing runner or existing
+loader.
+
+**Measured basis.** Two completed runs. The base full-cohort screen
+(`universe-high-recall-continuation-v5b-20260822`, manifest `4337370f…`)
+produced 6,467 screened rows, 574 unverified, 530 insufficient-evidence and 1
+truncated, over 7,572 planned rows. The repair run
+(`universe-high-recall-unverified-repair-v1-20260823`, manifest `c0360af4…`)
+re-asked exactly those 574 and recovered 363, leaving 211 that failed
+validation twice. Reconciled: **6,830 valid** (3,075 LIKELY_ELIGIBLE, 2,876
+LIKELY_INELIGIBLE, 879 BOUNDARY_OR_UNCERTAIN), 211 unresolved, 530
+insufficient, 1 truncated — 7,572 exactly. The unverified rate falls from
+**8.15% to 3.00%** of the 7,042-row cohort.
+
+**No authorization governs a reconciliation.** Every grant in this project
+authorizes spending: attempts, tokens, cost, an endpoint allowlist. A release
+spends nothing, so a grant would authorize an empty set and add ceremony
+without adding a check. What replaces it is stricter binding — both source
+manifests pinned by digest, every consumed output re-hashed against its own
+manifest before a record is read, both runs revalidated through their committed
+loaders, and the repair run's recorded base digests required to equal the base
+run's actual digests. A repair reconciled against the wrong base is refused
+structurally.
+
+**One supersession rule, named in the manifest.** A repair output supersedes a
+base row only where the repair record is `screened_packet` and the base row is
+`model_evidence_unverified`. Coverage is checked as set equality against the
+base's unverified population, so a gap, a duplicate or a foreign row each stop
+the build. Attempting to supersede a valid, insufficient-evidence or truncated
+row is a hard refusal rather than a skipped row.
+
+**Both histories survive.** A repaired row carries the repair observation that
+now stands *and* the base observation it superseded, with the reason the base
+row failed. A row that failed twice is named `unresolved_after_repair`, keeps
+both raw-response identities and both failure reasons, holds no status and no
+evidence, and is excluded from every valid-status count and from any classifier
+input. Row-level provenance lives in the row; the manifest reports populations,
+never identities.
+
+**The residual is a const, not a range.** `max_unresolved_after_repair` is
+pinned at exactly **211**. The 900 breaker it might have inherited was a
+run-time budget for a 7,042-row screen; carrying it here would let a later
+reconciliation ship up to 900 holes under a threshold nobody re-decided. During
+implementation the schema initially pinned `planned_rows` and `cohort_rows` as
+consts too; that was wrong and was removed — a cohort's size is a property of
+the data, not of the contract, and only the residual is a decision.
+
+**Honest limits.** This release reconciles *evidence validity*, nothing else. A
+validated row is a row whose quotes resolve verbatim; it is not a correct
+screening judgement, and no accuracy claim is made or supported here. The 211
+unresolved rows are 211 firms about which the screen knows nothing, and any
+downstream analysis inherits that hole. The 363 recoveries were produced under
+a different prompt from the 6,467 base rows — a difference confined to evidence
+binding, with screening criteria, vocabulary and archetypes byte-identical, but
+a difference nonetheless, and it is recorded per row rather than averaged away.
+
+**Scope.** Twenty-three paths: two schemas, the release builder and its loader,
+one fixture-only test module, one CLI mode, the registry (0.62.0 to 0.63.0, 134
+to 136), this decision log, `REPO_MANIFEST.md` (884 to 888), the five
+registry/manifest guards, and the absolute registry literals in ten screen
+suites. `require_promotable_screen_run` is byte-unchanged and continues to
+refuse both source runs.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only

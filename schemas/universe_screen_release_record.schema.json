@@ -1,0 +1,453 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_screen_release_record.schema.json",
+  "title": "Universe screen release record v0.1.0",
+  "description": "ADR-124. One row of an immutable SCREEN release, reconciled from a completed full-cohort screen and a completed repair run. The release origin is explicit on every row, and a repaired row carries BOTH provenance chains: the repair observation that now stands and the base observation it superseded, with the reason the base row failed. A row that failed validation twice is named unresolved_after_repair rather than dropped, carries both failure reasons, holds no status or evidence, and is excluded from every valid-status count and every classifier input.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_contract",
+    "release_origin",
+    "record_kind",
+    "cik",
+    "company_id",
+    "accession",
+    "form",
+    "baseline_filing_date",
+    "source_id",
+    "packet_sha256",
+    "prompt_sha256",
+    "model_route",
+    "screen_status",
+    "screen_output",
+    "failure_reason_code",
+    "failure_detail",
+    "release_provenance",
+    "truncation_evidence"
+  ],
+  "properties": {
+    "record_contract": {
+      "const": "universe_screen_release_record@0.1.0"
+    },
+    "release_origin": {
+      "description": "Where this row's standing observation came from. Orthogonal to record_kind: base_valid and repaired are both screened_packet rows held to the identical validator.",
+      "enum": [
+        "base_valid",
+        "repaired",
+        "unresolved_after_repair",
+        "insufficient_evidence",
+        "model_output_truncated"
+      ]
+    },
+    "record_kind": {
+      "enum": [
+        "screened_packet",
+        "model_evidence_unverified",
+        "insufficient_evidence",
+        "model_output_truncated"
+      ]
+    },
+    "cik": {
+      "type": "string",
+      "pattern": "^[0-9]{10}$"
+    },
+    "company_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "accession": {
+      "type": "string",
+      "minLength": 1
+    },
+    "form": {
+      "type": "string",
+      "minLength": 1
+    },
+    "baseline_filing_date": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packet_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prompt_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "model_route": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "screen_status": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            "LIKELY_ELIGIBLE",
+            "LIKELY_INELIGIBLE",
+            "BOUNDARY_OR_UNCERTAIN"
+          ]
+        }
+      ]
+    },
+    "screen_output": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "failure_reason_code": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "failure_detail": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "truncation_evidence": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "release_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "base",
+        "repair"
+      ],
+      "properties": {
+        "base": {
+          "description": "The base screen observation. Present on every row that the base run produced a response for; null only where the base row never reached the model.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "run_id",
+                "raw_response_id",
+                "raw_response_sha256"
+              ],
+              "properties": {
+                "run_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "raw_response_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "raw_response_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "failure_reason_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                },
+                "source_row_ordinal": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1
+                }
+              }
+            }
+          ]
+        },
+        "repair": {
+          "description": "The repair observation. Present only on rows the repair run re-asked; null on every other row.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "run_id",
+                "raw_response_id",
+                "raw_response_sha256"
+              ],
+              "properties": {
+                "run_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "raw_response_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "raw_response_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "failure_reason_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                },
+                "source_row_ordinal": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "release_origin": {
+            "const": "base_valid"
+          }
+        },
+        "required": [
+          "release_origin"
+        ]
+      },
+      "then": {
+        "properties": {
+          "record_kind": {
+            "const": "screened_packet"
+          },
+          "screen_status": {
+            "enum": [
+              "LIKELY_ELIGIBLE",
+              "LIKELY_INELIGIBLE",
+              "BOUNDARY_OR_UNCERTAIN"
+            ]
+          },
+          "screen_output": {
+            "type": "object"
+          },
+          "failure_reason_code": {
+            "type": "null"
+          },
+          "release_provenance": {
+            "properties": {
+              "base": {
+                "type": "object"
+              },
+              "repair": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_origin": {
+            "const": "repaired"
+          }
+        },
+        "required": [
+          "release_origin"
+        ]
+      },
+      "then": {
+        "properties": {
+          "record_kind": {
+            "const": "screened_packet"
+          },
+          "screen_status": {
+            "enum": [
+              "LIKELY_ELIGIBLE",
+              "LIKELY_INELIGIBLE",
+              "BOUNDARY_OR_UNCERTAIN"
+            ]
+          },
+          "screen_output": {
+            "type": "object"
+          },
+          "failure_reason_code": {
+            "type": "null"
+          },
+          "release_provenance": {
+            "properties": {
+              "base": {
+                "type": "object"
+              },
+              "repair": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_origin": {
+            "const": "unresolved_after_repair"
+          }
+        },
+        "required": [
+          "release_origin"
+        ]
+      },
+      "then": {
+        "properties": {
+          "record_kind": {
+            "const": "model_evidence_unverified"
+          },
+          "screen_status": {
+            "type": "null"
+          },
+          "screen_output": {
+            "type": "null"
+          },
+          "failure_reason_code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "release_provenance": {
+            "properties": {
+              "base": {
+                "type": "object"
+              },
+              "repair": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_origin": {
+            "const": "insufficient_evidence"
+          }
+        },
+        "required": [
+          "release_origin"
+        ]
+      },
+      "then": {
+        "properties": {
+          "record_kind": {
+            "const": "insufficient_evidence"
+          },
+          "screen_status": {
+            "type": "null"
+          },
+          "screen_output": {
+            "type": "null"
+          },
+          "release_provenance": {
+            "properties": {
+              "base": {
+                "type": "null"
+              },
+              "repair": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_origin": {
+            "const": "model_output_truncated"
+          }
+        },
+        "required": [
+          "release_origin"
+        ]
+      },
+      "then": {
+        "properties": {
+          "record_kind": {
+            "const": "model_output_truncated"
+          },
+          "screen_status": {
+            "type": "null"
+          },
+          "screen_output": {
+            "type": "null"
+          },
+          "truncation_evidence": {
+            "type": "object"
+          },
+          "release_provenance": {
+            "properties": {
+              "repair": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "model_evidence_unverified"
+          }
+        },
+        "required": [
+          "record_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "screen_status": {
+            "type": "null"
+          },
+          "screen_output": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

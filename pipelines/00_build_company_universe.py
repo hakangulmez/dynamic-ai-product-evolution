@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Thirty-four mutually exclusive modes, selected by ``--mode`` (default
+Thirty-five mutually exclusive modes, selected by ``--mode`` (default
 ``sentinel`` so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -133,6 +133,11 @@ Thirty-four mutually exclusive modes, selected by ``--mode`` (default
   tolerance is 25 rows and the twenty-sixth stops the run fail-closed. Content,
   evidence, capture, governance and budget failures remain run-fatal and can
   never become provider-unresolved.
+- ``build-screen-release`` reconciles one completed full-cohort screen and
+  one completed repair run into an immutable SCREEN release. It is a
+  derivation: no model, provider, prompt or authorization is involved, both
+  sources are pinned by digest and left byte-unchanged, and a repair output
+  supersedes a base row only where that repair validated.
 - ``select-screen-unverified-repair-rows`` derives, from one completed
   continuation-v5 screen, the rows whose evidence never verified. The
   population is every ``model_evidence_unverified`` record, ascending by source
@@ -320,6 +325,9 @@ from dynamic_ai_products.lineage_screen_continuation_v3 import (  # noqa: E402
 from dynamic_ai_products.lineage_screen_continuation_v4 import (  # noqa: E402
     run_lineage_screen_continuation_v4,
 )
+from dynamic_ai_products.lineage_screen_release import (  # noqa: E402
+    build_screen_release,
+)
 from dynamic_ai_products.lineage_screen_repair import (  # noqa: E402
     REPAIR_SELECTION_FILENAME,
     build_repair_selection as build_unverified_repair_selection,
@@ -368,6 +376,7 @@ def build_parser() -> argparse.ArgumentParser:
                  "select-screen-rows",
                  "select-screen-unverified-repair-rows",
                  "screen-universe-unverified-repair",
+                 "build-screen-release",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
                  "aggregate-acquisition-lineage"],
@@ -601,6 +610,26 @@ def build_parser() -> argparse.ArgumentParser:
              "which failure is being continued.",
     )
     parser.add_argument(
+        "--base-screen-manifest", default=None,
+        help="Build-screen-release mode only: the completed base screen's "
+             "universe_screen_continuation_v5_manifest.json.",
+    )
+    parser.add_argument(
+        "--base-screen-manifest-sha256", default=None,
+        help="Build-screen-release mode only: the pinned digest of that "
+             "manifest. A mismatch refuses the reconciliation.",
+    )
+    parser.add_argument(
+        "--repair-manifest", default=None,
+        help="Build-screen-release mode only: the completed repair run's "
+             "universe_screen_repair_manifest.json.",
+    )
+    parser.add_argument(
+        "--repair-manifest-sha256", default=None,
+        help="Build-screen-release mode only: the pinned digest of that "
+             "manifest. A mismatch refuses the reconciliation.",
+    )
+    parser.add_argument(
         "--source-screen-manifest", default=None,
         help="Unverified-repair modes only: the completed source screen's "
              "universe_screen_continuation_v5_manifest.json. Its hash-bound "
@@ -782,6 +811,13 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         screen_offenders += _present((
             ("--source-diagnostic-manifest",
              args.source_diagnostic_manifest),
+        ))
+    if args.mode != "build-screen-release":
+        screen_offenders += _present((
+            ("--base-screen-manifest", args.base_screen_manifest),
+            ("--base-screen-manifest-sha256", args.base_screen_manifest_sha256),
+            ("--repair-manifest", args.repair_manifest),
+            ("--repair-manifest-sha256", args.repair_manifest_sha256),
         ))
     if args.mode not in ("screen-universe-lineage-continuation",
                          "screen-universe-unverified-repair",
@@ -1263,6 +1299,39 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                 "screen-universe-lineage-diagnostic-repair mode requires: "
                 f"{', '.join(missing)}"
             )
+        return None
+
+    if args.mode == "build-screen-release":
+        offending = _present(
+            frame_flags + acquire_flags + dera_flags
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+            + (("--input", args.input),)
+            + (("--seed", args.seed),)
+            + (("--provider", args.provider),)
+            # a reconciliation reaches no provider, so it takes no grant
+            + (("--governance-root", args.governance_root),)
+            + (("--screen-authorization", args.screen_authorization),)
+            + (("--screen-authorization-sha256",
+                args.screen_authorization_sha256),)
+            + (("--packet-manifest", args.packet_manifest),)
+            + (("--selection-artifact", args.selection_artifact),)
+        )
+        if offending:
+            return (
+                "build-screen-release mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing((
+            ("--base-screen-manifest", args.base_screen_manifest),
+            ("--base-screen-manifest-sha256", args.base_screen_manifest_sha256),
+            ("--repair-manifest", args.repair_manifest),
+            ("--repair-manifest-sha256", args.repair_manifest_sha256),
+            ("--output-dir", args.output_dir),
+            ("--run-id", args.run_id),
+        ))
+        if missing:
+            return f"build-screen-release mode requires: {', '.join(missing)}"
         return None
 
     if args.mode == "select-screen-unverified-repair-rows":
@@ -2895,6 +2964,41 @@ def _main_screen_universe_lineage_continuation_v5(args: argparse.Namespace) -> i
     return 0
 
 
+def _main_build_screen_release(args: argparse.Namespace) -> int:
+    """CLI boundary for ADR-124. Derives a release; calls no model."""
+    base = Path(args.base_screen_manifest)
+    repair = Path(args.repair_manifest)
+    for label, path in (("base screen manifest", base),
+                        ("repair manifest", repair)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    try:
+        result = build_screen_release(
+            repo_root=REPO_ROOT, base_manifest_path=base,
+            base_manifest_sha256=args.base_screen_manifest_sha256,
+            repair_manifest_path=repair,
+            repair_manifest_sha256=args.repair_manifest_sha256,
+            output_dir=Path(args.output_dir), release_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run)
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid release input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "release_id": result.release_id, "dry_run": result.dry_run,
+        "status": result.status,
+        "release_dir": str(result.release_dir) if result.release_dir else None,
+        "counts": result.counts, "rates": result.rates,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (str(result.manifest_path) if result.manifest_path
+                          else None),
+    }, indent=2))
+    return 0
+
+
 def _main_select_screen_unverified_repair_rows(args: argparse.Namespace) -> int:
     """CLI boundary for ADR-123 Stage 1. Derives rows; calls no model."""
     source_manifest = Path(args.source_screen_manifest)
@@ -3489,6 +3593,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_screen_universe_lineage_diagnostic(args)
     if args.mode == "screen-universe-lineage-diagnostic-repair":
         return _main_screen_universe_lineage_diagnostic_repair(args)
+    if args.mode == "build-screen-release":
+        return _main_build_screen_release(args)
     if args.mode == "select-screen-unverified-repair-rows":
         return _main_select_screen_unverified_repair_rows(args)
     if args.mode == "screen-universe-unverified-repair":
