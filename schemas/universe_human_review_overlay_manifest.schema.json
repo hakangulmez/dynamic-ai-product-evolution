@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_human_review_overlay_manifest.schema.json",
+  "title": "Universe human review overlay manifest v0.1.0",
+  "description": "ADR-125. The complete human-review layer over one SCREEN_v1 release. It covers every unresolved-after-repair row exactly once \u2014 a partial review would bias the cohort silently \u2014 and it changes nothing in the release it reviews. It binds the release manifest AND the base source chain's packet manifest and packets JSONL, so every human quote is provably tied to the immutable Item 1 bytes rather than to a rendering of them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_contract",
+    "overlay_id",
+    "run_timestamp",
+    "release",
+    "packet_source",
+    "coverage",
+    "counts",
+    "output_contract",
+    "output_hashes",
+    "record_order",
+    "reconciliation",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "manifest_contract": {
+      "const": "universe_human_review_overlay_manifest@0.1.0"
+    },
+    "overlay_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_id",
+        "manifest_path",
+        "manifest_sha256",
+        "records_jsonl_sha256",
+        "release_unmodified"
+      ],
+      "properties": {
+        "release_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "records_jsonl_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "release_unmodified": {
+          "const": true
+        }
+      }
+    },
+    "packet_source": {
+      "description": "The immutable Item 1 bytes every human quote resolved against, reached through the release's own base run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "base_run_id",
+        "packet_manifest_path",
+        "packet_manifest_sha256",
+        "packets_jsonl_sha256",
+        "quotes_resolved_against_packet_bytes"
+      ],
+      "properties": {
+        "base_run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "packet_manifest_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "packet_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "packets_jsonl_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "quotes_resolved_against_packet_bytes": {
+          "const": true
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unresolved_rows_in_release",
+        "decisions_supplied",
+        "coverage_is_exact"
+      ],
+      "properties": {
+        "unresolved_rows_in_release": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "decisions_supplied": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "coverage_is_exact": {
+          "const": true
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions",
+        "by_decision",
+        "evidence_items",
+        "reviewers",
+        "review_protocol_versions"
+      ],
+      "properties": {
+        "decisions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_decision": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "evidence_items": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reviewers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "review_protocol_versions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "output_contract": {
+      "const": "universe_human_review_decision@0.1.0"
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_human_review_decisions.jsonl"
+      ],
+      "properties": {
+        "universe_human_review_decisions.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "record_order": {
+      "const": "release_row_order"
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 12,
+      "additionalProperties": {
+        "const": true
+      }
+    },
+    "schema_versions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

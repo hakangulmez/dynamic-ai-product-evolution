@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_candidate_record.schema.json",
+  "title": "Universe classifier candidate record v0.1.0",
+  "description": "ADR-125. One row admitted to the classifier-candidate cohort, carrying how it was admitted. A model_screen row was validated by the screen; a human_review row failed validation twice and was decided by a reviewer against the immutable Item 1 bytes. The two are never merged into an undifferentiated status: the origin travels with the row so any later analysis can hold them apart, weight them differently, or exclude one. Only LIKELY_ELIGIBLE and BOUNDARY_OR_UNCERTAIN are admissible from either origin; nothing else reaches a classifier.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_contract",
+    "admission_origin",
+    "screen_status",
+    "cik",
+    "accession",
+    "company_id",
+    "form",
+    "baseline_filing_date",
+    "source_id",
+    "packet_sha256",
+    "admission_provenance"
+  ],
+  "properties": {
+    "record_contract": {
+      "const": "universe_classifier_candidate_record@0.1.0"
+    },
+    "admission_origin": {
+      "enum": [
+        "model_screen",
+        "human_review"
+      ]
+    },
+    "screen_status": {
+      "enum": [
+        "LIKELY_ELIGIBLE",
+        "BOUNDARY_OR_UNCERTAIN"
+      ]
+    },
+    "cik": {
+      "type": "string",
+      "pattern": "^[0-9]{10}$"
+    },
+    "accession": {
+      "type": "string",
+      "minLength": 1
+    },
+    "company_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "form": {
+      "type": "string",
+      "minLength": 1
+    },
+    "baseline_filing_date": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packet_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "admission_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_id",
+        "release_origin",
+        "model_screen",
+        "human_review"
+      ],
+      "properties": {
+        "release_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "release_origin": {
+          "enum": [
+            "base_valid",
+            "repaired",
+            "unresolved_after_repair"
+          ]
+        },
+        "model_screen": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "raw_response_id",
+                "raw_response_sha256"
+              ],
+              "properties": {
+                "raw_response_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "raw_response_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          ]
+        },
+        "human_review": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "overlay_id",
+                "reviewer_id",
+                "review_protocol_version",
+                "decision_timestamp",
+                "evidence_items",
+                "base_failure_reason_code",
+                "repair_failure_reason_code"
+              ],
+              "properties": {
+                "overlay_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reviewer_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "review_protocol_version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "decision_timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "evidence_items": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "base_failure_reason_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "repair_failure_reason_code": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "admission_origin": {
+            "const": "model_screen"
+          }
+        },
+        "required": [
+          "admission_origin"
+        ]
+      },
+      "then": {
+        "properties": {
+          "admission_provenance": {
+            "properties": {
+              "release_origin": {
+                "enum": [
+                  "base_valid",
+                  "repaired"
+                ]
+              },
+              "model_screen": {
+                "type": "object"
+              },
+              "human_review": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_origin": {
+            "const": "human_review"
+          }
+        },
+        "required": [
+          "admission_origin"
+        ]
+      },
+      "then": {
+        "properties": {
+          "admission_provenance": {
+            "properties": {
+              "release_origin": {
+                "const": "unresolved_after_repair"
+              },
+              "model_screen": {
+                "type": "null"
+              },
+              "human_review": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

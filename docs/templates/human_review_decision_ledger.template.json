@@ -1,0 +1,31 @@
+{
+  "ledger_contract": "universe_human_review_decision_ledger@0.1.0",
+  "_instructions": [
+    "One entry per SCREEN_v1 row whose release_origin is unresolved_after_repair.",
+    "Coverage must be exact: every such row, exactly once, no others.",
+    "release_id and release_manifest_sha256 may be omitted per entry; the loader fills them from the pinned release.",
+    "base_failure_reason_code and repair_failure_reason_code must equal the values the release row already carries.",
+    "Evidence uses the displayed passage_ref (P001 form) and a contiguous verbatim quote; the loader re-derives the canonical passage id from the hash-bound packet and resolves the quote there.",
+    "decision is one of LIKELY_ELIGIBLE, LIKELY_INELIGIBLE, BOUNDARY_OR_UNCERTAIN. A LIKELY_INELIGIBLE decision is retained for audit and enters no classifier cohort.",
+    "The entry below is an empty scaffold. Replace every value; supply no real decision here."
+  ],
+  "decisions": [
+    {
+      "cik": "0000000000",
+      "accession": "0000000000-00-000000",
+      "base_failure_reason_code": "",
+      "repair_failure_reason_code": "",
+      "decision": "",
+      "evidence": [
+        {
+          "passage_ref": "P001",
+          "quote": "",
+          "supported_claim": ""
+        }
+      ],
+      "review_protocol_version": "",
+      "reviewer_id": "",
+      "decision_timestamp": ""
+    }
+  ]
+}

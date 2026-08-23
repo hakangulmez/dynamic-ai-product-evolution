@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **888**
+Total tracked/scaffold files listed: **897**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -87,6 +87,7 @@ Total tracked/scaffold files listed: **888**
 - `docs/ROADMAP_90_DAYS.md`
 - `docs/SOURCE_POLICY.md`
 - `docs/TEMPORAL_POLICY.md`
+- `docs/templates/human_review_decision_ledger.template.json`
 - `docs/THESIS_EXECUTION_PLAN.md`
 - `docs/THESIS_METHODOLOGY_AND_DATA.md`
 - `docs/agents/domain.md`
@@ -492,6 +493,10 @@ Total tracked/scaffold files listed: **888**
 - `schemas/universe_screen_record.v6.schema.json`
 - `schemas/universe_screen_release_manifest.schema.json`
 - `schemas/universe_screen_release_record.schema.json`
+- `schemas/universe_classifier_candidate_cohort_manifest.schema.json`
+- `schemas/universe_classifier_candidate_record.schema.json`
+- `schemas/universe_human_review_decision.schema.json`
+- `schemas/universe_human_review_overlay_manifest.schema.json`
 - `schemas/universe_screen_selection.schema.json`
 - `schemas/web_collection_receipt.schema.json`
 - `schemas/web_collection_request_plan.schema.json`
@@ -657,6 +662,8 @@ Total tracked/scaffold files listed: **888**
 - `src/dynamic_ai_products/lineage_screen_continuation_v5.py`
 - `src/dynamic_ai_products/lineage_screen_repair.py`
 - `src/dynamic_ai_products/lineage_screen_release.py`
+- `src/dynamic_ai_products/classifier_candidate_cohort.py`
+- `src/dynamic_ai_products/human_review_overlay.py`
 - `src/dynamic_ai_products/lineage_screen_live_v3.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/providers/__init__.py`
@@ -877,6 +884,8 @@ Total tracked/scaffold files listed: **888**
 - `tests/universe/test_lineage_screen_continuation_v5.py`
 - `tests/universe/test_lineage_screen_repair.py`
 - `tests/universe/test_lineage_screen_release.py`
+- `tests/universe/test_classifier_candidate_cohort.py`
+- `tests/universe/test_human_review_overlay.py`
 - `tests/universe/test_lineage_screen_live_v3.py`
 - `tests/universe/test_screen_repair_prompt.py`
 - `tests/universe/test_pilot_packet.py`

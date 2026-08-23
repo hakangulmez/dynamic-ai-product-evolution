@@ -8621,6 +8621,83 @@ registry/manifest guards, and the absolute registry literals in ten screen
 suites. `require_promotable_screen_run` is byte-unchanged and continues to
 refuse both source runs.
 
+## ADR-125 — The human layer is bound as tightly as the model layer
+
+**Status.** Accepted, fixture-first. No model call, no network, no governance
+artifact, no production `data/runs` artifact, and no change to any prompt,
+provider module, runner, existing loader or SCREEN_v1.
+
+**Why a separate layer.** SCREEN_v1 names 211 rows `unresolved_after_repair`:
+rows whose evidence failed verbatim validation twice, about which the screen
+knows nothing. Those rows can be decided by a person reading Item 1, but the
+decision must not be written into the release. A release that quietly absorbed
+human judgement would no longer be the artifact its own manifest describes, and
+the distinction between a validated screen row and a reviewed one would be
+unrecoverable. The overlay is therefore a separate, hash-bound artifact, and
+SCREEN_v1 never learns of it.
+
+**Coverage is exact, as a bias control.** Every unresolved row must carry
+exactly one decision. A partial review would silently select which holes get
+filled, and that selection would correlate with how legible a filing is —
+precisely the property the screen already struggles with. A gap, a duplicate, a
+foreign row, or a decision aimed at a row the release did not leave unresolved
+each refuse the whole ingestion.
+
+**Evidence is cited as a human reads it and resolved as a machine must.** A
+reviewer supplies a displayed `P001`-style `passage_ref` and a contiguous
+verbatim quote — never an opaque internal `passage_id`, which is invisible when
+reading Item 1 and would be pure transcription noise. The loader re-derives the
+canonical passage id from the hash-bound packet using the screen's own ordinal
+convention, then resolves the quote inside that passage's body. A test pins
+that convention against the committed renderer, so a reviewer's `P001` and the
+model's `P001` cannot drift apart.
+
+**The evidence chain reaches the immutable bytes.** The overlay binds the
+release manifest and, through the release's own base run, that run's packet
+manifest and packets JSONL. Human evidence is tied to the Item 1 bytes the
+screen itself consumed, not to a rendering or a copy of them.
+
+**Admission is a second, separate decision.** The classifier-candidate cohort
+admits `LIKELY_ELIGIBLE` and `BOUNDARY_OR_UNCERTAIN` rows from either origin,
+and nothing else: model `LIKELY_INELIGIBLE`, human `LIKELY_INELIGIBLE`,
+insufficient-evidence, truncated and un-admitted unresolved rows are excluded
+and counted. A reviewer's `LIKELY_INELIGIBLE` decision stays in the overlay for
+audit — dropping it would erase the record that a person looked and concluded.
+
+**Origin travels with every row.** A `model_screen` row was validated by the
+screen; a `human_review` row failed twice and was decided by a person. These
+are different kinds of evidence and the cohort refuses to flatten them: the
+origin is on the record, with the screen's response identity or the reviewer's
+identity, protocol version, timestamp, evidence count and both prior failure
+reasons. A later analysis may weight them differently or drop one, but cannot
+fail to notice which is which.
+
+**No authorization, and no population literals.** Neither derivation spends
+anything or reaches a provider, so no grant is minted; binding is by pinned
+digests. Every count is derived from the two inputs — a test asserts that no
+population literal appears in either module, because a hard-coded total would
+describe one particular release and would keep passing while describing a
+different one.
+
+**What is deliberately absent.** No production decision, quote, reviewer
+identity or label is invented or encoded anywhere in this ADR. The shipped
+template is an empty scaffold, asserted as such by a test, and the real 211-row
+ledger is supplied separately. The classifier itself is not built here.
+
+**Honest limits.** The overlay records decisions; it makes no claim that a
+reviewed row is more accurate than a screened one, and it cannot: there is no
+gold set against which either could be scored. A row admitted as
+`BOUNDARY_OR_UNCERTAIN` is admitted precisely because it is uncertain —
+admission is not eligibility. And rows excluded from the cohort are excluded
+from classification, not judged ineligible as firms: the truncated and
+insufficient-evidence rows remain unknown rather than negative.
+
+**Scope.** Twenty-nine paths: four schemas, the overlay ingestion module, the
+cohort builder, the decision-ledger template, two fixture-only test modules,
+two CLI modes, the registry (0.63.0 to 0.64.0, 136 to 140), this decision log,
+`REPO_MANIFEST.md` (888 to 897), the five registry/manifest guards, and the
+absolute registry literals in eleven screen suites.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only

@@ -174,6 +174,18 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-125 (a governed human-review layer and the
+    # classifier-candidate cohort): manifest_version 0.63.0 -> 0.64.0, 136 ->
+    # 140 entries, registering the human-review decision and overlay manifest
+    # contracts and the classifier-candidate record and cohort manifest
+    # contracts. The overlay reviews every unresolved SCREEN_v1 row exactly
+    # once without editing the release; the cohort admits eligible and
+    # boundary rows from either the screen or a reviewer and keeps the
+    # admission origin on every row. Neither is a classifier and neither
+    # calls a model. Every earlier contract is byte-unchanged and none of the
+    # four joins EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS
+    # below.
+    # Before it,
     # Rebaselined by ADR-124 (the first reconciled SCREEN release):
     # manifest_version 0.62.0 -> 0.63.0, 134 -> 136 entries, registering the
     # release record and release manifest contracts. A release is a
@@ -459,7 +471,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "bb57a958d7a801a0df2e90a1e13570470b89a1acde0e4c0da5e3c9c549ee59f9"
+    "bc89ce21d73cf09c4189091d738fca033e133e557d4580727e631d0af6f52194"
 )
 
 

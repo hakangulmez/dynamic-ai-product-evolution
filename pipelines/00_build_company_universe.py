@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Thirty-five mutually exclusive modes, selected by ``--mode`` (default
+Thirty-seven mutually exclusive modes, selected by ``--mode`` (default
 ``sentinel`` so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -133,6 +133,15 @@ Thirty-five mutually exclusive modes, selected by ``--mode`` (default
   tolerance is 25 rows and the twenty-sixth stops the run fail-closed. Content,
   evidence, capture, governance and budget failures remain run-fatal and can
   never become provider-unresolved.
+- ``build-human-review-overlay`` ingests a reviewer-supplied decision ledger
+  covering every unresolved row of one SCREEN release. Evidence is cited as a
+  displayed ``P001``-style reference and a contiguous verbatim quote; the
+  loader re-derives the canonical passage id from the hash-bound packet and
+  resolves the quote there. The release is never edited.
+- ``build-classifier-candidate-cohort`` derives, from one release and its
+  complete overlay, the rows a classifier may be handed: eligible or boundary,
+  from either the screen or a reviewer, with the admission origin on every row.
+  No model is called and no judgement is formed.
 - ``build-screen-release`` reconciles one completed full-cohort screen and
   one completed repair run into an immutable SCREEN release. It is a
   derivation: no model, provider, prompt or authorization is involved, both
@@ -325,6 +334,12 @@ from dynamic_ai_products.lineage_screen_continuation_v3 import (  # noqa: E402
 from dynamic_ai_products.lineage_screen_continuation_v4 import (  # noqa: E402
     run_lineage_screen_continuation_v4,
 )
+from dynamic_ai_products.classifier_candidate_cohort import (  # noqa: E402
+    build_classifier_candidate_cohort,
+)
+from dynamic_ai_products.human_review_overlay import (  # noqa: E402
+    build_human_review_overlay,
+)
 from dynamic_ai_products.lineage_screen_release import (  # noqa: E402
     build_screen_release,
 )
@@ -377,6 +392,8 @@ def build_parser() -> argparse.ArgumentParser:
                  "select-screen-unverified-repair-rows",
                  "screen-universe-unverified-repair",
                  "build-screen-release",
+                 "build-human-review-overlay",
+                 "build-classifier-candidate-cohort",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
                  "aggregate-acquisition-lineage"],
@@ -610,6 +627,31 @@ def build_parser() -> argparse.ArgumentParser:
              "which failure is being continued.",
     )
     parser.add_argument(
+        "--release-manifest", default=None,
+        help="Overlay and cohort modes only: the SCREEN release's "
+             "universe_screen_release_manifest.json.",
+    )
+    parser.add_argument(
+        "--release-manifest-sha256", default=None,
+        help="Overlay and cohort modes only: the pinned digest of that "
+             "release manifest.",
+    )
+    parser.add_argument(
+        "--decision-ledger", default=None,
+        help="Build-human-review-overlay mode only: the reviewer-supplied "
+             "decision ledger covering every unresolved release row.",
+    )
+    parser.add_argument(
+        "--overlay-manifest", default=None,
+        help="Build-classifier-candidate-cohort mode only: the human-review "
+             "overlay's universe_human_review_overlay_manifest.json.",
+    )
+    parser.add_argument(
+        "--overlay-manifest-sha256", default=None,
+        help="Build-classifier-candidate-cohort mode only: the pinned digest "
+             "of that overlay manifest.",
+    )
+    parser.add_argument(
         "--base-screen-manifest", default=None,
         help="Build-screen-release mode only: the completed base screen's "
              "universe_screen_continuation_v5_manifest.json.",
@@ -811,6 +853,21 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         screen_offenders += _present((
             ("--source-diagnostic-manifest",
              args.source_diagnostic_manifest),
+        ))
+    if args.mode not in ("build-human-review-overlay",
+                         "build-classifier-candidate-cohort"):
+        screen_offenders += _present((
+            ("--release-manifest", args.release_manifest),
+            ("--release-manifest-sha256", args.release_manifest_sha256),
+        ))
+    if args.mode != "build-human-review-overlay":
+        screen_offenders += _present((
+            ("--decision-ledger", args.decision_ledger),
+        ))
+    if args.mode != "build-classifier-candidate-cohort":
+        screen_offenders += _present((
+            ("--overlay-manifest", args.overlay_manifest),
+            ("--overlay-manifest-sha256", args.overlay_manifest_sha256),
         ))
     if args.mode != "build-screen-release":
         screen_offenders += _present((
@@ -1299,6 +1356,44 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                 "screen-universe-lineage-diagnostic-repair mode requires: "
                 f"{', '.join(missing)}"
             )
+        return None
+
+    for derivation, required in (
+        ("build-human-review-overlay",
+         (("--release-manifest", "release_manifest"),
+          ("--release-manifest-sha256", "release_manifest_sha256"),
+          ("--decision-ledger", "decision_ledger"),
+          ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
+        ("build-classifier-candidate-cohort",
+         (("--release-manifest", "release_manifest"),
+          ("--release-manifest-sha256", "release_manifest_sha256"),
+          ("--overlay-manifest", "overlay_manifest"),
+          ("--overlay-manifest-sha256", "overlay_manifest_sha256"),
+          ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
+    ):
+        if args.mode != derivation:
+            continue
+        offending = _present(
+            frame_flags + acquire_flags + dera_flags
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+            + (("--input", args.input),)
+            + (("--seed", args.seed),)
+            + (("--provider", args.provider),)
+            # a derivation reaches no provider, so it takes no grant
+            + (("--governance-root", args.governance_root),)
+            + (("--screen-authorization", args.screen_authorization),)
+            + (("--screen-authorization-sha256",
+                args.screen_authorization_sha256),)
+            + (("--packet-manifest", args.packet_manifest),)
+            + (("--selection-artifact", args.selection_artifact),)
+        )
+        if offending:
+            return f"{derivation} mode does not accept: {', '.join(offending)}"
+        missing = _missing(tuple((flag, getattr(args, attribute))
+                                 for flag, attribute in required))
+        if missing:
+            return f"{derivation} mode requires: {', '.join(missing)}"
         return None
 
     if args.mode == "build-screen-release":
@@ -2964,6 +3059,75 @@ def _main_screen_universe_lineage_continuation_v5(args: argparse.Namespace) -> i
     return 0
 
 
+def _main_build_human_review_overlay(args: argparse.Namespace) -> int:
+    """CLI boundary for the ADR-125 overlay. Ingests decisions; calls no model."""
+    release = Path(args.release_manifest)
+    ledger = Path(args.decision_ledger)
+    for label, path in (("release manifest", release),
+                        ("decision ledger", ledger)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    try:
+        result = build_human_review_overlay(
+            repo_root=REPO_ROOT, release_manifest_path=release,
+            release_manifest_sha256=args.release_manifest_sha256,
+            ledger_path=ledger, output_dir=Path(args.output_dir),
+            overlay_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run)
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid human-review input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "overlay_id": result.overlay_id, "dry_run": result.dry_run,
+        "status": result.status,
+        "overlay_dir": str(result.overlay_dir) if result.overlay_dir else None,
+        "coverage": result.coverage, "counts": result.counts,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (str(result.manifest_path) if result.manifest_path
+                          else None),
+    }, indent=2))
+    return 0
+
+
+def _main_build_classifier_candidate_cohort(args: argparse.Namespace) -> int:
+    """CLI boundary for the ADR-125 cohort. Derives admission; calls no model."""
+    release = Path(args.release_manifest)
+    overlay = Path(args.overlay_manifest)
+    for label, path in (("release manifest", release),
+                        ("overlay manifest", overlay)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    try:
+        result = build_classifier_candidate_cohort(
+            repo_root=REPO_ROOT, release_manifest_path=release,
+            release_manifest_sha256=args.release_manifest_sha256,
+            overlay_manifest_path=overlay,
+            overlay_manifest_sha256=args.overlay_manifest_sha256,
+            output_dir=Path(args.output_dir), cohort_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run)
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid cohort input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "cohort_id": result.cohort_id, "dry_run": result.dry_run,
+        "status": result.status,
+        "cohort_dir": str(result.cohort_dir) if result.cohort_dir else None,
+        "counts": result.counts, "exclusions": result.exclusions,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (str(result.manifest_path) if result.manifest_path
+                          else None),
+    }, indent=2))
+    return 0
+
+
 def _main_build_screen_release(args: argparse.Namespace) -> int:
     """CLI boundary for ADR-124. Derives a release; calls no model."""
     base = Path(args.base_screen_manifest)
@@ -3593,6 +3757,10 @@ def main(argv: list[str] | None = None) -> int:
         return _main_screen_universe_lineage_diagnostic(args)
     if args.mode == "screen-universe-lineage-diagnostic-repair":
         return _main_screen_universe_lineage_diagnostic_repair(args)
+    if args.mode == "build-human-review-overlay":
+        return _main_build_human_review_overlay(args)
+    if args.mode == "build-classifier-candidate-cohort":
+        return _main_build_classifier_candidate_cohort(args)
     if args.mode == "build-screen-release":
         return _main_build_screen_release(args)
     if args.mode == "select-screen-unverified-repair-rows":

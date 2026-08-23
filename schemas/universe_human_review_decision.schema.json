@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_human_review_decision.schema.json",
+  "title": "Universe human review decision v0.1.0",
+  "description": "ADR-125. One reviewer's decision on one SCREEN_v1 row that failed validation twice. The decision is bound to the exact release it reviews and to the exact row, carrying both prior failure reasons so the reader sees what the model could not resolve. Evidence is cited the way a human reads it \u2014 a displayed P001-style reference and a contiguous verbatim quote \u2014 and is resolved against the immutable Item 1 packet bytes rather than trusted. A decision is a separate observation layer: it never edits SCREEN_v1, and a LIKELY_INELIGIBLE decision is retained for audit while entering no classifier cohort.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decision_contract",
+    "release_id",
+    "release_manifest_sha256",
+    "cik",
+    "accession",
+    "base_failure_reason_code",
+    "repair_failure_reason_code",
+    "decision",
+    "evidence",
+    "review_protocol_version",
+    "reviewer_id",
+    "decision_timestamp"
+  ],
+  "properties": {
+    "decision_contract": {
+      "const": "universe_human_review_decision@0.1.0"
+    },
+    "release_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "release_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "cik": {
+      "type": "string",
+      "pattern": "^[0-9]{10}$"
+    },
+    "accession": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_failure_reason_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repair_failure_reason_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision": {
+      "enum": [
+        "LIKELY_ELIGIBLE",
+        "LIKELY_INELIGIBLE",
+        "BOUNDARY_OR_UNCERTAIN"
+      ]
+    },
+    "evidence": {
+      "description": "Item 1 evidence in the same displayed form a reviewer reads: a P001-style reference and a contiguous verbatim span. The reviewer never handles an internal passage_id; the loader re-derives the canonical id from the hash-bound packet and resolves the quote inside that passage's body.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "passage_ref",
+          "quote"
+        ],
+        "properties": {
+          "passage_ref": {
+            "type": "string",
+            "pattern": "^P[0-9]{3}$"
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1
+          },
+          "supported_claim": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "review_protocol_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reviewer_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
