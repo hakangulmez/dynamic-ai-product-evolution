@@ -174,6 +174,18 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-126 (the governed live Company-Universe Classifier
+    # V2.1 and its continuation): manifest_version 0.64.0 -> 0.65.0, 140 -> 146
+    # entries, registering the classifier axes and stored-record contracts,
+    # both classifier authorizations and both classifier manifests. The axes
+    # contract carries no tier field of any name: the model returns axes and a
+    # versioned deterministic engine derives the tier, so a prompt revision
+    # cannot move tier membership. The stored record keeps the axes, the full
+    # rule trace and the admission origin that put the firm in the cohort,
+    # marked non-authoritative. Every earlier contract is byte-unchanged and
+    # none of the six joins EVALUATION_SCHEMA_CONTRACTS or
+    # RELEASED_EVALUATION_CONTRACTS below.
+    # Before it,
     # Rebaselined by ADR-125 (a governed human-review layer and the
     # classifier-candidate cohort): manifest_version 0.63.0 -> 0.64.0, 136 ->
     # 140 entries, registering the human-review decision and overlay manifest
@@ -471,7 +483,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "bc89ce21d73cf09c4189091d738fca033e133e557d4580727e631d0af6f52194"
+    "8e6025833847db2fdd8fb54ae8f75818d3724d1e8772a6feda7b9cf1c0824b84"
 )
 
 

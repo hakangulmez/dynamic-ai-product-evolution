@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Thirty-seven mutually exclusive modes, selected by ``--mode`` (default
+Thirty-nine mutually exclusive modes, selected by ``--mode`` (default
 ``sentinel`` so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -153,6 +153,25 @@ Thirty-seven mutually exclusive modes, selected by ``--mode`` (default
   row ordinal, under the closed rule ``unverified_rows_ascending_ordinal@1``
   and with no status-based filter; the artifact is written write-once and no
   model is called.
+- ``classify-universe-cohort`` runs the governed live Company-Universe
+  Classifier V2.1 over one immutable classifier candidate cohort (ADR-126).
+  Each row is judged against its complete baseline Item 1 packet; the
+  admission that put the firm in the cohort — a validated model screen or a
+  hash-bound human-review decision — is rendered as explicitly
+  non-authoritative context the model may contradict. The model returns axes
+  only: a versioned deterministic engine derives the tier and stores its full
+  rule trace, so a prompt revision can never move tier membership.
+  Provider-unresolved, truncated and unusable outputs are bounded by
+  authorization parameters with no default. Nothing runs until the cohort,
+  overlay, release, packet, prompt, tier-rule, route, contract, endpoint and
+  cap bindings are all proven, ahead of any run directory or SDK import.
+- ``classify-universe-cohort-continuation`` is that route's immutable-prefix
+  successor (ADR-126). It reuses one explicitly named failed classifier run's
+  archived responses — revalidating and re-tiering every one of them rather
+  than copying an outcome — and model-calls only the rows that remain. It
+  refuses a source whose archive is not a contiguous prefix of the cohort,
+  which includes any source that carried a provider-unresolved or truncated
+  row before it stopped.
 - ``screen-universe-unverified-repair`` re-asks exactly those rows under the
   narrow evidence-binding prompt successor. Each row is screened afresh from
   its packet: no earlier status, quote, reference or failure reason reaches the
@@ -337,6 +356,15 @@ from dynamic_ai_products.lineage_screen_continuation_v4 import (  # noqa: E402
 from dynamic_ai_products.classifier_candidate_cohort import (  # noqa: E402
     build_classifier_candidate_cohort,
 )
+from dynamic_ai_products.classifier_tier_engine import (  # noqa: E402
+    TierRulesError,
+)
+from dynamic_ai_products.lineage_classifier_v2_1 import (  # noqa: E402
+    run_lineage_classifier,
+)
+from dynamic_ai_products.lineage_classifier_continuation import (  # noqa: E402
+    run_lineage_classifier_continuation,
+)
 from dynamic_ai_products.human_review_overlay import (  # noqa: E402
     build_human_review_overlay,
 )
@@ -394,6 +422,8 @@ def build_parser() -> argparse.ArgumentParser:
                  "build-screen-release",
                  "build-human-review-overlay",
                  "build-classifier-candidate-cohort",
+                 "classify-universe-cohort",
+                 "classify-universe-cohort-continuation",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
                  "aggregate-acquisition-lineage"],
@@ -642,6 +672,12 @@ def build_parser() -> argparse.ArgumentParser:
              "decision ledger covering every unresolved release row.",
     )
     parser.add_argument(
+        "--cohort-manifest", default=None,
+        help="Path to a completed classifier candidate cohort manifest. Used "
+             "by the two classifier modes only; its digest is pinned by the "
+             "authorization, never by this flag.",
+    )
+    parser.add_argument(
         "--overlay-manifest", default=None,
         help="Build-classifier-candidate-cohort mode only: the human-review "
              "overlay's universe_human_review_overlay_manifest.json.",
@@ -813,7 +849,9 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "screen-universe-lineage-diagnostic",
                          "screen-universe-lineage-diagnostic-repair",
                          "select-screen-repair-rows",
-                         "select-screen-rows"):
+                         "select-screen-rows",
+                         "classify-universe-cohort",
+                         "classify-universe-cohort-continuation"):
         screen_offenders += _present(
             (("--packet-manifest", args.packet_manifest),)
         )
@@ -842,8 +880,26 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "screen-universe-unverified-repair",
                          "screen-universe-lineage-diagnostic",
                          "screen-universe-lineage-diagnostic-repair"):
+        # The classifier modes take a cohort, not a selection artifact, so
+        # they are deliberately absent here and admitted below for the three
+        # governance flags alone.
         screen_offenders += _present((
             ("--selection-artifact", args.selection_artifact),
+        ))
+    if args.mode not in ("screen-universe-lineage-live",
+                         "screen-universe-lineage-live-v2",
+                         "screen-universe-lineage-live-v3",
+                         "screen-universe-lineage-continuation",
+                         "screen-universe-lineage-continuation-v2",
+                         "screen-universe-lineage-continuation-v3",
+                         "screen-universe-lineage-continuation-v4",
+                         "screen-universe-lineage-continuation-v5",
+                         "screen-universe-unverified-repair",
+                         "screen-universe-lineage-diagnostic",
+                         "screen-universe-lineage-diagnostic-repair",
+                         "classify-universe-cohort",
+                         "classify-universe-cohort-continuation"):
+        screen_offenders += _present((
             ("--governance-root", args.governance_root),
             ("--screen-authorization", args.screen_authorization),
             ("--screen-authorization-sha256",
@@ -855,19 +911,35 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
              args.source_diagnostic_manifest),
         ))
     if args.mode not in ("build-human-review-overlay",
-                         "build-classifier-candidate-cohort"):
+                         "build-classifier-candidate-cohort",
+                         "classify-universe-cohort", "classify-universe-cohort-continuation"):
         screen_offenders += _present((
             ("--release-manifest", args.release_manifest),
+        ))
+    # The digest flags belong to the two deterministic builders. A classifier
+    # run takes its digests from the authorization, so passing one here would
+    # create a second, unbound source of truth.
+    if args.mode not in ("build-human-review-overlay",
+                         "build-classifier-candidate-cohort"):
+        screen_offenders += _present((
             ("--release-manifest-sha256", args.release_manifest_sha256),
         ))
     if args.mode != "build-human-review-overlay":
         screen_offenders += _present((
             ("--decision-ledger", args.decision_ledger),
         ))
-    if args.mode != "build-classifier-candidate-cohort":
+    if args.mode not in ("build-classifier-candidate-cohort",
+                         "classify-universe-cohort", "classify-universe-cohort-continuation"):
         screen_offenders += _present((
             ("--overlay-manifest", args.overlay_manifest),
+        ))
+    if args.mode != "build-classifier-candidate-cohort":
+        screen_offenders += _present((
             ("--overlay-manifest-sha256", args.overlay_manifest_sha256),
+        ))
+    if args.mode not in ("classify-universe-cohort", "classify-universe-cohort-continuation"):
+        screen_offenders += _present((
+            ("--cohort-manifest", args.cohort_manifest),
         ))
     if args.mode != "build-screen-release":
         screen_offenders += _present((
@@ -882,7 +954,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "screen-universe-lineage-continuation-v2",
                          "screen-universe-lineage-continuation-v3",
                          "screen-universe-lineage-continuation-v4",
-                         "screen-universe-lineage-continuation-v5"):
+                         "screen-universe-lineage-continuation-v5",
+                         "classify-universe-cohort-continuation"):
         screen_offenders += _present((
             ("--source-run-dir", args.source_run_dir),
             ("--source-receipt-sha256", args.source_receipt_sha256),
@@ -1482,6 +1555,41 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                 "screen-universe-unverified-repair mode requires: "
                 f"{', '.join(missing)}"
             )
+        return None
+
+    for classifier_mode, extra_required in (
+        ("classify-universe-cohort", ()),
+        ("classify-universe-cohort-continuation", (("--source-run-dir", "source_run_dir"),
+                    ("--source-receipt-sha256", "source_receipt_sha256"))),
+    ):
+        if args.mode != classifier_mode:
+            continue
+        offending = _present(
+            frame_flags + acquire_flags + dera_flags
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+            + (("--input", args.input),)
+            + (("--seed", args.seed),)
+            + (("--provider", args.provider),)
+        )
+        if offending:
+            return (
+                f"{classifier_mode} mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        required = [
+            ("--cohort-manifest", args.cohort_manifest),
+            ("--overlay-manifest", args.overlay_manifest),
+            ("--release-manifest", args.release_manifest),
+            ("--packet-manifest", args.packet_manifest),
+            ("--governance-root", args.governance_root),
+            ("--screen-authorization", args.screen_authorization),
+            ("--screen-authorization-sha256", args.screen_authorization_sha256),
+        ]
+        required += [(flag, getattr(args, attr)) for flag, attr in extra_required]
+        missing = _missing(tuple(required))
+        if missing:
+            return f"{classifier_mode} mode requires: {', '.join(missing)}"
         return None
 
     if args.mode == "select-screen-repair-rows":
@@ -3194,6 +3302,110 @@ def _main_select_screen_unverified_repair_rows(args: argparse.Namespace) -> int:
     return 0
 
 
+def _classifier_paths(args: argparse.Namespace):
+    """Resolve and existence-check the four pinned classifier inputs."""
+    paths = {
+        "cohort manifest": Path(args.cohort_manifest),
+        "overlay manifest": Path(args.overlay_manifest),
+        "release manifest": Path(args.release_manifest),
+        "packet manifest": Path(args.packet_manifest),
+    }
+    for label, path in paths.items():
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return None
+    governance_root = Path(args.governance_root)
+    if not governance_root.is_dir():
+        print(f"ERROR: governance root not found: {governance_root}",
+              file=sys.stderr)
+        return None
+    return list(paths.values()) + [governance_root]
+
+
+def _report_classifier_run(result, *, what: str) -> int:
+    print(json.dumps({
+        "run_id": result.run_id, "dry_run": result.dry_run,
+        "status": result.status,
+        "run_dir": str(result.run_dir) if result.run_dir else None,
+        "counts": result.counts, "request_accounting": result.request_accounting,
+        "reconciliation": result.reconciliation,
+        "manifest_path": (str(result.manifest_path) if result.manifest_path
+                          else None),
+        "failure_receipt_path": (str(result.failure_receipt_path)
+                                 if result.failure_receipt_path else None),
+        "receipt": result.receipt,
+    }, indent=2))
+    if result.status == "failed":
+        print(f"ERROR: {what} stopped with a failure receipt; the run is "
+              "non-authoritative.", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _main_classify_universe_cohort(args: argparse.Namespace) -> int:
+    """CLI boundary for the ADR-126 governed live classifier."""
+    resolved = _classifier_paths(args)
+    if resolved is None:
+        return 2
+    cohort, overlay, release, packet, governance_root = resolved
+    try:
+        result = run_lineage_classifier(
+            repo_root=REPO_ROOT, cohort_manifest_path=cohort,
+            overlay_manifest_path=overlay, release_manifest_path=release,
+            packet_manifest_path=packet, governance_root=governance_root,
+            authorization_reference=args.screen_authorization,
+            authorization_sha256=args.screen_authorization_sha256,
+            output_dir=Path(args.output_dir), run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid classifier input: {exc}", file=sys.stderr)
+        return 2
+    except TierRulesError as exc:
+        print(f"ERROR: unusable tier rules: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    return _report_classifier_run(result, what="classifier run")
+
+
+def _main_classify_universe_cohort_continuation(
+        args: argparse.Namespace) -> int:
+    """CLI boundary for the ADR-126 immutable-prefix continuation."""
+    resolved = _classifier_paths(args)
+    if resolved is None:
+        return 2
+    cohort, overlay, release, packet, governance_root = resolved
+    source_run_dir = Path(args.source_run_dir)
+    if not source_run_dir.is_dir():
+        print(f"ERROR: source run directory not found: {source_run_dir}",
+              file=sys.stderr)
+        return 2
+    try:
+        result = run_lineage_classifier_continuation(
+            repo_root=REPO_ROOT, cohort_manifest_path=cohort,
+            overlay_manifest_path=overlay, release_manifest_path=release,
+            packet_manifest_path=packet, governance_root=governance_root,
+            authorization_reference=args.screen_authorization,
+            authorization_sha256=args.screen_authorization_sha256,
+            source_run_dir=source_run_dir,
+            output_dir=Path(args.output_dir), run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid classifier continuation input: {exc}",
+              file=sys.stderr)
+        return 2
+    except TierRulesError as exc:
+        print(f"ERROR: unusable tier rules: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    return _report_classifier_run(result, what="classifier continuation run")
+
+
 def _main_screen_universe_unverified_repair(args: argparse.Namespace) -> int:
     """CLI boundary for ADR-123 Stage 2. Re-asks; never edits."""
     packet_manifest = Path(args.packet_manifest)
@@ -3761,6 +3973,10 @@ def main(argv: list[str] | None = None) -> int:
         return _main_build_human_review_overlay(args)
     if args.mode == "build-classifier-candidate-cohort":
         return _main_build_classifier_candidate_cohort(args)
+    if args.mode == "classify-universe-cohort":
+        return _main_classify_universe_cohort(args)
+    if args.mode == "classify-universe-cohort-continuation":
+        return _main_classify_universe_cohort_continuation(args)
     if args.mode == "build-screen-release":
         return _main_build_screen_release(args)
     if args.mode == "select-screen-unverified-repair-rows":

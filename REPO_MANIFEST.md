@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **897**
+Total tracked/scaffold files listed: **912**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -64,6 +64,7 @@ Total tracked/scaffold files listed: **897**
 - `configs/shell_validation_canary_request_plan.json`
 - `configs/source_types.yaml`
 - `configs/universe_sample_rules.yaml`
+- `configs/universe_classifier_tier_rules_v2_1.yaml`
 - `configs/universe_taxonomy.yaml`
 - `data/README.md`
 - `data/interim/.gitkeep`
@@ -326,6 +327,7 @@ Total tracked/scaffold files listed: **897**
 - `prompts/adjudication/universe_boundary_adjudication.md`
 - `prompts/discovery/official_source_discovery.md`
 - `prompts/discovery/universe_full_classification.md`
+- `prompts/discovery/universe_full_classification.v2_1.md`
 - `prompts/discovery/universe_high_recall_screen.md`
 - `prompts/discovery/universe_high_recall_screen.v2.md`
 - `prompts/discovery/universe_high_recall_screen.v3.md`
@@ -497,6 +499,12 @@ Total tracked/scaffold files listed: **897**
 - `schemas/universe_classifier_candidate_record.schema.json`
 - `schemas/universe_human_review_decision.schema.json`
 - `schemas/universe_human_review_overlay_manifest.schema.json`
+- `schemas/universe_classifier_authorization.schema.json`
+- `schemas/universe_classifier_axes_record.schema.json`
+- `schemas/universe_classifier_continuation_authorization.schema.json`
+- `schemas/universe_classifier_continuation_manifest.schema.json`
+- `schemas/universe_classifier_manifest.schema.json`
+- `schemas/universe_classifier_record.schema.json`
 - `schemas/universe_screen_selection.schema.json`
 - `schemas/web_collection_receipt.schema.json`
 - `schemas/web_collection_request_plan.schema.json`
@@ -664,6 +672,9 @@ Total tracked/scaffold files listed: **897**
 - `src/dynamic_ai_products/lineage_screen_release.py`
 - `src/dynamic_ai_products/classifier_candidate_cohort.py`
 - `src/dynamic_ai_products/human_review_overlay.py`
+- `src/dynamic_ai_products/classifier_tier_engine.py`
+- `src/dynamic_ai_products/lineage_classifier_continuation.py`
+- `src/dynamic_ai_products/lineage_classifier_v2_1.py`
 - `src/dynamic_ai_products/lineage_screen_live_v3.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/providers/__init__.py`
@@ -886,6 +897,10 @@ Total tracked/scaffold files listed: **897**
 - `tests/universe/test_lineage_screen_release.py`
 - `tests/universe/test_classifier_candidate_cohort.py`
 - `tests/universe/test_human_review_overlay.py`
+- `tests/universe/test_classifier_tier_engine.py`
+- `tests/universe/test_classifier_v2_1_prompt.py`
+- `tests/universe/test_lineage_classifier_continuation.py`
+- `tests/universe/test_lineage_classifier_v2_1.py`
 - `tests/universe/test_lineage_screen_live_v3.py`
 - `tests/universe/test_screen_repair_prompt.py`
 - `tests/universe/test_pilot_packet.py`

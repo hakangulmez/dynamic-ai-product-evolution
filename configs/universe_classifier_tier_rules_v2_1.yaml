@@ -1,0 +1,57 @@
+# ADR-126 deterministic classifier tier rules.
+#
+# This config is the single source of truth for turning validated classifier
+# axes into a tier. It is pinned by digest in every authorization and manifest,
+# so a prompt revision can never move tier membership: only an explicit,
+# versioned change to this file can.
+#
+# `configs/universe_sample_rules.yaml` is untouched and continues to govern the
+# historical sentinel path.
+#
+# customer_market_orientation appears nowhere below, by design. It is
+# descriptive metadata and is not an input to the tier function.
+tier_rules_version: "universe_classifier_tier_rules_v2_1"
+
+# Evaluated in order; the first rule whose conditions all hold decides.
+rules:
+  - rule_id: "excluded_no_customer_facing_product"
+    tier: "EXCLUDED"
+    when:
+      customer_facing_functional_product: [false]
+
+  - rule_id: "uncertain_unknown_product_or_centrality"
+    tier: "UNCERTAIN"
+    when_any:
+      customer_facing_functional_product: [null]
+      software_centrality: ["UNKNOWN"]
+      firm_structure: ["UNKNOWN"]
+
+  - rule_id: "excluded_peripheral_software"
+    tier: "EXCLUDED"
+    when:
+      software_centrality: ["PERIPHERAL"]
+
+  - rule_id: "tier_a_core_software_dominant_firm"
+    tier: "TIER_A"
+    when:
+      software_centrality: ["CORE"]
+      firm_structure: ["PURE_PLAY", "SOFTWARE_DOMINANT"]
+      commercial_materiality: ["DOMINANT", "MATERIAL"]
+      economically_eligible: [true]
+
+  - rule_id: "tier_b_core_or_co_essential_mixed_firm"
+    tier: "TIER_B"
+    when:
+      software_centrality: ["CORE", "CO_ESSENTIAL"]
+      firm_structure: ["PURE_PLAY", "SOFTWARE_DOMINANT", "MIXED_SEPARABLE",
+                       "MIXED_NONSEPARABLE"]
+      commercial_materiality: ["DOMINANT", "MATERIAL", "MINOR"]
+
+  - rule_id: "tier_c_enabling_software"
+    tier: "TIER_C"
+    when:
+      software_centrality: ["ENABLING"]
+
+  - rule_id: "uncertain_unresolved_combination"
+    tier: "UNCERTAIN"
+    when: {}

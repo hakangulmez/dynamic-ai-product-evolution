@@ -749,7 +749,13 @@ def test_manifest_declared_total_matches_entry_count_and_lists_new_path():
 def test_no_static_schema_added_and_schema_manifest_unchanged():
     # Evaluation-v2 meaning preserved: run manifest v0.2 still adds no static
     # schema file. Only the global schema-version-manifest baseline is
-    # rebaselined (latest: ADR-112, 0.49.0 -> 0.50.0, 105 -> 108 entries,
+    # rebaselined (latest: ADR-126, 0.64.0 -> 0.65.0, 140 -> 146 entries,
+    # registering the six classifier contracts (axes record, stored record,
+    # both authorizations, both manifests) -- the axes contract carries no
+    # tier field of any name, so the tier stays a deterministic derivation
+    # from a separately versioned rule config; every earlier contract and the
+    # V5 screen prompt stay byte-unchanged; before it
+    # ADR-112, 0.49.0 -> 0.50.0, 105 -> 108 entries,
     # registering the three diagnostic-canary contracts (record,
     # manifest, authorization) -- every authoritative screen contract
     # and prompt stays byte-unchanged; before it
@@ -848,7 +854,7 @@ def test_no_static_schema_added_and_schema_manifest_unchanged():
     # successor).
     assert not (ROOT / "schemas" / "evaluation_run_manifest.v2.schema.json").exists()
     got = sha256_bytes((ROOT / "schemas" / "schema_version_manifest.json").read_bytes())
-    assert got == "bc89ce21d73cf09c4189091d738fca033e133e557d4580727e631d0af6f52194"
+    assert got == "8e6025833847db2fdd8fb54ae8f75818d3724d1e8772a6feda7b9cf1c0824b84"
 
 
 def test_protected_identities_unchanged():

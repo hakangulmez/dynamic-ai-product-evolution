@@ -8698,6 +8698,90 @@ two CLI modes, the registry (0.63.0 to 0.64.0, 136 to 140), this decision log,
 `REPO_MANIFEST.md` (888 to 897), the five registry/manifest guards, and the
 absolute registry literals in eleven screen suites.
 
+## ADR-126 — The model returns axes; the tier is derived
+
+**Status.** Accepted, fixture-first. No model call, no network, no governance
+artifact, no production `data/runs` artifact, and no change to the historical
+classification schema, the sentinel classification module, the sentinel rule
+config, the V1 classification prompt, the screen prompts, or any existing
+runner or loader.
+
+**Why the tier leaves the prompt.** The V1 classifier asked one model call for
+both an economic reading and a tier label. That coupling means a prompt
+revision can move firms between tiers with no artifact recording why, and it
+makes the tier boundary unauditable after the fact. V2.1 splits them: the model
+returns axes only, and a separately versioned rule config —
+`configs/universe_classifier_tier_rules_v2_1.yaml`, pinned by digest in every
+authorization and manifest — derives the tier and stores its full ordered rule
+trace. The axes contract carries no tier field of any name, so a model that
+volunteers one is refused rather than obeyed, and every stored tier is
+replayable from its own stored axes years later without this code running.
+
+**Market orientation is metadata, not an input.** `customer_market_orientation`
+records who buys. Letting it reach the tier function would quietly convert a
+description of the customer into a claim about the firm's economic type, so the
+engine refuses a rule that names it at load time rather than ignoring it at
+evaluation time, and a test permutes all four values across a live run to show
+no row moves.
+
+**An admission is context, not authority.** The cohort admits firms two ways:
+3,954 rows carry a validated screen result, and 91 failed screen validation
+twice and were admitted by a reviewer through the hash-bound overlay. Both are
+legitimate admissions and neither is evidence. Every row is judged against its
+complete baseline Item 1 packet; the admission is rendered as explicitly
+non-authoritative context the model is told to check and may contradict, and
+two tests prove a screen admission and a reviewer admission can each be
+contradicted by the complete packet.
+
+**The renderer never invents provenance.** A `model_screen` row's context is
+hydrated from the release row the cohort names, cross-checked against the
+raw-response id and digest the cohort record carries. A `human_review` row's
+context is hydrated from the matching hash-bound overlay decision, because the
+cohort record carries reviewer metadata and an evidence count but not the quote
+bodies. A missing, duplicate, foreign or digest-mismatched link on either
+branch refuses the run before a run directory exists, before the SDK is
+imported and before any credential is resolved. Screen evidence is read from
+the frozen release's own records rather than from the mutable runs that
+produced it.
+
+**Compactness is a contract term.** The committed `max_output_tokens` is
+unchanged, so the axes schema bounds every array and string — at most four
+archetypes, five dependencies, six evidence objects, a 300-character quote — and
+the prompt declares the same limits a test holds it to. A response that
+overflows them is a validation failure, not a silent truncation of meaning.
+
+**Bounded outcomes are authorized, never assumed.** Provider-unresolved
+(ADR-121), truncated output (ADR-122) and output that fails validation are all
+recorded row kinds rather than run-ending stops, and all three tolerances are
+authorization parameters with no default in the module: each grant states its
+own numbers, so no threshold enters the pipeline unexamined. A row of any of
+those kinds is a row about which the run concluded nothing — never a negative
+finding about the firm.
+
+**The continuation reuses bytes, not conclusions.** Every archived response a
+failed run left is re-rendered, re-validated and re-tiered exactly as a fresh
+response would be, so a reused row that no longer validates becomes an unusable
+row rather than a smuggled-in classification. The route requires the archive to
+map one-to-one onto the leading cohort rows: a provider-unresolved or truncated
+row leaves no archive line, so a source carrying one before it stopped has no
+contiguous reusable prefix and is refused by name rather than partially reused.
+A prefix whose revalidated failures already exceed the tolerance refuses the run
+before it starts.
+
+**Honest limits.** This run is an observation, not a frozen universe: it is
+structurally non-promotable, carries no adjudication state, and settles no
+sampling decision. A tier is a reading of one filing's Item 1 under one rule
+config, not a claim about the firm's true economic type, and `UNCERTAIN` is a
+recorded absence of a stable conclusion rather than a middle score. No
+calibration cohort is built here and no live run is authorized.
+
+**Scope.** Thirty-five paths: the V2.1 prompt, six schemas, the tier-rule
+config, the tier engine, the governed runner, its continuation, four
+fixture-only test modules, two CLI modes, the registry (0.64.0 to 0.65.0, 140
+to 146), this decision log, `REPO_MANIFEST.md` (897 to 912), the five
+registry/manifest guards, and the absolute registry literals in eleven screen
+suites.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only
