@@ -717,7 +717,7 @@ def _refused(cohort, tmp_path, grant, match, **kwargs):
     ("release_manifest_sha256", "0" * 64, "not the artifact that was authorized"),
     ("overlay_manifest_sha256", "0" * 64, "not the artifact that was authorized"),
     ("packet_manifest_sha256", "0" * 64, "different packet cohort"),
-    ("prompt_template_sha256", "0" * 64, "committed V2.1 classifier prompt"),
+    ("prompt_template_sha256", "0" * 64, "committed v2_1 classifier prompt"),
     ("tier_rules_sha256", "0" * 64, "committed tier-rule config"),
     ("tier_rules_version", "other_rules", "committed tier-rule config"),
     ("taxonomy_version", "other_taxonomy", "policy versions, ceilings or contracts"),
@@ -933,5 +933,5 @@ def test_the_cli_declares_both_modes():
     choices = next(a.choices for a in parser._actions if a.dest == "mode")
     assert "classify-universe-cohort" in choices
     assert "classify-universe-cohort-continuation" in choices
-    # ADR-127 added the three calibration modes beside these two.
-    assert "Forty-two mutually exclusive modes" in cli.__doc__
+    # ADR-127 added three calibration modes; ADR-128 added three V2.2 modes.
+    assert "Forty-five mutually exclusive modes" in cli.__doc__

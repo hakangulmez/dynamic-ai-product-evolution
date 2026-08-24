@@ -37,6 +37,7 @@ from typing import Any, Callable
 
 from jsonschema import Draft202012Validator, FormatChecker
 
+from .classifier_contract_set import V2_1, V2_2
 from .classifier_tier_engine import derive_tier
 from .lineage_classifier_v2_1 import (
     AXES_SCHEMA,
@@ -71,6 +72,7 @@ __all__ = [
     "CONTINUATION_MANIFEST_SCHEMA",
     "CONTINUATION_RECORDS_FILENAME",
     "CONTINUATION_ROUTE",
+    "CONTINUATION_ROUTE_V2_2",
     "ClassifierSourcePrefix",
     "load_classifier_continuation_source",
     "require_classifier_continuation_run",
@@ -97,6 +99,25 @@ CONTINUATION_ROUTE = ClassifierRoute(
     manifest_contract=CONTINUATION_MANIFEST_CONTRACT,
     manifest_schema=CONTINUATION_MANIFEST_SCHEMA,
     record_order=RECORD_ORDER,
+    authorization_schema=CONTINUATION_AUTHORIZATION_SCHEMA,
+    archive_filename=CLASSIFIER_RAW_RESPONSES_FILENAME,
+    contracts=V2_1,
+)
+
+#: The ADR-128 successor. Same immutable-prefix logic, wider output bounds, its
+#: own contracts and filenames.
+CONTINUATION_ROUTE_V2_2 = ClassifierRoute(
+    run_kind=CONTINUATION_RUN_KIND,
+    records_filename="universe_classifier_v2_2_continuation_records.jsonl",
+    manifest_filename="universe_classifier_v2_2_continuation_manifest.json",
+    manifest_contract="universe_classifier_continuation_manifest@0.2.0",
+    manifest_schema=(
+        "schemas/universe_classifier_continuation_manifest.v2.schema.json"),
+    record_order=RECORD_ORDER,
+    authorization_schema=(
+        "schemas/universe_classifier_continuation_authorization.v2.schema.json"),
+    archive_filename="universe_classifier_v2_2_raw_responses.jsonl",
+    contracts=V2_2,
 )
 
 #: Receipt fields a continuable classifier failure must carry. A receipt that
@@ -104,7 +125,8 @@ CONTINUATION_ROUTE = ClassifierRoute(
 #: refused rather than interpreted.
 _REQUIRED_RECEIPT_FIELDS = (
     "run_id", "run_kind", "reason_code", "stopping_cik", "stopping_accession",
-    "stopping_row_index", "records_completed_before_failure",
+    "stopping_row_index", "stopping_row_completed",
+    "records_completed_before_failure",
     "reused_prefix_rows", "authorization_sha256", "cohort_id",
 )
 
@@ -123,7 +145,8 @@ class ClassifierSourcePrefix:
 
 
 def load_classifier_continuation_source(
-    source_run_dir: str | Path, *, source_receipt_sha256: str
+    source_run_dir: str | Path, *, source_receipt_sha256: str,
+    archive_filename: str = CLASSIFIER_RAW_RESPONSES_FILENAME,
 ) -> ClassifierSourcePrefix:
     """Load and structurally validate one explicitly named failed run.
 
@@ -166,7 +189,7 @@ def load_classifier_continuation_source(
             f"The source receipt is missing {missing}; this route continues only "
             "receipts whose shape it has reasoned about."
         )
-    archive_path = directory / CLASSIFIER_RAW_RESPONSES_FILENAME
+    archive_path = directory / archive_filename
     if not archive_path.is_file():
         raise ScreenInputError(
             f"Continuation source {directory} holds no response archive; there "
@@ -176,7 +199,7 @@ def load_classifier_continuation_source(
     entries: list[dict] = []
     seen: set[str] = set()
     for line in _decode_utf8(
-            archive_bytes, CLASSIFIER_RAW_RESPONSES_FILENAME).splitlines():
+            archive_bytes, archive_filename).splitlines():
         if not line.strip():
             continue
         entry = json.loads(line)
@@ -208,11 +231,20 @@ def load_classifier_continuation_source(
             "this source has no contiguous reusable prefix and needs a fresh "
             "run rather than a continuation."
         )
-    if receipt["stopping_row_index"] != completed + 1:
+    # A stop names the row that broke, which is not always where a
+    # continuation resumes. A budget-exhausted stop recorded that row before
+    # stopping, so it is inside the prefix and the resume point is the row
+    # after it; every other stop never completed its row, so the resume point
+    # is that row itself. Either way the resume point is completed + 1, and the
+    # stopping ordinal must be one of the two rows either side of that seam.
+    stopping_completed = bool(receipt.get("stopping_row_completed", False))
+    expected_index = completed if stopping_completed else completed + 1
+    if receipt["stopping_row_index"] != expected_index:
         raise ScreenInputError(
-            f"The source stopped at row {receipt['stopping_row_index']} with "
-            f"{completed} completed; a continuation needs the stopping row to "
-            "follow the prefix immediately."
+            f"The source names stopping row {receipt['stopping_row_index']} "
+            f"with {completed} completed and stopping_row_completed="
+            f"{stopping_completed}; the stopping ordinal must be "
+            f"{expected_index}."
         )
     return ClassifierSourcePrefix(
         run_dir=directory, run_id=receipt["run_id"], receipt=receipt,
@@ -332,6 +364,7 @@ def run_lineage_classifier_continuation(
     source_run_dir: str | Path, output_dir: str | Path, run_id: str,
     clock: Callable[[], datetime], dry_run: bool = False,
     client_factory: Any = None, sleep: Callable[[float], None] | None = None,
+    route: ClassifierRoute = CONTINUATION_ROUTE,
 ) -> ScreenRunResult:
     """Continue one named failed classifier run under a fresh grant."""
     root = Path(repo_root)
@@ -350,7 +383,8 @@ def run_lineage_classifier_continuation(
             )
         prefix = load_classifier_continuation_source(
             source_run_dir,
-            source_receipt_sha256=authorization["source_receipt_sha256"])
+            source_receipt_sha256=authorization["source_receipt_sha256"],
+            archive_filename=route.archive_filename)
         if prefix.run_id != authorization["source_run_id"]:
             raise ScreenInputError(
                 f"The source run is {prefix.run_id!r}, but the grant names "
@@ -379,11 +413,19 @@ def run_lineage_classifier_continuation(
             validator=axes_validator)
         stopping = (prefix.receipt["stopping_cik"],
                     prefix.receipt["stopping_accession"])
-        following = inputs.rows[len(records)]
-        if (following["cik"], following["accession"]) != stopping:
+        # The stopping row sits at its own recorded ordinal, which is the last
+        # prefix row for a budget stop and the first re-sent row otherwise.
+        ordinal = prefix.receipt["stopping_row_index"]
+        if not 1 <= ordinal <= len(inputs.rows):
             raise ScreenInputError(
-                f"The source stopped on {stopping}, but the row following the "
-                f"prefix is {(following['cik'], following['accession'])}."
+                f"The source names stopping ordinal {ordinal}, outside the "
+                f"cohort's {len(inputs.rows)} rows."
+            )
+        at_ordinal = inputs.rows[ordinal - 1]
+        if (at_ordinal["cik"], at_ordinal["accession"]) != stopping:
+            raise ScreenInputError(
+                f"The source stopped on {stopping}, but row {ordinal} of the "
+                f"scope is {(at_ordinal['cik'], at_ordinal['accession'])}."
             )
         holder["prefix"] = prefix
         return records, {
@@ -402,8 +444,7 @@ def run_lineage_classifier_continuation(
         overlay_manifest_path=Path(overlay_manifest_path),
         release_manifest_path=Path(release_manifest_path),
         packet_manifest_path=packet_manifest_path, clock=clock,
-        authorization_schema=CONTINUATION_AUTHORIZATION_SCHEMA,
-        route=CONTINUATION_ROUTE, prefix_loader=prefix_loader)
+        route=route, prefix_loader=prefix_loader)
     if dry_run:
         for row, packet, admission in pre.plan:
             render_classifier_prompt(pre.prompt_text, packet, admission)

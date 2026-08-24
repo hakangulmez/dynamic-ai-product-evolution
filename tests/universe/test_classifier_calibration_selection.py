@@ -630,7 +630,7 @@ def test_the_cli_declares_all_three_modes():
                  "classify-universe-calibration",
                  "build-classifier-calibration-review"):
         assert mode in choices
-    assert "Forty-two mutually exclusive modes" in cli.__doc__
+    assert "Forty-five mutually exclusive modes" in cli.__doc__
 
 
 # --- dry-run semantics at the CLI boundary -----------------------------------------

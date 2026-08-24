@@ -8884,6 +8884,99 @@ CLI modes, the registry (0.65.0 to 0.66.0, 146 to 150), this decision log,
 `REPO_MANIFEST.md` (912 to 923), the five registry/manifest guards, and the
 absolute registry literals in eleven screen suites.
 
+## ADR-128 — Two ceilings were wrong, and nothing else was
+
+**Status.** Accepted, fixture-first. No model call, no network, no governance
+artifact, no calibration selection, no `data/runs` write, and no change to the
+tier rules, the economic axes vocabulary, the 40-row calibration selection,
+SCREEN_v1, the human-review overlay or the candidate cohort.
+
+**What the failure actually said.** The first live calibration stopped after
+three rows on `model_output_unusable_budget_exhausted`, having spent 6 external
+requests against ceilings of 120/200/320. Replaying the committed validator
+offline against the archived responses showed all three were valid JSON
+carrying valid axes — no tier field, no unknown key, no missing field, every
+archetype and dependency inside its bound — and all three were refused on
+output size alone: `evidence` at 10, 8 and 6 objects against a cap of 6, and
+quotes at 972, 638 and 375 characters against a cap of 300. The rejected spans
+were genuine, contiguous, verbatim and on point. The model was not
+malfunctioning; the contract was too narrow for the corpus.
+
+**Why the caps were wrong, specifically.** The `axis` enum has six values and
+`evidence` was capped at six objects, so a response citing one item per axis
+sat exactly at the ceiling with no headroom; two of the three overflowed on the
+eligibility axis alone, which is itself three booleans plus market orientation.
+The quote cap conflicted with the prompt's own rules: Item 1 sentences in
+financial filings routinely exceed 300 characters, and the prompt forbids
+combining or truncating across sentences. V2.2 raises the two to 12 and 1200
+and changes nothing else.
+
+**The prompt now says what a limit is for.** The size section already existed
+and was already marked contractual, but it sat tens of thousands of characters
+before the end of the rendered prompt while the final self-check restated only
+the tier and vocabulary rules. Every bound is now restated in that check, and
+the quoting rule changed from "prefer the shortest direct span" to the shortest
+**sufficient** span, with an explicit prohibition on shortening a span past the
+text the claim rests on. A ceiling that makes a model drop the evidence for its
+own claim is worse than no ceiling.
+
+**The record contract had to move with the axes contract.** The record schema
+inlines the axes contract rather than referencing it, so a wider axes bound
+would still have been refused one layer up. Both moved to 0.2.0 together.
+
+**Successor, never an edit.** The V2.1 prompt, axes schema, record schema and
+all six V2.1 contracts stay byte-identical, asserted by digest. The failed run
+is immutable, non-authoritative, and its three responses may not be reused: its
+evidence remains interpretable under the contract it actually ran under, which
+is the entire reason the old contract stays.
+
+**`taxonomy_version` names a contract, not a taxonomy.** It moves to
+`universe_classifier_axes_v2_2` so a stored record says which axes contract
+validated it. Every axis, every enum value and every tier rule is
+byte-identical to V2.1, and a test asserts that; the field's own schema
+description says so, because the name would otherwise read as a change in
+economic meaning that did not happen.
+
+**One contract set, six routes, one reconciliation.** The three routes now
+exist at two versions. What differs is a triple — prompt bytes, axes contract,
+record contract — named once in `classifier_contract_set.py` and carried on the
+route descriptor ADR-127 introduced. No runner was forked: a forked `_settle`
+is where two versions drift while both claiming to be the classifier.
+
+**Loader isolation is structural.** Distinct manifest contracts, distinct
+output filenames, distinct authorization contracts, and `prompt_template_path`
+a const in each, so a V2.1 grant cannot name the V2.2 prompt or vice versa. A
+V2.1 loader refuses a V2.2 manifest by contract id, and the reverse, both
+tested.
+
+**The receipt off-by-one.** Of three budget-exhausted paths, only the
+unusable-output path appended its record before writing the receipt, so
+`stopping_row_index` named the row after the identity in `stopping_cik`. The
+live receipt showed exactly that. A continuation would have accepted the
+digests and then refused a perfectly reusable prefix. The receipt now states
+`stopping_row_completed` outright: `stopping_row_index` always names the
+ordinal of the identity it carries, and the resume point is
+`records_completed_before_failure + 1` either way. The distinction is real — a
+budget stop recorded its row, a provider stop did not — and it was previously
+left for a reader to infer from an index. Regression tests cover both stops and
+the exact pre-fix shape the live run wrote.
+
+**Honest limits.** Widening a ceiling is not evidence that the wider ceiling is
+right; it is evidence that the narrower one was wrong for three observed rows.
+The 12 and 1200 are chosen with headroom over what was observed (10 and 972),
+not derived from a distribution, and a rerun may still find rows that exceed
+them. Nothing here says anything about how well the classifier classifies: the
+failed run produced no usable classification and this ADR produces none either.
+The rerun, its grant and the review gate all remain unauthorized.
+
+**Scope.** Thirty-six paths: the V2.2 prompt, the 0.2.0 axes and record
+contracts, six V2.2 authorization and manifest contracts, the shared
+contract-set module, two fixture-only test modules, the three runner modules,
+three CLI modes, the registry (0.66.0 to 0.67.0, 150 to 158), this decision
+log, `REPO_MANIFEST.md` (923 to 935), the five registry/manifest guards, the
+absolute registry literals in eleven screen suites, and the three ADR-126/127
+suites that pin both versions through the change.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only

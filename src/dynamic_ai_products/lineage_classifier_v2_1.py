@@ -73,6 +73,7 @@ from dynamic_ai_products.providers.vertex_gemini_screen_v6 import (
 )
 from dynamic_ai_products.provenance import WriteOnceError, write_bytes_once
 
+from .classifier_contract_set import V2_1, V2_2, ClassifierContractSet
 from .classifier_tier_engine import derive_tier, load_tier_rules
 from .classifier_candidate_cohort import (
     COHORT_MANIFEST_FILENAME,
@@ -123,6 +124,7 @@ __all__ = [
     "render_classifier_prompt",
     "model_called_provenance",
     "BASE_ROUTE",
+    "BASE_ROUTE_V2_2",
     "ClassifierRoute",
     "require_classifier_run",
     "run_lineage_classifier",
@@ -167,6 +169,9 @@ class ClassifierRoute:
     manifest_contract: str
     manifest_schema: str
     record_order: str
+    authorization_schema: str
+    archive_filename: str
+    contracts: ClassifierContractSet
 
 
 BASE_ROUTE = ClassifierRoute(
@@ -176,6 +181,24 @@ BASE_ROUTE = ClassifierRoute(
     manifest_contract=MANIFEST_CONTRACT,
     manifest_schema=MANIFEST_SCHEMA,
     record_order=RECORD_ORDER,
+    authorization_schema=AUTHORIZATION_SCHEMA,
+    archive_filename=CLASSIFIER_RAW_RESPONSES_FILENAME,
+    contracts=V2_1,
+)
+
+#: The ADR-128 successor of the base route. Identical logic; wider output
+#: bounds, its own contracts, and its own filenames so no loader can confuse
+#: the two.
+BASE_ROUTE_V2_2 = ClassifierRoute(
+    run_kind=RUN_KIND,
+    records_filename="universe_classifier_v2_2_records.jsonl",
+    manifest_filename="universe_classifier_v2_2_manifest.json",
+    manifest_contract="universe_classifier_manifest@0.2.0",
+    manifest_schema="schemas/universe_classifier_manifest.v2.schema.json",
+    record_order=RECORD_ORDER,
+    authorization_schema="schemas/universe_classifier_authorization.v2.schema.json",
+    archive_filename="universe_classifier_v2_2_raw_responses.jsonl",
+    contracts=V2_2,
 )
 
 #: The closed provider reasons a bounded provider-unresolved row may carry,
@@ -518,8 +541,8 @@ class AxesValidationFailure(Exception):
         self.detail = detail
 
 
-def validate_axes_output(raw: str, packet: dict, validator: Draft202012Validator
-                         ) -> dict:
+def validate_axes_output(raw: str, packet: dict, validator: Draft202012Validator,
+                         axes_contract: str = AXES_CONTRACT) -> dict:
     """Parse and validate one model response against the axes contract.
 
     Refuses a tier field of any name, enforces the bounded axes schema, and
@@ -545,8 +568,8 @@ def validate_axes_output(raw: str, packet: dict, validator: Draft202012Validator
     if errors:
         raise AxesValidationFailure(
             "axes_contract_violation",
-            f"Model output violates {AXES_CONTRACT} at {errors[0].json_path}: "
-            f"{errors[0].message}")
+            f"Model output violates {axes_contract} at "
+            f"{errors[0].json_path}: {errors[0].message}")
     refs = passage_refs(packet)
     bodies = {p["passage_id"]: " ".join(p["text"].split()) for p in packet["passages"]}
     for position, item in enumerate(parsed["evidence"], start=1):
@@ -627,7 +650,6 @@ def _preflight(
     authorization_sha256: str, cohort_manifest_path: Path,
     overlay_manifest_path: Path, release_manifest_path: Path,
     packet_manifest_path: str | Path, clock: Callable[[], datetime],
-    authorization_schema: str = AUTHORIZATION_SCHEMA,
     route: ClassifierRoute = BASE_ROUTE,
     prefix_loader: Callable[[dict, list[dict], dict], tuple[list[dict], dict]]
     | None = None,
@@ -638,7 +660,7 @@ def _preflight(
     authorization, _ = _hydrate_pinned(
         governance_root, authorization_reference, authorization_sha256,
         "classifier authorization")
-    _validate(authorization, _load_schema(root, authorization_schema),
+    _validate(authorization, _load_schema(root, route.authorization_schema),
               "Classifier authorization")
     enablement, _ = _hydrate_pinned(
         governance_root, authorization["screen_adapter_enablement_reference"],
@@ -675,8 +697,9 @@ def _preflight(
             or authorization["generate_attempts_per_row"] != SCREEN_GENERATE_MAX_ATTEMPTS
             or authorization["external_requests_per_row"]
             != SCREEN_EXTERNAL_REQUESTS_PER_ROW_V2
-            or authorization["output_contract"] != RECORD_CONTRACT
-            or authorization["taxonomy_version"] != TAXONOMY_VERSION):
+            or authorization["output_contract"] != route.contracts.record_contract
+            or authorization["taxonomy_version"]
+            != route.contracts.taxonomy_version):
         raise ScreenInputError(
             "Authorization route, policy versions, ceilings or contracts do not "
             "match the committed ones.")
@@ -690,15 +713,16 @@ def _preflight(
         raise ScreenInputError(
             "Authorization/enablement endpoint allowlists are not exactly the "
             "derived operation endpoints.")
-    if authorization["prompt_template_path"] != PROMPT_PATH:
+    if authorization["prompt_template_path"] != route.contracts.prompt_path:
         raise ScreenInputError(
             f"The grant binds prompt {authorization['prompt_template_path']!r}; "
-            f"this route runs {PROMPT_PATH!r} only.")
-    prompt_raw = (root / PROMPT_PATH).read_bytes()
+            f"this route runs {route.contracts.prompt_path!r} only.")
+    prompt_raw = (root / route.contracts.prompt_path).read_bytes()
     prompt_sha = _sha256(prompt_raw)
     if prompt_sha != authorization["prompt_template_sha256"]:
         raise ScreenInputError(
-            "Authorization does not bind the committed V2.1 classifier prompt bytes.")
+            f"Authorization does not bind the committed "
+            f"{route.contracts.version_id} classifier prompt bytes.")
     tier_rules = load_tier_rules(root)
     if (authorization["tier_rules_version"] != tier_rules.version
             or authorization["tier_rules_sha256"] != tier_rules.sha256):
@@ -948,15 +972,16 @@ def _execute(*, root: Path, pre: _Preflight, output_dir, run_id: str,
         prompt_template_sha256=pre.prompt_sha256, ledger=ledger)
     adapter._row_ordinal = len(prefix_records)
 
-    archive_path = run_dir / CLASSIFIER_RAW_RESPONSES_FILENAME
+    archive_path = run_dir / pre.route.archive_filename
     archive = os.fdopen(
         os.open(archive_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644), "wb")
     if prefix_archive:
         archive.write(prefix_archive)
         archive.flush()
         os.fsync(archive.fileno())
-    axes_validator = Draft202012Validator(_load_schema(root, AXES_SCHEMA),
-                                          format_checker=FormatChecker())
+    axes_validator = Draft202012Validator(
+        _load_schema(root, pre.route.contracts.axes_schema),
+        format_checker=FormatChecker())
     records: list[dict] = list(prefix_records)
     # The prefix's own recomputed failures count against this run's tolerance:
     # they are rows the cohort still has no classification for.
@@ -972,7 +997,8 @@ def _execute(*, root: Path, pre: _Preflight, output_dir, run_id: str,
 
     def base_identity(row: dict, packet: dict, admission: dict, rendered: str) -> dict:
         return {
-            "record_contract": RECORD_CONTRACT, "cik": row["cik"],
+            "record_contract": pre.route.contracts.record_contract,
+            "cik": row["cik"],
             "accession": row["accession"], "company_id": row["company_id"],
             "form": row["form"], "baseline_filing_date": row["baseline_filing_date"],
             "source_id": row["source_id"], "packet_sha256": row["packet_sha256"],
@@ -991,7 +1017,20 @@ def _execute(*, root: Path, pre: _Preflight, output_dir, run_id: str,
             "provider_attempt_telemetry": None, "truncation_evidence": None,
         }
 
-    def fail(reason: str, detail: str, row: dict) -> ScreenRunResult:
+    def fail(reason: str, detail: str, row: dict, *,
+             stopping_row_completed: bool = False) -> ScreenRunResult:
+        """Write the receipt for a stop.
+
+        ``stopping_row_index`` always names the ordinal of the row
+        ``stopping_cik``/``stopping_accession`` identifies. That row is not
+        always where a continuation resumes: a budget-exhausted stop records
+        the offending row before stopping, so the row is complete and a
+        continuation resumes after it, while a provider stop never completed
+        its row and a continuation resumes at it. The two cases are told apart
+        by ``records_completed_before_failure``, and
+        ``stopping_row_completed`` states it outright rather than leaving a
+        later reader to infer it from an index.
+        """
         archive.flush()
         os.fsync(archive.fileno())
         archive.close()
@@ -1001,7 +1040,9 @@ def _execute(*, root: Path, pre: _Preflight, output_dir, run_id: str,
             "run_kind": pre.authorization["run_kind"], "reason_code": reason,
             "detail": _detail(detail), "stopping_cik": row["cik"],
             "stopping_accession": row["accession"],
-            "stopping_row_index": len(records) + 1,
+            "stopping_row_index": (len(records) if stopping_row_completed
+                                   else len(records) + 1),
+            "stopping_row_completed": stopping_row_completed,
             "records_completed_before_failure": len(records),
             "reused_prefix_rows": len(prefix_records),
             "model_called_rows_attempted": called_rows,
@@ -1105,7 +1146,8 @@ def _execute(*, root: Path, pre: _Preflight, output_dir, run_id: str,
                   "output_provenance": model_called_provenance(
                       run_id, response_id, raw_sha)}
         try:
-            axes = validate_axes_output(raw, packet, axes_validator)
+            axes = validate_axes_output(raw, packet, axes_validator,
+                                        pre.route.contracts.axes_contract)
         except AxesValidationFailure as exc:
             unusable[exc.reason_code] = unusable.get(exc.reason_code, 0) + 1
             record.update(record_kind="model_output_unusable",
@@ -1115,7 +1157,7 @@ def _execute(*, root: Path, pre: _Preflight, output_dir, run_id: str,
                 records.append(record)
                 return fail("model_output_unusable_budget_exhausted",
                             "The authorized unusable-output tolerance was exceeded.",
-                            row)
+                            row, stopping_row_completed=True)
         else:
             derivation = derive_tier(axes, pre.tier_rules)
             record.update(record_kind="classified", axes=axes,
@@ -1125,13 +1167,15 @@ def _execute(*, root: Path, pre: _Preflight, output_dir, run_id: str,
     os.fsync(archive.fileno())
     archive.close()
 
-    validator = Draft202012Validator(_load_schema(root, RECORD_SCHEMA),
-                                     format_checker=FormatChecker())
+    validator = Draft202012Validator(
+        _load_schema(root, pre.route.contracts.record_schema),
+        format_checker=FormatChecker())
     for record in records:
         errors = sorted(validator.iter_errors(record), key=lambda e: e.json_path)
         if errors:
             raise ScreenInputError(
-                f"Built classifier record violates {RECORD_CONTRACT} at "
+                f"Built classifier record violates "
+                f"{pre.route.contracts.record_contract} at "
                 f"{errors[0].json_path}: {errors[0].message}")
     return _settle(root=root, pre=pre, run_dir=run_dir, run_id=run_id,
                    authorization_sha256=authorization_sha256, clock=clock,
@@ -1168,7 +1212,7 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
     archive_raw = archive_path.read_bytes()
     archive_entries = [json.loads(line) for line
                        in _decode_utf8(archive_raw,
-                                       CLASSIFIER_RAW_RESPONSES_FILENAME).splitlines()
+                                       pre.route.archive_filename).splitlines()
                        if line.strip()]
     classified = [r for r in records if r["record_kind"] == "classified"]
     answered = [r for r in records if r["output_provenance"]["raw_response_id"]]
@@ -1360,7 +1404,7 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
                 len(prefix_records) + called_rows == len(pre.inputs.rows)),
             "the source run is byte-unchanged": (
                 _sha256((Path(source["source_run_path"])
-                         / CLASSIFIER_RAW_RESPONSES_FILENAME).read_bytes())
+                         / pre.route.archive_filename).read_bytes())
                 == source["source_raw_responses_sha256"]),
         })
     if not all(reconciliation.values()):
@@ -1385,11 +1429,11 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
                 "packets_jsonl_sha256":
                     pre.inputs.overlay["packet_source"]["packets_jsonl_sha256"]},
             "sources_unmodified": True},
-        "prompt_template_path": PROMPT_PATH,
+        "prompt_template_path": pre.route.contracts.prompt_path,
         "prompt_template_sha256": pre.prompt_sha256,
         "tier_rules_version": pre.tier_rules.version,
         "tier_rules_sha256": pre.tier_rules.sha256,
-        "taxonomy_version": TAXONOMY_VERSION,
+        "taxonomy_version": pre.route.contracts.taxonomy_version,
         "provider": dict(pre.model_route),
         "provider_client_contract_reference": CLIENT_CONTRACT_V2_ID,
         "provider_client_contract_sha256": pre.contract_digest,
@@ -1397,9 +1441,9 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
             pre.authorization["screen_adapter_enablement_sha256"],
         "endpoint_allowlist": sorted(pre.endpoints.values()),
         "envelope_text_extraction_rule": ENVELOPE_TEXT_EXTRACTION_RULE,
-        "output_contract": RECORD_CONTRACT,
+        "output_contract": pre.route.contracts.record_contract,
         "output_hashes": {records_filename: _sha256(records_bytes),
-                          CLASSIFIER_RAW_RESPONSES_FILENAME: _sha256(archive_raw),
+                          pre.route.archive_filename: _sha256(archive_raw),
                           CAPTURE_LEDGER_FILENAME: _sha256(ledger_bytes)},
         "record_order": pre.route.record_order, "counts": counts,
         "request_accounting": request_accounting,
@@ -1412,9 +1456,12 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
             "tier_excludes_market_orientation": True},
         "reconciliation": reconciliation,
         "schema_versions": {
-            "universe_classifier_axes_record": "0.1.0",
-            "universe_classifier_record": "0.1.0",
-            "universe_classifier_manifest": "0.1.0",
+            "universe_classifier_axes_record":
+                pre.route.contracts.axes_contract.rsplit("@", 1)[1],
+            "universe_classifier_record":
+                pre.route.contracts.record_contract.rsplit("@", 1)[1],
+            "universe_classifier_manifest":
+                pre.route.manifest_contract.rsplit("@", 1)[1],
             "screen_connector": SCREEN_CONNECTOR_V6_ID},
         "limitations": [
             "The admission context is not evidence. Axes were judged against "

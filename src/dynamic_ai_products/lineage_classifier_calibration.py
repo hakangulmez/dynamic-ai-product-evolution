@@ -30,7 +30,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .classifier_calibration_selection import require_calibration_selection
+from .classifier_contract_set import V2_1, V2_2
 from .lineage_classifier_v2_1 import (
+    CLASSIFIER_RAW_RESPONSES_FILENAME,
     ClassifierRoute,
     _execute,
     _preflight,
@@ -50,6 +52,7 @@ __all__ = [
     "CALIBRATION_MANIFEST_FILENAME",
     "CALIBRATION_RECORDS_FILENAME",
     "CALIBRATION_ROUTE",
+    "CALIBRATION_ROUTE_V2_2",
     "require_classifier_calibration_run",
     "run_lineage_classifier_calibration",
 ]
@@ -72,6 +75,25 @@ CALIBRATION_ROUTE = ClassifierRoute(
     manifest_contract=CALIBRATION_MANIFEST_CONTRACT,
     manifest_schema=CALIBRATION_MANIFEST_SCHEMA,
     record_order=CALIBRATION_RECORD_ORDER,
+    authorization_schema=CALIBRATION_AUTHORIZATION_SCHEMA,
+    archive_filename=CLASSIFIER_RAW_RESPONSES_FILENAME,
+    contracts=V2_1,
+)
+
+#: The ADR-128 successor. The 40-row selection is unchanged and reusable; only
+#: the prompt, the axes/record contracts and the output names differ.
+CALIBRATION_ROUTE_V2_2 = ClassifierRoute(
+    run_kind=CALIBRATION_RUN_KIND,
+    records_filename="universe_classifier_v2_2_calibration_records.jsonl",
+    manifest_filename="universe_classifier_v2_2_calibration_manifest.json",
+    manifest_contract="universe_classifier_calibration_manifest@0.2.0",
+    manifest_schema=(
+        "schemas/universe_classifier_calibration_manifest.v2.schema.json"),
+    record_order=CALIBRATION_RECORD_ORDER,
+    authorization_schema=(
+        "schemas/universe_classifier_calibration_authorization.v2.schema.json"),
+    archive_filename="universe_classifier_v2_2_raw_responses.jsonl",
+    contracts=V2_2,
 )
 
 
@@ -119,6 +141,7 @@ def run_lineage_classifier_calibration(
     authorization_sha256: str, output_dir: str | Path, run_id: str,
     clock: Callable[[], datetime], dry_run: bool = False,
     client_factory: Any = None, sleep: Callable[[float], None] | None = None,
+    route: ClassifierRoute = CALIBRATION_ROUTE,
 ) -> ScreenRunResult:
     """Classify one seeded stratified sample under its own governed grant."""
     root = Path(repo_root)
@@ -207,8 +230,7 @@ def run_lineage_classifier_calibration(
         overlay_manifest_path=Path(overlay_manifest_path),
         release_manifest_path=Path(release_manifest_path),
         packet_manifest_path=packet_manifest_path, clock=clock,
-        authorization_schema=CALIBRATION_AUTHORIZATION_SCHEMA,
-        route=CALIBRATION_ROUTE, selection_loader=selection_loader)
+        route=route, selection_loader=selection_loader)
 
     if dry_run:
         for row, packet, admission in pre.plan:

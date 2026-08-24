@@ -187,7 +187,7 @@ def _script(cohort, selection, **overrides):
 
 
 def _run(cohort, selection, grant, tmp_path, *, script=None, run_id="calibration-run",
-         dry_run=False, output_dir=None, selection_path=None):
+         dry_run=False, output_dir=None, selection_path=None, route=None):
     events: list = []
     factory = _EmptyBodyFactory(
         script if script is not None else _script(cohort, selection), events)
@@ -201,7 +201,8 @@ def _run(cohort, selection, grant, tmp_path, *, script=None, run_id="calibration
         authorization_sha256=grant.sha256,
         output_dir=output_dir or (tmp_path / "calibration-out"), run_id=run_id,
         clock=CLOCK, dry_run=dry_run, client_factory=factory,
-        sleep=lambda s: events.append(("wait", s)))
+        sleep=lambda s: events.append(("wait", s)),
+        **({"route": route} if route is not None else {}))
     return SimpleNamespace(result=result, factory=factory, events=events)
 
 
@@ -459,3 +460,96 @@ def test_a_promotable_calibration_grant_is_refused(cohort, selection, tmp_path):
     grant = _grant(cohort, selection, tmp_path, name="gov-promotable",
                    mutate=lambda p: p.__setitem__("promotable", True))
     _refused(cohort, selection, grant, tmp_path, "violates its contract")
+
+
+# --- ADR-128: the same route, at the V2.2 contract version -------------------------
+
+
+def _v2_2_grant(cohort, selection, tmp_path, *, name="calibration-gov-v2-2"):
+    """The V2.1 grant, re-pointed at the V2.2 contracts. Same selection."""
+    from dynamic_ai_products.classifier_contract_set import V2_2
+    base = _grant(cohort, selection, tmp_path, name=name).authorization
+    payload = dict(base)
+    payload.update({
+        "authorization_contract":
+            "universe_classifier_calibration_authorization@0.2.0",
+        "output_contract": V2_2.record_contract,
+        "taxonomy_version": V2_2.taxonomy_version,
+        "prompt_template_path": V2_2.prompt_path,
+        "prompt_template_sha256":
+            sha256((ROOT / V2_2.prompt_path).read_bytes()).hexdigest(),
+    })
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    ((tmp_path / name) / "calibration_authorization.json").write_bytes(raw)
+    return SimpleNamespace(root=tmp_path / name,
+                           reference="calibration_authorization.json",
+                           sha256=_sha(raw), authorization=payload)
+
+
+def test_the_v2_2_route_classifies_the_same_unchanged_selection(cohort, selection,
+                                                                tmp_path):
+    """The selection is immutable and reusable; only the contract moved."""
+    grant = _v2_2_grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path, run_id="calibration-v2-2",
+               route=lcal.CALIBRATION_ROUTE_V2_2)
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == \
+        "universe_classifier_calibration_manifest@0.2.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.2.0"
+    assert manifest["taxonomy_version"] == "universe_classifier_axes_v2_2"
+    assert manifest["prompt_template_path"].endswith("v2_2.md")
+    assert manifest["calibration_selection"]["selection_sha256"] == selection.sha256
+    assert manifest["schema_versions"]["universe_classifier_axes_record"] == "0.2.0"
+    assert manifest["schema_versions"]["universe_classifier_record"] == "0.2.0"
+    # the tier rules did not move with the contract
+    assert manifest["tier_rules_version"] == "universe_classifier_tier_rules_v2_1"
+    records = [json.loads(x) for x in
+               (run.result.run_dir / lcal.CALIBRATION_ROUTE_V2_2.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(records) == len(selection.rows)
+    assert all(r["record_contract"] == "universe_classifier_record@0.2.0"
+               for r in records)
+
+
+def test_the_two_versions_write_different_files(cohort, selection, tmp_path):
+    v1 = _run(cohort, selection, _grant(cohort, selection, tmp_path, name="g1"),
+              tmp_path, run_id="calib-v1")
+    v2 = _run(cohort, selection,
+              _v2_2_grant(cohort, selection, tmp_path, name="g2"), tmp_path,
+              run_id="calib-v2", route=lcal.CALIBRATION_ROUTE_V2_2)
+    assert v1.result.status == v2.result.status == "completed"
+    assert {p.name for p in v1.result.run_dir.iterdir()} != \
+        {p.name for p in v2.result.run_dir.iterdir()}
+    assert (v1.result.run_dir / lcal.CALIBRATION_RECORDS_FILENAME).is_file()
+    assert not (v1.result.run_dir /
+                lcal.CALIBRATION_ROUTE_V2_2.records_filename).exists()
+    assert (v2.result.run_dir /
+            lcal.CALIBRATION_ROUTE_V2_2.records_filename).is_file()
+    assert not (v2.result.run_dir / lcal.CALIBRATION_RECORDS_FILENAME).exists()
+
+
+def test_each_version_loader_refuses_the_other(cohort, selection, tmp_path):
+    v2 = _run(cohort, selection,
+              _v2_2_grant(cohort, selection, tmp_path, name="g3"), tmp_path,
+              run_id="calib-iso", route=lcal.CALIBRATION_ROUTE_V2_2)
+    with pytest.raises(ls.ScreenInputError,
+                       match="holds no classifier calibration manifest"):
+        lcal.require_classifier_calibration_run(v2.result.run_dir)
+    with pytest.raises(ls.ScreenInputError, match="holds no classifier manifest"):
+        lcl.require_classifier_run(v2.result.run_dir)
+
+
+def test_a_v2_2_grant_is_refused_by_the_v2_1_route(cohort, selection, tmp_path):
+    grant = _v2_2_grant(cohort, selection, tmp_path, name="g4")
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, selection, grant, tmp_path, run_id="cross-1",
+             output_dir=tmp_path / "never")
+
+
+def test_a_v2_1_grant_is_refused_by_the_v2_2_route(cohort, selection, tmp_path):
+    grant = _grant(cohort, selection, tmp_path, name="g5")
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, selection, grant, tmp_path, run_id="cross-2",
+             output_dir=tmp_path / "never", route=lcal.CALIBRATION_ROUTE_V2_2)

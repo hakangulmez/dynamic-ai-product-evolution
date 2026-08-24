@@ -174,6 +174,20 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-128 (the V2.2 classifier contract set):
+    # manifest_version 0.66.0 -> 0.67.0, 150 -> 158 entries, registering the
+    # 0.2.0 axes and record contracts and the six V2.2 authorization and
+    # manifest contracts. The first live calibration stopped after three rows,
+    # all three valid JSON with valid axes and refused on output size alone:
+    # evidence capped at 6 against a six-value axis vocabulary, and quote
+    # capped at 300 against legitimate contiguous Item 1 spans reaching 972.
+    # V2.2 raises those two ceilings to 12 and 1200 and nothing else -- every
+    # axis, enum value and tier rule is byte-identical, and taxonomy_version
+    # moves only to name the axes-contract identity. Every 0.1.0 contract stays
+    # byte-unchanged so a V2.1 run's evidence remains interpretable under the
+    # contract it ran under, and none of the eight joins
+    # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS below.
+    # Before it,
     # Rebaselined by ADR-127 (a governed calibration route before the full
     # cohort run): manifest_version 0.65.0 -> 0.66.0, 146 -> 150 entries,
     # registering the calibration selection, authorization, manifest and review
@@ -495,7 +509,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "6626213322aff5b65a338737609b76bb3988d4271e65862f8961bfffb7c506bc"
+    "af3ba4ba29e90afe9fb79feb902e0ff9f11fb88d31485fd7978e874847e8b9b8"
 )
 
 

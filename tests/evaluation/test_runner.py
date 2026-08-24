@@ -1349,6 +1349,15 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
     # v0.1.
+    # 935 = 923 + the twelve ADR-128 paths: the V2.2 prompt, the 0.2.0 axes and
+    # record contracts, the six V2.2 authorization/manifest contracts, the
+    # shared classifier contract-set module and two test modules. A live
+    # calibration stopped after three rows, every one valid JSON with valid
+    # axes and refused on output size alone; V2.2 widens exactly two ceilings
+    # (evidence 6 -> 12, quote 300 -> 1200) and changes no axis, enum value or
+    # tier rule. Every V2.1 contract stays byte-unchanged. Schema registry:
+    # 0.66.0 -> 0.67.0, 150 -> 158 entries; none of the eight joins
+    # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS. Before it,
     # 923 = 912 + the eleven ADR-127 paths: the calibration strata config, four
     # contracts (selection, authorization, manifest, review), the selection
     # builder, the calibration runner, the review reporter and three test
@@ -1456,7 +1465,7 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert declared == len(paths) == 923
+    assert declared == len(paths) == 935
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

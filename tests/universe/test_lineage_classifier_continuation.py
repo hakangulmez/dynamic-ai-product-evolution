@@ -95,6 +95,9 @@ def _failed_run(cohort, tmp_path, *, prefix_rows=PREFIX_ROWS,
         "reason_code": "provider_error", "detail": "scripted stop",
         "stopping_cik": stopping["cik"], "stopping_accession": stopping["accession"],
         "stopping_row_index": prefix_rows + 1,
+        # A provider stop never completed its row, so the stopping ordinal is
+        # the first row this continuation must re-send.
+        "stopping_row_completed": False,
         "records_completed_before_failure": prefix_rows,
         "reused_prefix_rows": 0,
         "authorization_sha256": SOURCE_AUTHORIZATION_SHA256,
@@ -405,7 +408,7 @@ def test_a_stopping_row_that_does_not_follow_the_prefix_is_refused(
         cohort, tmp_path, run_id="source-misaligned",
         mutate_receipt=lambda r: r.update(stopping_cik="9999999999"))
     grant = _continuation_grant(cohort, misaligned, tmp_path, name="gov-misaligned")
-    _refused(cohort, misaligned, grant, tmp_path, "row following the prefix")
+    _refused(cohort, misaligned, grant, tmp_path, "of the scope is")
 
 
 def test_a_grant_whose_reuse_caps_do_not_match_is_refused(cohort, source, tmp_path):
@@ -452,3 +455,94 @@ def test_a_prefix_whose_failures_exceed_the_tolerance_is_refused(cohort, tmp_pat
     grant = _continuation_grant(cohort, doomed, tmp_path, unusable=1,
                                 name="gov-doomed")
     _refused(cohort, doomed, grant, tmp_path, "reused prefix alone revalidates")
+
+
+# --- ADR-128: the receipt boundary -------------------------------------------------
+
+
+def _budget_exhausted_source(cohort, tmp_path, *, run_id, prefix_rows=PREFIX_ROWS):
+    """A stop whose offending row WAS recorded before the run stopped.
+
+    The unusable-budget path appends the row and then stops, so the stopping
+    row is the last prefix row and a continuation resumes after it — unlike a
+    provider stop, which never completed its row.
+    """
+    stopping = cohort.rows[prefix_rows - 1]
+    return _failed_run(
+        cohort, tmp_path, run_id=run_id, prefix_rows=prefix_rows,
+        mutate_receipt=lambda r: r.update(
+            reason_code="model_output_unusable_budget_exhausted",
+            detail="The authorized unusable-output tolerance was exceeded.",
+            stopping_cik=stopping["cik"],
+            stopping_accession=stopping["accession"],
+            stopping_row_index=prefix_rows,
+            stopping_row_completed=True))
+
+
+def test_a_budget_exhausted_stop_resumes_after_its_stopping_row(cohort, tmp_path):
+    """The regression from the first live calibration.
+
+    The receipt named ordinal N+1 while the identity named row N, so the loader
+    refused a prefix that was perfectly reusable.
+    """
+    source = _budget_exhausted_source(cohort, tmp_path, run_id="source-budget")
+    assert source.receipt["stopping_row_index"] == PREFIX_ROWS
+    assert source.receipt["records_completed_before_failure"] == PREFIX_ROWS
+    grant = _continuation_grant(cohort, source, tmp_path, name="gov-budget")
+    run = _run(cohort, source, grant, tmp_path, run_id="budget-continuation")
+    assert run.result.status == "completed", run.result.receipt
+    records = _records(run.result)
+    assert len(records) == len(cohort.rows)
+    assert run.factory.generate_calls == len(cohort.rows) - PREFIX_ROWS
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["continuation"]["reused_prefix_rows"] == PREFIX_ROWS
+    assert manifest["continuation"]["first_model_called_row_ordinal"] == \
+        PREFIX_ROWS + 1
+
+
+def test_a_provider_stop_resumes_at_its_own_stopping_row(cohort, tmp_path):
+    source = _failed_run(cohort, tmp_path, run_id="source-provider")
+    assert source.receipt["stopping_row_completed"] is False
+    assert source.receipt["stopping_row_index"] == PREFIX_ROWS + 1
+    stopping = cohort.rows[PREFIX_ROWS]
+    assert (source.receipt["stopping_cik"], source.receipt["stopping_accession"]) \
+        == (stopping["cik"], stopping["accession"])
+    grant = _continuation_grant(cohort, source, tmp_path, name="gov-provider")
+    run = _run(cohort, source, grant, tmp_path, run_id="provider-continuation")
+    assert run.result.status == "completed", run.result.receipt
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["continuation"]["first_model_called_row_ordinal"] == \
+        PREFIX_ROWS + 1
+
+
+def test_the_pre_fix_receipt_shape_is_refused(cohort, tmp_path):
+    """The exact shape the live run wrote: identity row N, ordinal N+1."""
+    stopping = cohort.rows[PREFIX_ROWS - 1]
+    broken = _failed_run(
+        cohort, tmp_path, run_id="source-offbyone",
+        mutate_receipt=lambda r: r.update(
+            reason_code="model_output_unusable_budget_exhausted",
+            stopping_cik=stopping["cik"],
+            stopping_accession=stopping["accession"],
+            stopping_row_index=PREFIX_ROWS + 1,
+            stopping_row_completed=True))
+    grant = _continuation_grant(cohort, broken, tmp_path, name="gov-offbyone")
+    _refused(cohort, broken, grant, tmp_path, "the stopping ordinal must be")
+
+
+def test_a_receipt_without_the_completion_flag_is_refused(cohort, tmp_path):
+    """The field is required: its absence is a shape this route never reasoned about."""
+    legacy = _failed_run(
+        cohort, tmp_path, run_id="source-legacy",
+        mutate_receipt=lambda r: r.pop("stopping_row_completed"))
+    grant = _continuation_grant(cohort, legacy, tmp_path, name="gov-legacy")
+    _refused(cohort, legacy, grant, tmp_path, "missing")
+
+
+def test_a_stopping_ordinal_outside_the_cohort_is_refused(cohort, tmp_path):
+    outside = _failed_run(
+        cohort, tmp_path, run_id="source-outside",
+        mutate_receipt=lambda r: r.update(stopping_row_index=9_999,
+                                          records_completed_before_failure=9_998))
+    grant = _continuation_grant(cohort, outside, tmp_path, name="gov-outside")
+    _refused(cohort, outside, grant, tmp_path, "completed")
