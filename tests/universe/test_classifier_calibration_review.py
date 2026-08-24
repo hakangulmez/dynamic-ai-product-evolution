@@ -254,3 +254,119 @@ def test_the_selection_filename_is_enforced(calibrated, selection, tmp_path):
             selection_path=foreign, selection_sha256=selection.sha256,
             output_path=tmp_path / "f" / ccr.REVIEW_FILENAME,
             review_id="f", clock=CLOCK)
+
+
+# --- dry-run semantics at the CLI boundary -----------------------------------------
+
+
+def _cli_module():
+    """Import the pipeline CLI once, by path, without executing main()."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "adr127_review_cli", ROOT / "pipelines" / "00_build_company_universe.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _invoke(cli, calibrated, selection, out_dir, *, run_id, dry_run):
+    argv = ["--mode", "build-classifier-calibration-review",
+            "--calibration-run-dir", str(calibrated.run_dir),
+            "--calibration-selection", str(selection.path),
+            "--calibration-selection-sha256", selection.sha256,
+            "--output-dir", str(out_dir), "--run-id", run_id]
+    if dry_run:
+        argv.append("--dry-run")
+    args = cli.build_parser().parse_args(argv)
+    assert cli._reject_cross_mode_flags(args) is None
+    return cli._main_build_classifier_calibration_review(args)
+
+
+def test_a_dry_run_reserves_no_review_id(calibrated, selection, tmp_path, capsys):
+    """A dry run derives the whole review and leaves the id free.
+
+    The run directory is the write-once reservation, so an invocation that
+    writes nothing must not burn an id.
+    """
+    cli = _cli_module()
+    out = tmp_path / "cli-dry"
+    assert _invoke(cli, calibrated, selection, out,
+                   run_id="dry-review", dry_run=True) == 0
+    assert not (out / "dry-review").exists(), "a dry run reserved the run id"
+    assert not out.exists(), "a dry run created the output parent"
+    reported = json.loads(capsys.readouterr().out)
+    assert reported["dry_run"] is True
+    assert reported["output_path"] is None
+    assert reported["gate_state"] == "pending_human_reading"
+    assert reported["reviewer_id"] == "hakan_zeki_gulmez"
+    assert reported["review_protocol_version"] == "classifier_calibration_review_v1"
+    assert reported["counts"]["nominated_rows"] == len(selection.rows)
+
+
+def test_a_real_run_creates_exactly_its_write_once_target(calibrated, selection,
+                                                          tmp_path, capsys):
+    cli = _cli_module()
+    out = tmp_path / "cli-real"
+    assert _invoke(cli, calibrated, selection, out,
+                   run_id="real-review", dry_run=False) == 0
+    target = out / "real-review"
+    assert target.is_dir()
+    assert [p.name for p in target.iterdir()] == [ccr.REVIEW_FILENAME]
+    assert [p.name for p in out.iterdir()] == ["real-review"]
+    reported = json.loads(capsys.readouterr().out)
+    assert reported["dry_run"] is False
+    assert reported["output_path"] == str(target / ccr.REVIEW_FILENAME)
+    written = json.loads(
+        (target / ccr.REVIEW_FILENAME).read_text(encoding="utf-8"))
+    assert written["review_id"] == "real-review"
+    assert len(written["nominated_rows"]) == len(selection.rows)
+
+
+def test_a_second_real_run_with_the_same_id_is_refused(calibrated, selection,
+                                                       tmp_path, capsys):
+    """Write-once is unchanged: the reservation still refuses a second run."""
+    from hashlib import sha256
+    cli = _cli_module()
+    out = tmp_path / "cli-twice"
+    assert _invoke(cli, calibrated, selection, out,
+                   run_id="same-id", dry_run=False) == 0
+    capsys.readouterr()
+    written = out / "same-id" / ccr.REVIEW_FILENAME
+    before = sha256(written.read_bytes()).hexdigest()
+    assert _invoke(cli, calibrated, selection, out,
+                   run_id="same-id", dry_run=False) == 2
+    captured = capsys.readouterr()
+    assert "written once" in captured.err
+    assert sha256(written.read_bytes()).hexdigest() == before, \
+        "the review was overwritten"
+
+
+def test_a_dry_run_leaves_the_id_free_for_the_real_run(calibrated, selection,
+                                                       tmp_path, capsys):
+    cli = _cli_module()
+    out = tmp_path / "cli-then-real"
+    assert _invoke(cli, calibrated, selection, out,
+                   run_id="shared-id", dry_run=True) == 0
+    dry = json.loads(capsys.readouterr().out)
+    assert _invoke(cli, calibrated, selection, out,
+                   run_id="shared-id", dry_run=False) == 0
+    real = json.loads(capsys.readouterr().out)
+    assert (out / "shared-id" / ccr.REVIEW_FILENAME).is_file()
+    assert real["counts"] == dry["counts"]
+    assert real["output_path"] == str(out / "shared-id" / ccr.REVIEW_FILENAME)
+
+
+def test_a_dry_run_against_a_taken_id_still_reports(calibrated, selection,
+                                                    tmp_path, capsys):
+    cli = _cli_module()
+    out = tmp_path / "cli-after"
+    assert _invoke(cli, calibrated, selection, out,
+                   run_id="taken", dry_run=False) == 0
+    capsys.readouterr()
+    assert _invoke(cli, calibrated, selection, out,
+                   run_id="taken", dry_run=True) == 0
+    captured = capsys.readouterr()
+    assert "written once" not in captured.err
+    reported = json.loads(captured.out)
+    assert reported["dry_run"] is True and reported["output_path"] is None
+    assert reported["counts"]["nominated_rows"] == len(selection.rows)

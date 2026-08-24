@@ -631,3 +631,103 @@ def test_the_cli_declares_all_three_modes():
                  "build-classifier-calibration-review"):
         assert mode in choices
     assert "Forty-two mutually exclusive modes" in cli.__doc__
+
+
+# --- dry-run semantics at the CLI boundary -----------------------------------------
+
+
+def _select_argv(cohort, out_dir, *, run_id, dry_run):
+    argv = ["--mode", "select-classifier-calibration-rows",
+            "--cohort-manifest", str(cohort.path),
+            "--cohort-manifest-sha256", cohort.sha256,
+            "--release-manifest", str(cohort.release.path),
+            "--release-manifest-sha256", cohort.release.sha256,
+            "--overlay-manifest", str(cohort.overlay_path),
+            "--overlay-manifest-sha256", cohort.overlay_sha256,
+            "--output-dir", str(out_dir), "--run-id", run_id]
+    return argv + (["--dry-run"] if dry_run else [])
+
+
+def _invoke(cli, cohort, out_dir, *, run_id, dry_run):
+    args = cli.build_parser().parse_args(
+        _select_argv(cohort, out_dir, run_id=run_id, dry_run=dry_run))
+    assert cli._reject_cross_mode_flags(args) is None
+    return cli._main_select_classifier_calibration_rows(args)
+
+
+def test_a_dry_run_reserves_no_selection_id(cohort, tmp_path, capsys):
+    """A dry run computes the sample and leaves the id free for the real run.
+
+    The run directory is the write-once reservation, so creating it before
+    knowing whether anything will be written would burn an id on an invocation
+    that produces no artifact.
+    """
+    cli = _cli_module()
+    out = tmp_path / "cli-dry"
+    assert _invoke(cli, cohort, out, run_id="dry-selection", dry_run=True) == 0
+    assert not (out / "dry-selection").exists(), "a dry run reserved the run id"
+    assert not out.exists(), "a dry run created the output parent"
+    reported = json.loads(capsys.readouterr().out)
+    assert reported["dry_run"] is True
+    assert reported["output_path"] is None
+    assert reported["counts"]["selected_rows"] >= 1
+    assert reported["sampling"]["seed"] == 20260824
+    assert len(reported["sampling"]["strata"]) >= 1
+    _assert_no_google()
+
+
+def test_a_dry_run_leaves_the_id_free_for_the_real_run(cohort, tmp_path, capsys):
+    cli = _cli_module()
+    out = tmp_path / "cli-then-real"
+    assert _invoke(cli, cohort, out, run_id="shared-id", dry_run=True) == 0
+    dry = json.loads(capsys.readouterr().out)
+    assert _invoke(cli, cohort, out, run_id="shared-id", dry_run=False) == 0
+    real = json.loads(capsys.readouterr().out)
+    assert (out / "shared-id" / ccs.CALIBRATION_SELECTION_FILENAME).is_file()
+    assert real["counts"] == dry["counts"]
+    assert real["output_path"] == str(
+        out / "shared-id" / ccs.CALIBRATION_SELECTION_FILENAME)
+
+
+def test_a_real_run_creates_exactly_its_write_once_target(cohort, tmp_path,
+                                                          capsys):
+    cli = _cli_module()
+    out = tmp_path / "cli-real"
+    assert _invoke(cli, cohort, out, run_id="real-selection", dry_run=False) == 0
+    target = out / "real-selection"
+    assert target.is_dir()
+    assert [p.name for p in target.iterdir()] == [
+        ccs.CALIBRATION_SELECTION_FILENAME]
+    assert [p.name for p in out.iterdir()] == ["real-selection"]
+    reported = json.loads(capsys.readouterr().out)
+    assert reported["dry_run"] is False
+    assert reported["output_path"] == str(
+        target / ccs.CALIBRATION_SELECTION_FILENAME)
+    written = target / ccs.CALIBRATION_SELECTION_FILENAME
+    assert json.loads(written.read_text(encoding="utf-8"))["selection_id"] == \
+        "real-selection"
+
+
+def test_a_second_real_run_with_the_same_id_is_refused(cohort, tmp_path, capsys):
+    """Write-once is unchanged: the reservation still refuses a second run."""
+    cli = _cli_module()
+    out = tmp_path / "cli-twice"
+    assert _invoke(cli, cohort, out, run_id="same-id", dry_run=False) == 0
+    capsys.readouterr()
+    written = out / "same-id" / ccs.CALIBRATION_SELECTION_FILENAME
+    before = _sha(written.read_bytes())
+    assert _invoke(cli, cohort, out, run_id="same-id", dry_run=False) == 2
+    captured = capsys.readouterr()
+    assert "written once" in captured.err
+    assert _sha(written.read_bytes()) == before, "the artifact was overwritten"
+
+
+def test_a_dry_run_after_a_real_run_still_reports(cohort, tmp_path, capsys):
+    """A dry run reads nothing it must not, and never trips the reservation."""
+    cli = _cli_module()
+    out = tmp_path / "cli-after"
+    assert _invoke(cli, cohort, out, run_id="taken", dry_run=False) == 0
+    capsys.readouterr()
+    assert _invoke(cli, cohort, out, run_id="taken", dry_run=True) == 0
+    reported = json.loads(capsys.readouterr().out)
+    assert reported["dry_run"] is True and reported["output_path"] is None

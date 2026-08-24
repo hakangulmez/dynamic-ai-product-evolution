@@ -3440,12 +3440,16 @@ def _main_select_classifier_calibration_rows(args: argparse.Namespace) -> int:
             print(f"ERROR: {label} not found: {path}", file=sys.stderr)
             return 2
     output_path = Path(args.output_dir) / args.run_id / CALIBRATION_SELECTION_FILENAME
-    try:
-        output_path.parent.mkdir(parents=True, exist_ok=False)
-    except FileExistsError:
-        print(f"ERROR: {output_path.parent} already exists; a selection is "
-              "written once.", file=sys.stderr)
-        return 2
+    # The directory is the write-once reservation of a selection id, so only an
+    # invocation that will actually write may claim it. A dry run computes the
+    # same selection and leaves the id free for the real run.
+    if not args.dry_run:
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            print(f"ERROR: {output_path.parent} already exists; a selection is "
+                  "written once.", file=sys.stderr)
+            return 2
     try:
         selection = build_calibration_selection(
             repo_root=REPO_ROOT, cohort_manifest_path=cohort,
@@ -3514,12 +3518,15 @@ def _main_build_classifier_calibration_review(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 2
     output_path = Path(args.output_dir) / args.run_id / REVIEW_FILENAME
-    try:
-        output_path.parent.mkdir(parents=True, exist_ok=False)
-    except FileExistsError:
-        print(f"ERROR: {output_path.parent} already exists; a review is written "
-              "once.", file=sys.stderr)
-        return 2
+    # As with the selection, the directory is the write-once reservation of a
+    # review id. A dry run derives the same review and leaves the id free.
+    if not args.dry_run:
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            print(f"ERROR: {output_path.parent} already exists; a review is "
+                  "written once.", file=sys.stderr)
+            return 2
     try:
         review = build_calibration_review(
             repo_root=REPO_ROOT, calibration_run_dir=run_dir,
