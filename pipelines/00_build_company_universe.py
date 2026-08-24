@@ -1042,7 +1042,9 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         screen_offenders += _present((
             ("--cohort-manifest", args.cohort_manifest),
         ))
-    if args.mode not in ("classify-universe-calibration", "build-classifier-calibration-review"):
+    if args.mode not in ("classify-universe-calibration",
+                         "classify-universe-calibration-v2-2",
+                         "build-classifier-calibration-review"):
         screen_offenders += _present((
             ("--calibration-selection", args.calibration_selection),
         ))

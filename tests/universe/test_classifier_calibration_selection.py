@@ -9,6 +9,7 @@ model call at all, and a test asserts the module contains no provider surface.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -731,3 +732,138 @@ def test_a_dry_run_after_a_real_run_still_reports(cohort, tmp_path, capsys):
     assert _invoke(cli, cohort, out, run_id="taken", dry_run=True) == 0
     reported = json.loads(capsys.readouterr().out)
     assert reported["dry_run"] is True and reported["output_path"] is None
+
+
+# --- ADR-128: the three V2.2 modes must be reachable through their own flags -------
+
+SHA_PLACEHOLDER = "0" * 64
+
+V2_2_COHORT_ARGV = [
+    "--mode", "classify-universe-cohort-v2-2",
+    "--cohort-manifest", "c.json", "--overlay-manifest", "o.json",
+    "--release-manifest", "r.json", "--packet-manifest", "p.json",
+    "--governance-root", "gov", "--screen-authorization", "a.json",
+    "--screen-authorization-sha256", SHA_PLACEHOLDER,
+    "--output-dir", "out", "--run-id", "cli-gating-fixture",
+]
+V2_2_CONTINUATION_ARGV = V2_2_COHORT_ARGV[:2] + [
+    "--source-run-dir", "src", "--source-receipt-sha256", SHA_PLACEHOLDER,
+] + V2_2_COHORT_ARGV[2:]
+V2_2_CONTINUATION_ARGV[1] = "classify-universe-cohort-continuation-v2-2"
+V2_2_CALIBRATION_ARGV = ["--mode", "classify-universe-calibration-v2-2",
+                         "--calibration-selection", "s.json"] + V2_2_COHORT_ARGV[2:]
+
+V2_2_MODES = [
+    ("classify-universe-cohort-v2-2", V2_2_COHORT_ARGV),
+    ("classify-universe-cohort-continuation-v2-2", V2_2_CONTINUATION_ARGV),
+    ("classify-universe-calibration-v2-2", V2_2_CALIBRATION_ARGV),
+]
+
+
+@pytest.mark.parametrize("mode,argv", V2_2_MODES, ids=[m for m, _ in V2_2_MODES])
+def test_each_v2_2_mode_accepts_its_complete_required_argv(mode, argv):
+    """ADR-123's lesson, missed again in ADR-128 and pinned here.
+
+    A mode whose own required-flag table demands a flag the shared allow-list
+    refuses is unreachable: every invocation dies at the argument gate before
+    preflight. The V2.1 modes had this coverage; the V2.2 successors did not,
+    and exactly one of them shipped unreachable.
+    """
+    cli = _cli_module()
+    args = cli.build_parser().parse_args(argv)
+    assert args.mode == mode
+    assert cli._reject_cross_mode_flags(args) is None
+    _assert_no_google()
+
+
+def test_the_v2_2_calibration_mode_accepts_its_selection_flag():
+    """The exact defect: --calibration-selection beside every other required flag."""
+    cli = _cli_module()
+    args = cli.build_parser().parse_args(V2_2_CALIBRATION_ARGV)
+    assert args.calibration_selection == "s.json"
+    for attr in ("cohort_manifest", "overlay_manifest", "release_manifest",
+                 "packet_manifest", "governance_root", "screen_authorization",
+                 "screen_authorization_sha256", "output_dir", "run_id"):
+        assert getattr(args, attr), attr
+    verdict = cli._reject_cross_mode_flags(args)
+    assert verdict is None, verdict
+
+
+#: Every flag in the V2.2 calibration mode's required-flag table, in table
+#: order. Two of them -- --output-dir and --run-id -- are enforced by argparse
+#: itself rather than by _reject_cross_mode_flags, so omitting one exits at
+#: parse time and the cross-mode gate never runs. Both layers are refusals;
+#: the test asserts whichever one actually applies, so the list can mirror the
+#: table exactly and the test's name stays true.
+V2_2_CALIBRATION_REQUIRED_FLAGS = [
+    "--cohort-manifest", "--overlay-manifest", "--release-manifest",
+    "--packet-manifest", "--calibration-selection", "--governance-root",
+    "--screen-authorization", "--screen-authorization-sha256",
+    "--output-dir", "--run-id",
+]
+
+
+@pytest.mark.parametrize("flag", V2_2_CALIBRATION_REQUIRED_FLAGS)
+def test_the_v2_2_calibration_mode_still_requires_every_flag(flag, capsys):
+    """Accepting a flag must not make it optional."""
+    cli = _cli_module()
+    parser = cli.build_parser()
+    enforced_by_argparse = {option for action in parser._actions if action.required
+                            for option in action.option_strings}
+    trimmed = list(V2_2_CALIBRATION_ARGV)
+    index = trimmed.index(flag)
+    del trimmed[index:index + 2]
+    if flag in enforced_by_argparse:
+        with pytest.raises(SystemExit) as excinfo:
+            parser.parse_args(trimmed)
+        assert excinfo.value.code == 2
+        assert flag in capsys.readouterr().err
+    else:
+        verdict = cli._reject_cross_mode_flags(parser.parse_args(trimmed))
+        assert verdict and "requires" in verdict and flag in verdict
+
+
+def test_the_required_flag_list_covers_the_modes_whole_table():
+    """The list above mirrors the CLI's own table; drift would hide a flag."""
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    start = source.index('("classify-universe-calibration-v2-2", ((')
+    table = source[start:source.index('("classify-universe-calibration",', start)]
+    declared = re.findall(r'\("(--[a-z0-9-]+)"', table)
+    assert declared == V2_2_CALIBRATION_REQUIRED_FLAGS
+    assert len(set(declared)) == len(declared) == 10
+
+
+@pytest.mark.parametrize("mode,argv", [
+    ("classify-universe-cohort-v2-2", V2_2_COHORT_ARGV),
+    ("classify-universe-cohort-continuation-v2-2", V2_2_CONTINUATION_ARGV),
+], ids=["cohort-v2-2", "continuation-v2-2"])
+def test_a_v2_2_run_mode_still_rejects_the_selection_flag(mode, argv):
+    """Only the calibration route takes a selection; widening one allow-list
+    must not have widened the others."""
+    cli = _cli_module()
+    verdict = cli._reject_cross_mode_flags(cli.build_parser().parse_args(
+        list(argv) + ["--calibration-selection", "s.json"]))
+    assert verdict and "--calibration-selection" in verdict
+
+
+def test_the_v2_1_calibration_mode_is_unaffected():
+    cli = _cli_module()
+    assert cli._reject_cross_mode_flags(
+        cli.build_parser().parse_args(RUN_ARGV)) is None
+    trimmed = list(RUN_ARGV)
+    index = trimmed.index("--calibration-selection")
+    del trimmed[index:index + 2]
+    verdict = cli._reject_cross_mode_flags(cli.build_parser().parse_args(trimmed))
+    assert verdict and "--calibration-selection" in verdict
+
+
+def test_no_unrelated_mode_gained_the_selection_flag():
+    cli = _cli_module()
+    for mode in ("build-screen-release", "build-classifier-candidate-cohort",
+                 "select-classifier-calibration-rows",
+                 "screen-universe-lineage-live"):
+        argv = ["--mode", mode, "--calibration-selection", "s.json",
+                "--output-dir", "out", "--run-id", "cli-gating-fixture"]
+        verdict = cli._reject_cross_mode_flags(cli.build_parser().parse_args(argv))
+        assert verdict and "--calibration-selection" in verdict, mode
