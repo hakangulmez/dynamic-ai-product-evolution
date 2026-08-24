@@ -1,0 +1,342 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_calibration_selection.schema.json",
+  "title": "Universe classifier calibration selection v0.1.0",
+  "description": "ADR-127. Which cohort rows a calibration run classifies, and why each was drawn. Closed, deterministic and relational: the strata rules and quotas live in a digest-pinned config, the draw is seeded, and no row is hand-picked. The strata come from SCREEN_v1 candidate archetypes, which are sample design only -- never truth about a firm and never an input to the tier engine.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "selection_contract",
+    "selection_id",
+    "selection_kind",
+    "cohort_id",
+    "cohort_manifest_path",
+    "cohort_manifest_sha256",
+    "cohort_records_jsonl_sha256",
+    "release_manifest_sha256",
+    "release_records_jsonl_sha256",
+    "overlay_manifest_sha256",
+    "packet_manifest_path",
+    "packet_manifest_sha256",
+    "strata_rules_path",
+    "strata_rules_version",
+    "strata_rules_sha256",
+    "sampling",
+    "rows",
+    "counts",
+    "run_timestamp",
+    "limitations",
+    "no_model_call"
+  ],
+  "properties": {
+    "selection_contract": {
+      "const": "universe_classifier_calibration_selection@0.1.0"
+    },
+    "selection_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selection_kind": {
+      "const": "classifier_calibration_v1"
+    },
+    "cohort_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cohort_manifest_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cohort_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "cohort_records_jsonl_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "release_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "release_records_jsonl_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "overlay_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_manifest_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packet_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "strata_rules_path": {
+      "const": "configs/universe_classifier_calibration_strata_v1.yaml"
+    },
+    "strata_rules_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "strata_rules_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sampling": {
+      "description": "The draw, stated so it can be reproduced exactly.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "seed",
+        "strata"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "seeded_stratified_admission_archetype@1"
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "strata": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "description": "One stratum's quota and what the seeded draw actually took from it.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "rule_id",
+              "pool",
+              "quota",
+              "status_targets",
+              "status_selected",
+              "selected",
+              "reallocated"
+            ],
+            "properties": {
+              "rule_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "pool": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "quota": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "status_targets": {
+                "description": "Rows wanted per admitted status.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "LIKELY_ELIGIBLE",
+                  "BOUNDARY_OR_UNCERTAIN"
+                ],
+                "properties": {
+                  "LIKELY_ELIGIBLE": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "BOUNDARY_OR_UNCERTAIN": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "status_selected": {
+                "description": "Rows actually drawn per admitted status.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "LIKELY_ELIGIBLE",
+                  "BOUNDARY_OR_UNCERTAIN"
+                ],
+                "properties": {
+                  "LIKELY_ELIGIBLE": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "BOUNDARY_OR_UNCERTAIN": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "selected": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reallocated": {
+                "description": "Rows moved to the other status because one status pool could not meet its target.",
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "rows": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "description": "One selected cohort row, carrying the stratum it was drawn from.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cik",
+          "accession",
+          "company_id",
+          "form",
+          "baseline_filing_date",
+          "source_id",
+          "packet_sha256",
+          "admission_origin",
+          "screen_status",
+          "stratum",
+          "stratum_rule_id"
+        ],
+        "properties": {
+          "cik": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$"
+          },
+          "accession": {
+            "type": "string",
+            "minLength": 1
+          },
+          "company_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "form": {
+            "type": "string",
+            "minLength": 1
+          },
+          "baseline_filing_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "source_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "packet_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "admission_origin": {
+            "enum": [
+              "model_screen",
+              "human_review"
+            ]
+          },
+          "screen_status": {
+            "enum": [
+              "LIKELY_ELIGIBLE",
+              "BOUNDARY_OR_UNCERTAIN"
+            ]
+          },
+          "stratum": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stratum_rule_id": {
+            "description": "The config rule that claimed this row. Sample design only: it is not a claim about the firm and is no tier input.",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "counts": {
+      "description": "Populations, all derived from the cohort and the config.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cohort_rows",
+        "selected_rows",
+        "by_admission_origin",
+        "by_screen_status",
+        "by_stratum"
+      ],
+      "properties": {
+        "cohort_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selected_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "by_admission_origin": {
+          "description": "",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "model_screen",
+            "human_review"
+          ],
+          "properties": {
+            "model_screen": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "human_review": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "by_screen_status": {
+          "description": "",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "LIKELY_ELIGIBLE",
+            "BOUNDARY_OR_UNCERTAIN"
+          ],
+          "properties": {
+            "LIKELY_ELIGIBLE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "BOUNDARY_OR_UNCERTAIN": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "by_stratum": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "no_model_call": {
+      "const": true
+    },
+    "run_timestamp": {
+      "type": "string",
+      "minLength": 1
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

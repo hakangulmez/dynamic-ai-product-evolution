@@ -122,6 +122,8 @@ __all__ = [
     "load_cohort_inputs",
     "render_classifier_prompt",
     "model_called_provenance",
+    "BASE_ROUTE",
+    "ClassifierRoute",
     "require_classifier_run",
     "run_lineage_classifier",
     "validate_axes_output",
@@ -146,6 +148,35 @@ AXES_SCHEMA = "schemas/universe_classifier_axes_record.schema.json"
 
 PROMPT_PATH = "prompts/discovery/universe_full_classification.v2_1.md"
 TAXONOMY_VERSION = "universe_classifier_axes_v2_1"
+
+@dataclass(frozen=True)
+class ClassifierRoute:
+    """What one classifier route calls its outputs, and which contract governs.
+
+    Three routes now share this module's preflight, governed loop and
+    reconciliation: the base run, its continuation, and the ADR-127 calibration.
+    They differ in what they name their outputs and which manifest contract
+    describes them, and in nothing else. Making that difference one explicit
+    value keeps the reconciliation block single: a copied ``_settle`` is exactly
+    where two routes would silently drift apart.
+    """
+
+    run_kind: str
+    records_filename: str
+    manifest_filename: str
+    manifest_contract: str
+    manifest_schema: str
+    record_order: str
+
+
+BASE_ROUTE = ClassifierRoute(
+    run_kind=RUN_KIND,
+    records_filename=CLASSIFIER_RECORDS_FILENAME,
+    manifest_filename=CLASSIFIER_MANIFEST_FILENAME,
+    manifest_contract=MANIFEST_CONTRACT,
+    manifest_schema=MANIFEST_SCHEMA,
+    record_order=RECORD_ORDER,
+)
 
 #: The closed provider reasons a bounded provider-unresolved row may carry,
 #: identical to ADR-121's set. Never widened here.
@@ -587,6 +618,8 @@ class _Preflight:
     model_route: dict
     prefix_records: list[dict]
     source: dict | None
+    route: ClassifierRoute
+    selection: dict | None
 
 
 def _preflight(
@@ -595,7 +628,10 @@ def _preflight(
     overlay_manifest_path: Path, release_manifest_path: Path,
     packet_manifest_path: str | Path, clock: Callable[[], datetime],
     authorization_schema: str = AUTHORIZATION_SCHEMA,
+    route: ClassifierRoute = BASE_ROUTE,
     prefix_loader: Callable[[dict, list[dict], dict], tuple[list[dict], dict]]
+    | None = None,
+    selection_loader: Callable[[dict, list[dict]], tuple[dict, list[dict]]]
     | None = None,
 ) -> _Preflight:
     """Everything provable, proven, before any output or network exists."""
@@ -683,6 +719,13 @@ def _preflight(
         raise ScreenInputError("Authorization binds a different packet cohort.")
     packets = {(p["cik"], p["accession"]): p for p in packet_inputs.packets}
 
+    selection: dict | None = None
+    scope: list[dict] = inputs.rows
+    if selection_loader is not None:
+        # The loader returns cohort records in selection order: the renderer
+        # reads a cohort row, and a selection row carries identity only.
+        selection, scope = selection_loader(authorization, inputs.rows)
+
     prefix_records: list[dict] = []
     source: dict | None = None
     if prefix_loader is not None:
@@ -691,7 +734,7 @@ def _preflight(
             _decode_utf8(prompt_raw, "classifier prompt"), tier_rules, model_route)
 
     plan: list[tuple[dict, dict, dict]] = []
-    for row in inputs.rows[len(prefix_records):]:
+    for row in scope[len(prefix_records):]:
         key = (row["cik"], row["accession"])
         packet = packets.get(key)
         if packet is None:
@@ -724,10 +767,12 @@ def _preflight(
             raise ScreenInputError(
                 f"The grant authorizes {authorization['model_called_row_cap']} "
                 f"model-called row(s) but {called} remain.")
-    if authorization["logical_row_cap"] != len(inputs.rows):
+    # A calibration run is scoped by its selection; every other route covers
+    # the whole cohort. Either way the cap is the scope, never a literal.
+    if authorization["logical_row_cap"] != len(scope):
         raise ScreenInputError(
-            f"The grant authorizes {authorization['logical_row_cap']} cohort "
-            f"rows but the cohort holds {len(inputs.rows)}.")
+            f"The grant authorizes {authorization['logical_row_cap']} row(s) "
+            f"but this route's scope holds {len(scope)}.")
     if authorization["count_attempt_cap"] != screen_count_attempt_cap(called):
         raise ScreenInputError(
             f"count_attempt_cap must be exactly {screen_count_attempt_cap(called)}.")
@@ -745,7 +790,8 @@ def _preflight(
         endpoints=endpoints, prompt_text=_decode_utf8(prompt_raw, "classifier prompt"),
         prompt_sha256=prompt_sha, tier_rules=tier_rules, inputs=inputs,
         packets=packets, plan=plan, model_route=model_route,
-        prefix_records=prefix_records, source=source)
+        prefix_records=prefix_records, source=source, route=route,
+        selection=selection)
 
 
 def model_called_provenance(run_id: str, raw_response_id: str | None,
@@ -1102,22 +1148,13 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
     """Write the ledger, records and manifest once every identity holds."""
     prefix_records = pre.prefix_records
     source = pre.source
-    from .lineage_classifier_continuation import (
-        CONTINUATION_MANIFEST_CONTRACT,
-        CONTINUATION_MANIFEST_FILENAME,
-        CONTINUATION_RECORDS_FILENAME,
-        CONTINUATION_MANIFEST_SCHEMA,
-    )
     called_rows, count_attempts, generate_attempts, count_retried, generate_retried = counters
     is_continuation = source is not None
-    records_filename = (CONTINUATION_RECORDS_FILENAME if is_continuation
-                        else CLASSIFIER_RECORDS_FILENAME)
-    manifest_filename = (CONTINUATION_MANIFEST_FILENAME if is_continuation
-                         else CLASSIFIER_MANIFEST_FILENAME)
-    manifest_contract = (CONTINUATION_MANIFEST_CONTRACT if is_continuation
-                         else MANIFEST_CONTRACT)
-    manifest_schema = (CONTINUATION_MANIFEST_SCHEMA if is_continuation
-                       else MANIFEST_SCHEMA)
+    is_calibration = pre.selection is not None
+    records_filename = pre.route.records_filename
+    manifest_filename = pre.route.manifest_filename
+    manifest_contract = pre.route.manifest_contract
+    manifest_schema = pre.route.manifest_schema
     ledger_bytes = "".join(_canonical_line(e) + "\n" for e in ledger).encode("utf-8")
     records_bytes = "".join(_canonical_line(r) + "\n" for r in records).encode("utf-8")
     try:
@@ -1153,6 +1190,7 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
         if record["record_kind"] == "model_output_unusable":
             code = record["failure_reason_code"]
             unusable_by_reason[code] = unusable_by_reason.get(code, 0) + 1
+    scope_rows = pre.selection["rows"] if is_calibration else pre.inputs.rows
     counts = {
         "cohort_rows": len(pre.inputs.rows), "classified": len(classified),
         "model_output_unusable": _kind("model_output_unusable"),
@@ -1196,12 +1234,12 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
             pre.authorization["budget_max_wall_clock_seconds"],
     }
     reconciliation = {
-        "every cohort row produced exactly one record": (
-            len(records) == len(pre.inputs.rows)
+        "every row in scope produced exactly one record": (
+            len(records) == len(scope_rows)
             and len({(r["cik"], r["accession"]) for r in records}) == len(records)),
-        "records follow cohort row order": (
+        "records follow the scope's own row order": (
             [(r["cik"], r["accession"]) for r in records]
-            == [(r["cik"], r["accession"]) for r in pre.inputs.rows]),
+            == [(r["cik"], r["accession"]) for r in scope_rows]),
         "the four record kinds partition the run": (
             len(classified) + counts["model_output_unusable"]
             + counts["provider_unresolved"] + counts["model_output_truncated"]
@@ -1221,11 +1259,13 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
             and r["admission_provenance"]["model_screen"] is None
             for r in records
             if r["admission_provenance"]["admission_origin"] == "human_review"),
-        "the origin split matches the cohort's own": (
+        # A calibration deliberately over-weights the reviewer-admitted rows,
+        # so its origin split is the selection's, never the cohort's.
+        "the origin split matches the scope's own": (
             counts["by_admission_origin"]["model_screen"]
-            == pre.inputs.cohort["counts"]["model_screen_admitted"]
+            == sum(r["admission_origin"] == "model_screen" for r in scope_rows)
             and counts["by_admission_origin"]["human_review"]
-            == pre.inputs.cohort["counts"]["human_review_admitted"]),
+            == sum(r["admission_origin"] == "human_review" for r in scope_rows)),
         "no model output supplied a tier": all(
             "tier" not in (r["axes"] or {}) and "candidate_tier" not in (r["axes"] or {})
             for r in records),
@@ -1275,6 +1315,31 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
             and pre.tier_rules.sha256 == pre.authorization["tier_rules_sha256"]),
         "every input source is byte-unchanged": _sources_unchanged(pre),
     }
+    if is_calibration:
+        selected = {(r["cik"], r["accession"]) for r in pre.selection["rows"]}
+        quotas = {s["rule_id"]: s for s in pre.selection["sampling"]["strata"]}
+        by_stratum: dict[str, int] = {}
+        for row in pre.selection["rows"]:
+            by_stratum[row["stratum"]] = by_stratum.get(row["stratum"], 0) + 1
+        counts["selected_rows"] = len(scope_rows)
+        counts["by_stratum"] = by_stratum
+        reconciliation.update({
+            "every classified row is a selected row": all(
+                (r["cik"], r["accession"]) in selected for r in records),
+            "the run covers strictly less than the cohort": (
+                len(records) < len(pre.inputs.rows)),
+            "each stratum contributed exactly its selected count": all(
+                by_stratum.get(rule_id, 0) == stratum["selected"]
+                for rule_id, stratum in quotas.items()),
+            "the selection's strata rules are the authorized ones": (
+                pre.selection["strata_rules_sha256"]
+                == pre.authorization["strata_rules_sha256"]
+                and pre.selection["sampling"]["seed"]
+                == pre.authorization["selection_seed"]),
+            "the selection was drawn from this cohort": (
+                pre.selection["cohort_manifest_sha256"]
+                == pre.authorization["cohort_manifest_sha256"]),
+        })
     if is_continuation:
         reconciliation.update({
             "the archive opens with the source archive byte for byte": (
@@ -1336,7 +1401,7 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
         "output_hashes": {records_filename: _sha256(records_bytes),
                           CLASSIFIER_RAW_RESPONSES_FILENAME: _sha256(archive_raw),
                           CAPTURE_LEDGER_FILENAME: _sha256(ledger_bytes)},
-        "record_order": RECORD_ORDER, "counts": counts,
+        "record_order": pre.route.record_order, "counts": counts,
         "request_accounting": request_accounting,
         "bounded_outcomes": {
             "max_provider_unresolved": pre.authorization["max_provider_unresolved"],
@@ -1365,6 +1430,29 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
             "rows about which this run concluded nothing.",
         ],
     }
+    if is_calibration:
+        manifest["covers_full_cohort"] = False
+        manifest["calibration_selection"] = {
+            "selection_id": pre.selection["selection_id"],
+            "selection_sha256": pre.authorization["selection_artifact_sha256"],
+            "strata_rules_version": pre.selection["strata_rules_version"],
+            "strata_rules_sha256": pre.selection["strata_rules_sha256"],
+            "sampling_algorithm": pre.selection["sampling"]["algorithm"],
+            "seed": pre.selection["sampling"]["seed"],
+            "selected_rows": len(pre.selection["rows"]),
+            "cohort_rows": pre.selection["counts"]["cohort_rows"],
+        }
+        manifest["limitations"] = manifest["limitations"] + [
+            "This is a calibration observation over a stratified sample, not a "
+            "universe. It settles no firm's membership and is structurally "
+            "non-promotable.",
+            "Strata were derived from SCREEN_v1 candidate archetypes, which are "
+            "sample design only. They are not truth about a firm and are no "
+            "input to the tier engine, which reads the classifier's own axes.",
+            "The sample is too small to estimate a rate. Its counts describe "
+            "these rows and may not be read as the full cohort's yield, nor "
+            "used to set the full run's bounded-outcome tolerances.",
+        ]
     if is_continuation:
         manifest["continuation"] = {
             "source_run_id": source["source_run_id"],

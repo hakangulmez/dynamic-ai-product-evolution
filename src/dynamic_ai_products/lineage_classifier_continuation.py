@@ -40,6 +40,8 @@ from jsonschema import Draft202012Validator, FormatChecker
 from .classifier_tier_engine import derive_tier
 from .lineage_classifier_v2_1 import (
     AXES_SCHEMA,
+    RECORD_ORDER,
+    ClassifierRoute,
     CLASSIFIER_MANIFEST_FILENAME,
     CLASSIFIER_RAW_RESPONSES_FILENAME,
     CLASSIFIER_RECORDS_FILENAME,
@@ -68,6 +70,7 @@ __all__ = [
     "CONTINUATION_MANIFEST_FILENAME",
     "CONTINUATION_MANIFEST_SCHEMA",
     "CONTINUATION_RECORDS_FILENAME",
+    "CONTINUATION_ROUTE",
     "ClassifierSourcePrefix",
     "load_classifier_continuation_source",
     "require_classifier_continuation_run",
@@ -83,6 +86,18 @@ CONTINUATION_AUTHORIZATION_SCHEMA = (
     "schemas/universe_classifier_continuation_authorization.schema.json")
 
 SOURCE_KIND = "failed_classifier_run"
+CONTINUATION_RUN_KIND = "classifier_v2_1_continuation"
+
+#: What this route calls its outputs. The governed loop, the reconciliation and
+#: the manifest writer are the base route's, unchanged; only these names differ.
+CONTINUATION_ROUTE = ClassifierRoute(
+    run_kind=CONTINUATION_RUN_KIND,
+    records_filename=CONTINUATION_RECORDS_FILENAME,
+    manifest_filename=CONTINUATION_MANIFEST_FILENAME,
+    manifest_contract=CONTINUATION_MANIFEST_CONTRACT,
+    manifest_schema=CONTINUATION_MANIFEST_SCHEMA,
+    record_order=RECORD_ORDER,
+)
 
 #: Receipt fields a continuable classifier failure must carry. A receipt that
 #: is missing one is a shape this route has never reasoned about, and it is
@@ -388,7 +403,7 @@ def run_lineage_classifier_continuation(
         release_manifest_path=Path(release_manifest_path),
         packet_manifest_path=packet_manifest_path, clock=clock,
         authorization_schema=CONTINUATION_AUTHORIZATION_SCHEMA,
-        prefix_loader=prefix_loader)
+        route=CONTINUATION_ROUTE, prefix_loader=prefix_loader)
     if dry_run:
         for row, packet, admission in pre.plan:
             render_classifier_prompt(pre.prompt_text, packet, admission)

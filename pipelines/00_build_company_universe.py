@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Thirty-nine mutually exclusive modes, selected by ``--mode`` (default
+Forty-two mutually exclusive modes, selected by ``--mode`` (default
 ``sentinel`` so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -153,6 +153,31 @@ Thirty-nine mutually exclusive modes, selected by ``--mode`` (default
   row ordinal, under the closed rule ``unverified_rows_ascending_ordinal@1``
   and with no status-based filter; the artifact is written write-once and no
   model is called.
+- ``select-classifier-calibration-rows`` derives the ADR-127 calibration
+  selection: a closed, seeded, stratified sample of the immutable classifier
+  candidate cohort, drawn under a digest-pinned strata config that carries the
+  quotas and the seed. Nine strata partition the cohort exactly; the
+  reviewer-admitted rows are their own stratum, because no screen output and so
+  no archetype signal exists for them, and they are deliberately over-weighted.
+  The strata come from SCREEN_v1 candidate archetypes and are sample design
+  only: never truth about a firm, never a tier input. Deterministic and
+  offline: no model call, and the selection size is derived from the config
+  rather than written down.
+- ``classify-universe-calibration`` runs the governed live classifier over exactly
+  that selection (ADR-127). It binds the identical prompt bytes, tier-rule
+  bytes, cohort, overlay, release and packet chain the full run will use, so
+  what it observes is what the full run would do. It is structurally
+  unconfusable with the full run: its own manifest contract and filenames, its
+  own run root, ``promotable`` and ``covers_full_cohort`` both false, and a row
+  count the preflight proves is strictly below the cohort's. Its three
+  bounded-outcome tolerances are stated for this sample alone.
+- ``build-classifier-calibration-review`` derives the qualitative gate from one
+  completed calibration run: it nominates *every* selected row for human
+  reading with its tier, the rule that fired, its evidence quotes and any
+  contradiction of the admission it entered on. It records no accuracy or
+  pass/fail figure, and its contract has no field for one -- there is no gold
+  set and the sample cannot estimate a rate. The gate is passed by a recorded
+  human decision or not at all. Deterministic and offline.
 - ``classify-universe-cohort`` runs the governed live Company-Universe
   Classifier V2.1 over one immutable classifier candidate cohort (ADR-126).
   Each row is judged against its complete baseline Item 1 packet; the
@@ -359,6 +384,18 @@ from dynamic_ai_products.classifier_candidate_cohort import (  # noqa: E402
 from dynamic_ai_products.classifier_tier_engine import (  # noqa: E402
     TierRulesError,
 )
+from dynamic_ai_products.classifier_calibration_selection import (  # noqa: E402
+    CALIBRATION_SELECTION_FILENAME,
+    StrataRulesError,
+    build_calibration_selection,
+)
+from dynamic_ai_products.classifier_calibration_review import (  # noqa: E402
+    REVIEW_FILENAME,
+    build_calibration_review,
+)
+from dynamic_ai_products.lineage_classifier_calibration import (  # noqa: E402
+    run_lineage_classifier_calibration,
+)
 from dynamic_ai_products.lineage_classifier_v2_1 import (  # noqa: E402
     run_lineage_classifier,
 )
@@ -424,6 +461,9 @@ def build_parser() -> argparse.ArgumentParser:
                  "build-classifier-candidate-cohort",
                  "classify-universe-cohort",
                  "classify-universe-cohort-continuation",
+                 "select-classifier-calibration-rows",
+                 "classify-universe-calibration",
+                 "build-classifier-calibration-review",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
                  "aggregate-acquisition-lineage"],
@@ -672,6 +712,27 @@ def build_parser() -> argparse.ArgumentParser:
              "decision ledger covering every unresolved release row.",
     )
     parser.add_argument(
+        "--cohort-manifest-sha256", default=None,
+        help="Expected sha256 of the classifier candidate cohort manifest. "
+             "Calibration selection mode only: a classifier run takes this "
+             "digest from its authorization.",
+    )
+    parser.add_argument(
+        "--calibration-selection", default=None,
+        help="Path to a calibration selection artifact. Used by the calibration "
+             "run and review modes only; its digest is pinned by the "
+             "authorization or passed with --calibration-selection-sha256.",
+    )
+    parser.add_argument(
+        "--calibration-selection-sha256", default=None,
+        help="Expected sha256 of the calibration selection. Review mode only: "
+             "a calibration run takes the digest from its authorization.",
+    )
+    parser.add_argument(
+        "--calibration-run-dir", default=None,
+        help="Path to a completed calibration run directory. Review mode only.",
+    )
+    parser.add_argument(
         "--cohort-manifest", default=None,
         help="Path to a completed classifier candidate cohort manifest. Used "
              "by the two classifier modes only; its digest is pinned by the "
@@ -851,7 +912,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "select-screen-repair-rows",
                          "select-screen-rows",
                          "classify-universe-cohort",
-                         "classify-universe-cohort-continuation"):
+                         "classify-universe-cohort-continuation",
+                         "classify-universe-calibration"):
         screen_offenders += _present(
             (("--packet-manifest", args.packet_manifest),)
         )
@@ -898,7 +960,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "screen-universe-lineage-diagnostic",
                          "screen-universe-lineage-diagnostic-repair",
                          "classify-universe-cohort",
-                         "classify-universe-cohort-continuation"):
+                         "classify-universe-cohort-continuation",
+                         "classify-universe-calibration"):
         screen_offenders += _present((
             ("--governance-root", args.governance_root),
             ("--screen-authorization", args.screen_authorization),
@@ -912,7 +975,9 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         ))
     if args.mode not in ("build-human-review-overlay",
                          "build-classifier-candidate-cohort",
-                         "classify-universe-cohort", "classify-universe-cohort-continuation"):
+                         "classify-universe-cohort",
+                         "classify-universe-cohort-continuation",
+                         "select-classifier-calibration-rows", "classify-universe-calibration"):
         screen_offenders += _present((
             ("--release-manifest", args.release_manifest),
         ))
@@ -920,7 +985,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
     # run takes its digests from the authorization, so passing one here would
     # create a second, unbound source of truth.
     if args.mode not in ("build-human-review-overlay",
-                         "build-classifier-candidate-cohort"):
+                         "build-classifier-candidate-cohort", "select-classifier-calibration-rows"):
         screen_offenders += _present((
             ("--release-manifest-sha256", args.release_manifest_sha256),
         ))
@@ -929,17 +994,34 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
             ("--decision-ledger", args.decision_ledger),
         ))
     if args.mode not in ("build-classifier-candidate-cohort",
-                         "classify-universe-cohort", "classify-universe-cohort-continuation"):
+                         "classify-universe-cohort",
+                         "classify-universe-cohort-continuation",
+                         "select-classifier-calibration-rows", "classify-universe-calibration"):
         screen_offenders += _present((
             ("--overlay-manifest", args.overlay_manifest),
         ))
-    if args.mode != "build-classifier-candidate-cohort":
+    if args.mode not in ("build-classifier-candidate-cohort", "select-classifier-calibration-rows"):
         screen_offenders += _present((
             ("--overlay-manifest-sha256", args.overlay_manifest_sha256),
         ))
-    if args.mode not in ("classify-universe-cohort", "classify-universe-cohort-continuation"):
+    if args.mode not in ("classify-universe-cohort",
+                         "classify-universe-cohort-continuation",
+                         "select-classifier-calibration-rows", "classify-universe-calibration"):
         screen_offenders += _present((
             ("--cohort-manifest", args.cohort_manifest),
+        ))
+    if args.mode not in ("classify-universe-calibration", "build-classifier-calibration-review"):
+        screen_offenders += _present((
+            ("--calibration-selection", args.calibration_selection),
+        ))
+    if args.mode != "build-classifier-calibration-review":
+        screen_offenders += _present((
+            ("--calibration-selection-sha256", args.calibration_selection_sha256),
+            ("--calibration-run-dir", args.calibration_run_dir),
+        ))
+    if args.mode != "select-classifier-calibration-rows":
+        screen_offenders += _present((
+            ("--cohort-manifest-sha256", args.cohort_manifest_sha256),
         ))
     if args.mode != "build-screen-release":
         screen_offenders += _present((
@@ -1555,6 +1637,51 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                 "screen-universe-unverified-repair mode requires: "
                 f"{', '.join(missing)}"
             )
+        return None
+
+    for calibration_mode, required_flags in (
+        ("select-classifier-calibration-rows", (("--cohort-manifest", "cohort_manifest"),
+                   ("--cohort-manifest-sha256", "cohort_manifest_sha256"),
+                   ("--release-manifest", "release_manifest"),
+                   ("--release-manifest-sha256", "release_manifest_sha256"),
+                   ("--overlay-manifest", "overlay_manifest"),
+                   ("--overlay-manifest-sha256", "overlay_manifest_sha256"),
+                   ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
+        ("classify-universe-calibration", (("--cohort-manifest", "cohort_manifest"),
+                   ("--overlay-manifest", "overlay_manifest"),
+                   ("--release-manifest", "release_manifest"),
+                   ("--packet-manifest", "packet_manifest"),
+                   ("--calibration-selection", "calibration_selection"),
+                   ("--governance-root", "governance_root"),
+                   ("--screen-authorization", "screen_authorization"),
+                   ("--screen-authorization-sha256",
+                    "screen_authorization_sha256"),
+                   ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
+        ("build-classifier-calibration-review", (("--calibration-run-dir", "calibration_run_dir"),
+                   ("--calibration-selection", "calibration_selection"),
+                   ("--calibration-selection-sha256",
+                    "calibration_selection_sha256"),
+                   ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
+    ):
+        if args.mode != calibration_mode:
+            continue
+        offending = _present(
+            frame_flags + acquire_flags + dera_flags
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+            + (("--input", args.input),)
+            + (("--seed", args.seed),)
+            + (("--provider", args.provider),)
+        )
+        if offending:
+            return (
+                f"{calibration_mode} mode does not accept: "
+                f"{', '.join(offending)}"
+            )
+        missing = _missing(tuple(
+            (flag, getattr(args, attr)) for flag, attr in required_flags))
+        if missing:
+            return f"{calibration_mode} mode requires: {', '.join(missing)}"
         return None
 
     for classifier_mode, extra_required in (
@@ -3302,6 +3429,117 @@ def _main_select_screen_unverified_repair_rows(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_select_classifier_calibration_rows(args: argparse.Namespace) -> int:
+    """CLI boundary for the ADR-127 calibration selection. No model call."""
+    cohort = Path(args.cohort_manifest)
+    release = Path(args.release_manifest)
+    overlay = Path(args.overlay_manifest)
+    for label, path in (("cohort manifest", cohort), ("release manifest", release),
+                        ("overlay manifest", overlay)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    output_path = Path(args.output_dir) / args.run_id / CALIBRATION_SELECTION_FILENAME
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        print(f"ERROR: {output_path.parent} already exists; a selection is "
+              "written once.", file=sys.stderr)
+        return 2
+    try:
+        selection = build_calibration_selection(
+            repo_root=REPO_ROOT, cohort_manifest_path=cohort,
+            cohort_manifest_sha256=args.cohort_manifest_sha256,
+            release_manifest_path=release,
+            release_manifest_sha256=args.release_manifest_sha256,
+            overlay_manifest_path=overlay,
+            overlay_manifest_sha256=args.overlay_manifest_sha256,
+            output_path=output_path, selection_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run)
+    except (ScreenInputError, StrataRulesError) as exc:
+        print(f"ERROR: invalid calibration selection input: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "selection_id": selection["selection_id"], "dry_run": args.dry_run,
+        "output_path": None if args.dry_run else str(output_path),
+        "counts": selection["counts"], "sampling": selection["sampling"],
+    }, indent=2))
+    return 0
+
+
+def _main_classify_universe_calibration(args: argparse.Namespace) -> int:
+    """CLI boundary for the ADR-127 governed live calibration run."""
+    resolved = _classifier_paths(args)
+    if resolved is None:
+        return 2
+    cohort, overlay, release, packet, governance_root = resolved
+    selection = Path(args.calibration_selection)
+    if not selection.is_file():
+        print(f"ERROR: calibration selection not found: {selection}",
+              file=sys.stderr)
+        return 2
+    try:
+        result = run_lineage_classifier_calibration(
+            repo_root=REPO_ROOT, cohort_manifest_path=cohort,
+            overlay_manifest_path=overlay, release_manifest_path=release,
+            packet_manifest_path=packet, selection_path=selection,
+            governance_root=governance_root,
+            authorization_reference=args.screen_authorization,
+            authorization_sha256=args.screen_authorization_sha256,
+            output_dir=Path(args.output_dir), run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid calibration input: {exc}", file=sys.stderr)
+        return 2
+    except TierRulesError as exc:
+        print(f"ERROR: unusable tier rules: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    return _report_classifier_run(result, what="calibration run")
+
+
+def _main_build_classifier_calibration_review(args: argparse.Namespace) -> int:
+    """CLI boundary for the ADR-127 qualitative review gate. No model call."""
+    run_dir = Path(args.calibration_run_dir)
+    selection = Path(args.calibration_selection)
+    if not run_dir.is_dir():
+        print(f"ERROR: calibration run directory not found: {run_dir}",
+              file=sys.stderr)
+        return 2
+    if not selection.is_file():
+        print(f"ERROR: calibration selection not found: {selection}",
+              file=sys.stderr)
+        return 2
+    output_path = Path(args.output_dir) / args.run_id / REVIEW_FILENAME
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        print(f"ERROR: {output_path.parent} already exists; a review is written "
+              "once.", file=sys.stderr)
+        return 2
+    try:
+        review = build_calibration_review(
+            repo_root=REPO_ROOT, calibration_run_dir=run_dir,
+            selection_path=selection,
+            selection_sha256=args.calibration_selection_sha256,
+            output_path=output_path, review_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run)
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid calibration review input: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "review_id": review["review_id"], "dry_run": args.dry_run,
+        "output_path": None if args.dry_run else str(output_path),
+        "gate_state": review["gate_state"], "reviewer_id": review["reviewer_id"],
+        "review_protocol_version": review["review_protocol_version"],
+        "counts": review["counts"],
+    }, indent=2))
+    return 0
+
+
 def _classifier_paths(args: argparse.Namespace):
     """Resolve and existence-check the four pinned classifier inputs."""
     paths = {
@@ -3973,6 +4211,12 @@ def main(argv: list[str] | None = None) -> int:
         return _main_build_human_review_overlay(args)
     if args.mode == "build-classifier-candidate-cohort":
         return _main_build_classifier_candidate_cohort(args)
+    if args.mode == "select-classifier-calibration-rows":
+        return _main_select_classifier_calibration_rows(args)
+    if args.mode == "classify-universe-calibration":
+        return _main_classify_universe_calibration(args)
+    if args.mode == "build-classifier-calibration-review":
+        return _main_build_classifier_calibration_review(args)
     if args.mode == "classify-universe-cohort":
         return _main_classify_universe_cohort(args)
     if args.mode == "classify-universe-cohort-continuation":

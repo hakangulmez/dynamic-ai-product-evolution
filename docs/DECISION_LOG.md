@@ -8782,6 +8782,108 @@ to 146), this decision log, `REPO_MANIFEST.md` (897 to 912), the five
 registry/manifest guards, and the absolute registry literals in eleven screen
 suites.
 
+## ADR-127 — Calibrate on a sample that can be read, and score nothing
+
+**Status.** Accepted, fixture-first. No model call, no network, no governance
+artifact, no calibration selection, no production `data/runs` artifact, and no
+change to the V2.1 prompt, the tier-rule config, the tier engine, SCREEN_v1,
+the overlay, the candidate cohort or any screen route.
+
+**Why a calibration exists at all.** The full 4,045-row run is expensive and,
+once made, is what every later stage reads. Finding out afterwards that the
+prompt could not return valid axes, that a tier rule never resolved, or that
+the model deferred to the admission context it was told to contest would mean
+paying twice. So a small run first, over the same prompt bytes, the same
+tier-rule bytes and the same cohort, overlay, release and packet chain the full
+run will use. That sameness is the whole point: a calibration that differed
+from the run it precedes would measure nothing.
+
+**Sampled by rule, never by hand.** Nine strata partition the cohort exactly —
+verified total and disjoint — with quotas, status targets and the seed
+(20260824) in a digest-pinned config, and a seeded per-(stratum, status) draw
+over canonically sorted rows. A shortfall in one status pool reallocates
+deterministically within its own stratum rather than shrinking it. Changing the
+sample means editing a versioned file, not a call site.
+
+**The size is derived, not declared.** The config asks for 8 reviewer-admitted
+rows and 4 from each of the eight model-screen strata; the builder caps each
+ask by what the stratum can supply and sums. Under the current cohort that is
+40. The number appears in no module, schema or test: a literal would describe
+one cohort and would keep passing while describing another, the mistake
+ADR-125 already ruled out for populations.
+
+**Reviewer-admitted rows are over-weighted on purpose.** They are 2.2% of the
+cohort and a fifth of the calibration. They failed screen validation twice and
+were admitted by a person, and no artifact has yet measured how they classify.
+They are also the one population that *cannot* be stratified economically:
+no screen output exists for them, so no archetype signal exists either, and
+placing them in an economic stratum would mean inventing the signal. They are a
+stratum of their own, drawn by reviewer decision.
+
+**Screen archetypes are sample design and stop there.** The eight model-screen
+strata are derived from SCREEN_v1's candidate archetypes — a non-authoritative
+model output the classifier is free to contradict. It tells us where a row was
+drawn from and nothing about how it must classify, it is no input to the tier
+engine, and the dependency is a stated limitation on the selection, the run
+manifest and the review rather than something a reader must infer. The
+contradiction/boundary stratum deliberately outranks every economic stratum,
+because a contradicted row's archetype list is the least trustworthy part of
+its output and must not quietly populate "hardware-software system".
+
+**`PHYSICAL_SERVICE_NETWORK` alone covers four rows in the whole cohort**, too
+few to support a quota, so the stratum is folded with `HUMAN_MANAGED_SERVICE`
+and named `physical_or_human_delivered_service` — named for what it contains
+rather than for what was originally asked for.
+
+**Structurally unconfusable with the full run.** Five separations, none relying
+on a reader's care: `promotable` false; its own manifest contract, so
+`require_classifier_run` refuses it; its own output filenames; its own run
+root; and `covers_full_cohort` a false const with a row count the preflight
+proves strictly below the cohort's. The full run re-calls every calibration row,
+so no row's provenance is a hybrid.
+
+**One refactor rather than a fork.** Three routes now share the preflight, the
+governed loop and the reconciliation block, differing only in what they name
+their outputs. That difference became one explicit `ClassifierRoute` value; the
+alternative — copying `_settle` — is exactly where two routes drift apart
+without anyone noticing. The ADR-126 suites pin both existing routes through
+the change.
+
+**Tolerances are for this sample and stop there.** The three bounded-outcome
+ceilings remain authorization parameters with no default. The governed examples
+use 2/2/2. A test asserts those numbers appear as a default nowhere in the
+classifier code or contracts, and the calibration grant's own schema says in
+each field's description that the value is for this sample alone.
+
+**The gate reports and refuses to score.** The review nominates *every*
+selected row for human reading — not a subsample; forty rows exist to be read —
+with each row's tier, the rule that fired, its evidence quotes, and whether the
+axes contradicted the admission it entered on. It records no accuracy,
+precision, recall, agreement or pass/fail figure, and its contract has no field
+one could live in: there is no gold set to score against, and a number here
+would be read as evidence it is not. The gate is passed by a recorded human
+decision, by `hakan_zeki_gulmez` under `classifier_calibration_review_v1`, or
+it is not passed.
+
+**Honest limits.** Forty rows can catch gross failures — invalid axes, a
+never-resolving rule, deference to the admission, collapsing quote resolution,
+output hitting the ceiling, the real cost per row. It cannot estimate a rate:
+one unusable row in a four-row stratum is 25%, with an interval spanning most
+of the unit line. So the full run's three tolerances may **not** be inferred
+from what calibration observes; they must come from ADR-121/122/123 screen-run
+experience and an explicit risk decision. The manifest and the review both say
+so in their own limitations, so no later reader can mistake a small count for a
+measured rate. A contradiction of an admission is likewise reported, never
+flagged as an error: the classifier is instructed to contest the admission
+where the packet warrants it.
+
+**Scope.** Thirty-four paths: the strata config, four contracts, the selection
+builder, the calibration runner, the review reporter, three fixture-only test
+modules, the ADR-126 route-descriptor refactor and its two call sites, three
+CLI modes, the registry (0.65.0 to 0.66.0, 146 to 150), this decision log,
+`REPO_MANIFEST.md` (912 to 923), the five registry/manifest guards, and the
+absolute registry literals in eleven screen suites.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only

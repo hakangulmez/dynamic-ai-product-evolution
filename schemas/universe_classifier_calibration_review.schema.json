@@ -1,0 +1,337 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_calibration_review.schema.json",
+  "title": "Universe classifier calibration review v0.1.0",
+  "description": "ADR-127. The qualitative gate a human passes before the full cohort run is authorized. It nominates EVERY selected row for reading and reports context counts. It deliberately carries no accuracy, precision, recall, score or pass/fail field: there is no gold set, the sample is far too small to estimate a rate, and a number here would be read as evidence it is not. The gate is passed by a recorded human decision or not at all.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "review_contract",
+    "review_kind",
+    "review_id",
+    "calibration_run_id",
+    "calibration_manifest_sha256",
+    "selection_id",
+    "selection_sha256",
+    "prompt_template_sha256",
+    "tier_rules_version",
+    "tier_rules_sha256",
+    "reviewer_id",
+    "review_protocol_version",
+    "gate_state",
+    "counts",
+    "nominated_rows",
+    "no_model_call",
+    "promotable",
+    "run_timestamp",
+    "limitations"
+  ],
+  "properties": {
+    "review_contract": {
+      "const": "universe_classifier_calibration_review@0.1.0"
+    },
+    "review_kind": {
+      "const": "qualitative_human_reading"
+    },
+    "review_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "calibration_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "calibration_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "selection_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selection_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prompt_template_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "tier_rules_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tier_rules_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "reviewer_id": {
+      "const": "hakan_zeki_gulmez"
+    },
+    "review_protocol_version": {
+      "const": "classifier_calibration_review_v1"
+    },
+    "gate_state": {
+      "description": "Always pending on generation. Only a person may record a decision, and this artifact never decides for them.",
+      "const": "pending_human_reading"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nominated_rows",
+        "selected_rows",
+        "by_record_kind",
+        "by_stratum",
+        "by_tier",
+        "tier_by_stratum",
+        "fired_rule_ids",
+        "contradicts_admission_by_origin",
+        "unusable_by_reason"
+      ],
+      "properties": {
+        "nominated_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selected_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "by_record_kind": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "by_stratum": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "by_tier": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "tier_by_stratum": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "fired_rule_ids": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "contradicts_admission_by_origin": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "unusable_by_reason": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "nominated_rows": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "description": "One row put in front of a human reader. Every selected row appears here; there is no subsample.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cik",
+          "accession",
+          "company_id",
+          "stratum",
+          "admission_origin",
+          "admitted_status",
+          "record_kind",
+          "tier",
+          "fired_rule_id",
+          "software_centrality",
+          "firm_structure",
+          "commercial_materiality",
+          "customer_market_orientation",
+          "contradicts_admission",
+          "boundary_flags",
+          "contradictions",
+          "evidence",
+          "packet_sha256",
+          "failure_reason_code"
+        ],
+        "properties": {
+          "cik": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$"
+          },
+          "accession": {
+            "type": "string",
+            "minLength": 1
+          },
+          "company_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stratum": {
+            "type": "string",
+            "minLength": 1
+          },
+          "admission_origin": {
+            "enum": [
+              "model_screen",
+              "human_review"
+            ]
+          },
+          "admitted_status": {
+            "enum": [
+              "LIKELY_ELIGIBLE",
+              "BOUNDARY_OR_UNCERTAIN"
+            ]
+          },
+          "record_kind": {
+            "enum": [
+              "classified",
+              "model_output_unusable",
+              "provider_unresolved",
+              "model_output_truncated"
+            ]
+          },
+          "tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fired_rule_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "software_centrality": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "firm_structure": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commercial_materiality": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "customer_market_orientation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contradicts_admission": {
+            "description": "True when the axes reject a customer-facing product the admission asserted. Reported for reading, never as an error.",
+            "type": "boolean"
+          },
+          "boundary_flags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "contradictions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "axis",
+                "passage_ref",
+                "quote",
+                "supported_claim"
+              ],
+              "properties": {
+                "axis": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "passage_ref": {
+                  "type": "string",
+                  "pattern": "^P[0-9]{3}$"
+                },
+                "quote": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "supported_claim": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          "packet_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "failure_reason_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "no_model_call": {
+      "const": true
+    },
+    "promotable": {
+      "const": false
+    },
+    "run_timestamp": {
+      "type": "string",
+      "minLength": 1
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

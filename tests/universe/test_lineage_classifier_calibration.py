@@ -1,0 +1,461 @@
+"""ADR-127 tests: the calibration is the classifier, on a sample, and says so.
+
+Everything is offline. The cohort, release and overlay are the ADR-127
+selection fixtures; the transport is the fake the screen suites use; no test
+builds a ``genai.Client``, resolves a credential or opens a socket.
+
+The properties that matter here are not about classification — ADR-126 already
+pins those — but about containment: that a calibration cannot be mistaken for a
+full run by any loader, that its grant must state tolerances rather than
+inherit them, and that its manifest says out loud what its own numbers cannot
+support.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from hashlib import sha256
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from jsonschema import Draft202012Validator, FormatChecker
+
+from dynamic_ai_products import classifier_calibration_selection as ccs
+from dynamic_ai_products import lineage_classifier_calibration as lcal
+from dynamic_ai_products import lineage_classifier_v2_1 as lcl
+from dynamic_ai_products.providers import screen_count_retry_policy as cp
+from dynamic_ai_products.providers import screen_retry_policy as gp
+from dynamic_ai_products.providers.client_contract_v2 import CLIENT_CONTRACT_V2_ID
+from dynamic_ai_products.providers.retry_policy import (
+    RATE_LIMIT_POLICY_VERSION,
+    RETRY_POLICY_VERSION,
+)
+from dynamic_ai_products.universe import lineage_screen as ls
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from test_classifier_calibration_selection import (  # noqa: E402
+    CLOCK,
+    ROOT,
+    _build as _build_selection,
+    _sha,
+    cohort as cohort,  # noqa: F401,PLC0414 - re-exported pytest fixture
+    packet_cohort as packet_cohort,  # noqa: F401,PLC0414
+    release as release,  # noqa: F401,PLC0414
+)
+from test_lineage_classifier_v2_1 import _axes_payload  # noqa: E402
+from test_lineage_screen_continuation_v5 import _EmptyBodyFactory  # noqa: E402
+from test_lineage_screen_live import (  # noqa: E402
+    VERTEX_LOCATION,
+    VERTEX_PROJECT,
+    _contract_digest,
+    _endpoints,
+)
+
+MANIFEST_SCHEMA = json.loads(
+    (ROOT / lcal.CALIBRATION_MANIFEST_SCHEMA).read_text(encoding="utf-8"))
+RECORD_SCHEMA = json.loads((ROOT / lcl.RECORD_SCHEMA).read_text(encoding="utf-8"))
+
+#: The approved calibration-only tolerances. Named here once so a test can
+#: assert they never leak into a full-run default.
+CALIBRATION_TOLERANCES = {"max_model_output_unusable": 2,
+                          "max_provider_unresolved": 2,
+                          "max_model_output_truncated": 2}
+
+_GOOGLE_BASELINE: set[str] | None = None
+
+
+def _google_modules() -> set[str]:
+    return {n for n in sys.modules if n == "google" or n.startswith("google.")}
+
+
+@pytest.fixture(autouse=True)
+def _google_module_baseline():
+    global _GOOGLE_BASELINE
+    if _GOOGLE_BASELINE is None:
+        _GOOGLE_BASELINE = _google_modules()
+    yield
+
+
+def _assert_no_google() -> None:
+    added = _google_modules() - (_GOOGLE_BASELINE or set())
+    assert not added, f"the calibration path imported google: {sorted(added)}"
+
+
+@pytest.fixture
+def selection(cohort, tmp_path):
+    payload = _build_selection(cohort, tmp_path, name="calibration-selection")
+    path = tmp_path / "calibration-selection" / ccs.CALIBRATION_SELECTION_FILENAME
+    return SimpleNamespace(path=path, selection=payload,
+                           sha256=_sha(path.read_bytes()),
+                           rows=payload["rows"])
+
+
+def _grant(cohort, selection, tmp_path, *, mutate=None, name="calibration-gov",
+           tolerances=None):
+    root = tmp_path / name
+    root.mkdir(parents=True, exist_ok=True)
+    endpoints, digest = _endpoints(), _contract_digest()
+    enablement = {
+        "enablement_contract": "universe_screen_adapter_enablement@0.1.0",
+        "enablement_id": "screen-enablement-fixture",
+        "enabled_by": "fixture-governance",
+        "effective_at": "2026-08-01T00:00:00+00:00",
+        "expires_at": "2026-12-31T00:00:00+00:00",
+        "deployment_environment_id": "fixture-env",
+        "screen_stage": "universe_high_recall_screen",
+        "provider_client_contract_reference": CLIENT_CONTRACT_V2_ID,
+        "provider_client_contract_sha256": digest,
+        "endpoint_allowlist": endpoints,
+    }
+    enablement_raw = (json.dumps(enablement, indent=2, sort_keys=True) + "\n").encode()
+    (root / "screen_adapter_enablement.json").write_bytes(enablement_raw)
+    from dynamic_ai_products.classifier_tier_engine import load_tier_rules
+    tier = load_tier_rules(ROOT)
+    strata = ccs.load_strata_rules(ROOT)
+    rows = len(selection.rows)
+    payload = {
+        "authorization_contract":
+            "universe_classifier_calibration_authorization@0.1.0",
+        "authorization_id": "calibration-fixture",
+        "authorized_by": "fixture-governance",
+        "effective_at": "2026-08-01T00:00:00+00:00",
+        "expires_at": "2026-12-31T00:00:00+00:00",
+        "deployment_environment_id": "fixture-env",
+        "rollout_state": "release_or_research_production",
+        "run_kind": lcal.CALIBRATION_RUN_KIND, "promotable": False,
+        "covers_full_cohort": False,
+        "output_contract": lcl.RECORD_CONTRACT,
+        "cohort_id": "cohort-fixture", "cohort_manifest_sha256": cohort.sha256,
+        "overlay_id": "overlay-fixture",
+        "overlay_manifest_sha256": cohort.overlay_sha256,
+        "release_id": "synthetic-release",
+        "release_manifest_sha256": cohort.release.sha256,
+        "packet_manifest_sha256": cohort.packet_manifest_sha256,
+        "selection_artifact_path": str(selection.path),
+        "selection_artifact_sha256": selection.sha256,
+        "selection_kind": "classifier_calibration_v1",
+        "selection_seed": strata.seed,
+        "strata_rules_version": strata.version,
+        "strata_rules_sha256": strata.sha256,
+        "prompt_template_path": lcl.PROMPT_PATH,
+        "prompt_template_sha256":
+            sha256((ROOT / lcl.PROMPT_PATH).read_bytes()).hexdigest(),
+        "tier_rules_version": tier.version, "tier_rules_sha256": tier.sha256,
+        "taxonomy_version": lcl.TAXONOMY_VERSION,
+        "screen_adapter_enablement_reference": "screen_adapter_enablement.json",
+        "screen_adapter_enablement_sha256": _sha(enablement_raw),
+        "provider_client_contract_reference": CLIENT_CONTRACT_V2_ID,
+        "provider_client_contract_sha256": digest,
+        "vertex_project": VERTEX_PROJECT, "vertex_location": VERTEX_LOCATION,
+        "model_route": {"provider": "google_vertex_ai",
+                        "model_label": "gemini-2.5-flash"},
+        "endpoint_allowlist": endpoints,
+        "logical_row_cap": rows, "count_attempt_cap": rows * 3,
+        "provider_attempt_cap": rows * 5,
+        "budget_max_external_requests": rows * 8,
+        "count_attempts_per_row": 3, "generate_attempts_per_row": 5,
+        "external_requests_per_row": 8,
+        "budget_max_input_tokens": 10_000_000,
+        "budget_max_output_tokens": 100_000_000,
+        "budget_max_estimated_cost_micros": 1_000_000_000,
+        "budget_max_wall_clock_seconds": 86_400,
+        "retry_policy_version": RETRY_POLICY_VERSION,
+        "rate_limit_policy_version": RATE_LIMIT_POLICY_VERSION,
+        "screen_generate_retry_policy_version":
+            gp.SCREEN_GENERATE_RETRY_POLICY_VERSION,
+        "screen_count_retry_policy_version": cp.SCREEN_COUNT_RETRY_POLICY_VERSION,
+        **(tolerances if tolerances is not None else CALIBRATION_TOLERANCES),
+    }
+    if mutate is not None:
+        mutate(payload)
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    (root / "calibration_authorization.json").write_bytes(raw)
+    return SimpleNamespace(root=root, reference="calibration_authorization.json",
+                           sha256=_sha(raw), authorization=payload)
+
+
+def _script(cohort, selection, **overrides):
+    packets = cohort.release.packets
+    script = {row["cik"]: {"text": _axes_payload(
+        packets[(row["cik"], row["accession"])])} for row in selection.rows}
+    for cik, extra in overrides.items():
+        script[cik] = {**script.get(cik, {}), **extra}
+    return script
+
+
+def _run(cohort, selection, grant, tmp_path, *, script=None, run_id="calibration-run",
+         dry_run=False, output_dir=None, selection_path=None):
+    events: list = []
+    factory = _EmptyBodyFactory(
+        script if script is not None else _script(cohort, selection), events)
+    result = lcal.run_lineage_classifier_calibration(
+        repo_root=ROOT, cohort_manifest_path=cohort.path,
+        overlay_manifest_path=cohort.overlay_path,
+        release_manifest_path=cohort.release.path,
+        packet_manifest_path=cohort.packet_manifest_path,
+        selection_path=selection_path or selection.path,
+        governance_root=grant.root, authorization_reference=grant.reference,
+        authorization_sha256=grant.sha256,
+        output_dir=output_dir or (tmp_path / "calibration-out"), run_id=run_id,
+        clock=CLOCK, dry_run=dry_run, client_factory=factory,
+        sleep=lambda s: events.append(("wait", s)))
+    return SimpleNamespace(result=result, factory=factory, events=events)
+
+
+def _records(result):
+    return [json.loads(x) for x in
+            (result.run_dir / lcal.CALIBRATION_RECORDS_FILENAME)
+            .read_text(encoding="utf-8").splitlines() if x.strip()]
+
+
+# --- the happy path ----------------------------------------------------------------
+
+
+def test_the_calibration_classifies_exactly_its_selection(cohort, selection,
+                                                          tmp_path):
+    grant = _grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path)
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+
+    records = _records(run.result)
+    validator = Draft202012Validator(RECORD_SCHEMA, format_checker=FormatChecker())
+    for record in records:
+        validator.validate(record)
+    assert [(r["cik"], r["accession"]) for r in records] == \
+        [(r["cik"], r["accession"]) for r in selection.rows]
+    assert len(records) < len(cohort.rows)
+    assert run.result.counts["selected_rows"] == len(selection.rows)
+    assert sum(run.result.counts["by_stratum"].values()) == len(records)
+    assert all(v is True for v in run.result.reconciliation.values())
+
+
+def test_the_manifest_binds_the_same_prompt_and_rules_as_the_full_run(
+        cohort, selection, tmp_path):
+    grant = _grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path)
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    Draft202012Validator(MANIFEST_SCHEMA,
+                         format_checker=FormatChecker()).validate(manifest)
+    assert manifest["prompt_template_path"] == lcl.PROMPT_PATH
+    assert manifest["prompt_template_sha256"] == \
+        sha256((ROOT / lcl.PROMPT_PATH).read_bytes()).hexdigest()
+    assert manifest["tier_rules_version"] == "universe_classifier_tier_rules_v2_1"
+    assert manifest["sources"]["cohort"]["manifest_sha256"] == cohort.sha256
+    assert manifest["calibration_selection"]["seed"] == 20260824
+    assert manifest["calibration_selection"]["selection_sha256"] == selection.sha256
+
+
+def test_a_dry_run_renders_every_selected_row_and_sends_nothing(
+        cohort, selection, tmp_path):
+    grant = _grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path, dry_run=True)
+    assert run.result.status == "dry_run" and run.result.run_dir is None
+    assert run.factory.opens == run.factory.generate_calls == 0
+    assert run.result.request_accounting["selected_rows"] == len(selection.rows)
+    assert run.result.request_accounting["cohort_rows"] == len(cohort.rows)
+
+
+def test_the_run_spends_only_what_the_selection_justifies(cohort, selection,
+                                                          tmp_path):
+    grant = _grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path)
+    accounting = run.result.request_accounting
+    assert accounting["model_called_rows"] == len(selection.rows)
+    assert accounting["logical_row_cap"] == len(selection.rows)
+    assert accounting["count_attempt_cap"] == len(selection.rows) * 3
+    assert accounting["provider_attempt_cap"] == len(selection.rows) * 5
+    assert accounting["external_request_cap"] == len(selection.rows) * 8
+    assert accounting["external_requests_made"] <= accounting["external_request_cap"]
+
+
+# --- containment: a calibration is not a full run ----------------------------------
+
+
+def test_a_full_run_loader_refuses_a_calibration(cohort, selection, tmp_path):
+    grant = _grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path)
+    with pytest.raises(ls.ScreenInputError, match="holds no classifier manifest"):
+        lcl.require_classifier_run(run.result.run_dir)
+    assert lcal.require_classifier_calibration_run(run.result.run_dir) == \
+        run.result.manifest_path
+
+
+def test_the_outputs_carry_their_own_names(cohort, selection, tmp_path):
+    grant = _grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path)
+    present = {p.name for p in run.result.run_dir.iterdir()}
+    assert lcal.CALIBRATION_RECORDS_FILENAME in present
+    assert lcal.CALIBRATION_MANIFEST_FILENAME in present
+    assert lcl.CLASSIFIER_RECORDS_FILENAME not in present
+    assert lcl.CLASSIFIER_MANIFEST_FILENAME not in present
+
+
+def test_the_manifest_is_non_promotable_and_says_it_covers_no_cohort(
+        cohort, selection, tmp_path):
+    grant = _grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path)
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["promotable"] is False
+    assert manifest["covers_full_cohort"] is False
+    assert manifest["record_order"] == "calibration_selection_row_order"
+    assert manifest["run_kind"] == "classifier_calibration_v2_1"
+    assert manifest["counts"]["selected_rows"] < manifest["counts"]["cohort_rows"]
+
+
+def test_the_manifest_refuses_to_let_its_numbers_be_extrapolated(
+        cohort, selection, tmp_path):
+    grant = _grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path)
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    joined = " ".join(manifest["limitations"]).lower()
+    assert "too small to estimate a rate" in joined
+    assert "bounded-outcome tolerances" in joined
+    assert "sample design only" in joined
+    assert "non-promotable" in joined
+
+
+def test_a_calibration_loader_refuses_a_full_cohort_claim(cohort, selection,
+                                                          tmp_path):
+    grant = _grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path)
+    manifest_path = run.result.manifest_path
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["covers_full_cohort"] = True
+    manifest_path.write_bytes(
+        (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode())
+    with pytest.raises(ls.ScreenInputError, match="never a universe"):
+        lcal.require_classifier_calibration_run(run.result.run_dir)
+
+
+def test_a_grant_claiming_cohort_coverage_is_refused(cohort, selection, tmp_path):
+    grant = _grant(cohort, selection, tmp_path, name="gov-covers",
+                   mutate=lambda p: p.__setitem__("covers_full_cohort", True))
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, selection, grant, tmp_path, output_dir=tmp_path / "never")
+
+
+def test_the_base_route_refuses_a_calibration_grant(cohort, selection, tmp_path):
+    """The two grants are mutually exclusive contracts, not variants."""
+    grant = _grant(cohort, selection, tmp_path, name="gov-cross")
+    with pytest.raises(ls.ScreenInputError):
+        lcl.run_lineage_classifier(
+            repo_root=ROOT, cohort_manifest_path=cohort.path,
+            overlay_manifest_path=cohort.overlay_path,
+            release_manifest_path=cohort.release.path,
+            packet_manifest_path=cohort.packet_manifest_path,
+            governance_root=grant.root, authorization_reference=grant.reference,
+            authorization_sha256=grant.sha256,
+            output_dir=tmp_path / "never", run_id="cross-run", clock=CLOCK,
+            dry_run=True)
+
+
+# --- tolerances are stated, never inherited ----------------------------------------
+
+
+@pytest.mark.parametrize("field", ["max_model_output_unusable",
+                                   "max_provider_unresolved",
+                                   "max_model_output_truncated"])
+def test_a_grant_without_an_explicit_tolerance_is_refused(cohort, selection,
+                                                          tmp_path, field):
+    tolerances = dict(CALIBRATION_TOLERANCES)
+    del tolerances[field]
+    grant = _grant(cohort, selection, tmp_path, name=f"gov-{field}",
+                   tolerances=tolerances)
+    with pytest.raises(ls.ScreenInputError, match="violates its contract"):
+        _run(cohort, selection, grant, tmp_path, output_dir=tmp_path / "never")
+
+
+def test_the_calibration_tolerances_are_not_a_full_run_default():
+    """Nothing in the classifier code carries these numbers as a default."""
+    for module in ("lineage_classifier_v2_1.py", "lineage_classifier_calibration.py",
+                   "classifier_calibration_selection.py"):
+        source = (ROOT / "src/dynamic_ai_products" / module).read_text(
+            encoding="utf-8")
+        for field in CALIBRATION_TOLERANCES:
+            assert f"{field} = " not in source
+            assert f'"{field}", 2' not in source
+            assert f'{field}={2}' not in source
+    schema = json.loads((ROOT / lcl.AUTHORIZATION_SCHEMA).read_text(encoding="utf-8"))
+    for field in CALIBRATION_TOLERANCES:
+        assert "default" not in schema["properties"][field]
+
+
+def test_the_calibration_grant_marks_its_tolerances_as_sample_only():
+    schema = json.loads(
+        (ROOT / lcal.CALIBRATION_AUTHORIZATION_SCHEMA).read_text(encoding="utf-8"))
+    for field in CALIBRATION_TOLERANCES:
+        described = schema["properties"][field]["description"].lower()
+        assert "calibration sample alone" in described
+        assert "separate decision" in described
+        assert "default" not in schema["properties"][field]
+
+
+# --- preflight refusals, all before a run directory exists --------------------------
+
+
+def _refused(cohort, selection, grant, tmp_path, match, **kwargs):
+    output_dir = tmp_path / "never-created"
+    with pytest.raises(ls.ScreenInputError, match=match):
+        _run(cohort, selection, grant, tmp_path, output_dir=output_dir, **kwargs)
+    assert not output_dir.exists(), "a refused calibration created a run directory"
+    _assert_no_google()
+
+
+def test_a_selection_the_grant_does_not_name_is_refused(cohort, selection, tmp_path):
+    other = _build_selection(cohort, tmp_path, selection_id="other", name="other")
+    other_path = tmp_path / "other" / ccs.CALIBRATION_SELECTION_FILENAME
+    assert other["selection_id"] == "other"
+    grant = _grant(cohort, selection, tmp_path, name="gov-other")
+    _refused(cohort, selection, grant, tmp_path, "grant names selection",
+             selection_path=other_path)
+
+
+def test_a_selection_whose_digest_moved_is_refused(cohort, selection, tmp_path):
+    grant = _grant(cohort, selection, tmp_path, name="gov-digest",
+                   mutate=lambda p: p.__setitem__("selection_artifact_sha256",
+                                                  "0" * 64))
+    _refused(cohort, selection, grant, tmp_path, "was pinned")
+
+
+def test_a_selection_drawn_under_other_strata_rules_is_refused(cohort, selection,
+                                                               tmp_path):
+    grant = _grant(cohort, selection, tmp_path, name="gov-strata",
+                   mutate=lambda p: p.__setitem__("strata_rules_sha256", "0" * 64))
+    _refused(cohort, selection, grant, tmp_path, "different strata rules")
+
+
+def test_a_selection_drawn_under_another_seed_is_refused(cohort, selection,
+                                                         tmp_path):
+    grant = _grant(cohort, selection, tmp_path, name="gov-seed",
+                   mutate=lambda p: p.__setitem__("selection_seed", 1))
+    _refused(cohort, selection, grant, tmp_path, "but the grant names")
+
+
+def test_a_selection_from_another_cohort_is_refused(cohort, selection, tmp_path):
+    grant = _grant(cohort, selection, tmp_path, name="gov-cohort",
+                   mutate=lambda p: p.__setitem__("cohort_manifest_sha256",
+                                                  "0" * 64))
+    _refused(cohort, selection, grant, tmp_path, "was pinned")
+
+
+def test_a_cap_that_does_not_match_the_selection_is_refused(cohort, selection,
+                                                            tmp_path):
+    grant = _grant(cohort, selection, tmp_path, name="gov-cap",
+                   mutate=lambda p: p.__setitem__("logical_row_cap", 9_999))
+    _refused(cohort, selection, grant, tmp_path, r"row\(s\) but this route's scope")
+
+
+def test_a_grant_for_the_wrong_run_kind_is_refused(cohort, selection, tmp_path):
+    grant = _grant(cohort, selection, tmp_path, name="gov-kind",
+                   mutate=lambda p: p.__setitem__("run_kind", "classifier_v2_1"))
+    _refused(cohort, selection, grant, tmp_path, "violates its contract")
+
+
+def test_a_promotable_calibration_grant_is_refused(cohort, selection, tmp_path):
+    grant = _grant(cohort, selection, tmp_path, name="gov-promotable",
+                   mutate=lambda p: p.__setitem__("promotable", True))
+    _refused(cohort, selection, grant, tmp_path, "violates its contract")

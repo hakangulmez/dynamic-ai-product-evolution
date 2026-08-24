@@ -1,0 +1,146 @@
+# ADR-127 deterministic calibration strata and quotas.
+#
+# This config is the single source of truth for which cohort rows a calibration
+# run classifies. It is pinned by digest in the selection artifact and in every
+# calibration authorization, so a re-derivation reproduces the same rows and a
+# change to the sample requires an explicit, versioned edit to this file.
+#
+# The archetype terms below come from the SCREEN_v1 release. They are used for
+# SAMPLE DESIGN ONLY. They are not truth about a firm, they are not evidence,
+# and they are not an input to the deterministic tier engine, which reads the
+# classifier's own axes and nothing else. A row's stratum says where it was
+# drawn from; it says nothing about how it must classify.
+#
+# The 91 human-review rows carry no screen output at all, so no archetype
+# signal exists for them. They are therefore a stratum of their own, sampled by
+# reviewer decision, never placed into an economic stratum by inference.
+strata_rules_version: "universe_classifier_calibration_strata_v1"
+sampling_algorithm: "seeded_stratified_admission_archetype@1"
+seed: 20260824
+
+# The closed archetype vocabulary, split for the mixed-firm and
+# core-software predicates. Both lists together are the screen's whole
+# vocabulary; a term in neither list is a config error.
+software_archetypes:
+  - "FUNCTIONAL_SOFTWARE"
+  - "ADAPTIVE_DIGITAL_SERVICE"
+  - "DATA_ANALYTICS_PRODUCT"
+
+non_software_archetypes:
+  - "ECOMMERCE_RETAIL"
+  - "HARDWARE_SOFTWARE_SYSTEM"
+  - "MARKETPLACE_COORDINATION"
+  - "TRANSACTION_INFRASTRUCTURE"
+  - "CONTENT_CATALOG"
+  - "HUMAN_MANAGED_SERVICE"
+  - "PHYSICAL_SERVICE_NETWORK"
+  - "INTERACTIVE_ENTERTAINMENT"
+  - "ATTENTION_SOCIAL_PLATFORM"
+  - "OTHER"
+
+# Evaluated in order; the first stratum whose predicate holds claims the row.
+# The contradiction/boundary stratum deliberately sits above every economic
+# stratum: a contradicted screen row's archetype list is the least trustworthy
+# part of its output and must not quietly populate "hardware-software system".
+strata:
+  - rule_id: "S1_human_review_no_screen_signal"
+    description: >-
+      Admitted by a reviewer after failing screen validation twice. No screen
+      output and therefore no archetype signal exists for these rows.
+    match:
+      admission_origin: ["human_review"]
+    quota:
+      rows: 8
+      status_targets:
+        LIKELY_ELIGIBLE: 4
+        BOUNDARY_OR_UNCERTAIN: 4
+
+  - rule_id: "S2_contradiction_or_boundary"
+    description: >-
+      The screen itself recorded doubt: boundary evidence, low confidence, an
+      unset plausibility flag, or no archetype at all.
+    match:
+      screen_doubt_any:
+        - "negative_or_boundary_evidence"
+        - "low_confidence"
+        - "not_plausible"
+        - "no_archetype"
+    quota:
+      rows: 4
+      status_targets:
+        LIKELY_ELIGIBLE: 2
+        BOUNDARY_OR_UNCERTAIN: 2
+
+  - rule_id: "S3_physical_or_human_delivered_service"
+    description: >-
+      A physical service network or a human-delivered service. Folded because
+      PHYSICAL_SERVICE_NETWORK alone covers four rows in the whole cohort and
+      cannot support a quota on its own.
+    match:
+      archetype_any: ["PHYSICAL_SERVICE_NETWORK", "HUMAN_MANAGED_SERVICE"]
+    quota:
+      rows: 4
+      status_targets:
+        LIKELY_ELIGIBLE: 2
+        BOUNDARY_OR_UNCERTAIN: 2
+
+  - rule_id: "S4_hardware_software_system"
+    match:
+      archetype_any: ["HARDWARE_SOFTWARE_SYSTEM"]
+    quota:
+      rows: 4
+      status_targets:
+        LIKELY_ELIGIBLE: 2
+        BOUNDARY_OR_UNCERTAIN: 2
+
+  - rule_id: "S5_marketplace_transaction"
+    match:
+      archetype_any: ["MARKETPLACE_COORDINATION", "TRANSACTION_INFRASTRUCTURE"]
+    quota:
+      rows: 4
+      status_targets:
+        LIKELY_ELIGIBLE: 2
+        BOUNDARY_OR_UNCERTAIN: 2
+
+  - rule_id: "S6_mixed_firm"
+    description: >-
+      At least one software archetype and at least one non-software archetype
+      in the same screen output.
+    match:
+      mixed_software_and_non_software: true
+    quota:
+      rows: 4
+      status_targets:
+        LIKELY_ELIGIBLE: 2
+        BOUNDARY_OR_UNCERTAIN: 2
+
+  - rule_id: "S7_data_analytics_product"
+    match:
+      archetype_any: ["DATA_ANALYTICS_PRODUCT"]
+    quota:
+      rows: 4
+      status_targets:
+        LIKELY_ELIGIBLE: 2
+        BOUNDARY_OR_UNCERTAIN: 2
+
+  - rule_id: "S8_clear_core_software"
+    description: Every named archetype is a software archetype.
+    match:
+      archetypes_subset_of_software: true
+    quota:
+      rows: 4
+      status_targets:
+        LIKELY_ELIGIBLE: 2
+        BOUNDARY_OR_UNCERTAIN: 2
+
+  - rule_id: "S9_residual_non_software"
+    description: >-
+      Unconditional. A closed selection needs an exhaustive partition; without
+      this stratum some cohort rows would belong to no stratum and the rule
+      would not be total.
+    match: {}
+    quota:
+      rows: 4
+      status_targets:
+        LIKELY_ELIGIBLE: 2
+        BOUNDARY_OR_UNCERTAIN: 2

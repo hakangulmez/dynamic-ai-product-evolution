@@ -721,7 +721,7 @@ def _refused(cohort, tmp_path, grant, match, **kwargs):
     ("tier_rules_sha256", "0" * 64, "committed tier-rule config"),
     ("tier_rules_version", "other_rules", "committed tier-rule config"),
     ("taxonomy_version", "other_taxonomy", "policy versions, ceilings or contracts"),
-    ("logical_row_cap", 99, "cohort rows but the cohort holds"),
+    ("logical_row_cap", 99, r"row\(s\) but this route's scope holds"),
     ("count_attempt_cap", 99, "count_attempt_cap must be exactly"),
     ("provider_attempt_cap", 99, "provider_attempt_cap must be exactly"),
     ("budget_max_external_requests", 99, "budget_max_external_requests must be"),
@@ -933,4 +933,5 @@ def test_the_cli_declares_both_modes():
     choices = next(a.choices for a in parser._actions if a.dest == "mode")
     assert "classify-universe-cohort" in choices
     assert "classify-universe-cohort-continuation" in choices
-    assert "Thirty-nine mutually exclusive modes" in cli.__doc__
+    # ADR-127 added the three calibration modes beside these two.
+    assert "Forty-two mutually exclusive modes" in cli.__doc__

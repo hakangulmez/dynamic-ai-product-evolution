@@ -174,6 +174,18 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-127 (a governed calibration route before the full
+    # cohort run): manifest_version 0.65.0 -> 0.66.0, 146 -> 150 entries,
+    # registering the calibration selection, authorization, manifest and review
+    # contracts. The selection is a closed, seeded, stratified sample of the
+    # classifier candidate cohort whose quotas live in a digest-pinned config;
+    # the run is the ADR-126 classifier over that sample, bound to the identical
+    # prompt and tier-rule bytes and structurally unable to be read as a full
+    # run; the review is a qualitative human gate whose contract carries no
+    # accuracy or pass/fail field at all. Every earlier contract is
+    # byte-unchanged and none of the four joins EVALUATION_SCHEMA_CONTRACTS or
+    # RELEASED_EVALUATION_CONTRACTS below.
+    # Before it,
     # Rebaselined by ADR-126 (the governed live Company-Universe Classifier
     # V2.1 and its continuation): manifest_version 0.64.0 -> 0.65.0, 140 -> 146
     # entries, registering the classifier axes and stored-record contracts,
@@ -483,7 +495,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "8e6025833847db2fdd8fb54ae8f75818d3724d1e8772a6feda7b9cf1c0824b84"
+    "6626213322aff5b65a338737609b76bb3988d4271e65862f8961bfffb7c506bc"
 )
 
 

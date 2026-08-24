@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **912**
+Total tracked/scaffold files listed: **923**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -65,6 +65,7 @@ Total tracked/scaffold files listed: **912**
 - `configs/source_types.yaml`
 - `configs/universe_sample_rules.yaml`
 - `configs/universe_classifier_tier_rules_v2_1.yaml`
+- `configs/universe_classifier_calibration_strata_v1.yaml`
 - `configs/universe_taxonomy.yaml`
 - `data/README.md`
 - `data/interim/.gitkeep`
@@ -505,6 +506,10 @@ Total tracked/scaffold files listed: **912**
 - `schemas/universe_classifier_continuation_manifest.schema.json`
 - `schemas/universe_classifier_manifest.schema.json`
 - `schemas/universe_classifier_record.schema.json`
+- `schemas/universe_classifier_calibration_authorization.schema.json`
+- `schemas/universe_classifier_calibration_manifest.schema.json`
+- `schemas/universe_classifier_calibration_review.schema.json`
+- `schemas/universe_classifier_calibration_selection.schema.json`
 - `schemas/universe_screen_selection.schema.json`
 - `schemas/web_collection_receipt.schema.json`
 - `schemas/web_collection_request_plan.schema.json`
@@ -675,6 +680,9 @@ Total tracked/scaffold files listed: **912**
 - `src/dynamic_ai_products/classifier_tier_engine.py`
 - `src/dynamic_ai_products/lineage_classifier_continuation.py`
 - `src/dynamic_ai_products/lineage_classifier_v2_1.py`
+- `src/dynamic_ai_products/classifier_calibration_review.py`
+- `src/dynamic_ai_products/classifier_calibration_selection.py`
+- `src/dynamic_ai_products/lineage_classifier_calibration.py`
 - `src/dynamic_ai_products/lineage_screen_live_v3.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/providers/__init__.py`
@@ -901,6 +909,9 @@ Total tracked/scaffold files listed: **912**
 - `tests/universe/test_classifier_v2_1_prompt.py`
 - `tests/universe/test_lineage_classifier_continuation.py`
 - `tests/universe/test_lineage_classifier_v2_1.py`
+- `tests/universe/test_classifier_calibration_review.py`
+- `tests/universe/test_classifier_calibration_selection.py`
+- `tests/universe/test_lineage_classifier_calibration.py`
 - `tests/universe/test_lineage_screen_live_v3.py`
 - `tests/universe/test_screen_repair_prompt.py`
 - `tests/universe/test_pilot_packet.py`
