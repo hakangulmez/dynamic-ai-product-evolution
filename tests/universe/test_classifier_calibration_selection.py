@@ -631,7 +631,7 @@ def test_the_cli_declares_all_three_modes():
                  "classify-universe-calibration",
                  "build-classifier-calibration-review"):
         assert mode in choices
-    assert "Fifty mutually exclusive modes" in cli.__doc__
+    assert "Fifty-four mutually exclusive modes" in cli.__doc__
 
 
 # --- dry-run semantics at the CLI boundary -----------------------------------------
@@ -967,3 +967,156 @@ def test_all_three_versions_of_each_mode_are_declared():
                  "classify-universe-calibration"):
         for suffix in ("", "-v2-2", "-v2-3"):
             assert f"{stem}{suffix}" in choices, f"{stem}{suffix}"
+
+
+# --- ADR-130: the four V2.4 modes must be reachable through their own flags --------
+
+V2_4_COHORT_ARGV = [
+    "--mode", "classify-universe-cohort-v2-4",
+    "--cohort-manifest", "c.json", "--overlay-manifest", "o.json",
+    "--release-manifest", "r.json", "--packet-manifest", "p.json",
+    "--governance-root", "gov", "--screen-authorization", "a.json",
+    "--screen-authorization-sha256", SHA_PLACEHOLDER,
+    "--output-dir", "out", "--run-id", "cli-gating-fixture",
+]
+V2_4_CONTINUATION_ARGV = (
+    ["--mode", "classify-universe-cohort-continuation-v2-4",
+     "--source-run-dir", "src", "--source-receipt-sha256", SHA_PLACEHOLDER]
+    + V2_4_COHORT_ARGV[2:])
+V2_4_CALIBRATION_ARGV = (
+    ["--mode", "classify-universe-calibration-v2-4",
+     "--calibration-selection", "s.json"] + V2_4_COHORT_ARGV[2:])
+V2_4_REVIEW_ARGV = [
+    "--mode", "build-classifier-calibration-review-v2-4",
+    "--calibration-run-dir", "run", "--calibration-selection", "s.json",
+    "--calibration-selection-sha256", SHA_PLACEHOLDER,
+    "--output-dir", "out", "--run-id", "cli-gating-fixture",
+]
+
+V2_4_MODES = [
+    ("classify-universe-cohort-v2-4", V2_4_COHORT_ARGV),
+    ("classify-universe-cohort-continuation-v2-4", V2_4_CONTINUATION_ARGV),
+    ("classify-universe-calibration-v2-4", V2_4_CALIBRATION_ARGV),
+    ("build-classifier-calibration-review-v2-4", V2_4_REVIEW_ARGV),
+]
+
+V2_4_CALIBRATION_REQUIRED_FLAGS = [
+    "--cohort-manifest", "--overlay-manifest", "--release-manifest",
+    "--packet-manifest", "--calibration-selection", "--governance-root",
+    "--screen-authorization", "--screen-authorization-sha256",
+    "--output-dir", "--run-id",
+]
+V2_4_REVIEW_REQUIRED_FLAGS = [
+    "--calibration-run-dir", "--calibration-selection",
+    "--calibration-selection-sha256", "--output-dir", "--run-id",
+]
+
+
+@pytest.mark.parametrize("mode,argv", V2_4_MODES, ids=[m for m, _ in V2_4_MODES])
+def test_each_v2_4_mode_accepts_its_complete_required_argv(mode, argv):
+    cli = _cli_module()
+    args = cli.build_parser().parse_args(argv)
+    assert args.mode == mode
+    assert cli._reject_cross_mode_flags(args) is None
+    _assert_no_google()
+
+
+def test_the_v2_4_calibration_mode_accepts_its_selection_flag():
+    cli = _cli_module()
+    args = cli.build_parser().parse_args(V2_4_CALIBRATION_ARGV)
+    assert args.calibration_selection == "s.json"
+    assert cli._reject_cross_mode_flags(args) is None
+
+
+@pytest.mark.parametrize("flag", V2_4_CALIBRATION_REQUIRED_FLAGS)
+def test_the_v2_4_calibration_mode_requires_every_flag(flag, capsys):
+    _assert_mode_requires_flag(V2_4_CALIBRATION_ARGV, flag, capsys)
+
+
+@pytest.mark.parametrize("flag", V2_4_REVIEW_REQUIRED_FLAGS)
+def test_the_v2_4_review_mode_requires_every_flag(flag, capsys):
+    _assert_mode_requires_flag(V2_4_REVIEW_ARGV, flag, capsys)
+
+
+def _assert_mode_requires_flag(argv, flag, capsys):
+    """Assert at whichever layer actually enforces the flag.
+
+    ``--output-dir`` and ``--run-id`` are argparse-required, so removing one
+    raises ``SystemExit(2)`` rather than reaching the cross-mode verdict. The
+    test names the enforcing layer per flag instead of assuming one of them.
+    """
+    cli = _cli_module()
+    parser = cli.build_parser()
+    enforced_by_argparse = {option for action in parser._actions if action.required
+                            for option in action.option_strings}
+    trimmed = list(argv)
+    index = trimmed.index(flag)
+    del trimmed[index:index + 2]
+    if flag in enforced_by_argparse:
+        with pytest.raises(SystemExit) as excinfo:
+            parser.parse_args(trimmed)
+        assert excinfo.value.code == 2
+        assert flag in capsys.readouterr().err
+    else:
+        verdict = cli._reject_cross_mode_flags(parser.parse_args(trimmed))
+        assert verdict and "requires" in verdict and flag in verdict
+
+
+def test_the_v2_4_required_flag_list_covers_the_modes_whole_table():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    start = source.index('("classify-universe-calibration-v2-4", ((')
+    table = source[start:source.index('("classify-universe-calibration-v2-3",', start)]
+    declared = re.findall(r'\("(--[a-z0-9-]+)"', table)
+    assert declared == V2_4_CALIBRATION_REQUIRED_FLAGS
+    assert len(set(declared)) == len(declared) == 10
+
+
+def test_the_v2_4_review_flag_list_covers_the_modes_whole_table():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    start = source.index('("build-classifier-calibration-review-v2-4", ((')
+    table = source[start:source.index(
+        '("build-classifier-calibration-review-v2-3",', start)]
+    declared = re.findall(r'\("(--[a-z0-9-]+)"', table)
+    assert declared == V2_4_REVIEW_REQUIRED_FLAGS
+    assert len(set(declared)) == len(declared) == 5
+
+
+@pytest.mark.parametrize("mode,argv", [
+    ("classify-universe-cohort-v2-4", V2_4_COHORT_ARGV),
+    ("classify-universe-cohort-continuation-v2-4", V2_4_CONTINUATION_ARGV),
+], ids=["cohort-v2-4", "continuation-v2-4"])
+def test_a_v2_4_run_mode_still_rejects_the_selection_flag(mode, argv):
+    cli = _cli_module()
+    verdict = cli._reject_cross_mode_flags(cli.build_parser().parse_args(
+        list(argv) + ["--calibration-selection", "s.json"]))
+    assert verdict and "--calibration-selection" in verdict
+
+
+def test_the_v2_4_cohort_mode_still_rejects_continuation_flags():
+    cli = _cli_module()
+    verdict = cli._reject_cross_mode_flags(cli.build_parser().parse_args(
+        list(V2_4_COHORT_ARGV) + ["--source-run-dir", "src"]))
+    assert verdict and "--source-run-dir" in verdict
+
+
+def test_the_v2_4_review_mode_rejects_the_run_modes_flags():
+    cli = _cli_module()
+    verdict = cli._reject_cross_mode_flags(cli.build_parser().parse_args(
+        list(V2_4_REVIEW_ARGV) + ["--governance-root", "gov"]))
+    assert verdict and "--governance-root" in verdict
+
+
+def test_all_four_versions_of_each_mode_are_declared():
+    cli = _cli_module()
+    choices = next(a.choices for a in cli.build_parser()._actions
+                   if a.dest == "mode")
+    for stem in ("classify-universe-cohort",
+                 "classify-universe-cohort-continuation",
+                 "classify-universe-calibration"):
+        for suffix in ("", "-v2-2", "-v2-3", "-v2-4"):
+            assert f"{stem}{suffix}" in choices, f"{stem}{suffix}"
+    for suffix in ("", "-v2-2", "-v2-3", "-v2-4"):
+        assert f"build-classifier-calibration-review{suffix}" in choices, suffix
+    assert len(choices) == 54

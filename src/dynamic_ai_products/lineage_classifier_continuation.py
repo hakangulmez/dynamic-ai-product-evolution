@@ -37,7 +37,7 @@ from typing import Any, Callable
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-from .classifier_contract_set import V2_1, V2_2, V2_3
+from .classifier_contract_set import V2_1, V2_2, V2_3, V2_4
 from .classifier_tier_engine import derive_tier
 from .lineage_classifier_v2_1 import (
     require_completed_run,
@@ -73,6 +73,7 @@ __all__ = [
     "CONTINUATION_ROUTE",
     "CONTINUATION_ROUTE_V2_2",
     "CONTINUATION_ROUTE_V2_3",
+    "CONTINUATION_ROUTE_V2_4",
     "ClassifierSourcePrefix",
     "load_classifier_continuation_source",
     "require_classifier_continuation_run",
@@ -133,6 +134,24 @@ CONTINUATION_ROUTE_V2_3 = ClassifierRoute(
         "schemas/universe_classifier_continuation_authorization.v3.schema.json"),
     archive_filename="universe_classifier_v2_3_raw_responses.jsonl",
     contracts=V2_3,
+)
+
+#: ADR-130. The V2.4 continuation route. The archive filename is what keeps a
+#: V2.3 failed run from being continued as a V2.4 one: the source loader is
+#: handed this route's archive name explicitly, so an earlier version's prefix
+#: is not found rather than being revalidated under the wider 0.3.0 bound.
+CONTINUATION_ROUTE_V2_4 = ClassifierRoute(
+    run_kind=CONTINUATION_RUN_KIND,
+    records_filename="universe_classifier_v2_4_continuation_records.jsonl",
+    manifest_filename="universe_classifier_v2_4_continuation_manifest.json",
+    manifest_contract="universe_classifier_continuation_manifest@0.4.0",
+    manifest_schema=(
+        "schemas/universe_classifier_continuation_manifest.v4.schema.json"),
+    record_order=RECORD_ORDER,
+    authorization_schema=(
+        "schemas/universe_classifier_continuation_authorization.v4.schema.json"),
+    archive_filename="universe_classifier_v2_4_raw_responses.jsonl",
+    contracts=V2_4,
 )
 
 #: Receipt fields a continuable classifier failure must carry. A receipt that

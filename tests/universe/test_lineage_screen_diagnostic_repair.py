@@ -848,8 +848,8 @@ def test_registry_registers_the_three_repair_schemas():
     registry = json.loads(
         (ROOT / "schemas" / "schema_version_manifest.json")
         .read_text(encoding="utf-8"))
-    assert registry["manifest_version"] == "0.68.0"
-    assert len(registry["schemas"]) == 164
+    assert registry["manifest_version"] == "0.69.0"
+    assert len(registry["schemas"]) == 172
     for key in ("universe_screen_diagnostic_repair_selection",
                 "universe_screen_diagnostic_repair_authorization",
                 "universe_screen_diagnostic_repair_manifest"):

@@ -149,7 +149,8 @@ def _continuation_grant(cohort, source, tmp_path, *, mutate=None,
     })
     if route is not None and route is not lcc.CONTINUATION_ROUTE:
         from hashlib import sha256
-        version = {"v2_2": "0.2.0", "v2_3": "0.3.0"}[route.contracts.version_id]
+        version = {"v2_2": "0.2.0", "v2_3": "0.3.0",
+                   "v2_4": "0.4.0"}[route.contracts.version_id]
         payload.update({
             "authorization_contract":
                 f"universe_classifier_continuation_authorization@{version}",
@@ -734,6 +735,7 @@ CONTINUATION_ROUTES = [
     ("v2_1", lcc.CONTINUATION_ROUTE, "universe_classifier_record@0.1.0"),
     ("v2_2", lcc.CONTINUATION_ROUTE_V2_2, "universe_classifier_record@0.2.0"),
     ("v2_3", lcc.CONTINUATION_ROUTE_V2_3, "universe_classifier_record@0.2.0"),
+    ("v2_4", lcc.CONTINUATION_ROUTE_V2_4, "universe_classifier_record@0.3.0"),
 ]
 
 
@@ -833,3 +835,152 @@ def test_the_pre_fix_prefix_contract_is_refused(cohort, tmp_path):
                  route=lcc.CONTINUATION_ROUTE_V2_3)
     finally:
         lcc.revalidate_classifier_prefix = real
+
+
+# --- ADR-130: the continuation route at V2.4 --------------------------------------
+
+
+@pytest.fixture
+def v2_4_source(cohort, tmp_path):
+    """A synthetic failed V2.4 run: a contiguous prefix under V2.4 filenames."""
+    return _failed_run(cohort, tmp_path, run_id="source-v2-4",
+                       route=lcc.CONTINUATION_ROUTE_V2_4)
+
+
+def test_the_v2_4_continuation_route_is_isolated_and_bound():
+    from dynamic_ai_products.classifier_contract_set import V2_3, V2_4
+    v3, v4 = lcc.CONTINUATION_ROUTE_V2_3, lcc.CONTINUATION_ROUTE_V2_4
+    assert v4.records_filename == "universe_classifier_v2_4_continuation_records.jsonl"
+    assert v4.manifest_filename == "universe_classifier_v2_4_continuation_manifest.json"
+    assert v4.archive_filename == "universe_classifier_v2_4_raw_responses.jsonl"
+    assert v4.manifest_contract == "universe_classifier_continuation_manifest@0.4.0"
+    assert v4.run_kind == v3.run_kind
+    assert v4.contracts.prompt_path == V2_4.prompt_path != V2_3.prompt_path
+    assert v4.contracts.record_contract == "universe_classifier_record@0.3.0"
+
+
+def test_a_v2_4_continuation_completes_end_to_end(cohort, v2_4_source, tmp_path):
+    from hashlib import sha256
+    from dynamic_ai_products.classifier_contract_set import V2_4
+    route = lcc.CONTINUATION_ROUTE_V2_4
+    grant = _continuation_grant(cohort, v2_4_source, tmp_path, route=route,
+                                name="gov-v2-4")
+    run = _run(cohort, v2_4_source, grant, tmp_path, run_id="continuation-v2-4",
+               route=route)
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == \
+        "universe_classifier_continuation_manifest@0.4.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.3.0"
+    assert manifest["taxonomy_version"] == "universe_classifier_axes_v2_4"
+    assert manifest["prompt_template_path"] == V2_4.prompt_path
+    assert manifest["prompt_template_sha256"] == sha256(
+        (ROOT / V2_4.prompt_path).read_bytes()).hexdigest()
+
+    records = [json.loads(x) for x in
+               (run.result.run_dir / route.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(records) == len(cohort.rows)
+    # The reused prefix is what ADR-129's second latent defect broke: every
+    # rebuilt row must declare the running route's record contract, not the
+    # module's V2.1 constant.
+    assert all(r["record_contract"] == "universe_classifier_record@0.3.0"
+               for r in records)
+    reused = [r for r in records
+              if r["output_provenance"].get("source_run_id") == v2_4_source.run_id]
+    assert reused, "the continuation reused no prefix row"
+    assert all(r["record_contract"] == "universe_classifier_record@0.3.0"
+               for r in reused)
+    archive = (run.result.run_dir / route.archive_filename).read_bytes()
+    assert archive.startswith(v2_4_source.archive_bytes)
+
+
+def test_the_v2_4_continuation_loader_accepts_only_its_own_run(
+        cohort, v2_4_source, tmp_path):
+    route = lcc.CONTINUATION_ROUTE_V2_4
+    grant = _continuation_grant(cohort, v2_4_source, tmp_path, route=route,
+                                name="gov-v2-4-iso")
+    run = _run(cohort, v2_4_source, grant, tmp_path, run_id="continuation-v2-4-iso",
+               route=route)
+    assert lcc.require_classifier_continuation_run(
+        run.result.run_dir, route=route) == run.result.manifest_path
+    for other in (lcc.CONTINUATION_ROUTE, lcc.CONTINUATION_ROUTE_V2_2,
+                  lcc.CONTINUATION_ROUTE_V2_3):
+        with pytest.raises(ls.ScreenInputError,
+                           match=f"holds no {other.manifest_filename}"):
+            lcc.require_classifier_continuation_run(run.result.run_dir, route=other)
+
+
+@pytest.mark.parametrize("route", [
+    lcc.CONTINUATION_ROUTE, lcc.CONTINUATION_ROUTE_V2_2, lcc.CONTINUATION_ROUTE_V2_3,
+], ids=["v2_1", "v2_2", "v2_3"])
+def test_the_v2_4_route_refuses_every_earlier_grant(cohort, v2_4_source, tmp_path,
+                                                    route):
+    grant = _continuation_grant(cohort, v2_4_source, tmp_path, route=route,
+                                name=f"gov-cross-{route.contracts.version_id}")
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, v2_4_source, grant, tmp_path,
+             run_id=f"cross-grant-{route.contracts.version_id}",
+             output_dir=tmp_path / f"never-{route.contracts.version_id}",
+             route=lcc.CONTINUATION_ROUTE_V2_4)
+
+
+def test_the_v2_4_route_refuses_a_v2_3_source(cohort, tmp_path):
+    """The archive filename is the gate, and it has to be, because 0.3.0 is wider.
+
+    A V2.3 prefix would satisfy the V2.4 axes schema on shape alone, so nothing
+    downstream could tell the two apart. The source loader is handed this
+    route's archive name, so the earlier run's prefix is never found at all.
+    """
+    src = _failed_run(cohort, tmp_path, run_id="source-v2-3-for-v2-4",
+                      route=lcc.CONTINUATION_ROUTE_V2_3)
+    grant = _continuation_grant(cohort, src, tmp_path, name="gov-v2-3-src",
+                                route=lcc.CONTINUATION_ROUTE_V2_4)
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, src, grant, tmp_path, run_id="cross-source-v2-4",
+             output_dir=tmp_path / "never-src", route=lcc.CONTINUATION_ROUTE_V2_4)
+
+
+def test_the_v2_3_route_refuses_a_v2_4_grant_and_source(cohort, tmp_path):
+    src = _failed_run(cohort, tmp_path, run_id="source-v2-4-for-v2-3",
+                      route=lcc.CONTINUATION_ROUTE_V2_4)
+    grant = _continuation_grant(cohort, src, tmp_path, name="gov-v2-4-for-v2-3",
+                                route=lcc.CONTINUATION_ROUTE_V2_4)
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, src, grant, tmp_path, run_id="cross-v2-3-from-v2-4",
+             output_dir=tmp_path / "never-back", route=lcc.CONTINUATION_ROUTE_V2_3)
+
+
+def test_the_v2_4_prefix_rebuild_stamps_the_running_routes_contract(
+        cohort, tmp_path):
+    """ADR-129's second latent defect, re-armed for the fourth version."""
+    src = _failed_run(cohort, tmp_path, run_id="source-prefix-v2-4",
+                      route=lcc.CONTINUATION_ROUTE_V2_4)
+    grant = _continuation_grant(cohort, src, tmp_path, name="gov-prefix-v2-4",
+                                route=lcc.CONTINUATION_ROUTE_V2_4)
+    real = lcc.revalidate_classifier_prefix
+
+    def stamped_with_the_old_constant(*args, **kwargs):
+        rows = real(*args, **{**kwargs, "route": lcc.CONTINUATION_ROUTE})
+        assert all(r["record_contract"] == "universe_classifier_record@0.1.0"
+                   for r in rows)
+        return rows
+
+    lcc.revalidate_classifier_prefix = stamped_with_the_old_constant
+    try:
+        with pytest.raises(ls.ScreenInputError,
+                           match=r"violates universe_classifier_record@0\.3\.0"):
+            _run(cohort, src, grant, tmp_path, run_id="prefix-shape-v2-4",
+                 output_dir=tmp_path / "never-prefix-v2-4",
+                 route=lcc.CONTINUATION_ROUTE_V2_4)
+    finally:
+        lcc.revalidate_classifier_prefix = real
+
+
+def test_the_v2_4_continuation_cli_mode_reaches_its_route():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    assert ('if args.mode == "classify-universe-cohort-continuation-v2-4":\n'
+            "        return _main_classify_universe_cohort_continuation(\n"
+            "            args, route=CONTINUATION_ROUTE_V2_4)") in source

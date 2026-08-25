@@ -88,7 +88,10 @@ def build_calibration_review(
     ``calibration_route`` names which calibration version this run is. The
     review contract itself is version-neutral — it binds the source manifest
     and prompt digests rather than naming a prompt — so the same builder reads
-    a V2.1, V2.2 or V2.3 run; only the filenames it opens differ.
+    a V2.1, V2.2, V2.3 or V2.4 run; only the filenames it opens differ. The
+    route is also the whole of the version gate here: it reaches the run only
+    through ``require_classifier_calibration_run``, which refuses a manifest
+    filename or contract belonging to any other version.
     """
     root = Path(repo_root)
     run_dir = Path(calibration_run_dir)

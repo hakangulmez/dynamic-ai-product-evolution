@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .classifier_calibration_selection import require_calibration_selection
-from .classifier_contract_set import V2_1, V2_2, V2_3
+from .classifier_contract_set import V2_1, V2_2, V2_3, V2_4
 from .lineage_classifier_v2_1 import (
     CLASSIFIER_RAW_RESPONSES_FILENAME,
     ClassifierRoute,
@@ -51,6 +51,7 @@ __all__ = [
     "CALIBRATION_ROUTE",
     "CALIBRATION_ROUTE_V2_2",
     "CALIBRATION_ROUTE_V2_3",
+    "CALIBRATION_ROUTE_V2_4",
     "require_classifier_calibration_run",
     "run_lineage_classifier_calibration",
 ]
@@ -108,6 +109,23 @@ CALIBRATION_ROUTE_V2_3 = ClassifierRoute(
         "schemas/universe_classifier_calibration_authorization.v3.schema.json"),
     archive_filename="universe_classifier_v2_3_raw_responses.jsonl",
     contracts=V2_3,
+)
+
+#: ADR-130. The V2.4 calibration route, forked together with the base and
+#: continuation routes so the calibration exercises exactly the prompt and
+#: contract set a later full run would use.
+CALIBRATION_ROUTE_V2_4 = ClassifierRoute(
+    run_kind=CALIBRATION_RUN_KIND,
+    records_filename="universe_classifier_v2_4_calibration_records.jsonl",
+    manifest_filename="universe_classifier_v2_4_calibration_manifest.json",
+    manifest_contract="universe_classifier_calibration_manifest@0.4.0",
+    manifest_schema=(
+        "schemas/universe_classifier_calibration_manifest.v4.schema.json"),
+    record_order=CALIBRATION_RECORD_ORDER,
+    authorization_schema=(
+        "schemas/universe_classifier_calibration_authorization.v4.schema.json"),
+    archive_filename="universe_classifier_v2_4_raw_responses.jsonl",
+    contracts=V2_4,
 )
 
 

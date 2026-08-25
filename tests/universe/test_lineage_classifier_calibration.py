@@ -669,3 +669,137 @@ def test_each_version_loader_refuses_the_other_two(cohort, selection, tmp_path):
         lcal.require_classifier_calibration_run(v3.result.run_dir)
     with pytest.raises(ls.ScreenInputError, match="holds no universe_classifier_manifest.json"):
         lcl.require_classifier_run(v3.result.run_dir)
+
+
+# --- ADR-130: the same route and the same selection, at V2.4 -----------------------
+
+
+def _v2_4_grant(cohort, selection, tmp_path, *, name="calibration-gov-v2-4"):
+    """The V2.3 grant re-pointed at the V2.4 prompt and the 0.3.0 contracts."""
+    from dynamic_ai_products.classifier_contract_set import V2_4
+    base = _grant(cohort, selection, tmp_path, name=name).authorization
+    payload = dict(base)
+    payload.update({
+        "authorization_contract":
+            "universe_classifier_calibration_authorization@0.4.0",
+        "output_contract": V2_4.record_contract,
+        "taxonomy_version": V2_4.taxonomy_version,
+        "prompt_template_path": V2_4.prompt_path,
+        "prompt_template_sha256":
+            sha256((ROOT / V2_4.prompt_path).read_bytes()).hexdigest(),
+    })
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    ((tmp_path / name) / "calibration_authorization.json").write_bytes(raw)
+    return SimpleNamespace(root=tmp_path / name,
+                           reference="calibration_authorization.json",
+                           sha256=_sha(raw), authorization=payload)
+
+
+def test_the_v2_4_route_classifies_the_same_unchanged_selection(cohort, selection,
+                                                                tmp_path):
+    grant = _v2_4_grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path, run_id="calibration-v2-4",
+               route=lcal.CALIBRATION_ROUTE_V2_4)
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == \
+        "universe_classifier_calibration_manifest@0.4.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.3.0"
+    assert manifest["taxonomy_version"] == "universe_classifier_axes_v2_4"
+    assert manifest["prompt_template_path"].endswith("v2_4.md")
+    assert manifest["tier_rules_version"] == "universe_classifier_tier_rules_v2_1"
+    assert manifest["calibration_selection"]["selection_sha256"] == selection.sha256
+    assert manifest["promotable"] is False
+    assert manifest["covers_full_cohort"] is False
+    records = [json.loads(x) for x in
+               (run.result.run_dir / lcal.CALIBRATION_ROUTE_V2_4.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(records) == len(selection.rows)
+    assert all(r["record_contract"] == "universe_classifier_record@0.3.0"
+               for r in records)
+
+
+def test_the_four_versions_write_four_disjoint_file_sets(cohort, selection,
+                                                         tmp_path):
+    runs = {
+        "v2_1": _run(cohort, selection, _grant(cohort, selection, tmp_path, name="q1"),
+                     tmp_path, run_id="calib-q1"),
+        "v2_2": _run(cohort, selection,
+                     _v2_2_grant(cohort, selection, tmp_path, name="q2"), tmp_path,
+                     run_id="calib-q2", route=lcal.CALIBRATION_ROUTE_V2_2),
+        "v2_3": _run(cohort, selection,
+                     _v2_3_grant(cohort, selection, tmp_path, name="q3"), tmp_path,
+                     run_id="calib-q3", route=lcal.CALIBRATION_ROUTE_V2_3),
+        "v2_4": _run(cohort, selection,
+                     _v2_4_grant(cohort, selection, tmp_path, name="q4"), tmp_path,
+                     run_id="calib-q4", route=lcal.CALIBRATION_ROUTE_V2_4),
+    }
+    names = {}
+    for version, run in runs.items():
+        assert run.result.status == "completed", (version, run.result.receipt)
+        names[version] = {p.name for p in run.result.run_dir.iterdir()}
+    transport = {"provider_captures", "universe_screen_capture_ledger.jsonl"}
+    versions = list(runs)
+    for i, a in enumerate(versions):
+        for b in versions[i + 1:]:
+            shared = (names[a] & names[b]) - transport
+            assert not shared, (a, b, shared)
+    routes = {"v2_1": lcal.CALIBRATION_ROUTE, "v2_2": lcal.CALIBRATION_ROUTE_V2_2,
+              "v2_3": lcal.CALIBRATION_ROUTE_V2_3, "v2_4": lcal.CALIBRATION_ROUTE_V2_4}
+    for version, run in runs.items():
+        route = routes[version]
+        present = names[version] - transport
+        assert present == {route.records_filename, route.manifest_filename,
+                           route.archive_filename}, (version, present)
+
+
+@pytest.mark.parametrize("grant_maker", ["_grant", "_v2_2_grant", "_v2_3_grant"],
+                         ids=["v2_1-grant", "v2_2-grant", "v2_3-grant"])
+def test_the_v2_4_route_refuses_every_earlier_grant(cohort, selection, tmp_path,
+                                                    grant_maker):
+    grant = globals()[grant_maker](cohort, selection, tmp_path,
+                                   name=f"z-{grant_maker}")
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, selection, grant, tmp_path, run_id=f"cross-c-{grant_maker}",
+             output_dir=tmp_path / f"never-{grant_maker}",
+             route=lcal.CALIBRATION_ROUTE_V2_4)
+
+
+@pytest.mark.parametrize("tag,route", [
+    ("v2_1", None), ("v2_2", lcal.CALIBRATION_ROUTE_V2_2),
+    ("v2_3", lcal.CALIBRATION_ROUTE_V2_3),
+], ids=["v2_1-route", "v2_2-route", "v2_3-route"])
+def test_every_earlier_route_refuses_the_v2_4_grant(cohort, selection, tmp_path,
+                                                    tag, route):
+    grant = _v2_4_grant(cohort, selection, tmp_path, name=f"w-{tag}")
+    kwargs = {} if route is None else {"route": route}
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, selection, grant, tmp_path, run_id=f"cross-d-{tag}",
+             output_dir=tmp_path / f"never-earlier-{tag}", **kwargs)
+
+
+def test_every_calibration_loader_refuses_the_other_three(cohort, selection,
+                                                          tmp_path):
+    v4 = _run(cohort, selection,
+              _v2_4_grant(cohort, selection, tmp_path, name="q5"), tmp_path,
+              run_id="calib-iso-4", route=lcal.CALIBRATION_ROUTE_V2_4)
+    assert lcal.require_classifier_calibration_run(
+        v4.result.run_dir, route=lcal.CALIBRATION_ROUTE_V2_4) == \
+        v4.result.manifest_path
+    for other in (lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2,
+                  lcal.CALIBRATION_ROUTE_V2_3):
+        with pytest.raises(ls.ScreenInputError,
+                           match=f"holds no {other.manifest_filename}"):
+            lcal.require_classifier_calibration_run(v4.result.run_dir, route=other)
+    with pytest.raises(ls.ScreenInputError,
+                       match="holds no universe_classifier_v2_4_manifest.json"):
+        lcl.require_classifier_run(v4.result.run_dir, route=lcl.BASE_ROUTE_V2_4)
+
+
+def test_the_v2_4_calibration_cli_mode_reaches_its_route():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    assert ('if args.mode == "classify-universe-calibration-v2-4":\n'
+            "        return _main_classify_universe_calibration(\n"
+            "            args, route=CALIBRATION_ROUTE_V2_4)") in source

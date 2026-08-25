@@ -934,8 +934,9 @@ def test_the_cli_declares_both_modes():
     choices = next(a.choices for a in parser._actions if a.dest == "mode")
     assert "classify-universe-cohort" in choices
     assert "classify-universe-cohort-continuation" in choices
-    # ADR-127 added three calibration modes; ADR-128 added three V2.2 modes.
-    assert "Fifty mutually exclusive modes" in cli.__doc__
+    # ADR-127 added three calibration modes; ADR-128 three V2.2 modes;
+    # ADR-129 three V2.3 modes and two review modes; ADR-130 four V2.4 modes.
+    assert "Fifty-four mutually exclusive modes" in cli.__doc__
 
 
 # --- ADR-129: the base route at V2.3 ----------------------------------------------
@@ -994,3 +995,105 @@ def test_the_v2_3_base_route_refuses_a_v2_1_grant(cohort, tmp_path):
     with pytest.raises(ls.ScreenInputError):
         _run(cohort, grant, tmp_path, run_id="base-cross",
              output_dir=tmp_path / "never", route=lcl.BASE_ROUTE_V2_3)
+
+
+# --- ADR-130: the base route at V2.4 ----------------------------------------------
+
+
+def _v2_4_base_grant(cohort, tmp_path, *, name="base-gov-v2-4"):
+    """The V2.1 base grant re-pointed at the V2.4 prompt and 0.3.0 contracts."""
+    from dynamic_ai_products.classifier_contract_set import V2_4
+    base = _grant(cohort, tmp_path, name=name).authorization
+    payload = dict(base)
+    payload.update({
+        "authorization_contract": "universe_classifier_authorization@0.4.0",
+        "output_contract": V2_4.record_contract,
+        "taxonomy_version": V2_4.taxonomy_version,
+        "prompt_template_path": V2_4.prompt_path,
+        "prompt_template_sha256":
+            sha256((ROOT / V2_4.prompt_path).read_bytes()).hexdigest(),
+    })
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    ((tmp_path / name) / "classifier_authorization.json").write_bytes(raw)
+    return SimpleNamespace(root=tmp_path / name,
+                           reference="classifier_authorization.json",
+                           sha256=_sha(raw), authorization=payload)
+
+
+def test_the_v2_4_base_route_completes_end_to_end(cohort, tmp_path):
+    grant = _v2_4_base_grant(cohort, tmp_path)
+    run = _run(cohort, grant, tmp_path, run_id="base-v2-4",
+               route=lcl.BASE_ROUTE_V2_4)
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == "universe_classifier_manifest@0.4.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.3.0"
+    assert manifest["taxonomy_version"] == "universe_classifier_axes_v2_4"
+    assert manifest["prompt_template_path"].endswith("v2_4.md")
+    assert manifest["tier_rules_version"] == "universe_classifier_tier_rules_v2_1"
+    records = [json.loads(x) for x in
+               (run.result.run_dir / lcl.BASE_ROUTE_V2_4.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(records) == len(cohort.rows)
+    assert all(r["record_contract"] == "universe_classifier_record@0.3.0"
+               for r in records)
+
+
+def test_the_v2_4_run_hashes_only_its_own_filenames(cohort, tmp_path):
+    grant = _v2_4_base_grant(cohort, tmp_path, name="base-gov-v2-4-hash")
+    run = _run(cohort, grant, tmp_path, run_id="base-v2-4-hash",
+               route=lcl.BASE_ROUTE_V2_4)
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert set(manifest["output_hashes"]) == {
+        lcl.BASE_ROUTE_V2_4.records_filename,
+        lcl.BASE_ROUTE_V2_4.archive_filename,
+        "universe_screen_capture_ledger.jsonl"}
+    for filename, digest in manifest["output_hashes"].items():
+        assert _sha((run.result.run_dir / filename).read_bytes()) == digest
+
+
+@pytest.mark.parametrize("route", [
+    lcl.BASE_ROUTE, lcl.BASE_ROUTE_V2_2, lcl.BASE_ROUTE_V2_3,
+], ids=["v2_1", "v2_2", "v2_3"])
+def test_every_earlier_base_loader_refuses_a_v2_4_run(cohort, tmp_path, route):
+    grant = _v2_4_base_grant(cohort, tmp_path, name=f"base-gov-iso-{route.contracts.version_id}")
+    run = _run(cohort, grant, tmp_path, run_id=f"base-v2-4-iso-{route.contracts.version_id}",
+               route=lcl.BASE_ROUTE_V2_4)
+    with pytest.raises(ls.ScreenInputError, match="holds no "):
+        lcl.require_classifier_run(run.result.run_dir, route=route)
+
+
+def test_the_v2_4_base_loader_refuses_a_v2_3_run(cohort, tmp_path):
+    grant = _v2_3_base_grant(cohort, tmp_path, name="base-gov-v2-3-iso-4")
+    run = _run(cohort, grant, tmp_path, run_id="base-v2-3-for-v2-4",
+               route=lcl.BASE_ROUTE_V2_3)
+    with pytest.raises(ls.ScreenInputError,
+                       match="holds no universe_classifier_v2_4_manifest.json"):
+        lcl.require_classifier_run(run.result.run_dir, route=lcl.BASE_ROUTE_V2_4)
+
+
+def test_the_v2_4_base_route_refuses_a_v2_3_grant(cohort, tmp_path):
+    grant = _v2_3_base_grant(cohort, tmp_path, name="base-gov-old-v2-3")
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, grant, tmp_path, run_id="base-cross-v2-4",
+             output_dir=tmp_path / "never-v2-4", route=lcl.BASE_ROUTE_V2_4)
+
+
+def test_the_v2_3_base_route_refuses_a_v2_4_grant(cohort, tmp_path):
+    grant = _v2_4_base_grant(cohort, tmp_path, name="base-gov-new-v2-4")
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, grant, tmp_path, run_id="base-cross-v2-3",
+             output_dir=tmp_path / "never-v2-3", route=lcl.BASE_ROUTE_V2_3)
+
+
+def test_the_v2_4_cli_mode_reaches_the_v2_4_route():
+    cli = _cli_module()
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    assert ('if args.mode == "classify-universe-cohort-v2-4":\n'
+            "        return _main_classify_universe_cohort("
+            "args, route=BASE_ROUTE_V2_4)") in source
+    choices = next(a.choices for a in cli.build_parser()._actions
+                   if a.dest == "mode")
+    assert "classify-universe-cohort-v2-4" in choices

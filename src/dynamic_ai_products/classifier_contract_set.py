@@ -32,6 +32,25 @@ instead of copied, and output field names used as ``evidence.axis`` labels. A
 third ceiling increase would have rescued one row of three. So V2.3 moves only
 the prompt, and carries new authorization and manifest contracts solely because
 the prompt path is pinned as a const in each of them.
+
+**Why V2.4 exists.** The V2.3 calibration stopped after three rows, and every
+one of the three carried exactly one schema error: a ``supported_claim`` of
+233, 204 and 204 characters against a 200-character cap. Quote lengths (972,
+829, 994) and evidence counts (12, 12, 8) were inside the 0.2.0 ceilings, and
+all 32 evidence objects carried legal axis labels, so the V2.3 discipline did
+take hold where it was aimed. V2.4 therefore moves exactly one bound --
+``supported_claim`` to 300 -- and changes the instruction for the two defects a
+bound cannot fix: two of the three rows also wrote a quote that did not resolve
+verbatim, one splicing two real spans with an ellipsis and one prepending a
+subject the passage does not carry. Because the axes contract moves, the record
+contract that inlines it moves with it, and ``taxonomy_version`` becomes
+``universe_classifier_axes_v2_4``.
+
+**0.3.0 is a widening, so route binding is what separates versions.** Every
+valid 0.2.0 axes object is a valid 0.3.0 one. Schema validity therefore cannot
+tell a V2.3 output from a V2.4 one, and nothing in this package relies on it:
+the separation is the route's output filenames plus the ``prompt_template_path``
+and ``output_contract`` consts, both of which reject in either direction.
 """
 
 from __future__ import annotations
@@ -43,6 +62,7 @@ __all__ = [
     "V2_1",
     "V2_2",
     "V2_3",
+    "V2_4",
     "ClassifierContractSet",
     "contract_set_for",
 ]
@@ -108,10 +128,31 @@ V2_3 = ClassifierContractSet(
     output_prefix="v2_3_",
 )
 
+#: ADR-130. A one-bound successor plus a prompt successor. ``supported_claim``
+#: rises from 200 to 300 characters and nothing else about the axes moves:
+#: ``evidence`` stays at 12 objects and ``quote`` at 1200 characters, and every
+#: enum, pattern and required field is byte-equivalent to V2_2's. Because the
+#: axes contract changes, the record contract that inlines it changes too, and
+#: ``taxonomy_version`` moves to name the axes contract a stored row was
+#: validated against. The prompt additionally forbids any character
+#: modification inside a quote and requires a per-axis evidence count; those are
+#: instruction rules, not contract bounds, so they leave the schema alone.
+V2_4 = ClassifierContractSet(
+    version_id="v2_4",
+    prompt_path="prompts/discovery/universe_full_classification.v2_4.md",
+    axes_schema="schemas/universe_classifier_axes_record.v3.schema.json",
+    axes_contract="universe_classifier_axes_record@0.3.0",
+    record_contract="universe_classifier_record@0.3.0",
+    record_schema="schemas/universe_classifier_record.v3.schema.json",
+    taxonomy_version="universe_classifier_axes_v2_4",
+    output_prefix="v2_4_",
+)
+
 CONTRACT_SETS: dict[str, ClassifierContractSet] = {
     V2_1.version_id: V2_1,
     V2_2.version_id: V2_2,
     V2_3.version_id: V2_3,
+    V2_4.version_id: V2_4,
 }
 
 

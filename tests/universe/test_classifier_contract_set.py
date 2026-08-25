@@ -38,14 +38,24 @@ ROUTE_PAIRS = [
 #: Every route at every version. ADR-129 made this three-deep, so the isolation
 #: assertions below run over all of them rather than a V2.1/V2.2 pair.
 ALL_ROUTES = [
-    lcl.BASE_ROUTE, lcl.BASE_ROUTE_V2_2, lcl.BASE_ROUTE_V2_3,
+    lcl.BASE_ROUTE, lcl.BASE_ROUTE_V2_2, lcl.BASE_ROUTE_V2_3, lcl.BASE_ROUTE_V2_4,
     lcc.CONTINUATION_ROUTE, lcc.CONTINUATION_ROUTE_V2_2, lcc.CONTINUATION_ROUTE_V2_3,
+    lcc.CONTINUATION_ROUTE_V2_4,
     lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2, lcal.CALIBRATION_ROUTE_V2_3,
+    lcal.CALIBRATION_ROUTE_V2_4,
 ]
 ROUTE_TRIPLES = [
     (lcl.BASE_ROUTE, lcl.BASE_ROUTE_V2_2, lcl.BASE_ROUTE_V2_3),
     (lcc.CONTINUATION_ROUTE, lcc.CONTINUATION_ROUTE_V2_2, lcc.CONTINUATION_ROUTE_V2_3),
     (lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2, lcal.CALIBRATION_ROUTE_V2_3),
+]
+#: ADR-130 made every route four-deep.
+ROUTE_QUADS = [
+    (lcl.BASE_ROUTE, lcl.BASE_ROUTE_V2_2, lcl.BASE_ROUTE_V2_3, lcl.BASE_ROUTE_V2_4),
+    (lcc.CONTINUATION_ROUTE, lcc.CONTINUATION_ROUTE_V2_2,
+     lcc.CONTINUATION_ROUTE_V2_3, lcc.CONTINUATION_ROUTE_V2_4),
+    (lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2,
+     lcal.CALIBRATION_ROUTE_V2_3, lcal.CALIBRATION_ROUTE_V2_4),
 ]
 
 
@@ -57,7 +67,7 @@ def _schema(path):
 
 
 def test_both_contract_sets_resolve_to_committed_files():
-    for cset in (ccs.V2_1, ccs.V2_2, ccs.V2_3):
+    for cset in (ccs.V2_1, ccs.V2_2, ccs.V2_3, ccs.V2_4):
         for attr in ("prompt_path", "axes_schema", "record_schema"):
             assert (ROOT / getattr(cset, attr)).is_file(), (cset.version_id, attr)
 
@@ -112,7 +122,7 @@ def test_the_economic_vocabulary_is_unchanged():
 
 
 def test_neither_version_lets_the_model_emit_a_tier():
-    for cset in (ccs.V2_1, ccs.V2_2, ccs.V2_3):
+    for cset in (ccs.V2_1, ccs.V2_2, ccs.V2_3, ccs.V2_4):
         props = _schema(cset.axes_schema)["properties"]
         assert not [k for k in props if "tier" in k], cset.version_id
 
@@ -242,22 +252,25 @@ def test_each_route_triple_is_mutually_isolated(v1, v2, v3):
         "the route's kind is a role, not a prompt version"
 
 
-def test_every_output_filename_is_unique_across_all_nine_routes():
+def test_every_output_filename_is_unique_across_every_route():
+    """ADR-130 took this from nine routes to twelve."""
     names = [n for r in ALL_ROUTES
              for n in (r.records_filename, r.manifest_filename, r.archive_filename)]
-    # the three versions each have one archive name shared by their own routes
+    # each version has one archive name shared by its own three routes
     assert len(set(names)) == len(set(names))
     records = [r.records_filename for r in ALL_ROUTES]
     manifests = [r.manifest_filename for r in ALL_ROUTES]
-    assert len(set(records)) == len(records) == 9
-    assert len(set(manifests)) == len(manifests) == 9
+    assert len(set(records)) == len(records) == len(ALL_ROUTES) == 12
+    assert len(set(manifests)) == len(manifests) == 12
+    archives = {r.archive_filename for r in ALL_ROUTES}
+    assert len(archives) == 4, "one archive filename per contract version"
 
 
 def test_every_manifest_and_authorization_contract_is_unique():
     manifests = [r.manifest_contract for r in ALL_ROUTES]
     grants = [r.authorization_schema for r in ALL_ROUTES]
-    assert len(set(manifests)) == len(manifests) == 9
-    assert len(set(grants)) == len(grants) == 9
+    assert len(set(manifests)) == len(manifests) == 12
+    assert len(set(grants)) == len(grants) == 12
 
 
 @pytest.mark.parametrize("route", ALL_ROUTES,
@@ -299,3 +312,129 @@ def test_the_v2_2_contracts_are_untouched_by_adr_129():
     axes = _schema(ccs.V2_2.axes_schema)["properties"]["evidence"]
     assert axes["maxItems"] == 12
     assert axes["items"]["properties"]["quote"]["maxLength"] == 1200
+
+
+# --- ADR-130: a fourth version, and one bound between it and V2.3 ------------------
+
+
+@pytest.mark.parametrize("v1,v2,v3,v4", ROUTE_QUADS,
+                         ids=["base", "continuation", "calibration"])
+def test_each_route_quad_is_mutually_isolated(v1, v2, v3, v4):
+    for attr in ("records_filename", "manifest_filename", "manifest_contract",
+                 "manifest_schema", "authorization_schema", "archive_filename"):
+        values = [getattr(r, attr) for r in (v1, v2, v3, v4)]
+        assert len(set(values)) == 4, (attr, values)
+    assert v1.run_kind == v2.run_kind == v3.run_kind == v4.run_kind, \
+        "the route's kind is a role, not a prompt version"
+
+
+def test_every_output_filename_is_unique_across_all_twelve_routes():
+    assert len(ALL_ROUTES) == 12
+    names = [r.records_filename for r in ALL_ROUTES]
+    names += [r.manifest_filename for r in ALL_ROUTES]
+    assert len(set(names)) == len(names)
+
+
+def test_every_contract_id_is_unique_across_all_twelve_routes():
+    ids = [r.manifest_contract for r in ALL_ROUTES]
+    ids += [r.authorization_schema for r in ALL_ROUTES]
+    assert len(set(ids)) == len(ids)
+
+
+def test_v2_4_moves_the_axes_and_record_contracts_v2_3_reused():
+    assert ccs.V2_4.axes_schema != ccs.V2_3.axes_schema
+    assert ccs.V2_4.record_schema != ccs.V2_3.record_schema
+    assert ccs.V2_4.axes_contract == "universe_classifier_axes_record@0.3.0"
+    assert ccs.V2_4.record_contract == "universe_classifier_record@0.3.0"
+    assert ccs.V2_4.taxonomy_version == "universe_classifier_axes_v2_4"
+    assert ccs.V2_3.axes_contract == "universe_classifier_axes_record@0.2.0"
+
+
+def test_v2_4_moves_exactly_one_bound():
+    old = _schema(ccs.V2_3.axes_schema)["properties"]["evidence"]
+    new = _schema(ccs.V2_4.axes_schema)["properties"]["evidence"]
+    assert old["maxItems"] == new["maxItems"] == 12
+    assert old["items"]["properties"]["quote"] == new["items"]["properties"]["quote"]
+    assert old["items"]["properties"]["axis"] == new["items"]["properties"]["axis"]
+    assert old["items"]["properties"]["passage_ref"] == \
+        new["items"]["properties"]["passage_ref"]
+    assert old["items"]["properties"]["supported_claim"]["maxLength"] == 200
+    assert new["items"]["properties"]["supported_claim"]["maxLength"] == 300
+
+
+def test_the_v2_4_record_inlines_its_own_axes_version():
+    record = _schema(ccs.V2_4.record_schema)
+    inlined = record["properties"]["axes"]["oneOf"][1]
+    assert inlined == _schema(ccs.V2_4.axes_schema)
+    assert inlined["properties"]["evidence"]["items"]["properties"][
+        "supported_claim"]["maxLength"] == 300
+    assert record["properties"]["record_contract"]["const"] == ccs.V2_4.record_contract
+
+
+def test_the_v2_4_grants_pin_the_v2_4_prompt_output_and_taxonomy():
+    for path in ("schemas/universe_classifier_authorization.v4.schema.json",
+                 "schemas/universe_classifier_continuation_authorization.v4.schema.json",
+                 "schemas/universe_classifier_calibration_authorization.v4.schema.json",
+                 "schemas/universe_classifier_manifest.v4.schema.json",
+                 "schemas/universe_classifier_continuation_manifest.v4.schema.json",
+                 "schemas/universe_classifier_calibration_manifest.v4.schema.json"):
+        props = _schema(path)["properties"]
+        assert props["prompt_template_path"]["const"] == ccs.V2_4.prompt_path
+        assert props["output_contract"]["const"] == "universe_classifier_record@0.3.0"
+        assert props["taxonomy_version"]["const"] == "universe_classifier_axes_v2_4"
+
+
+def test_a_v2_4_grant_cannot_name_any_earlier_prompt_or_contract():
+    for path in ("schemas/universe_classifier_authorization.v4.schema.json",
+                 "schemas/universe_classifier_calibration_authorization.v4.schema.json"):
+        raw = (ROOT / path).read_text(encoding="utf-8")
+        for earlier in (ccs.V2_1, ccs.V2_2, ccs.V2_3):
+            assert earlier.prompt_path not in raw, (path, earlier.version_id)
+        assert "universe_classifier_record@0.2.0" not in raw
+        assert "universe_classifier_axes_v2_2" not in raw
+
+
+def test_the_v2_1_to_v2_3_contracts_are_untouched_by_adr_130():
+    for path, digest in FROZEN_V2_1.items():
+        assert sha256((ROOT / path).read_bytes()).hexdigest() == digest, path
+    assert sha256((ROOT / ccs.V2_2.prompt_path).read_bytes()).hexdigest() == \
+        "bafa3a5b8800cd572e5bb454df1bc0693ffb2fce6f237ca6f31fa8674d228e6b"
+    assert sha256((ROOT / ccs.V2_3.prompt_path).read_bytes()).hexdigest() == \
+        "991c8a47b61141d801e61c084b0809eb52a7f72d3f61c03daea22f7f992f8a0a"
+    for path in ("schemas/universe_classifier_authorization.v3.schema.json",
+                 "schemas/universe_classifier_manifest.v3.schema.json",
+                 "schemas/universe_classifier_calibration_manifest.v3.schema.json"):
+        props = _schema(path)["properties"]
+        assert props["prompt_template_path"]["const"] == ccs.V2_3.prompt_path
+        assert props["output_contract"]["const"] == "universe_classifier_record@0.2.0"
+    v2_2_axes = _schema(ccs.V2_2.axes_schema)["properties"]["evidence"]
+    assert v2_2_axes["maxItems"] == 12
+    assert v2_2_axes["items"]["properties"]["quote"]["maxLength"] == 1200
+    assert v2_2_axes["items"]["properties"]["supported_claim"]["maxLength"] == 200
+
+
+def test_the_economic_vocabulary_survives_the_fourth_version():
+    """The bound moved; what an axis means did not."""
+    old = _schema(ccs.V2_3.axes_schema)["properties"]
+    new = _schema(ccs.V2_4.axes_schema)["properties"]
+    for axis in ("software_centrality", "firm_structure", "commercial_materiality",
+                 "customer_market_orientation", "customer_value_archetypes",
+                 "complementary_dependencies", "confidence"):
+        assert old[axis] == new[axis], axis
+    assert _schema(ccs.V2_3.axes_schema)["required"] == \
+        _schema(ccs.V2_4.axes_schema)["required"]
+
+
+def test_the_v2_4_taxonomy_denotes_the_contract_not_the_economics():
+    versions = [c.taxonomy_version for c in (ccs.V2_1, ccs.V2_2, ccs.V2_3, ccs.V2_4)]
+    assert versions == ["universe_classifier_axes_v2_1",
+                        "universe_classifier_axes_v2_2",
+                        "universe_classifier_axes_v2_2",
+                        "universe_classifier_axes_v2_4"]
+
+
+def test_the_tier_rules_are_not_a_classifier_version_input():
+    """One config governs every version; ADR-130 did not fork it."""
+    digests = {sha256((ROOT / "configs/universe_classifier_tier_rules_v2_1.yaml"
+                       ).read_bytes()).hexdigest()}
+    assert digests == {FROZEN_V2_1["configs/universe_classifier_tier_rules_v2_1.yaml"]}

@@ -174,6 +174,23 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-130 (classifier V2.4, one bound and a prompt):
+    # manifest_version 0.68.0 -> 0.69.0, 164 -> 172 entries, registering the
+    # 0.3.0 axes and record contracts and the six V2.4 authorization and
+    # manifest contracts. The V2.3 calibration stopped after three rows and
+    # every one carried exactly one schema error: a supported_claim of 233,
+    # 204 and 204 characters against a 200-character cap, while quote
+    # lengths (972, 829, 994), evidence counts (12, 12, 8) and all 32 axis
+    # labels sat inside 0.2.0. So supported_claim rises to 300 and nothing
+    # else moves: evidence stays 12, quote stays 1200, the tier rules and
+    # economics are untouched, and the record contract moves only because it
+    # inlines the axes contract. Two of the three rows would still fail on
+    # quote fidelity -- an ellipsis splice and a prepended, re-cased subject
+    # -- which the V2.4 prompt addresses as instruction rather than bound.
+    # Every 0.1.0 and 0.2.0 contract stays byte-unchanged and none of the
+    # eight joins EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS
+    # below.
+    # Before it,
     # Rebaselined by ADR-129 (classifier V2.3, a prompt-discipline successor):
     # manifest_version 0.67.0 -> 0.68.0, 158 -> 164 entries, registering the six
     # V2.3 authorization and manifest contracts. Nothing else moved: the axes
@@ -523,7 +540,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "0f8e78ef31315fd8944473ed8ee82ad8515399519e54e91831362e3a3915e806"
+    "cd0499797c0ec6cba8a74cbdd5927b82a81b601cf86aca703f812e441bdcbff3"
 )
 
 

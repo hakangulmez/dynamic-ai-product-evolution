@@ -215,3 +215,46 @@ def test_the_prompt_keeps_the_v2_2_guarantees():
     assert "AI wording" in PROMPT
     assert "It is not authority for any classification result." in PROMPT
     assert "Market orientation is descriptive only." in PROMPT
+
+
+# --- ADR-130: V2.3 is frozen, and V2.4 did not reach back into it -----------------
+
+
+def test_the_v2_3_prompt_is_byte_unchanged_by_adr_130():
+    assert sha256((ROOT / ccs.V2_3.prompt_path).read_bytes()).hexdigest() == \
+        "991c8a47b61141d801e61c084b0809eb52a7f72d3f61c03daea22f7f992f8a0a"
+
+
+def test_the_v2_3_axes_and_record_contracts_are_byte_unchanged():
+    axes = json.loads((ROOT / ccs.V2_3.axes_schema).read_text(encoding="utf-8"))
+    evidence = axes["properties"]["evidence"]
+    assert evidence["maxItems"] == 12
+    assert evidence["items"]["properties"]["quote"]["maxLength"] == 1200
+    assert evidence["items"]["properties"]["supported_claim"]["maxLength"] == 200
+    record = json.loads((ROOT / ccs.V2_3.record_schema).read_text(encoding="utf-8"))
+    assert record["properties"]["record_contract"]["const"] == \
+        "universe_classifier_record@0.2.0"
+
+
+def test_v2_4_forked_the_contracts_v2_3_had_reused():
+    """V2.3 pointed at V2.2's schema files; V2.4 has its own."""
+    assert ccs.V2_4.axes_schema != ccs.V2_3.axes_schema
+    assert ccs.V2_4.record_schema != ccs.V2_3.record_schema
+    assert ccs.V2_4.prompt_path != ccs.V2_3.prompt_path
+    assert ccs.V2_4.taxonomy_version != ccs.V2_3.taxonomy_version
+
+
+def test_the_v2_3_prompt_lacks_the_v2_4_discipline():
+    """Proof the ADR-130 rules are genuinely new rather than already present."""
+    for token in ("A quote admits no character modification whatsoever",
+                  "`supported_claim` is a conclusion, not an explanation",
+                  "count your evidence objects for each of the six axis labels",
+                  "at most 300 characters"):
+        assert token not in FLAT, token
+
+
+def test_the_v2_3_prompt_states_the_bound_it_was_refused_on():
+    """It said 200 twice and never showed what obeying it looks like."""
+    assert "`supported_claim`: at most 200 characters." in FLAT
+    assert "each `supported_claim` at most 200" in _check()
+    assert "Mixed non-separable structure" not in FLAT

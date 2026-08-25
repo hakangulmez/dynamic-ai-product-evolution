@@ -1349,6 +1349,19 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # 0.38.0 -> 0.39.0, 88 -> 90 entries; the new pair is not added to
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS, same as
     # v0.1.
+    # 953 = 943 + the ten ADR-130 paths: the V2.4 prompt, the 0.3.0 axes
+    # and record contracts, six V2.4 authorization/manifest contracts and
+    # one test module. Exactly one bound moves -- supported_claim 200 ->
+    # 300 -- because the V2.3 calibration stopped after three rows, each
+    # carrying that one schema error while quote length, evidence count
+    # and every axis label sat inside 0.2.0. evidence stays 12, quote
+    # stays 1200, the tier rules are untouched, and the record contract
+    # moves only because it inlines the axes contract. Two of the three
+    # rows would still fail on quote fidelity, which the V2.4 prompt
+    # addresses as instruction rather than bound. Schema registry: 0.68.0
+    # -> 0.69.0, 164 -> 172 entries; none of the eight joins
+    # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS.
+    # Before it,
     # 943 = 935 + the eight ADR-129 paths: the V2.3 prompt, six V2.3
     # authorization/manifest contracts and one test module. A prompt-discipline
     # successor, not a schema change: the 0.2.0 axes and record contracts, the
@@ -1476,7 +1489,7 @@ def test_repo_manifest_lists_the_three_new_paths_once():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert declared == len(paths) == 943
+    assert declared == len(paths) == 953
     for path in ("src/dynamic_ai_products/evaluation/runner.py",
                  "src/dynamic_ai_products/evaluation/report.py",
                  "tests/evaluation/test_runner.py"):

@@ -77,6 +77,7 @@ from .classifier_contract_set import (
     V2_1,
     V2_2,
     V2_3,
+    V2_4,
     ClassifierContractSet,
 )
 from .classifier_tier_engine import derive_tier, load_tier_rules
@@ -131,6 +132,7 @@ __all__ = [
     "BASE_ROUTE",
     "BASE_ROUTE_V2_2",
     "BASE_ROUTE_V2_3",
+    "BASE_ROUTE_V2_4",
     "ClassifierRoute",
     "require_classifier_run",
     "require_completed_run",
@@ -221,6 +223,25 @@ BASE_ROUTE_V2_3 = ClassifierRoute(
     authorization_schema="schemas/universe_classifier_authorization.v3.schema.json",
     archive_filename="universe_classifier_v2_3_raw_responses.jsonl",
     contracts=V2_3,
+)
+
+#: ADR-130. The V2.4 base route. Its filenames carry the ``v2_4`` prefix and its
+#: manifest and authorization contracts are 0.4.0, so a V2.1, V2.2 or V2.3 run
+#: is refused here on its manifest filename before its contract is read, and a
+#: V2.4 run is refused by each earlier loader the same way. That filename gate
+#: matters more than usual for this version: the 0.3.0 axes contract is a
+#: widening of 0.2.0, so a V2.3 output would satisfy the V2.4 axes schema and
+#: schema validity alone could not tell the two apart.
+BASE_ROUTE_V2_4 = ClassifierRoute(
+    run_kind=RUN_KIND,
+    records_filename="universe_classifier_v2_4_records.jsonl",
+    manifest_filename="universe_classifier_v2_4_manifest.json",
+    manifest_contract="universe_classifier_manifest@0.4.0",
+    manifest_schema="schemas/universe_classifier_manifest.v4.schema.json",
+    record_order=RECORD_ORDER,
+    authorization_schema="schemas/universe_classifier_authorization.v4.schema.json",
+    archive_filename="universe_classifier_v2_4_raw_responses.jsonl",
+    contracts=V2_4,
 )
 
 #: The closed provider reasons a bounded provider-unresolved row may carry,

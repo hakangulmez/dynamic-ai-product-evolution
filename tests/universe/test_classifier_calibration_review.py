@@ -381,19 +381,21 @@ sys.path.insert(0, str(Path(__file__).parent))
 from test_lineage_classifier_calibration import (  # noqa: E402
     _v2_2_grant,
     _v2_3_grant,
+    _v2_4_grant,
 )
 
 CALIBRATION_ROUTES = [
     ("v2_1", lcal.CALIBRATION_ROUTE, "_grant"),
     ("v2_2", lcal.CALIBRATION_ROUTE_V2_2, "_v2_2_grant"),
     ("v2_3", lcal.CALIBRATION_ROUTE_V2_3, "_v2_3_grant"),
+    ("v2_4", lcal.CALIBRATION_ROUTE_V2_4, "_v2_4_grant"),
 ]
 
 
 def _completed(cohort, selection, tmp_path, route, grant_maker, name):
     from test_lineage_classifier_calibration import _grant, _run
     makers = {"_grant": _grant, "_v2_2_grant": _v2_2_grant,
-              "_v2_3_grant": _v2_3_grant}
+              "_v2_3_grant": _v2_3_grant, "_v2_4_grant": _v2_4_grant}
     grant = makers[grant_maker](cohort, selection, tmp_path, name=f"g-{name}")
     kwargs = {} if route is lcal.CALIBRATION_ROUTE else {"route": route}
     run = _run(cohort, selection, grant, tmp_path, run_id=f"calib-{name}", **kwargs)
@@ -429,7 +431,7 @@ def test_the_default_loader_route_is_still_v2_1(cohort, selection, tmp_path):
 
 
 @pytest.mark.parametrize("version,route,grant_maker", CALIBRATION_ROUTES[1:],
-                         ids=["v2_2", "v2_3"])
+                         ids=["v2_2", "v2_3", "v2_4"])
 def test_a_later_version_run_produces_a_valid_review(
         cohort, selection, tmp_path, version, route, grant_maker):
     from jsonschema import Draft202012Validator, FormatChecker
@@ -490,7 +492,8 @@ def test_the_v2_3_review_verifies_the_route_specific_records_digest(
 
 REVIEW_MODES = ["build-classifier-calibration-review",
                 "build-classifier-calibration-review-v2-2",
-                "build-classifier-calibration-review-v2-3"]
+                "build-classifier-calibration-review-v2-3",
+                "build-classifier-calibration-review-v2-4"]
 REVIEW_REQUIRED_FLAGS = ["--calibration-run-dir", "--calibration-selection",
                          "--calibration-selection-sha256", "--output-dir",
                          "--run-id"]
@@ -542,10 +545,107 @@ def test_each_review_mode_rejects_an_incompatible_flag(mode, flag, value):
     assert verdict and flag in verdict
 
 
-def test_the_cli_declares_all_three_review_modes():
+def test_the_cli_declares_all_four_review_modes():
     cli = _cli_module()
     choices = next(a.choices for a in cli.build_parser()._actions
                    if a.dest == "mode")
     for mode in REVIEW_MODES:
         assert mode in choices, mode
-    assert "Fifty mutually exclusive modes" in cli.__doc__
+    assert len(REVIEW_MODES) == 4
+    assert "Fifty-four mutually exclusive modes" in cli.__doc__
+
+
+# --- ADR-130: the review route at V2.4 --------------------------------------------
+
+
+def test_a_v2_4_calibration_produces_a_valid_review(cohort, selection, tmp_path):
+    from jsonschema import Draft202012Validator, FormatChecker
+    result = _completed(cohort, selection, tmp_path, lcal.CALIBRATION_ROUTE_V2_4,
+                        "_v2_4_grant", "rev-v2-4")
+    review = ccr.build_calibration_review(
+        repo_root=ROOT, calibration_run_dir=result.run_dir,
+        selection_path=selection.path, selection_sha256=selection.sha256,
+        output_path=tmp_path / "review-v2-4" / "review.json",
+        review_id="review-v2-4", clock=CLOCK, dry_run=True,
+        calibration_route=lcal.CALIBRATION_ROUTE_V2_4)
+    schema = json.loads(
+        (ROOT / "schemas/universe_classifier_calibration_review.schema.json")
+        .read_text(encoding="utf-8"))
+    Draft202012Validator(schema, format_checker=FormatChecker()).validate(review)
+    assert review["review_protocol_version"] == "classifier_calibration_review_v1"
+    assert review["gate_state"] == "pending_human_reading"
+    assert review["counts"]["nominated_rows"] == len(selection.rows)
+
+
+def test_the_v2_4_review_route_refuses_every_earlier_run(cohort, selection,
+                                                         tmp_path):
+    for version, route, grant_maker in CALIBRATION_ROUTES[:-1]:
+        result = _completed(cohort, selection, tmp_path, route, grant_maker,
+                            f"x4-{version}")
+        with pytest.raises(ls.ScreenInputError,
+                           match="holds no universe_classifier_v2_4_"
+                                 "calibration_manifest.json"):
+            ccr.build_calibration_review(
+                repo_root=ROOT, calibration_run_dir=result.run_dir,
+                selection_path=selection.path, selection_sha256=selection.sha256,
+                output_path=tmp_path / f"never-{version}" / "review.json",
+                review_id=f"never-{version}", clock=CLOCK, dry_run=True,
+                calibration_route=lcal.CALIBRATION_ROUTE_V2_4)
+
+
+@pytest.mark.parametrize("version,route,grant_maker", CALIBRATION_ROUTES[:-1],
+                         ids=["v2_1", "v2_2", "v2_3"])
+def test_every_earlier_review_route_refuses_a_v2_4_run(
+        cohort, selection, tmp_path, version, route, grant_maker):
+    result = _completed(cohort, selection, tmp_path, lcal.CALIBRATION_ROUTE_V2_4,
+                        "_v2_4_grant", f"back-{version}")
+    with pytest.raises(ls.ScreenInputError,
+                       match=f"holds no {route.manifest_filename}"):
+        ccr.build_calibration_review(
+            repo_root=ROOT, calibration_run_dir=result.run_dir,
+            selection_path=selection.path, selection_sha256=selection.sha256,
+            output_path=tmp_path / f"never-back-{version}" / "review.json",
+            review_id=f"never-back-{version}", clock=CLOCK, dry_run=True,
+            calibration_route=route)
+
+
+def test_the_v2_4_review_verifies_the_route_specific_records_digest(
+        cohort, selection, tmp_path):
+    result = _completed(cohort, selection, tmp_path, lcal.CALIBRATION_ROUTE_V2_4,
+                        "_v2_4_grant", "drift-v2-4")
+    records = result.run_dir / lcal.CALIBRATION_ROUTE_V2_4.records_filename
+    records.write_bytes(records.read_bytes() + b"\n")
+    with pytest.raises(ls.ScreenInputError):
+        ccr.build_calibration_review(
+            repo_root=ROOT, calibration_run_dir=result.run_dir,
+            selection_path=selection.path, selection_sha256=selection.sha256,
+            output_path=tmp_path / "never-drift" / "review.json",
+            review_id="never-drift", clock=CLOCK, dry_run=True,
+            calibration_route=lcal.CALIBRATION_ROUTE_V2_4)
+
+
+def test_the_v2_4_review_cli_mode_reaches_its_route():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    assert ('if args.mode == "build-classifier-calibration-review-v2-4":\n'
+            "        return _main_build_classifier_calibration_review(\n"
+            "            args, calibration_route=CALIBRATION_ROUTE_V2_4)") in source
+
+
+def test_the_v2_4_review_dry_run_reserves_no_directory(cohort, selection, tmp_path,
+                                                       capsys):
+    cli = _cli_module()
+    result = _completed(cohort, selection, tmp_path, lcal.CALIBRATION_ROUTE_V2_4,
+                        "_v2_4_grant", "dry-v2-4")
+    out_dir = tmp_path / "reviews-v2-4"
+    argv = ["--mode", "build-classifier-calibration-review-v2-4",
+            "--calibration-run-dir", str(result.run_dir),
+            "--calibration-selection", str(selection.path),
+            "--calibration-selection-sha256", selection.sha256,
+            "--output-dir", str(out_dir), "--run-id", "dry-review-v2-4",
+            "--dry-run"]
+    assert cli.main(argv) == 0
+    reported = json.loads(capsys.readouterr().out)
+    assert reported["dry_run"] is True
+    assert reported["output_path"] is None
+    assert not (out_dir / "dry-review-v2-4").exists()

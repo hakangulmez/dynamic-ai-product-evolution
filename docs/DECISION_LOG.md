@@ -9104,6 +9104,111 @@ classifier, two review), seven test modules, the registry (0.67.0 to 0.68.0, 158
 absolute registry literals in eleven screen suites. No new schema: the two
 route-aware consumer paths reuse the contracts that already existed.
 
+## ADR-130 — One bound was genuinely too tight, and two defects a bound cannot reach
+
+**Status.** Accepted, fixture-first. No model call, no network, no governance
+artifact, no `data/runs` write, no calibration rerun, and no change to the tier
+rules, the economic vocabulary, the 40-row calibration selection, SCREEN_v1, the
+overlay, the cohort, the shared `universe_screen_failure_receipt@0.1.0`
+contract, or any V2.1, V2.2 or V2.3 artifact.
+
+**What the third calibration actually said.** The V2.3 run stopped after three
+rows, all three rejected. Replaying the archived responses offline through the
+committed V2.3 validator showed something the two earlier diagnoses did not:
+every row carried **exactly one** schema error, and in all three it was the same
+field — a `supported_claim` of 233, 204 and 204 characters against a
+200-character cap. Everything the V2.3 prompt was written to fix had held. Quote
+lengths were 972, 829 and 994 against a ceiling of 1200; evidence counts were
+12, 12 and 8 against a cap of 12; all 32 evidence objects across the three rows
+carried one of the six legal `evidence.axis` labels, with no output field name
+anywhere; there were no duplicates, no unknown fields, no missing fields and no
+out-of-vocabulary axis values. The V2.2 failure family was gone.
+
+**So exactly one bound moves.** `supported_claim` rises from 200 to 300. The
+three overflows were 33, 4 and 4 characters, and the median claim across the 32
+objects was about 135, so this is a tail that the cap clipped rather than a
+model writing long. `evidence` stays at 12 and `quote` stays at 1200; every
+axis, enum value, pattern and required field in the 0.3.0 axes contract is
+byte-equivalent to 0.2.0. Because the record contract inlines the axes contract
+rather than referencing it, the record contract moves with it to 0.3.0, and
+`taxonomy_version` becomes `universe_classifier_axes_v2_4` — naming the axes
+contract a stored row was validated against, not a change in what an axis means.
+
+**Two of the three rows would still have failed, and that is the point.**
+Removing the length error does not make the run pass. Row 2's twelfth evidence
+object spliced two real spans from P006 with an ellipsis, skipping 1,364
+characters of the passage between them. Row 3's fourth object reproduced 760 of
+781 characters of P003 verbatim but prepended `Our ` and lower-cased `Machine`,
+where the passage reads `Machine learning technology may be embedded`. Both are
+`quote_resolution_failure`, both survive any bound, and both were invisible in
+the run itself because the validator raises on the first schema error and the
+claim-length error came first. Only the offline replay surfaced them. Widening
+`supported_claim` therefore does not relax acceptance: it moves the reported
+defect from a length the model controls to the fidelity defect underneath.
+
+**The instruction changes for the defects a bound cannot fix.** The V2.4 prompt
+keeps every V2.3 rule and adds three. A quote admits no character modification
+whatsoever, with ellipsis, splice, insertion, deletion and re-casing each
+forbidden by name and each matched to the shape actually observed — no `...` or
+bracketed omission marker; two real spans do not become one by being written
+next to each other; no prepended subject such as `Our` or `The Company`; no
+dropped clause; no letter re-cased at the start of a span or inside it.
+`supported_claim` is redefined as a conclusion clause for its axis rather than
+an explanatory sentence, with the 233-character row quoted as the wrong form and
+a compliant rewrite beside it — V2.3 stated the bound twice and never showed
+what obeying it looks like. And the at-most-two-per-axis rule, which V2.3 stated
+but which two of three rows ignored (four `dependency` objects in one row, four
+`eligibility` in another), becomes a per-axis count the final check must
+actually take. All three are restated in the Silent final check.
+
+**0.3.0 is a widening, so schema validity cannot separate versions.** Every
+valid 0.2.0 axes object is a valid 0.3.0 one. A V2.3 output would satisfy the
+V2.4 axes schema, and nothing in this package relies on it not doing so: the
+separation is the route's output filenames plus the `prompt_template_path` and
+`output_contract` consts, which reject in both directions. A V2.3 failed run
+cannot be continued as a V2.4 one because the continuation source loader is
+handed this route's archive filename explicitly. This asymmetry is stated in the
+schema description, in the route comment and in its own test, because a
+widening is exactly where a version boundary would otherwise be assumed rather
+than enforced.
+
+**Forked as a set of three, plus the review route.** Base, continuation and
+calibration move together, so the calibration exercises exactly the prompt and
+contract set a later full run would use — the ADR-127 property, preserved. The
+review contract still needs no successor: it binds the source manifest digest
+and the prompt digest rather than naming a prompt, so one builder reads a V2.1,
+V2.2, V2.3 or V2.4 calibration and only the filenames differ. A fourth review
+CLI mode was added rather than a contract, taking the CLI to 54 modes.
+
+**The all-errors diagnostic is deliberately not here.** The V2.3 run's two
+quote-fidelity defects were recoverable only by offline replay, and the same
+blindness applies to a *completed* run: a row inside tolerance records one
+truncated `failure_detail` string. The fix is a separate immutable diagnostic
+output, and it is deferred rather than bundled because its scope question is
+unsettled — a failure-only diagnostic touches nothing, while covering completed
+runs means listing a fourth filename in `output_hashes`, which is
+`additionalProperties: false` with an exact required list in every manifest
+contract. Extending the shared `universe_screen_failure_receipt@0.1.0` in place
+was rejected outright: thirteen modules write that literal, and two shapes under
+one contract id is what schema governance forbids. That decision belongs to its
+own ADR, taken before or after V2.4 runs but not silently inside this fork.
+
+**Honest limits.** Nothing here is evidence that V2.4 will classify better. One
+of three observed rows is rescued by the bound; the other two depend on an
+instruction holding that the same model has now been given twice. Three
+calibrations have each surfaced a different defect, and a fourth may surface a
+fourth. No rerun, no grant and no review gate is authorized by this entry, and
+the V2.3 failed run stays immutable and non-authoritative with its evidence
+interpretable under the contract it ran under.
+
+**Scope.** Forty-two paths: the V2.4 prompt, the 0.3.0 axes and record
+contracts, six V2.4 authorization and manifest contracts, one new test module,
+the contract-set module, five runner and consumer modules, four CLI modes (three
+classifier, one review), seven test modules, the registry (0.68.0 to 0.69.0, 164
+to 172), this decision log, `REPO_MANIFEST.md` (943 to 953), the five
+registry/manifest guards, and the absolute registry literals in eleven screen
+suites.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only
