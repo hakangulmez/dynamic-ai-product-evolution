@@ -74,7 +74,8 @@ def _archive_line(run_id, row, payload):
 
 def _failed_run(cohort, tmp_path, *, prefix_rows=PREFIX_ROWS,
                 run_id="source-classifier-run", payloads=None,
-                mutate_receipt=None, mutate_entries=None, extra_files=()):
+                mutate_receipt=None, mutate_entries=None, extra_files=(),
+                route=None):
     """One failed classifier run: a receipt and an archive, and nothing else."""
     directory = tmp_path / "failed" / run_id
     directory.mkdir(parents=True, exist_ok=True)
@@ -87,7 +88,8 @@ def _failed_run(cohort, tmp_path, *, prefix_rows=PREFIX_ROWS,
     if mutate_entries is not None:
         entries = mutate_entries(entries)
     archive = ("\n".join(entries) + "\n").encode() if entries else b""
-    (directory / lcl.CLASSIFIER_RAW_RESPONSES_FILENAME).write_bytes(archive)
+    archive_name = (route or lcc.CONTINUATION_ROUTE).archive_filename
+    (directory / archive_name).write_bytes(archive)
     stopping = cohort.rows[prefix_rows]
     receipt = {
         "receipt_contract": "universe_screen_failure_receipt@0.1.0",
@@ -116,7 +118,13 @@ def _failed_run(cohort, tmp_path, *, prefix_rows=PREFIX_ROWS,
 
 
 def _continuation_grant(cohort, source, tmp_path, *, mutate=None,
-                        name="classifier-continuation-gov", **kwargs):
+                        name="classifier-continuation-gov", route=None, **kwargs):
+    """Build a continuation grant for ``route``, defaulting to V2.1.
+
+    A later route differs only in which prompt and contract identities the
+    grant declares; every digest, cap and policy version is the same, which is
+    the point of a prompt-discipline successor.
+    """
     base = _grant(cohort, tmp_path, name=name, **kwargs).authorization
     root = tmp_path / name
     called = len(cohort.rows) - len(source.rows)
@@ -139,6 +147,18 @@ def _continuation_grant(cohort, source, tmp_path, *, mutate=None,
         "provider_attempt_cap": called * 5,
         "budget_max_external_requests": called * 8,
     })
+    if route is not None and route is not lcc.CONTINUATION_ROUTE:
+        from hashlib import sha256
+        version = {"v2_2": "0.2.0", "v2_3": "0.3.0"}[route.contracts.version_id]
+        payload.update({
+            "authorization_contract":
+                f"universe_classifier_continuation_authorization@{version}",
+            "output_contract": route.contracts.record_contract,
+            "taxonomy_version": route.contracts.taxonomy_version,
+            "prompt_template_path": route.contracts.prompt_path,
+            "prompt_template_sha256": sha256(
+                (ROOT / route.contracts.prompt_path).read_bytes()).hexdigest(),
+        })
     if mutate is not None:
         mutate(payload)
     raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
@@ -149,7 +169,7 @@ def _continuation_grant(cohort, source, tmp_path, *, mutate=None,
 
 
 def _run(cohort, source, grant, tmp_path, *, script=None, run_id="continuation-run",
-         dry_run=False, output_dir=None, source_run_dir=None):
+         dry_run=False, output_dir=None, source_run_dir=None, route=None):
     events: list = []
     factory = _EmptyBodyFactory(
         script if script is not None else _script(cohort), events)
@@ -163,7 +183,8 @@ def _run(cohort, source, grant, tmp_path, *, script=None, run_id="continuation-r
         source_run_dir=source_run_dir or source.dir,
         output_dir=output_dir or (tmp_path / "continuation-out"), run_id=run_id,
         clock=CLOCK, dry_run=dry_run, client_factory=factory,
-        sleep=lambda s: events.append(("wait", s)))
+        sleep=lambda s: events.append(("wait", s)),
+        **({"route": route} if route is not None else {}))
     return SimpleNamespace(result=result, factory=factory, events=events)
 
 
@@ -440,7 +461,7 @@ def test_a_source_with_an_empty_archive_is_refused(cohort, tmp_path):
 def test_the_base_route_refuses_a_continuation_manifest(cohort, source, tmp_path):
     grant = _continuation_grant(cohort, source, tmp_path, name="gov-loader")
     run = _run(cohort, source, grant, tmp_path)
-    with pytest.raises(ls.ScreenInputError, match="holds no classifier manifest"):
+    with pytest.raises(ls.ScreenInputError, match="holds no universe_classifier_manifest.json"):
         lcl.require_classifier_run(run.result.run_dir)
 
 
@@ -546,3 +567,269 @@ def test_a_stopping_ordinal_outside_the_cohort_is_refused(cohort, tmp_path):
                                           records_completed_before_failure=9_998))
     grant = _continuation_grant(cohort, outside, tmp_path, name="gov-outside")
     _refused(cohort, outside, grant, tmp_path, "completed")
+
+
+# --- ADR-129: the continuation route at V2.3 --------------------------------------
+
+
+def test_the_v2_3_continuation_route_is_isolated_and_bound():
+    """Filenames, contracts and prompt differ; the contract set does not."""
+    from dynamic_ai_products.classifier_contract_set import V2_2, V2_3
+    v2, v3 = lcc.CONTINUATION_ROUTE_V2_2, lcc.CONTINUATION_ROUTE_V2_3
+    assert v3.manifest_contract == "universe_classifier_continuation_manifest@0.3.0"
+    assert v3.records_filename == "universe_classifier_v2_3_continuation_records.jsonl"
+    assert v3.archive_filename == "universe_classifier_v2_3_raw_responses.jsonl"
+    assert v3.run_kind == v2.run_kind
+    assert v3.contracts.record_contract == V2_2.record_contract
+    assert v3.contracts.taxonomy_version == V2_2.taxonomy_version
+    assert v3.contracts.prompt_path == V2_3.prompt_path != V2_2.prompt_path
+    for attr in ("records_filename", "manifest_filename", "manifest_contract",
+                 "manifest_schema", "authorization_schema", "archive_filename"):
+        assert getattr(v3, attr) != getattr(v2, attr), attr
+
+
+# --- ADR-129: a real V2.3 continuation, end to end --------------------------------
+
+
+def _records_for(result, route):
+    return [json.loads(x) for x in
+            (result.run_dir / route.records_filename)
+            .read_text(encoding="utf-8").splitlines() if x.strip()]
+
+
+@pytest.fixture
+def v2_3_source(cohort, tmp_path):
+    """A synthetic failed V2.3 run: a contiguous prefix under V2.3 filenames.
+
+    Built from fixture packets, never from the real failed calibration archive,
+    whose bytes belong to a different contract version and a different cohort
+    row set.
+    """
+    return _failed_run(cohort, tmp_path, run_id="source-v2-3",
+                       route=lcc.CONTINUATION_ROUTE_V2_3)
+
+
+def test_a_v2_3_continuation_completes_end_to_end(cohort, v2_3_source, tmp_path):
+    from hashlib import sha256
+    from dynamic_ai_products.classifier_contract_set import V2_3
+    route = lcc.CONTINUATION_ROUTE_V2_3
+    grant = _continuation_grant(cohort, v2_3_source, tmp_path, route=route,
+                                name="gov-v2-3-continuation")
+    run = _run(cohort, v2_3_source, grant, tmp_path, run_id="continuation-v2-3",
+               route=route)
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert run.result.manifest_path.name == route.manifest_filename
+    assert manifest["manifest_contract"] == \
+        "universe_classifier_continuation_manifest@0.3.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.2.0"
+    assert manifest["taxonomy_version"] == "universe_classifier_axes_v2_2"
+    assert manifest["prompt_template_path"] == V2_3.prompt_path
+    assert manifest["prompt_template_sha256"] == sha256(
+        (ROOT / V2_3.prompt_path).read_bytes()).hexdigest()
+    assert manifest["tier_rules_version"] == "universe_classifier_tier_rules_v2_1"
+
+    # the V2.3 filenames, and only those
+    present = {p.name for p in run.result.run_dir.iterdir()}
+    assert route.records_filename in present
+    assert route.manifest_filename in present
+    assert route.archive_filename in present
+    assert lcc.CONTINUATION_RECORDS_FILENAME not in present
+    assert lcc.CONTINUATION_MANIFEST_FILENAME not in present
+    assert lcl.CLASSIFIER_RAW_RESPONSES_FILENAME not in present
+
+    # every recorded output still hashes to its manifest entry
+    for filename, recorded in manifest["output_hashes"].items():
+        target = run.result.run_dir / filename
+        assert target.is_file(), filename
+        assert _sha(target.read_bytes()) == recorded, filename
+
+    records = _records_for(run.result, route)
+    assert len(records) == len(cohort.rows)
+    assert all(r["record_contract"] == "universe_classifier_record@0.2.0"
+               for r in records)
+    reused = records[:PREFIX_ROWS]
+    assert all(r["output_provenance"]["origin"] == "reused_source_prefix"
+               for r in reused)
+    assert all(r["output_provenance"]["source_run_id"] == v2_3_source.run_id
+               for r in reused)
+    assert all(r["output_provenance"]["origin"] == "model_called"
+               for r in records[PREFIX_ROWS:])
+    assert run.factory.generate_calls == len(cohort.rows) - PREFIX_ROWS
+    assert manifest["continuation"]["reused_prefix_rows"] == PREFIX_ROWS
+    archive = (run.result.run_dir / route.archive_filename).read_bytes()
+    assert archive.startswith(v2_3_source.archive_bytes)
+
+
+def test_the_v2_3_continuation_loader_accepts_only_its_own_run(
+        cohort, v2_3_source, tmp_path):
+    route = lcc.CONTINUATION_ROUTE_V2_3
+    grant = _continuation_grant(cohort, v2_3_source, tmp_path, route=route,
+                                name="gov-v2-3-loader")
+    run = _run(cohort, v2_3_source, grant, tmp_path, run_id="continuation-v2-3-iso",
+               route=route)
+    assert run.result.status == "completed", run.result.receipt
+    assert lcc.require_classifier_continuation_run(
+        run.result.run_dir, route=route) == run.result.manifest_path
+    for other in (lcc.CONTINUATION_ROUTE, lcc.CONTINUATION_ROUTE_V2_2):
+        with pytest.raises(ls.ScreenInputError,
+                           match=f"holds no {other.manifest_filename}"):
+            lcc.require_classifier_continuation_run(run.result.run_dir,
+                                                    route=other)
+    # the default (V2.1) loader refuses it too, without being told a route
+    with pytest.raises(ls.ScreenInputError, match="holds no "):
+        lcc.require_classifier_continuation_run(run.result.run_dir)
+    with pytest.raises(ls.ScreenInputError):
+        lcl.require_classifier_run(run.result.run_dir)
+
+
+@pytest.mark.parametrize("grant_route", [None, "v2_2"],
+                         ids=["v2_1-grant", "v2_2-grant"])
+def test_the_v2_3_route_refuses_an_earlier_grant(cohort, v2_3_source, tmp_path,
+                                                 grant_route):
+    route = {None: None, "v2_2": lcc.CONTINUATION_ROUTE_V2_2}[grant_route]
+    grant = _continuation_grant(cohort, v2_3_source, tmp_path, route=route,
+                                name=f"gov-old-{grant_route}")
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, v2_3_source, grant, tmp_path, run_id="cross-grant",
+             output_dir=tmp_path / "never", route=lcc.CONTINUATION_ROUTE_V2_3)
+
+
+def test_the_v2_3_route_refuses_a_v2_1_source(cohort, tmp_path):
+    """A V2.1 source archive is not where the V2.3 route looks for one."""
+    v2_1_source = _failed_run(cohort, tmp_path, run_id="source-v2-1-for-v2-3")
+    grant = _continuation_grant(cohort, v2_1_source, tmp_path,
+                                route=lcc.CONTINUATION_ROUTE_V2_3,
+                                name="gov-v2-1-source")
+    with pytest.raises(ls.ScreenInputError, match="holds no response archive"):
+        _run(cohort, v2_1_source, grant, tmp_path, run_id="cross-source",
+             output_dir=tmp_path / "never", route=lcc.CONTINUATION_ROUTE_V2_3)
+
+
+def test_the_v2_1_route_refuses_a_v2_3_source(cohort, v2_3_source, tmp_path):
+    grant = _continuation_grant(cohort, v2_3_source, tmp_path,
+                                name="gov-v2-3-source-for-v2-1")
+    with pytest.raises(ls.ScreenInputError, match="holds no response archive"):
+        _run(cohort, v2_3_source, grant, tmp_path, run_id="cross-source-2",
+             output_dir=tmp_path / "never")
+
+
+def test_the_v2_1_continuation_still_completes_unchanged(cohort, source, tmp_path):
+    """The default route is untouched by the route parameter."""
+    grant = _continuation_grant(cohort, source, tmp_path, name="gov-v2-1-still")
+    run = _run(cohort, source, grant, tmp_path, run_id="continuation-v2-1-still")
+    assert run.result.status == "completed", run.result.receipt
+    assert run.result.manifest_path.name == lcc.CONTINUATION_MANIFEST_FILENAME
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == lcc.CONTINUATION_MANIFEST_CONTRACT
+    assert lcc.require_classifier_continuation_run(run.result.run_dir) == \
+        run.result.manifest_path
+
+
+# --- ADR-129 correction: every version's continuation, end to end -----------------
+
+CONTINUATION_ROUTES = [
+    ("v2_1", lcc.CONTINUATION_ROUTE, "universe_classifier_record@0.1.0"),
+    ("v2_2", lcc.CONTINUATION_ROUTE_V2_2, "universe_classifier_record@0.2.0"),
+    ("v2_3", lcc.CONTINUATION_ROUTE_V2_3, "universe_classifier_record@0.2.0"),
+]
+
+
+def _completed_continuation(cohort, tmp_path, route, tag):
+    """One genuine continuation at ``route``: its own prefix, its own grant."""
+    src = _failed_run(cohort, tmp_path, run_id=f"source-{tag}",
+                      route=None if route is lcc.CONTINUATION_ROUTE else route)
+    grant = _continuation_grant(
+        cohort, src, tmp_path, name=f"gov-{tag}",
+        route=None if route is lcc.CONTINUATION_ROUTE else route)
+    run = _run(cohort, src, grant, tmp_path, run_id=f"continuation-{tag}",
+               **({} if route is lcc.CONTINUATION_ROUTE else {"route": route}))
+    assert run.result.status == "completed", run.result.receipt
+    return src, run
+
+
+@pytest.mark.parametrize("version,route,record_contract", CONTINUATION_ROUTES,
+                         ids=[v for v, _, _ in CONTINUATION_ROUTES])
+def test_every_version_continuation_completes_end_to_end(
+        cohort, tmp_path, version, route, record_contract):
+    src, run = _completed_continuation(cohort, tmp_path, route, version)
+    _assert_no_google()
+    records = _records_for(run.result, route)
+    assert len(records) == len(cohort.rows)
+    # the defect this test exists for: a reused row must declare the route's
+    # own record contract, not the V2.1 module constant
+    assert all(r["record_contract"] == record_contract for r in records), version
+    reused = records[:PREFIX_ROWS]
+    assert all(r["output_provenance"]["origin"] == "reused_source_prefix"
+               for r in reused)
+    assert all(r["record_contract"] == record_contract for r in reused)
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == route.manifest_contract
+    assert manifest["output_contract"] == record_contract
+    for filename, recorded in manifest["output_hashes"].items():
+        target = run.result.run_dir / filename
+        assert target.is_file() and _sha(target.read_bytes()) == recorded, filename
+
+
+@pytest.mark.parametrize("version,route,_c", CONTINUATION_ROUTES,
+                         ids=[v for v, _, _ in CONTINUATION_ROUTES])
+def test_each_completed_continuation_is_loadable_only_by_its_route(
+        cohort, tmp_path, version, route, _c):
+    _src, run = _completed_continuation(cohort, tmp_path, route, f"load-{version}")
+    kwargs = {} if route is lcc.CONTINUATION_ROUTE else {"route": route}
+    assert lcc.require_classifier_continuation_run(
+        run.result.run_dir, **kwargs) == run.result.manifest_path
+    for _v, other, _oc in CONTINUATION_ROUTES:
+        if other is route:
+            continue
+        with pytest.raises(ls.ScreenInputError,
+                           match=f"holds no {other.manifest_filename}"):
+            lcc.require_classifier_continuation_run(run.result.run_dir,
+                                                    route=other)
+    with pytest.raises(ls.ScreenInputError):
+        lcl.require_classifier_run(run.result.run_dir)
+
+
+def test_the_v2_2_route_refuses_a_v2_3_grant_and_source(cohort, tmp_path):
+    src = _failed_run(cohort, tmp_path, run_id="source-v2-3-for-v2-2",
+                      route=lcc.CONTINUATION_ROUTE_V2_3)
+    grant = _continuation_grant(cohort, src, tmp_path, name="gov-v2-3-for-v2-2",
+                                route=lcc.CONTINUATION_ROUTE_V2_3)
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, src, grant, tmp_path, run_id="cross-v2-2",
+             output_dir=tmp_path / "never", route=lcc.CONTINUATION_ROUTE_V2_2)
+
+
+def test_the_pre_fix_prefix_contract_is_refused(cohort, tmp_path):
+    """The exact shape ADR-128 shipped: a reused row declaring the V2.1 contract.
+
+    Before the correction, ``revalidate_classifier_prefix`` stamped every
+    rebuilt row with the module's V2.1 constant, so a V2.2 or V2.3 continuation
+    could never satisfy its own record schema. Rebuilding the prefix with the
+    V2.1 route while running V2.3 reproduces that shape and must still fail.
+    """
+    from dynamic_ai_products.classifier_contract_set import V2_2, V2_3
+    assert V2_3.record_contract == V2_2.record_contract
+    src = _failed_run(cohort, tmp_path, run_id="source-prefix-shape",
+                      route=lcc.CONTINUATION_ROUTE_V2_3)
+    grant = _continuation_grant(cohort, src, tmp_path, name="gov-prefix-shape",
+                                route=lcc.CONTINUATION_ROUTE_V2_3)
+    real = lcc.revalidate_classifier_prefix
+
+    def stamped_with_the_old_constant(*args, **kwargs):
+        rows = real(*args, **{**kwargs, "route": lcc.CONTINUATION_ROUTE})
+        assert all(r["record_contract"] == "universe_classifier_record@0.1.0"
+                   for r in rows)
+        return rows
+
+    lcc.revalidate_classifier_prefix = stamped_with_the_old_constant
+    try:
+        with pytest.raises(ls.ScreenInputError,
+                           match=r"violates universe_classifier_record@0\.2\.0"):
+            _run(cohort, src, grant, tmp_path, run_id="prefix-shape",
+                 output_dir=tmp_path / "never-prefix",
+                 route=lcc.CONTINUATION_ROUTE_V2_3)
+    finally:
+        lcc.revalidate_classifier_prefix = real

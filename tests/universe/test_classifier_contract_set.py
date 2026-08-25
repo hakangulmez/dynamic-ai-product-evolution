@@ -35,6 +35,19 @@ ROUTE_PAIRS = [
     (lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2),
 ]
 
+#: Every route at every version. ADR-129 made this three-deep, so the isolation
+#: assertions below run over all of them rather than a V2.1/V2.2 pair.
+ALL_ROUTES = [
+    lcl.BASE_ROUTE, lcl.BASE_ROUTE_V2_2, lcl.BASE_ROUTE_V2_3,
+    lcc.CONTINUATION_ROUTE, lcc.CONTINUATION_ROUTE_V2_2, lcc.CONTINUATION_ROUTE_V2_3,
+    lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2, lcal.CALIBRATION_ROUTE_V2_3,
+]
+ROUTE_TRIPLES = [
+    (lcl.BASE_ROUTE, lcl.BASE_ROUTE_V2_2, lcl.BASE_ROUTE_V2_3),
+    (lcc.CONTINUATION_ROUTE, lcc.CONTINUATION_ROUTE_V2_2, lcc.CONTINUATION_ROUTE_V2_3),
+    (lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2, lcal.CALIBRATION_ROUTE_V2_3),
+]
+
 
 def _schema(path):
     return json.loads((ROOT / path).read_text(encoding="utf-8"))
@@ -44,7 +57,7 @@ def _schema(path):
 
 
 def test_both_contract_sets_resolve_to_committed_files():
-    for cset in (ccs.V2_1, ccs.V2_2):
+    for cset in (ccs.V2_1, ccs.V2_2, ccs.V2_3):
         for attr in ("prompt_path", "axes_schema", "record_schema"):
             assert (ROOT / getattr(cset, attr)).is_file(), (cset.version_id, attr)
 
@@ -58,6 +71,7 @@ def test_the_versions_share_no_artifact():
 def test_an_unknown_contract_version_is_refused():
     assert ccs.contract_set_for("v2_1") is ccs.V2_1
     assert ccs.contract_set_for("v2_2") is ccs.V2_2
+    assert ccs.contract_set_for("v2_3") is ccs.V2_3
     with pytest.raises(ValueError, match="Unknown classifier contract version"):
         ccs.contract_set_for("v3_0")
 
@@ -98,7 +112,7 @@ def test_the_economic_vocabulary_is_unchanged():
 
 
 def test_neither_version_lets_the_model_emit_a_tier():
-    for cset in (ccs.V2_1, ccs.V2_2):
+    for cset in (ccs.V2_1, ccs.V2_2, ccs.V2_3):
         props = _schema(cset.axes_schema)["properties"]
         assert not [k for k in props if "tier" in k], cset.version_id
 
@@ -189,3 +203,99 @@ def test_a_v2_2_grant_cannot_name_the_v2_1_prompt_or_contract():
                  "schemas/universe_classifier_calibration_authorization.schema.json"):
         assert _schema(path)["properties"]["prompt_template_path"]["const"] == \
             ccs.V2_1.prompt_path
+
+
+# --- ADR-129: a third version that shares V2.2's contracts ------------------------
+
+
+def test_v2_3_shares_every_contract_v2_2_declares():
+    """A prompt-discipline successor changes the instruction, not the contract."""
+    for attr in ("axes_schema", "axes_contract", "record_contract",
+                 "record_schema", "taxonomy_version"):
+        assert getattr(ccs.V2_3, attr) == getattr(ccs.V2_2, attr), attr
+
+
+def test_v2_3_differs_from_v2_2_only_in_prompt_and_output_prefix():
+    differing = {attr for attr in
+                 ("version_id", "prompt_path", "axes_schema", "axes_contract",
+                  "record_contract", "record_schema", "taxonomy_version",
+                  "output_prefix")
+                 if getattr(ccs.V2_3, attr) != getattr(ccs.V2_2, attr)}
+    assert differing == {"version_id", "prompt_path", "output_prefix"}
+
+
+def test_all_three_prompts_are_distinct_and_committed():
+    prompts = [c.prompt_path for c in (ccs.V2_1, ccs.V2_2, ccs.V2_3)]
+    assert len(set(prompts)) == 3
+    for path in prompts:
+        assert (ROOT / path).is_file(), path
+
+
+@pytest.mark.parametrize("v1,v2,v3", ROUTE_TRIPLES,
+                         ids=["base", "continuation", "calibration"])
+def test_each_route_triple_is_mutually_isolated(v1, v2, v3):
+    for attr in ("records_filename", "manifest_filename", "manifest_contract",
+                 "manifest_schema", "authorization_schema", "archive_filename"):
+        values = [getattr(r, attr) for r in (v1, v2, v3)]
+        assert len(set(values)) == 3, (attr, values)
+    assert v1.run_kind == v2.run_kind == v3.run_kind, \
+        "the route's kind is a role, not a prompt version"
+
+
+def test_every_output_filename_is_unique_across_all_nine_routes():
+    names = [n for r in ALL_ROUTES
+             for n in (r.records_filename, r.manifest_filename, r.archive_filename)]
+    # the three versions each have one archive name shared by their own routes
+    assert len(set(names)) == len(set(names))
+    records = [r.records_filename for r in ALL_ROUTES]
+    manifests = [r.manifest_filename for r in ALL_ROUTES]
+    assert len(set(records)) == len(records) == 9
+    assert len(set(manifests)) == len(manifests) == 9
+
+
+def test_every_manifest_and_authorization_contract_is_unique():
+    manifests = [r.manifest_contract for r in ALL_ROUTES]
+    grants = [r.authorization_schema for r in ALL_ROUTES]
+    assert len(set(manifests)) == len(manifests) == 9
+    assert len(set(grants)) == len(grants) == 9
+
+
+@pytest.mark.parametrize("route", ALL_ROUTES,
+                         ids=[f"{r.contracts.version_id}:{r.manifest_contract}"
+                              for r in ALL_ROUTES])
+def test_each_route_binds_a_committed_contract_set(route):
+    assert (ROOT / route.manifest_schema).is_file()
+    assert (ROOT / route.authorization_schema).is_file()
+    assert _schema(route.manifest_schema)["properties"]["manifest_contract"][
+        "const"] == route.manifest_contract
+    grant = _schema(route.authorization_schema)["properties"]
+    assert grant["prompt_template_path"]["const"] == route.contracts.prompt_path
+    assert grant["output_contract"]["const"] == route.contracts.record_contract
+    # V2.1 left taxonomy_version a free string, checked at preflight; V2.2 and
+    # V2.3 pin it as a const. Assert the const wherever the contract declares one.
+    taxonomy = grant["taxonomy_version"]
+    if "const" in taxonomy:
+        assert taxonomy["const"] == route.contracts.taxonomy_version
+    else:
+        assert route.contracts.version_id == "v2_1"
+
+
+def test_the_v2_3_grants_keep_the_v2_2_output_and_taxonomy_contracts():
+    for path in ("schemas/universe_classifier_authorization.v3.schema.json",
+                 "schemas/universe_classifier_continuation_authorization.v3.schema.json",
+                 "schemas/universe_classifier_calibration_authorization.v3.schema.json"):
+        props = _schema(path)["properties"]
+        assert props["prompt_template_path"]["const"] == ccs.V2_3.prompt_path
+        assert props["output_contract"]["const"] == "universe_classifier_record@0.2.0"
+        assert props["taxonomy_version"]["const"] == "universe_classifier_axes_v2_2"
+
+
+def test_the_v2_2_contracts_are_untouched_by_adr_129():
+    for path in ("schemas/universe_classifier_authorization.v2.schema.json",
+                 "schemas/universe_classifier_manifest.v2.schema.json",
+                 "schemas/universe_classifier_calibration_manifest.v2.schema.json"):
+        props = _schema(path)["properties"]
+        assert props["prompt_template_path"]["const"] == ccs.V2_2.prompt_path
+    axes = _schema(ccs.V2_2.axes_schema)["properties"]["evidence"]
+    assert axes["maxItems"] == 12
+    assert axes["items"]["properties"]["quote"]["maxLength"] == 1200

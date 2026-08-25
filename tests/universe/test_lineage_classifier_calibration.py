@@ -279,7 +279,7 @@ def test_the_run_spends_only_what_the_selection_justifies(cohort, selection,
 def test_a_full_run_loader_refuses_a_calibration(cohort, selection, tmp_path):
     grant = _grant(cohort, selection, tmp_path)
     run = _run(cohort, selection, grant, tmp_path)
-    with pytest.raises(ls.ScreenInputError, match="holds no classifier manifest"):
+    with pytest.raises(ls.ScreenInputError, match="holds no universe_classifier_manifest.json"):
         lcl.require_classifier_run(run.result.run_dir)
     assert lcal.require_classifier_calibration_run(run.result.run_dir) == \
         run.result.manifest_path
@@ -535,9 +535,9 @@ def test_each_version_loader_refuses_the_other(cohort, selection, tmp_path):
               _v2_2_grant(cohort, selection, tmp_path, name="g3"), tmp_path,
               run_id="calib-iso", route=lcal.CALIBRATION_ROUTE_V2_2)
     with pytest.raises(ls.ScreenInputError,
-                       match="holds no classifier calibration manifest"):
+                       match="holds no universe_classifier_calibration_manifest.json"):
         lcal.require_classifier_calibration_run(v2.result.run_dir)
-    with pytest.raises(ls.ScreenInputError, match="holds no classifier manifest"):
+    with pytest.raises(ls.ScreenInputError, match="holds no universe_classifier_manifest.json"):
         lcl.require_classifier_run(v2.result.run_dir)
 
 
@@ -553,3 +553,119 @@ def test_a_v2_1_grant_is_refused_by_the_v2_2_route(cohort, selection, tmp_path):
     with pytest.raises(ls.ScreenInputError):
         _run(cohort, selection, grant, tmp_path, run_id="cross-2",
              output_dir=tmp_path / "never", route=lcal.CALIBRATION_ROUTE_V2_2)
+
+
+# --- ADR-129: the same route and the same selection, at V2.3 -----------------------
+
+
+def _v2_3_grant(cohort, selection, tmp_path, *, name="calibration-gov-v2-3"):
+    """The V2.2 grant re-pointed at the V2.3 prompt. Contracts are unchanged."""
+    from dynamic_ai_products.classifier_contract_set import V2_3
+    base = _grant(cohort, selection, tmp_path, name=name).authorization
+    payload = dict(base)
+    payload.update({
+        "authorization_contract":
+            "universe_classifier_calibration_authorization@0.3.0",
+        "output_contract": V2_3.record_contract,
+        "taxonomy_version": V2_3.taxonomy_version,
+        "prompt_template_path": V2_3.prompt_path,
+        "prompt_template_sha256":
+            sha256((ROOT / V2_3.prompt_path).read_bytes()).hexdigest(),
+    })
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    ((tmp_path / name) / "calibration_authorization.json").write_bytes(raw)
+    return SimpleNamespace(root=tmp_path / name,
+                           reference="calibration_authorization.json",
+                           sha256=_sha(raw), authorization=payload)
+
+
+def test_the_v2_3_route_classifies_the_same_unchanged_selection(cohort, selection,
+                                                                tmp_path):
+    grant = _v2_3_grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path, run_id="calibration-v2-3",
+               route=lcal.CALIBRATION_ROUTE_V2_3)
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == \
+        "universe_classifier_calibration_manifest@0.3.0"
+    # the contract set is V2.2's; only the prompt moved
+    assert manifest["output_contract"] == "universe_classifier_record@0.2.0"
+    assert manifest["taxonomy_version"] == "universe_classifier_axes_v2_2"
+    assert manifest["prompt_template_path"].endswith("v2_3.md")
+    assert manifest["tier_rules_version"] == "universe_classifier_tier_rules_v2_1"
+    assert manifest["calibration_selection"]["selection_sha256"] == selection.sha256
+    assert manifest["schema_versions"]["universe_classifier_axes_record"] == "0.2.0"
+    records = [json.loads(x) for x in
+               (run.result.run_dir / lcal.CALIBRATION_ROUTE_V2_3.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(records) == len(selection.rows)
+    assert all(r["record_contract"] == "universe_classifier_record@0.2.0"
+               for r in records)
+
+
+def test_the_three_versions_write_three_disjoint_file_sets(cohort, selection,
+                                                           tmp_path):
+    runs = {
+        "v2_1": _run(cohort, selection, _grant(cohort, selection, tmp_path, name="k1"),
+                     tmp_path, run_id="calib-k1"),
+        "v2_2": _run(cohort, selection,
+                     _v2_2_grant(cohort, selection, tmp_path, name="k2"), tmp_path,
+                     run_id="calib-k2", route=lcal.CALIBRATION_ROUTE_V2_2),
+        "v2_3": _run(cohort, selection,
+                     _v2_3_grant(cohort, selection, tmp_path, name="k3"), tmp_path,
+                     run_id="calib-k3", route=lcal.CALIBRATION_ROUTE_V2_3),
+    }
+    names = {}
+    for version, run in runs.items():
+        assert run.result.status == "completed", (version, run.result.receipt)
+        names[version] = {p.name for p in run.result.run_dir.iterdir()}
+    assert names["v2_1"] != names["v2_2"] != names["v2_3"] != names["v2_1"]
+    # The capture directory and the capture ledger are provider-transport
+    # artifacts, named the same in all three manifest contracts. Version
+    # identity is carried by the records, manifest and archive names, which
+    # must share nothing across versions.
+    transport = {"provider_captures", "universe_screen_capture_ledger.jsonl"}
+    for a, b in (("v2_1", "v2_2"), ("v2_2", "v2_3"), ("v2_1", "v2_3")):
+        shared = (names[a] & names[b]) - transport
+        assert not shared, (a, b, shared)
+    for version, run in runs.items():
+        route = {"v2_1": lcal.CALIBRATION_ROUTE, "v2_2": lcal.CALIBRATION_ROUTE_V2_2,
+                 "v2_3": lcal.CALIBRATION_ROUTE_V2_3}[version]
+        present = names[version] - transport
+        assert present == {route.records_filename, route.manifest_filename,
+                           route.archive_filename}, (version, present)
+
+
+@pytest.mark.parametrize("route,other_grant", [
+    (None, "_v2_3_grant"), (None, "_v2_2_grant"),
+], ids=["v2_1-route-refuses-v2_3-grant", "v2_1-route-refuses-v2_2-grant"])
+def test_the_v2_1_route_refuses_a_later_grant(cohort, selection, tmp_path, route,
+                                              other_grant):
+    grant = globals()[other_grant](cohort, selection, tmp_path,
+                                   name=f"x-{other_grant}")
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, selection, grant, tmp_path, run_id="cross-a",
+             output_dir=tmp_path / "never")
+
+
+@pytest.mark.parametrize("grant_maker", ["_grant", "_v2_2_grant"],
+                         ids=["v2_1-grant", "v2_2-grant"])
+def test_the_v2_3_route_refuses_an_earlier_grant(cohort, selection, tmp_path,
+                                                 grant_maker):
+    grant = globals()[grant_maker](cohort, selection, tmp_path,
+                                   name=f"y-{grant_maker}")
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, selection, grant, tmp_path, run_id="cross-b",
+             output_dir=tmp_path / "never", route=lcal.CALIBRATION_ROUTE_V2_3)
+
+
+def test_each_version_loader_refuses_the_other_two(cohort, selection, tmp_path):
+    v3 = _run(cohort, selection,
+              _v2_3_grant(cohort, selection, tmp_path, name="k4"), tmp_path,
+              run_id="calib-iso-3", route=lcal.CALIBRATION_ROUTE_V2_3)
+    with pytest.raises(ls.ScreenInputError,
+                       match="holds no universe_classifier_calibration_manifest.json"):
+        lcal.require_classifier_calibration_run(v3.result.run_dir)
+    with pytest.raises(ls.ScreenInputError, match="holds no universe_classifier_manifest.json"):
+        lcl.require_classifier_run(v3.result.run_dir)

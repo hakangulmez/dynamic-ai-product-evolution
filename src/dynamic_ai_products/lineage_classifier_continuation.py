@@ -37,16 +37,15 @@ from typing import Any, Callable
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-from .classifier_contract_set import V2_1, V2_2
+from .classifier_contract_set import V2_1, V2_2, V2_3
 from .classifier_tier_engine import derive_tier
 from .lineage_classifier_v2_1 import (
-    AXES_SCHEMA,
+    require_completed_run,
     RECORD_ORDER,
     ClassifierRoute,
     CLASSIFIER_MANIFEST_FILENAME,
     CLASSIFIER_RAW_RESPONSES_FILENAME,
     CLASSIFIER_RECORDS_FILENAME,
-    RECORD_CONTRACT,
     AxesValidationFailure,
     _admission_for,
     _detail,
@@ -73,6 +72,7 @@ __all__ = [
     "CONTINUATION_RECORDS_FILENAME",
     "CONTINUATION_ROUTE",
     "CONTINUATION_ROUTE_V2_2",
+    "CONTINUATION_ROUTE_V2_3",
     "ClassifierSourcePrefix",
     "load_classifier_continuation_source",
     "require_classifier_continuation_run",
@@ -118,6 +118,21 @@ CONTINUATION_ROUTE_V2_2 = ClassifierRoute(
         "schemas/universe_classifier_continuation_authorization.v2.schema.json"),
     archive_filename="universe_classifier_v2_2_raw_responses.jsonl",
     contracts=V2_2,
+)
+
+#: The ADR-129 successor of the continuation route.
+CONTINUATION_ROUTE_V2_3 = ClassifierRoute(
+    run_kind=CONTINUATION_RUN_KIND,
+    records_filename="universe_classifier_v2_3_continuation_records.jsonl",
+    manifest_filename="universe_classifier_v2_3_continuation_manifest.json",
+    manifest_contract="universe_classifier_continuation_manifest@0.3.0",
+    manifest_schema=(
+        "schemas/universe_classifier_continuation_manifest.v3.schema.json"),
+    record_order=RECORD_ORDER,
+    authorization_schema=(
+        "schemas/universe_classifier_continuation_authorization.v3.schema.json"),
+    archive_filename="universe_classifier_v2_3_raw_responses.jsonl",
+    contracts=V2_3,
 )
 
 #: Receipt fields a continuable classifier failure must carry. A receipt that
@@ -255,8 +270,17 @@ def load_classifier_continuation_source(
 def revalidate_classifier_prefix(
     prefix: ClassifierSourcePrefix, *, inputs, packets: dict, prompt_text: str,
     tier_rules, model_route: dict, validator: Draft202012Validator,
+    route: ClassifierRoute,
 ) -> list[dict]:
-    """Rebuild the prefix rows from evidence, recomputing every outcome."""
+    """Rebuild the prefix rows from evidence, recomputing every outcome.
+
+    ``route`` supplies the record contract these rebuilt rows declare. It has
+    to: a reused row is a stored record like any other, and a row rebuilt under
+    a later route must declare that route's contract or the record schema — in
+    which the contract id is a const — refuses it. Hard-coding the V2.1
+    contract here made the V2.2 and V2.3 continuations structurally unable to
+    complete, which no name-only route test could show.
+    """
     rows = inputs.rows
     if len(prefix.entries) > len(rows):
         raise ScreenInputError(
@@ -287,7 +311,8 @@ def revalidate_classifier_prefix(
         admission = _admission_for(row, inputs, packet)
         rendered, _refs = render_classifier_prompt(prompt_text, packet, admission)
         record = {
-            "record_contract": RECORD_CONTRACT, "cik": row["cik"],
+            "record_contract": route.contracts.record_contract,
+            "cik": row["cik"],
             "accession": row["accession"], "company_id": row["company_id"],
             "form": row["form"], "baseline_filing_date": row["baseline_filing_date"],
             "source_id": row["source_id"], "packet_sha256": row["packet_sha256"],
@@ -312,7 +337,8 @@ def revalidate_classifier_prefix(
             "provider_attempt_telemetry": None, "truncation_evidence": None,
         }
         try:
-            axes = validate_axes_output(entry["raw_response"], packet, validator)
+            axes = validate_axes_output(entry["raw_response"], packet, validator,
+                                        route.contracts.axes_contract)
         except AxesValidationFailure as exc:
             record.update(record_kind="model_output_unusable",
                           failure_reason_code=exc.reason_code,
@@ -325,36 +351,18 @@ def revalidate_classifier_prefix(
     return records
 
 
-def require_classifier_continuation_run(run_dir: str | Path) -> Path:
-    """Refuse any continuation run that is not completed and self-consistent."""
-    directory = Path(run_dir)
-    if (directory / FAILURE_RECEIPT_FILENAME).exists():
-        raise ScreenInputError(
-            f"Continuation run {directory} holds a failure receipt; it is "
-            "non-authoritative and may not be consumed."
-        )
-    manifest_path = directory / CONTINUATION_MANIFEST_FILENAME
-    if not manifest_path.is_file():
-        raise ScreenInputError(
-            f"Directory {directory} holds no classifier continuation manifest."
-        )
-    manifest = json.loads(_decode_utf8(manifest_path.read_bytes(),
-                                       CONTINUATION_MANIFEST_FILENAME))
-    if manifest.get("manifest_contract") != CONTINUATION_MANIFEST_CONTRACT:
-        raise ScreenInputError(
-            f"Continuation run {directory} declares "
-            f"{manifest.get('manifest_contract')!r}; this loader consumes "
-            f"{CONTINUATION_MANIFEST_CONTRACT!r} only."
-        )
-    for filename, recorded in manifest["output_hashes"].items():
-        target = directory / filename
-        if not target.is_file() or _sha256(target.read_bytes()) != recorded:
-            raise ScreenInputError(
-                f"Continuation output {filename} is missing or no longer hashes "
-                "to its manifest entry."
-            )
-    return manifest_path
+def require_classifier_continuation_run(
+    run_dir: str | Path, *, route: ClassifierRoute | None = None
+) -> Path:
+    """Refuse any continuation run that is not completed and self-consistent.
 
+    ``route`` defaults to the V2.1 continuation route, so existing callers are
+    unchanged; pass a later route to consume that version's run instead.
+    """
+    directory = Path(run_dir)
+    route = route or CONTINUATION_ROUTE
+    require_completed_run(directory, route, what="Continuation run")
+    return directory / route.manifest_filename
 
 def run_lineage_classifier_continuation(
     *, repo_root: str | Path, cohort_manifest_path: str | Path,
@@ -370,8 +378,9 @@ def run_lineage_classifier_continuation(
     root = Path(repo_root)
     if not _RUN_ID_RE.match(run_id):
         raise ScreenInputError("Invalid run id.")
-    axes_validator = Draft202012Validator(_load_schema(root, AXES_SCHEMA),
-                                          format_checker=FormatChecker())
+    axes_validator = Draft202012Validator(
+        _load_schema(root, route.contracts.axes_schema),
+        format_checker=FormatChecker())
     holder: dict[str, Any] = {}
 
     def prefix_loader(authorization, inputs, packets, prompt_text, tier_rules,
@@ -410,7 +419,7 @@ def run_lineage_classifier_continuation(
         records = revalidate_classifier_prefix(
             prefix, inputs=inputs, packets=packets, prompt_text=prompt_text,
             tier_rules=tier_rules, model_route=model_route,
-            validator=axes_validator)
+            validator=axes_validator, route=route)
         stopping = (prefix.receipt["stopping_cik"],
                     prefix.receipt["stopping_accession"])
         # The stopping row sits at its own recorded ordinal, which is the last

@@ -24,27 +24,24 @@ tolerance, which remains a separate decision.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
 from .classifier_calibration_selection import require_calibration_selection
-from .classifier_contract_set import V2_1, V2_2
+from .classifier_contract_set import V2_1, V2_2, V2_3
 from .lineage_classifier_v2_1 import (
     CLASSIFIER_RAW_RESPONSES_FILENAME,
     ClassifierRoute,
+    require_completed_run,
     _execute,
     _preflight,
     render_classifier_prompt,
 )
 from .universe.lineage_screen import (
-    FAILURE_RECEIPT_FILENAME,
     ScreenInputError,
     ScreenRunResult,
     _RUN_ID_RE,
-    _decode_utf8,
-    _sha256,
 )
 
 __all__ = [
@@ -53,6 +50,7 @@ __all__ = [
     "CALIBRATION_RECORDS_FILENAME",
     "CALIBRATION_ROUTE",
     "CALIBRATION_ROUTE_V2_2",
+    "CALIBRATION_ROUTE_V2_3",
     "require_classifier_calibration_run",
     "run_lineage_classifier_calibration",
 ]
@@ -96,42 +94,42 @@ CALIBRATION_ROUTE_V2_2 = ClassifierRoute(
     contracts=V2_2,
 )
 
+#: The ADR-129 successor of the calibration route. The 40-row selection is
+#: unchanged and reusable across all three versions; only the prompt moved.
+CALIBRATION_ROUTE_V2_3 = ClassifierRoute(
+    run_kind=CALIBRATION_RUN_KIND,
+    records_filename="universe_classifier_v2_3_calibration_records.jsonl",
+    manifest_filename="universe_classifier_v2_3_calibration_manifest.json",
+    manifest_contract="universe_classifier_calibration_manifest@0.3.0",
+    manifest_schema=(
+        "schemas/universe_classifier_calibration_manifest.v3.schema.json"),
+    record_order=CALIBRATION_RECORD_ORDER,
+    authorization_schema=(
+        "schemas/universe_classifier_calibration_authorization.v3.schema.json"),
+    archive_filename="universe_classifier_v2_3_raw_responses.jsonl",
+    contracts=V2_3,
+)
 
-def require_classifier_calibration_run(run_dir: str | Path) -> Path:
-    """Refuse any calibration run that is not completed and self-consistent."""
+
+def require_classifier_calibration_run(
+    run_dir: str | Path, *, route: ClassifierRoute | None = None
+) -> Path:
+    """Refuse any calibration run that is not completed and self-consistent.
+
+    ``route`` defaults to the V2.1 calibration route, so existing callers are
+    unchanged; pass a later route to consume that version's run instead. The
+    full-cohort refusal is calibration's own and applies at every version: a
+    calibration observes a sample, never a universe.
+    """
     directory = Path(run_dir)
-    if (directory / FAILURE_RECEIPT_FILENAME).exists():
-        raise ScreenInputError(
-            f"Calibration run {directory} holds a failure receipt; it is "
-            "non-authoritative and may not be consumed."
-        )
-    manifest_path = directory / CALIBRATION_MANIFEST_FILENAME
-    if not manifest_path.is_file():
-        raise ScreenInputError(
-            f"Directory {directory} holds no classifier calibration manifest."
-        )
-    manifest = json.loads(_decode_utf8(manifest_path.read_bytes(),
-                                       CALIBRATION_MANIFEST_FILENAME))
-    if manifest.get("manifest_contract") != CALIBRATION_MANIFEST_CONTRACT:
-        raise ScreenInputError(
-            f"Calibration run {directory} declares "
-            f"{manifest.get('manifest_contract')!r}; this loader consumes "
-            f"{CALIBRATION_MANIFEST_CONTRACT!r} only."
-        )
+    route = route or CALIBRATION_ROUTE
+    manifest = require_completed_run(directory, route, what="Calibration run")
     if manifest.get("covers_full_cohort") is not False:
         raise ScreenInputError(
             f"Calibration run {directory} claims full-cohort coverage; a "
             "calibration observes a sample and never a universe."
         )
-    for filename, recorded in manifest["output_hashes"].items():
-        target = directory / filename
-        if not target.is_file() or _sha256(target.read_bytes()) != recorded:
-            raise ScreenInputError(
-                f"Calibration output {filename} is missing or no longer hashes "
-                "to its manifest entry."
-            )
-    return manifest_path
-
+    return directory / route.manifest_filename
 
 def run_lineage_classifier_calibration(
     *, repo_root: str | Path, cohort_manifest_path: str | Path,

@@ -8977,6 +8977,133 @@ log, `REPO_MANIFEST.md` (923 to 935), the five registry/manifest guards, the
 absolute registry literals in eleven screen suites, and the three ADR-126/127
 suites that pin both versions through the change.
 
+## ADR-129 — The ceiling was not the problem the second time
+
+**Status.** Accepted, fixture-first. No model call, no network, no governance
+artifact, no `data/runs` write, and no change to the axes contract, the record
+contract, the taxonomy version, the tier rules, the economic vocabulary, the
+40-row calibration selection, SCREEN_v1, the overlay, the cohort, or any V2.1
+or V2.2 artifact.
+
+**What the second calibration actually said.** The V2.2 run stopped after four
+rows with three rejected. Replaying the archived responses offline through the
+committed V2.2 validator showed all four were valid JSON with no tier field, no
+unknown key and no missing field — and that a third ceiling increase would have
+rescued exactly one of the three. Row 2 failed on size alone. Rows 1 and 4 also
+carried quotes that did not occur in the passage they cited, which survives any
+bound. Row 4 additionally put output JSON field names — `software_centrality`,
+`complementary_dependencies`, `firm_structure`, `commercial_materiality` — into
+`evidence.axis`, where only six labels are legal. Raising 12 again would have
+been the third attempt to fix an instruction problem with a number.
+
+**So V2.3 changes the instruction and nothing else.** The axes and record
+contracts stay at 0.2.0, `taxonomy_version` stays
+`universe_classifier_axes_v2_2`, the tier rules are untouched, and the evidence
+and quote ceilings stay 12 and 1200. A test asserts the V2.3 axes schema is the
+V2.2 file itself, not a copy that happens to agree.
+
+**Quoting is stated as a copy operation.** The prompt now gives an ordered
+sequence — decide the claim, locate a proving contiguous span in one passage,
+select it, copy it character for character, only then copy that passage's
+`P`-reference, and finally verify the copied quote occurs in that passage — and
+says outright that a failed verification means you wrote rather than copied.
+Normalizing, summarizing, re-punctuating, composing across spans, truncating
+past the claim, and moving a quote to another reference are each forbidden by
+name. If no exact span can be copied, the evidence object is omitted, the
+affected conclusion goes unknown, and a boundary flag is added: an omitted
+object is correct, an approximated quote is not. This is the discipline the
+ADR-123 screen repair used on the same failure family.
+
+**Evidence is declared a sparse support set.** Normally one object per
+concluded axis, at most two for any one axis, none for an axis left unknown,
+and never a checklist. Six axes at two objects each is exactly the unchanged
+12-item ceiling, so the sparse rule and the bound now agree by construction
+rather than by coincidence — a test asserts that arithmetic.
+
+**The axis vocabulary is stated literally.** The six legal `evidence.axis`
+values are listed in their own section, with the six output field names named
+individually as invalid there, and an explanation of why the two vocabularies
+differ: field names say where a conclusion goes, axis labels say which
+conclusion a piece of evidence supports. All of it is restated in the Silent
+final check, alongside the unchanged bounds.
+
+**New contracts for an unchanged contract set.** Six V2.3 authorization and
+manifest contracts exist for one reason: `prompt_template_path` is a const, so
+a new prompt cannot be named by an old grant. Their `output_contract` and
+`taxonomy_version` consts still point at the 0.2.0 record contract and the V2.2
+taxonomy, which is the honest description of what a V2.3 run produces.
+
+**Three versions, still one reconciliation.** The route descriptor now carries
+a contract set, so V2.3 added three route values and no forked runner. Nine
+routes exist across three versions with nine distinct records filenames, nine
+manifest filenames, nine manifest contracts and nine authorization schemas; the
+capture ledger and capture directory are deliberately shared, being transport
+artifacts named identically in all three manifest contracts. Every loader
+refuses the other versions' manifests, and every route refuses the other
+versions' grants.
+
+**A latent ADR-128 defect, found and fixed here.** ADR-128's CLI patch passed
+`route=` to `run_lineage_classifier`, but that function's signature was never
+extended, so `classify-universe-cohort` and `classify-universe-cohort-v2-2`
+would have raised `TypeError` on any invocation. The gap was that the base
+route had CLI gating tests but no end-to-end CLI test, and the library tests
+called the runner without a route. The parameter is added here and the V2.3
+base-route test exercises it end to end.
+
+**The consumption path moved with the production path.** Producing three
+distinct manifests is only half a version boundary; something has to read them.
+All three `require_classifier_*` loaders hard-coded the V2.1 filenames and
+contracts, so a completed V2.2 or V2.3 run could be written and then read by
+nothing — and `build_calibration_review`, the gate that must precede any full
+run, could not open a V2.2 or V2.3 calibration at all. Each loader now takes
+its route, defaulting to its own V2.1 route so no existing caller changes, and
+derives the manifest filename, the manifest contract, the decoding label and
+the output-hash verification from it. Because both the filename and the
+contract id must match, a later version's run is refused on its filename before
+its contract is even read. The four questions every loader asks are now asked
+once, in `require_completed_run`, against a route.
+
+**A second latent ADR-128 defect, found the same way.** The V2.2 and V2.3
+continuation routes could not complete at all.
+``revalidate_classifier_prefix`` stamped every rebuilt prefix row with the
+module's V2.1 record-contract constant, so a reused row declared
+`universe_classifier_record@0.1.0` while the route validated against the 0.2.0
+record schema, in which that id is a const. Every V2.2 or V2.3 continuation
+died on its own first reused row. The route is now threaded into the prefix
+rebuild — as is the axes schema and axes-contract id it validates against — and
+each rebuilt row declares `route.contracts.record_contract`.
+
+Both ADR-128 defects, this one and the missing `route` parameter on
+`run_lineage_classifier`, were invisible for the same reason: the route tests
+asserted field identity rather than running the route. A test that compares a
+descriptor's attributes proves the descriptor was written down correctly and
+nothing about whether the path works. Every route at every version now has a
+fixture-only end-to-end run, and the pre-fix shape is reproduced as a test that
+fails without the correction.
+
+**The review contract did not need a successor.** It binds the source manifest
+digest and the prompt digest rather than naming a prompt, so it is already
+version-neutral: `universe_classifier_calibration_review@0.1.0` reads a V2.1,
+V2.2 or V2.3 calibration unchanged, and only the filenames the builder opens
+differ. Two CLI modes were added rather than a contract, taking the review
+modes to three.
+
+**Honest limits.** Nothing here is evidence that V2.3 will classify better. It
+is a response to four observed rows, three of which failed in ways a bound
+cannot reach. The instruction may still not hold: a model told to copy can
+still write, and only a run will show it. No rerun, no grant and no review gate
+is authorized by this entry, and the V2.2 failed run stays immutable and
+non-authoritative with its evidence interpretable under the contract it ran
+under.
+
+**Scope.** Forty paths: the V2.3 prompt, six V2.3 authorization and manifest
+contracts, one new test module, the contract-set module, four runner and
+consumer modules including the prefix-rebuild correction, five CLI modes (three
+classifier, two review), seven test modules, the registry (0.67.0 to 0.68.0, 158 to 164), this decision log,
+`REPO_MANIFEST.md` (935 to 943), the five registry/manifest guards, and the
+absolute registry literals in eleven screen suites. No new schema: the two
+route-aware consumer paths reuse the contracts that already existed.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only

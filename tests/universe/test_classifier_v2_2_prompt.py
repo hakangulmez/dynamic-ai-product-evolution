@@ -229,3 +229,39 @@ def test_v2_2_still_refuses_what_v2_1_refused_for_substance(packet):
         lcl.validate_axes_output(json.dumps(bad), packet, validator,
                                  ccs.V2_2.axes_contract)
     assert exc.value.reason_code == "axes_contract_violation"
+
+
+# --- ADR-129: V2.2 is frozen, and V2.3 did not reach back into it ------------------
+
+
+def test_the_v2_2_prompt_is_byte_unchanged_by_adr_129():
+    from hashlib import sha256
+    assert sha256((ROOT / ccs.V2_2.prompt_path).read_bytes()).hexdigest() == \
+        "bafa3a5b8800cd572e5bb454df1bc0693ffb2fce6f237ca6f31fa8674d228e6b"
+
+
+def test_the_v2_2_axes_and_record_contracts_are_byte_unchanged():
+    axes = json.loads((ROOT / ccs.V2_2.axes_schema).read_text(encoding="utf-8"))
+    assert axes["properties"]["evidence"]["maxItems"] == 12
+    assert axes["properties"]["evidence"]["items"]["properties"]["quote"][
+        "maxLength"] == 1200
+    record = json.loads((ROOT / ccs.V2_2.record_schema).read_text(encoding="utf-8"))
+    assert record["properties"]["record_contract"]["const"] == \
+        "universe_classifier_record@0.2.0"
+
+
+def test_v2_3_reuses_these_very_contracts():
+    """V2.3 is a prompt successor; it points at V2.2's own schema files."""
+    assert ccs.V2_3.axes_schema == ccs.V2_2.axes_schema
+    assert ccs.V2_3.record_schema == ccs.V2_2.record_schema
+    assert ccs.V2_3.prompt_path != ccs.V2_2.prompt_path
+
+
+def test_the_v2_2_prompt_lacks_the_v2_3_discipline():
+    """Proof the discipline is genuinely new rather than already present."""
+    flat = " ".join(PROMPT.split())
+    for token in ("A quote is a copy operation, not a writing task.",
+                  "Evidence is a sparse support set",
+                  "The only legal `evidence.axis` values",
+                  "Never put an output JSON field name in `evidence.axis`"):
+        assert token not in flat, token

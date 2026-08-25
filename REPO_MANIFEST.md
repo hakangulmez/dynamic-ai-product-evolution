@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **935**
+Total tracked/scaffold files listed: **943**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -330,6 +330,7 @@ Total tracked/scaffold files listed: **935**
 - `prompts/discovery/universe_full_classification.md`
 - `prompts/discovery/universe_full_classification.v2_1.md`
 - `prompts/discovery/universe_full_classification.v2_2.md`
+- `prompts/discovery/universe_full_classification.v2_3.md`
 - `prompts/discovery/universe_high_recall_screen.md`
 - `prompts/discovery/universe_high_recall_screen.v2.md`
 - `prompts/discovery/universe_high_recall_screen.v3.md`
@@ -515,6 +516,12 @@ Total tracked/scaffold files listed: **935**
 - `schemas/universe_classifier_continuation_manifest.v2.schema.json`
 - `schemas/universe_classifier_manifest.v2.schema.json`
 - `schemas/universe_classifier_record.v2.schema.json`
+- `schemas/universe_classifier_authorization.v3.schema.json`
+- `schemas/universe_classifier_calibration_authorization.v3.schema.json`
+- `schemas/universe_classifier_calibration_manifest.v3.schema.json`
+- `schemas/universe_classifier_continuation_authorization.v3.schema.json`
+- `schemas/universe_classifier_continuation_manifest.v3.schema.json`
+- `schemas/universe_classifier_manifest.v3.schema.json`
 - `schemas/universe_classifier_calibration_authorization.schema.json`
 - `schemas/universe_classifier_calibration_manifest.schema.json`
 - `schemas/universe_classifier_calibration_review.schema.json`
@@ -923,6 +930,7 @@ Total tracked/scaffold files listed: **935**
 - `tests/universe/test_classifier_calibration_selection.py`
 - `tests/universe/test_classifier_contract_set.py`
 - `tests/universe/test_classifier_v2_2_prompt.py`
+- `tests/universe/test_classifier_v2_3_prompt.py`
 - `tests/universe/test_lineage_classifier_calibration.py`
 - `tests/universe/test_lineage_screen_live_v3.py`
 - `tests/universe/test_screen_repair_prompt.py`

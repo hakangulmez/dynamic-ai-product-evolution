@@ -73,7 +73,12 @@ from dynamic_ai_products.providers.vertex_gemini_screen_v6 import (
 )
 from dynamic_ai_products.provenance import WriteOnceError, write_bytes_once
 
-from .classifier_contract_set import V2_1, V2_2, ClassifierContractSet
+from .classifier_contract_set import (
+    V2_1,
+    V2_2,
+    V2_3,
+    ClassifierContractSet,
+)
 from .classifier_tier_engine import derive_tier, load_tier_rules
 from .classifier_candidate_cohort import (
     COHORT_MANIFEST_FILENAME,
@@ -125,8 +130,10 @@ __all__ = [
     "model_called_provenance",
     "BASE_ROUTE",
     "BASE_ROUTE_V2_2",
+    "BASE_ROUTE_V2_3",
     "ClassifierRoute",
     "require_classifier_run",
+    "require_completed_run",
     "run_lineage_classifier",
     "validate_axes_output",
 ]
@@ -199,6 +206,21 @@ BASE_ROUTE_V2_2 = ClassifierRoute(
     authorization_schema="schemas/universe_classifier_authorization.v2.schema.json",
     archive_filename="universe_classifier_v2_2_raw_responses.jsonl",
     contracts=V2_2,
+)
+
+#: The ADR-129 successor. Same contracts as V2.2 in every respect the schema
+#: governs; a different prompt, and therefore its own grant, manifest and
+#: filenames.
+BASE_ROUTE_V2_3 = ClassifierRoute(
+    run_kind=RUN_KIND,
+    records_filename="universe_classifier_v2_3_records.jsonl",
+    manifest_filename="universe_classifier_v2_3_manifest.json",
+    manifest_contract="universe_classifier_manifest@0.3.0",
+    manifest_schema="schemas/universe_classifier_manifest.v3.schema.json",
+    record_order=RECORD_ORDER,
+    authorization_schema="schemas/universe_classifier_authorization.v3.schema.json",
+    archive_filename="universe_classifier_v2_3_raw_responses.jsonl",
+    contracts=V2_3,
 )
 
 #: The closed provider reasons a bounded provider-unresolved row may carry,
@@ -594,33 +616,59 @@ def validate_axes_output(raw: str, packet: dict, validator: Draft202012Validator
     return parsed
 
 
-def require_classifier_run(run_dir: str | Path) -> Path:
-    """Refuse any classifier run that is not completed and self-consistent."""
-    directory = Path(run_dir)
+def require_completed_run(directory: Path, route: ClassifierRoute, *,
+                          what: str) -> dict:
+    """Load and verify one completed run of exactly one route.
+
+    Every classifier loader asks the same four questions — is there a failure
+    receipt, is this route's manifest present, does it declare this route's
+    contract, and does every output still hash to its manifest entry — and
+    differs only in which route's names it asks them about. Asking them once,
+    against a route, is what keeps a V2.2 or V2.3 run from being read as a V2.1
+    one: the manifest filename and the contract id both have to match, so a
+    later version's run is refused on its filename before its contract is even
+    read.
+    """
     if (directory / FAILURE_RECEIPT_FILENAME).exists():
         raise ScreenInputError(
-            f"Classifier run {directory} holds a failure receipt; it is "
+            f"{what} {directory} holds a failure receipt; it is "
             "non-authoritative and may not be consumed."
         )
-    manifest_path = directory / CLASSIFIER_MANIFEST_FILENAME
+    manifest_path = directory / route.manifest_filename
     if not manifest_path.is_file():
-        raise ScreenInputError(f"Directory {directory} holds no classifier manifest.")
-    manifest = json.loads(_decode_utf8(manifest_path.read_bytes(),
-                                       CLASSIFIER_MANIFEST_FILENAME))
-    if manifest.get("manifest_contract") != MANIFEST_CONTRACT:
         raise ScreenInputError(
-            f"Classifier run {directory} declares "
+            f"Directory {directory} holds no {route.manifest_filename}; this "
+            f"loader consumes {route.contracts.version_id} runs only."
+        )
+    manifest = json.loads(_decode_utf8(manifest_path.read_bytes(),
+                                       route.manifest_filename))
+    if manifest.get("manifest_contract") != route.manifest_contract:
+        raise ScreenInputError(
+            f"{what} {directory} declares "
             f"{manifest.get('manifest_contract')!r}; this loader consumes "
-            f"{MANIFEST_CONTRACT!r} only."
+            f"{route.manifest_contract!r} only."
         )
     for filename, recorded in manifest["output_hashes"].items():
         target = directory / filename
         if not target.is_file() or _sha256(target.read_bytes()) != recorded:
             raise ScreenInputError(
-                f"Classifier output {filename} is missing or no longer hashes "
+                f"{what} output {filename} is missing or no longer hashes "
                 "to its manifest entry."
             )
-    return manifest_path
+    return manifest
+
+
+def require_classifier_run(run_dir: str | Path, *,
+                           route: ClassifierRoute | None = None) -> Path:
+    """Refuse any classifier run that is not completed and self-consistent.
+
+    ``route`` defaults to the V2.1 base route, so existing callers are
+    unchanged; pass a later route to consume that version's run instead.
+    """
+    directory = Path(run_dir)
+    route = route or BASE_ROUTE
+    require_completed_run(directory, route, what="Classifier run")
+    return directory / route.manifest_filename
 
 
 # --- preflight and run ----------------------------------------------------------------
@@ -902,6 +950,7 @@ def run_lineage_classifier(
     output_dir: str | Path, run_id: str, clock: Callable[[], datetime],
     dry_run: bool = False, client_factory: Any = None,
     sleep: Callable[[float], None] | None = None,
+    route: ClassifierRoute = BASE_ROUTE,
 ) -> ScreenRunResult:
     """Classify every cohort row under one governed grant."""
     root = Path(repo_root)
@@ -914,7 +963,7 @@ def run_lineage_classifier(
         cohort_manifest_path=Path(cohort_manifest_path),
         overlay_manifest_path=Path(overlay_manifest_path),
         release_manifest_path=Path(release_manifest_path),
-        packet_manifest_path=packet_manifest_path, clock=clock)
+        packet_manifest_path=packet_manifest_path, clock=clock, route=route)
     if dry_run:
         for row, packet, admission in pre.plan:
             render_classifier_prompt(pre.prompt_text, packet, admission)

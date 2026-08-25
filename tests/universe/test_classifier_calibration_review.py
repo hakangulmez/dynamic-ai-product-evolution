@@ -227,7 +227,7 @@ def test_a_selection_the_run_did_not_classify_is_refused(calibrated, selection,
 
 def test_a_run_without_a_manifest_is_refused(calibrated, selection, tmp_path):
     (calibrated.run_dir / lcal.CALIBRATION_MANIFEST_FILENAME).unlink()
-    with pytest.raises(ls.ScreenInputError, match="holds no classifier calibration"):
+    with pytest.raises(ls.ScreenInputError, match="holds no universe_classifier_calibration_manifest.json"):
         _build(calibrated, selection, tmp_path, name="nomanifest")
 
 
@@ -370,3 +370,182 @@ def test_a_dry_run_against_a_taken_id_still_reports(calibrated, selection,
     reported = json.loads(captured.out)
     assert reported["dry_run"] is True and reported["output_path"] is None
     assert reported["counts"]["nominated_rows"] == len(selection.rows)
+
+
+# --- ADR-129 correction: the review reads every calibration version ----------------
+
+from dynamic_ai_products import lineage_classifier_v2_1 as lcl  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from test_lineage_classifier_calibration import (  # noqa: E402
+    _v2_2_grant,
+    _v2_3_grant,
+)
+
+CALIBRATION_ROUTES = [
+    ("v2_1", lcal.CALIBRATION_ROUTE, "_grant"),
+    ("v2_2", lcal.CALIBRATION_ROUTE_V2_2, "_v2_2_grant"),
+    ("v2_3", lcal.CALIBRATION_ROUTE_V2_3, "_v2_3_grant"),
+]
+
+
+def _completed(cohort, selection, tmp_path, route, grant_maker, name):
+    from test_lineage_classifier_calibration import _grant, _run
+    makers = {"_grant": _grant, "_v2_2_grant": _v2_2_grant,
+              "_v2_3_grant": _v2_3_grant}
+    grant = makers[grant_maker](cohort, selection, tmp_path, name=f"g-{name}")
+    kwargs = {} if route is lcal.CALIBRATION_ROUTE else {"route": route}
+    run = _run(cohort, selection, grant, tmp_path, run_id=f"calib-{name}", **kwargs)
+    assert run.result.status == "completed", run.result.receipt
+    return run.result
+
+
+@pytest.mark.parametrize("version,route,grant_maker", CALIBRATION_ROUTES,
+                         ids=[v for v, _, _ in CALIBRATION_ROUTES])
+def test_each_version_is_accepted_only_by_its_matching_loader(
+        cohort, selection, tmp_path, version, route, grant_maker):
+    result = _completed(cohort, selection, tmp_path, route, grant_maker, version)
+    assert lcal.require_classifier_calibration_run(result.run_dir, route=route) == \
+        result.run_dir / route.manifest_filename
+    for other_version, other_route, _ in CALIBRATION_ROUTES:
+        if other_route is route:
+            continue
+        with pytest.raises(ls.ScreenInputError,
+                           match=f"holds no {other_route.manifest_filename}"):
+            lcal.require_classifier_calibration_run(result.run_dir,
+                                                    route=other_route)
+    # and the base/continuation loaders refuse it at every version
+    with pytest.raises(ls.ScreenInputError):
+        lcl.require_classifier_run(result.run_dir)
+
+
+def test_the_default_loader_route_is_still_v2_1(cohort, selection, tmp_path):
+    """Existing callers pass no route and must keep working unchanged."""
+    result = _completed(cohort, selection, tmp_path, lcal.CALIBRATION_ROUTE,
+                        "_grant", "default")
+    assert lcal.require_classifier_calibration_run(result.run_dir) == \
+        result.run_dir / lcal.CALIBRATION_ROUTE.manifest_filename
+
+
+@pytest.mark.parametrize("version,route,grant_maker", CALIBRATION_ROUTES[1:],
+                         ids=["v2_2", "v2_3"])
+def test_a_later_version_run_produces_a_valid_review(
+        cohort, selection, tmp_path, version, route, grant_maker):
+    from jsonschema import Draft202012Validator, FormatChecker
+    result = _completed(cohort, selection, tmp_path, route, grant_maker,
+                        f"rev-{version}")
+    review = ccr.build_calibration_review(
+        repo_root=ROOT, calibration_run_dir=result.run_dir,
+        selection_path=selection.path, selection_sha256=selection.sha256,
+        output_path=tmp_path / f"review-{version}" / ccr.REVIEW_FILENAME,
+        review_id=f"review-{version}", clock=CLOCK, calibration_route=route)
+    Draft202012Validator(REVIEW_SCHEMA,
+                         format_checker=FormatChecker()).validate(review)
+    assert review["counts"]["nominated_rows"] == len(selection.rows)
+    assert len(review["nominated_rows"]) == len(selection.rows)
+    assert review["no_model_call"] is True and review["promotable"] is False
+    assert review["gate_state"] == "pending_human_reading"
+    assert review["reviewer_id"] == "hakan_zeki_gulmez"
+    manifest = json.loads(
+        (result.run_dir / route.manifest_filename).read_text(encoding="utf-8"))
+    from hashlib import sha256
+    assert review["calibration_manifest_sha256"] == sha256(
+        (result.run_dir / route.manifest_filename).read_bytes()).hexdigest()
+    assert review["prompt_template_sha256"] == manifest["prompt_template_sha256"]
+    assert review["calibration_run_id"] == manifest["run_id"]
+    assert review["tier_rules_sha256"] == manifest["tier_rules_sha256"]
+
+
+def test_a_review_built_with_the_wrong_route_is_refused(cohort, selection,
+                                                        tmp_path):
+    result = _completed(cohort, selection, tmp_path,
+                        lcal.CALIBRATION_ROUTE_V2_3, "_v2_3_grant", "wrong")
+    with pytest.raises(ls.ScreenInputError, match="holds no "):
+        ccr.build_calibration_review(
+            repo_root=ROOT, calibration_run_dir=result.run_dir,
+            selection_path=selection.path, selection_sha256=selection.sha256,
+            output_path=tmp_path / "never" / ccr.REVIEW_FILENAME,
+            review_id="wrong", clock=CLOCK,
+            calibration_route=lcal.CALIBRATION_ROUTE_V2_2)
+
+
+def test_the_v2_3_review_verifies_the_route_specific_records_digest(
+        cohort, selection, tmp_path):
+    result = _completed(cohort, selection, tmp_path,
+                        lcal.CALIBRATION_ROUTE_V2_3, "_v2_3_grant", "drift")
+    records = result.run_dir / lcal.CALIBRATION_ROUTE_V2_3.records_filename
+    assert records.is_file()
+    records.write_bytes(records.read_bytes() + b"\n")
+    with pytest.raises(ls.ScreenInputError, match="missing or no longer hashes"):
+        ccr.build_calibration_review(
+            repo_root=ROOT, calibration_run_dir=result.run_dir,
+            selection_path=selection.path, selection_sha256=selection.sha256,
+            output_path=tmp_path / "never2" / ccr.REVIEW_FILENAME,
+            review_id="drift", clock=CLOCK,
+            calibration_route=lcal.CALIBRATION_ROUTE_V2_3)
+
+
+# --- the two new review CLI modes --------------------------------------------------
+
+REVIEW_MODES = ["build-classifier-calibration-review",
+                "build-classifier-calibration-review-v2-2",
+                "build-classifier-calibration-review-v2-3"]
+REVIEW_REQUIRED_FLAGS = ["--calibration-run-dir", "--calibration-selection",
+                         "--calibration-selection-sha256", "--output-dir",
+                         "--run-id"]
+
+
+def _review_argv(mode):
+    return ["--mode", mode, "--calibration-run-dir", "run",
+            "--calibration-selection", "s.json",
+            "--calibration-selection-sha256", "0" * 64,
+            "--output-dir", "out", "--run-id", "cli-gating-fixture"]
+
+
+@pytest.mark.parametrize("mode", REVIEW_MODES)
+def test_each_review_mode_accepts_its_complete_argv(mode):
+    cli = _cli_module()
+    args = cli.build_parser().parse_args(_review_argv(mode))
+    assert args.mode == mode
+    assert cli._reject_cross_mode_flags(args) is None
+
+
+@pytest.mark.parametrize("mode", REVIEW_MODES)
+@pytest.mark.parametrize("flag", REVIEW_REQUIRED_FLAGS)
+def test_each_review_mode_requires_every_declared_flag(mode, flag, capsys):
+    cli = _cli_module()
+    parser = cli.build_parser()
+    enforced_by_argparse = {option for action in parser._actions if action.required
+                            for option in action.option_strings}
+    trimmed = _review_argv(mode)
+    index = trimmed.index(flag)
+    del trimmed[index:index + 2]
+    if flag in enforced_by_argparse:
+        with pytest.raises(SystemExit) as excinfo:
+            parser.parse_args(trimmed)
+        assert excinfo.value.code == 2
+    else:
+        verdict = cli._reject_cross_mode_flags(parser.parse_args(trimmed))
+        assert verdict and "requires" in verdict and flag in verdict
+
+
+@pytest.mark.parametrize("mode", REVIEW_MODES)
+@pytest.mark.parametrize("flag,value", [
+    ("--cohort-manifest", "c.json"), ("--packet-manifest", "p.json"),
+    ("--governance-root", "gov"), ("--selection-artifact", "sel.json"),
+])
+def test_each_review_mode_rejects_an_incompatible_flag(mode, flag, value):
+    cli = _cli_module()
+    verdict = cli._reject_cross_mode_flags(
+        cli.build_parser().parse_args(_review_argv(mode) + [flag, value]))
+    assert verdict and flag in verdict
+
+
+def test_the_cli_declares_all_three_review_modes():
+    cli = _cli_module()
+    choices = next(a.choices for a in cli.build_parser()._actions
+                   if a.dest == "mode")
+    for mode in REVIEW_MODES:
+        assert mode in choices, mode
+    assert "Fifty mutually exclusive modes" in cli.__doc__

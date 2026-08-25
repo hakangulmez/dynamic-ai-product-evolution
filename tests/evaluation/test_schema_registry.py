@@ -174,6 +174,20 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-129 (classifier V2.3, a prompt-discipline successor):
+    # manifest_version 0.67.0 -> 0.68.0, 158 -> 164 entries, registering the six
+    # V2.3 authorization and manifest contracts. Nothing else moved: the axes
+    # and record contracts stay at 0.2.0, taxonomy_version stays
+    # universe_classifier_axes_v2_2, the tier rules and economics are untouched,
+    # and the evidence and quote ceilings stay 12 and 1200. The V2.2 calibration
+    # stopped with three of four rows rejected and a wider bound would have
+    # rescued one; the rest wrote quotes instead of copying them and used output
+    # field names as evidence.axis labels, so the fix is instruction, not
+    # contract. The six new contracts exist only because prompt_template_path is
+    # a const. Every 0.1.0 and 0.2.0 contract stays byte-unchanged and none of
+    # the six joins EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS
+    # below.
+    # Before it,
     # Rebaselined by ADR-128 (the V2.2 classifier contract set):
     # manifest_version 0.66.0 -> 0.67.0, 150 -> 158 entries, registering the
     # 0.2.0 axes and record contracts and the six V2.2 authorization and
@@ -509,7 +523,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "af3ba4ba29e90afe9fb79feb902e0ff9f11fb88d31485fd7978e874847e8b9b8"
+    "0f8e78ef31315fd8944473ed8ee82ad8515399519e54e91831362e3a3915e806"
 )
 
 

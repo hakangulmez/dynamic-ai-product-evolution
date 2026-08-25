@@ -34,10 +34,10 @@ from typing import Callable
 
 from .classifier_calibration_selection import require_calibration_selection
 from .lineage_classifier_calibration import (
-    CALIBRATION_MANIFEST_FILENAME,
-    CALIBRATION_RECORDS_FILENAME,
+    CALIBRATION_ROUTE,
     require_classifier_calibration_run,
 )
+from .lineage_classifier_v2_1 import ClassifierRoute
 from .provenance import WriteOnceError, write_bytes_once
 from .universe.lineage_screen import (
     ScreenInputError,
@@ -81,13 +81,21 @@ def build_calibration_review(
     selection_path: str | Path, selection_sha256: str,
     output_path: str | Path, review_id: str,
     clock: Callable[[], datetime], dry_run: bool = False,
+    calibration_route: ClassifierRoute = CALIBRATION_ROUTE,
 ) -> dict:
-    """Derive one review artifact from a completed calibration. No model call."""
+    """Derive one review artifact from a completed calibration. No model call.
+
+    ``calibration_route`` names which calibration version this run is. The
+    review contract itself is version-neutral — it binds the source manifest
+    and prompt digests rather than naming a prompt — so the same builder reads
+    a V2.1, V2.2 or V2.3 run; only the filenames it opens differ.
+    """
     root = Path(repo_root)
     run_dir = Path(calibration_run_dir)
-    manifest_path = require_classifier_calibration_run(run_dir)
+    manifest_path = require_classifier_calibration_run(run_dir,
+                                                       route=calibration_route)
     manifest = json.loads(_decode_utf8(manifest_path.read_bytes(),
-                                       CALIBRATION_MANIFEST_FILENAME))
+                                       calibration_route.manifest_filename))
     selection = require_calibration_selection(selection_path,
                                               expected_sha256=selection_sha256)
     bound = manifest["calibration_selection"]
@@ -99,13 +107,15 @@ def build_calibration_review(
     if bound["selection_id"] != selection["selection_id"]:
         raise ScreenInputError("The selection ids disagree.")
 
-    records_raw = (run_dir / CALIBRATION_RECORDS_FILENAME).read_bytes()
-    if _sha256(records_raw) != manifest["output_hashes"][CALIBRATION_RECORDS_FILENAME]:
+    records_name = calibration_route.records_filename
+    records_raw = (run_dir / records_name).read_bytes()
+    if _sha256(records_raw) != manifest["output_hashes"][records_name]:
         raise ScreenInputError(
-            "The calibration records no longer hash to the manifest entry."
+            f"The calibration records {records_name} no longer hash to the "
+            "manifest entry."
         )
     records = [json.loads(x) for x
-               in _decode_utf8(records_raw, CALIBRATION_RECORDS_FILENAME).splitlines()
+               in _decode_utf8(records_raw, records_name).splitlines()
                if x.strip()]
     stratum_by_key = {(r["cik"], r["accession"]): r["stratum"]
                       for r in selection["rows"]}

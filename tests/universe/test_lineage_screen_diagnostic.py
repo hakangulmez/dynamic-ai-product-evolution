@@ -1037,8 +1037,8 @@ def test_registry_registers_the_three_diagnostic_schemas():
     registry = json.loads(
         (ROOT / "schemas" / "schema_version_manifest.json")
         .read_text(encoding="utf-8"))
-    assert registry["manifest_version"] == "0.67.0"
-    assert len(registry["schemas"]) == 158
+    assert registry["manifest_version"] == "0.68.0"
+    assert len(registry["schemas"]) == 164
     for key in ("universe_screen_diagnostic_record",
                 "universe_screen_diagnostic_manifest",
                 "universe_screen_diagnostic_authorization"):

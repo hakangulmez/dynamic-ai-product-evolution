@@ -374,7 +374,7 @@ def _script(cohort, **overrides):
 
 
 def _run(cohort, grant, tmp_path, *, script=None, run_id="classifier-run",
-         dry_run=False, output_dir=None):
+         dry_run=False, output_dir=None, route=None):
     events: list = []
     factory = _EmptyBodyFactory(
         script if script is not None else _script(cohort), events)
@@ -387,7 +387,8 @@ def _run(cohort, grant, tmp_path, *, script=None, run_id="classifier-run",
         authorization_sha256=grant.sha256,
         output_dir=output_dir or (tmp_path / "classifier-out"), run_id=run_id,
         clock=CLOCK, dry_run=dry_run, client_factory=factory,
-        sleep=lambda s: events.append(("wait", s)))
+        sleep=lambda s: events.append(("wait", s)),
+        **({"route": route} if route is not None else {}))
     return SimpleNamespace(result=result, factory=factory, events=events)
 
 
@@ -934,4 +935,62 @@ def test_the_cli_declares_both_modes():
     assert "classify-universe-cohort" in choices
     assert "classify-universe-cohort-continuation" in choices
     # ADR-127 added three calibration modes; ADR-128 added three V2.2 modes.
-    assert "Forty-five mutually exclusive modes" in cli.__doc__
+    assert "Fifty mutually exclusive modes" in cli.__doc__
+
+
+# --- ADR-129: the base route at V2.3 ----------------------------------------------
+
+
+def _v2_3_base_grant(cohort, tmp_path, *, name="base-gov-v2-3"):
+    """The V2.1 base grant re-pointed at the V2.3 prompt and 0.2.0 contracts."""
+    from dynamic_ai_products.classifier_contract_set import V2_3
+    base = _grant(cohort, tmp_path, name=name).authorization
+    payload = dict(base)
+    payload.update({
+        "authorization_contract": "universe_classifier_authorization@0.3.0",
+        "output_contract": V2_3.record_contract,
+        "taxonomy_version": V2_3.taxonomy_version,
+        "prompt_template_path": V2_3.prompt_path,
+        "prompt_template_sha256":
+            sha256((ROOT / V2_3.prompt_path).read_bytes()).hexdigest(),
+    })
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    ((tmp_path / name) / "classifier_authorization.json").write_bytes(raw)
+    return SimpleNamespace(root=tmp_path / name,
+                           reference="classifier_authorization.json",
+                           sha256=_sha(raw), authorization=payload)
+
+
+def test_the_v2_3_base_route_completes_end_to_end(cohort, tmp_path):
+    grant = _v2_3_base_grant(cohort, tmp_path)
+    run = _run(cohort, grant, tmp_path, run_id="base-v2-3",
+               route=lcl.BASE_ROUTE_V2_3)
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == "universe_classifier_manifest@0.3.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.2.0"
+    assert manifest["taxonomy_version"] == "universe_classifier_axes_v2_2"
+    assert manifest["prompt_template_path"].endswith("v2_3.md")
+    assert manifest["tier_rules_version"] == "universe_classifier_tier_rules_v2_1"
+    records = [json.loads(x) for x in
+               (run.result.run_dir / lcl.BASE_ROUTE_V2_3.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(records) == len(cohort.rows)
+    assert all(r["record_contract"] == "universe_classifier_record@0.2.0"
+               for r in records)
+
+
+def test_the_v2_1_base_loader_refuses_a_v2_3_run(cohort, tmp_path):
+    grant = _v2_3_base_grant(cohort, tmp_path, name="base-gov-iso")
+    run = _run(cohort, grant, tmp_path, run_id="base-v2-3-iso",
+               route=lcl.BASE_ROUTE_V2_3)
+    with pytest.raises(ls.ScreenInputError, match="holds no universe_classifier_manifest.json"):
+        lcl.require_classifier_run(run.result.run_dir)
+
+
+def test_the_v2_3_base_route_refuses_a_v2_1_grant(cohort, tmp_path):
+    grant = _grant(cohort, tmp_path, name="base-gov-old")
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, grant, tmp_path, run_id="base-cross",
+             output_dir=tmp_path / "never", route=lcl.BASE_ROUTE_V2_3)

@@ -1,0 +1,307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_continuation_authorization.v3.schema.json",
+  "title": "Universe classifier continuation authorization v0.3.0",
+  "description": "ADR-129. Successor bound to the V2.3 prompt. This is a prompt-discipline successor, not a schema change: the axes and record contracts stay at 0.2.0, taxonomy_version stays universe_classifier_axes_v2_2, the tier rules and economics are untouched, and the evidence and quote ceilings stay 12 and 1200. Only prompt_template_path moves, and it is a const, so the authorization and manifest contracts must move with it. Successor bound to the V2.2 prompt and the 0.2.0 axes and record contracts. The tier rules and the economic axes vocabulary are unchanged; taxonomy_version moves to universe_classifier_axes_v2_2 to denote the axes-CONTRACT identity, not any change in economic taxonomy. ADR-126. Continues one failed classifier run from its own contiguous, hash-bound archived prefix, under the same lineage discipline the screen successors use: the prefix is revalidated offline through the unchanged validator rather than trusted, the new archive opens with the source archive byte for byte, and the failed parent stays immutable and non-authoritative.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorization_contract",
+    "authorization_id",
+    "authorized_by",
+    "budget_max_estimated_cost_micros",
+    "budget_max_external_requests",
+    "budget_max_input_tokens",
+    "budget_max_output_tokens",
+    "budget_max_wall_clock_seconds",
+    "cohort_id",
+    "cohort_manifest_sha256",
+    "count_attempt_cap",
+    "count_attempts_per_row",
+    "deployment_environment_id",
+    "effective_at",
+    "endpoint_allowlist",
+    "expires_at",
+    "external_requests_per_row",
+    "generate_attempts_per_row",
+    "logical_row_cap",
+    "max_model_output_truncated",
+    "max_model_output_unusable",
+    "max_provider_unresolved",
+    "model_called_row_cap",
+    "model_route",
+    "output_contract",
+    "overlay_id",
+    "overlay_manifest_sha256",
+    "packet_manifest_sha256",
+    "promotable",
+    "prompt_template_path",
+    "prompt_template_sha256",
+    "provider_attempt_cap",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "rate_limit_policy_version",
+    "release_id",
+    "release_manifest_sha256",
+    "retry_policy_version",
+    "reused_prefix_row_cap",
+    "rollout_state",
+    "run_kind",
+    "screen_adapter_enablement_reference",
+    "screen_adapter_enablement_sha256",
+    "screen_count_retry_policy_version",
+    "screen_generate_retry_policy_version",
+    "source_authorization_reference",
+    "source_authorization_sha256",
+    "source_kind",
+    "source_raw_responses_sha256",
+    "source_receipt_sha256",
+    "source_run_id",
+    "source_run_path",
+    "taxonomy_version",
+    "tier_rules_sha256",
+    "tier_rules_version",
+    "vertex_location",
+    "vertex_project"
+  ],
+  "properties": {
+    "authorization_contract": {
+      "const": "universe_classifier_continuation_authorization@0.3.0"
+    },
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorized_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "budget_max_estimated_cost_micros": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_external_requests": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_input_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_output_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_wall_clock_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "cohort_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cohort_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "count_attempt_cap": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "count_attempts_per_row": {
+      "const": 3
+    },
+    "deployment_environment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "effective_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "endpoint_allowlist": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "external_requests_per_row": {
+      "const": 8
+    },
+    "generate_attempts_per_row": {
+      "const": 5
+    },
+    "logical_row_cap": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "max_model_output_truncated": {
+      "description": "ADR-122 mechanism carried forward: bounded, visible, authorization-controlled. The value is a governance choice made per grant, not a constant.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "max_model_output_unusable": {
+      "description": "The evidence-validation tolerance. ADR-126 fixes no number: every grant must state it explicitly.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "max_provider_unresolved": {
+      "description": "ADR-121 mechanism carried forward, per-grant.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "model_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model_label"
+      ],
+      "properties": {
+        "provider": {
+          "const": "google_vertex_ai"
+        },
+        "model_label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "output_contract": {
+      "const": "universe_classifier_record@0.2.0"
+    },
+    "overlay_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "overlay_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "promotable": {
+      "const": false
+    },
+    "prompt_template_path": {
+      "const": "prompts/discovery/universe_full_classification.v2_3.md"
+    },
+    "prompt_template_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provider_attempt_cap": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "provider_client_contract_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_client_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rate_limit_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "release_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "release_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "retry_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rollout_state": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_kind": {
+      "const": "classifier_v2_1_continuation"
+    },
+    "screen_adapter_enablement_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "screen_adapter_enablement_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_count_retry_policy_version": {
+      "const": "universe_screen_count_retry_policy_v1"
+    },
+    "screen_generate_retry_policy_version": {
+      "const": "universe_screen_generate_retry_policy_v1"
+    },
+    "taxonomy_version": {
+      "description": "The axes-contract identity this run used. It denotes the contract version, not a change in the economic axes vocabulary, which is unchanged from V2.1.",
+      "const": "universe_classifier_axes_v2_2"
+    },
+    "tier_rules_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "tier_rules_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vertex_location": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vertex_project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_kind": {
+      "const": "failed_classifier_run"
+    },
+    "source_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_run_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_receipt_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_raw_responses_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_authorization_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_authorization_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "reused_prefix_row_cap": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "model_called_row_cap": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}
