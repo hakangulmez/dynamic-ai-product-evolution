@@ -88,6 +88,7 @@ from .classifier_contract_set import (
     V2_3,
     V2_4,
     V2_5,
+    V2_6,
     ClassifierContractSet,
 )
 from .classifier_tier_engine import derive_tier, load_tier_rules
@@ -144,6 +145,7 @@ __all__ = [
     "BASE_ROUTE_V2_3",
     "BASE_ROUTE_V2_4",
     "BASE_ROUTE_V2_5",
+    "BASE_ROUTE_V2_6",
     "ClassifierRoute",
     "require_classifier_run",
     "require_completed_run",
@@ -272,6 +274,24 @@ BASE_ROUTE_V2_5 = ClassifierRoute(
     authorization_schema="schemas/universe_classifier_authorization.v5.schema.json",
     archive_filename="universe_classifier_v2_5_raw_responses.jsonl",
     contracts=V2_5,
+)
+
+#: ADR-133. The V2.6 base route. Its contract set is V2_5's in everything the
+#: model touches; what differs is the manifest and authorization contracts,
+#: whose ``request_accounting`` admits a null ``tokens_out_reported`` after a
+#: retry. The filenames still separate the two versions' archives and manifests,
+#: which is what keeps a V2.5 run unreadable here and a V2.6 run unreadable
+#: there.
+BASE_ROUTE_V2_6 = ClassifierRoute(
+    run_kind=RUN_KIND,
+    records_filename="universe_classifier_v2_6_records.jsonl",
+    manifest_filename="universe_classifier_v2_6_manifest.json",
+    manifest_contract="universe_classifier_manifest@0.6.0",
+    manifest_schema="schemas/universe_classifier_manifest.v6.schema.json",
+    record_order=RECORD_ORDER,
+    authorization_schema="schemas/universe_classifier_authorization.v6.schema.json",
+    archive_filename="universe_classifier_v2_6_raw_responses.jsonl",
+    contracts=V2_6,
 )
 
 #: The closed provider reasons a bounded provider-unresolved row may carry,

@@ -39,11 +39,13 @@ ROUTE_PAIRS = [
 #: assertions below run over all of them rather than a V2.1/V2.2 pair.
 ALL_ROUTES = [
     lcl.BASE_ROUTE, lcl.BASE_ROUTE_V2_2, lcl.BASE_ROUTE_V2_3, lcl.BASE_ROUTE_V2_4,
-    lcl.BASE_ROUTE_V2_5,
+    lcl.BASE_ROUTE_V2_5, lcl.BASE_ROUTE_V2_6,
     lcc.CONTINUATION_ROUTE, lcc.CONTINUATION_ROUTE_V2_2, lcc.CONTINUATION_ROUTE_V2_3,
     lcc.CONTINUATION_ROUTE_V2_4, lcc.CONTINUATION_ROUTE_V2_5,
+    lcc.CONTINUATION_ROUTE_V2_6,
     lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2, lcal.CALIBRATION_ROUTE_V2_3,
     lcal.CALIBRATION_ROUTE_V2_4, lcal.CALIBRATION_ROUTE_V2_5,
+    lcal.CALIBRATION_ROUTE_V2_6,
 ]
 ROUTE_TRIPLES = [
     (lcl.BASE_ROUTE, lcl.BASE_ROUTE_V2_2, lcl.BASE_ROUTE_V2_3),
@@ -68,7 +70,8 @@ def _schema(path):
 
 
 def test_both_contract_sets_resolve_to_committed_files():
-    for cset in (ccs.V2_1, ccs.V2_2, ccs.V2_3, ccs.V2_4, ccs.V2_5):
+    for cset in (ccs.V2_1, ccs.V2_2, ccs.V2_3, ccs.V2_4, ccs.V2_5,
+                 ccs.V2_6):
         for attr in ("prompt_path", "axes_schema", "record_schema"):
             assert (ROOT / getattr(cset, attr)).is_file(), (cset.version_id, attr)
 
@@ -123,7 +126,8 @@ def test_the_economic_vocabulary_is_unchanged():
 
 
 def test_neither_version_lets_the_model_emit_a_tier():
-    for cset in (ccs.V2_1, ccs.V2_2, ccs.V2_3, ccs.V2_4, ccs.V2_5):
+    for cset in (ccs.V2_1, ccs.V2_2, ccs.V2_3, ccs.V2_4, ccs.V2_5,
+                 ccs.V2_6):
         props = _schema(cset.axes_schema)["properties"]
         assert not [k for k in props if "tier" in k], cset.version_id
 
@@ -261,17 +265,17 @@ def test_every_output_filename_is_unique_across_every_route():
     assert len(set(names)) == len(set(names))
     records = [r.records_filename for r in ALL_ROUTES]
     manifests = [r.manifest_filename for r in ALL_ROUTES]
-    assert len(set(records)) == len(records) == len(ALL_ROUTES) == 15
-    assert len(set(manifests)) == len(manifests) == 15
+    assert len(set(records)) == len(records) == len(ALL_ROUTES) == 18
+    assert len(set(manifests)) == len(manifests) == 18
     archives = {r.archive_filename for r in ALL_ROUTES}
-    assert len(archives) == 5, "one archive filename per contract version"
+    assert len(archives) == 6, "one archive filename per contract version"
 
 
 def test_every_manifest_and_authorization_contract_is_unique():
     manifests = [r.manifest_contract for r in ALL_ROUTES]
     grants = [r.authorization_schema for r in ALL_ROUTES]
-    assert len(set(manifests)) == len(manifests) == 15
-    assert len(set(grants)) == len(grants) == 15
+    assert len(set(manifests)) == len(manifests) == 18
+    assert len(set(grants)) == len(grants) == 18
 
 
 @pytest.mark.parametrize("route", ALL_ROUTES,
@@ -329,14 +333,14 @@ def test_each_route_quad_is_mutually_isolated(v1, v2, v3, v4):
         "the route's kind is a role, not a prompt version"
 
 
-def test_every_output_filename_is_unique_across_all_fifteen_routes():
-    assert len(ALL_ROUTES) == 15
+def test_every_output_filename_is_unique_across_all_eighteen_routes():
+    assert len(ALL_ROUTES) == 18
     names = [r.records_filename for r in ALL_ROUTES]
     names += [r.manifest_filename for r in ALL_ROUTES]
     assert len(set(names)) == len(names)
 
 
-def test_every_contract_id_is_unique_across_all_twelve_routes():
+def test_every_contract_id_is_unique_across_all_eighteen_routes():
     ids = [r.manifest_contract for r in ALL_ROUTES]
     ids += [r.authorization_schema for r in ALL_ROUTES]
     assert len(set(ids)) == len(ids)

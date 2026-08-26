@@ -936,7 +936,7 @@ def test_the_cli_declares_both_modes():
     assert "classify-universe-cohort-continuation" in choices
     # ADR-127 added three calibration modes; ADR-128 three V2.2 modes;
     # ADR-129 three V2.3 modes and two review modes; ADR-130 four V2.4 modes.
-    assert "Fifty-eight mutually exclusive modes" in cli.__doc__
+    assert "Sixty-two mutually exclusive modes" in cli.__doc__
 
 
 # --- ADR-129: the base route at V2.3 ----------------------------------------------
@@ -1292,7 +1292,7 @@ def test_the_v2_5_cli_mode_reaches_the_v2_5_route():
     cli = _cli_module()
     choices = next(a.choices for a in cli.build_parser()._actions if a.dest == "mode")
     assert "classify-universe-cohort-v2-5" in choices
-    assert len(choices) == 58
+    assert len(choices) == 62
 
 
 # --- ADR-132 correction: archival verification needs the packet and nothing else ----
@@ -1400,3 +1400,116 @@ def test_v2_5_initial_validation_still_uses_the_span_index(cohort, tmp_path):
             json.dumps(malformed), packet, validator,
             lcl.BASE_ROUTE_V2_5.contracts.axes_contract, index)
     assert exc.value.reason_code == "axes_contract_violation"
+
+
+# --- ADR-133: the base route at V2.6 ------------------------------------------------
+
+
+def _v2_6_base_grant(cohort, tmp_path, *, name="base-gov-v2-6"):
+    from dynamic_ai_products.classifier_contract_set import V2_6
+    rules = _span_rules()
+    base = _grant(cohort, tmp_path, name=name).authorization
+    payload = dict(base)
+    payload.update({
+        "authorization_contract": "universe_classifier_authorization@0.6.0",
+        "output_contract": V2_6.record_contract,
+        "taxonomy_version": V2_6.taxonomy_version,
+        "prompt_template_path": V2_6.prompt_path,
+        "prompt_template_sha256":
+            sha256((ROOT / V2_6.prompt_path).read_bytes()).hexdigest(),
+        "span_index_version": rules.version,
+        "span_index_sha256": rules.sha256,
+    })
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    ((tmp_path / name) / "classifier_authorization.json").write_bytes(raw)
+    return SimpleNamespace(root=tmp_path / name,
+                           reference="classifier_authorization.json",
+                           sha256=_sha(raw), authorization=payload)
+
+
+def test_the_v2_6_base_route_completes_end_to_end(cohort, tmp_path):
+    grant = _v2_6_base_grant(cohort, tmp_path)
+    run = _run(cohort, grant, tmp_path, run_id="base-v2-6",
+               script=_span_script(cohort), route=lcl.BASE_ROUTE_V2_6)
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == "universe_classifier_manifest@0.6.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.4.0"
+    assert manifest["taxonomy_version"] == "universe_classifier_axes_v2_5"
+    assert manifest["span_index_version"] == "universe_classifier_span_index_v1"
+    assert isinstance(manifest["request_accounting"]["tokens_out_reported"], int)
+    records = [json.loads(x) for x in
+               (run.result.run_dir / lcl.BASE_ROUTE_V2_6.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(records) == len(cohort.rows)
+    assert all(r["record_contract"] == "universe_classifier_record@0.4.0"
+               for r in records)
+
+
+def test_a_v2_6_base_run_with_one_retry_reports_null(cohort, tmp_path):
+    grant = _v2_6_base_grant(cohort, tmp_path, name="base-gov-v2-6-retry")
+    flaky = cohort.rows[0]["cik"]
+    run = _run(cohort, grant, tmp_path, run_id="base-v2-6-retry",
+               script=_span_script(cohort, **{flaky: {"quota_failures": 1}}),
+               route=lcl.BASE_ROUTE_V2_6)
+    assert run.result.status == "completed", run.result.receipt
+    assert run.result.request_accounting["rows_generate_retried"] == 1
+    assert run.result.request_accounting["tokens_out_reported"] is None
+
+
+def test_the_v2_6_base_run_keeps_the_span_archival_checks(cohort, tmp_path):
+    grant = _v2_6_base_grant(cohort, tmp_path, name="base-gov-v2-6-span")
+    run = _run(cohort, grant, tmp_path, run_id="base-v2-6-span",
+               script=_span_script(cohort), route=lcl.BASE_ROUTE_V2_6)
+    records = [json.loads(x) for x in
+               (run.result.run_dir / lcl.BASE_ROUTE_V2_6.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    checked = 0
+    for record in records:
+        if record["record_kind"] != "classified":
+            continue
+        packet = cohort.release.packets[(record["cik"], record["accession"])]
+        for item in record["axes"]["evidence"]:
+            assert "span_ref" in item and "quote" not in item
+            assert _csi.verify_stored_span(item, packet)
+            checked += 1
+    assert checked
+
+
+@pytest.mark.parametrize("route", [
+    lcl.BASE_ROUTE, lcl.BASE_ROUTE_V2_2, lcl.BASE_ROUTE_V2_3, lcl.BASE_ROUTE_V2_4,
+    lcl.BASE_ROUTE_V2_5,
+], ids=["v2_1", "v2_2", "v2_3", "v2_4", "v2_5"])
+def test_every_earlier_base_loader_refuses_a_v2_6_run(cohort, tmp_path, route):
+    tag = route.contracts.version_id
+    grant = _v2_6_base_grant(cohort, tmp_path, name=f"base-gov-v2-6-iso-{tag}")
+    run = _run(cohort, grant, tmp_path, run_id=f"base-v2-6-iso-{tag}",
+               script=_span_script(cohort), route=lcl.BASE_ROUTE_V2_6)
+    with pytest.raises(ls.ScreenInputError, match="holds no "):
+        lcl.require_classifier_run(run.result.run_dir, route=route)
+
+
+def test_the_v2_6_base_loader_refuses_a_v2_5_run(cohort, tmp_path):
+    grant = _v2_5_base_grant(cohort, tmp_path, name="base-gov-v2-5-for-v2-6")
+    run = _run(cohort, grant, tmp_path, run_id="base-v2-5-for-v2-6",
+               script=_span_script(cohort), route=lcl.BASE_ROUTE_V2_5)
+    with pytest.raises(ls.ScreenInputError,
+                       match="holds no universe_classifier_v2_6_manifest.json"):
+        lcl.require_classifier_run(run.result.run_dir, route=lcl.BASE_ROUTE_V2_6)
+
+
+def test_the_v2_6_base_route_refuses_a_v2_5_grant(cohort, tmp_path):
+    grant = _v2_5_base_grant(cohort, tmp_path, name="base-gov-v2-5-cross")
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, grant, tmp_path, run_id="base-cross-v2-6",
+             script=_span_script(cohort), output_dir=tmp_path / "never-v2-6",
+             route=lcl.BASE_ROUTE_V2_6)
+
+
+def test_the_v2_6_cli_mode_reaches_the_v2_6_route():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    assert ('if args.mode == "classify-universe-cohort-v2-6":\n'
+            "        return _main_classify_universe_cohort("
+            "args, route=BASE_ROUTE_V2_6)") in source

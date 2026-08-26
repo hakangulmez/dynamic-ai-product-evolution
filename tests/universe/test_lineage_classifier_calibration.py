@@ -945,3 +945,206 @@ def test_the_v2_5_calibration_cli_mode_reaches_its_route():
     assert ('if args.mode == "classify-universe-calibration-v2-5":\n'
             "        return _main_classify_universe_calibration(\n"
             "            args, route=CALIBRATION_ROUTE_V2_5)") in source
+
+
+# --- ADR-133: the calibration route at V2.6 -----------------------------------------
+
+
+def _v2_6_grant(cohort, selection, tmp_path, *, name="calibration-gov-v2-6"):
+    """The V2.5 calibration grant re-pointed at the 0.6.0 authorization contract.
+
+    Everything the model touches is V2.5's: same prompt, same span index, same
+    0.4.0 output contract, same taxonomy. Only the contract id moves.
+    """
+    from dynamic_ai_products.classifier_contract_set import V2_6
+    rules = _csi.load_span_index_rules(ROOT)
+    base = _grant(cohort, selection, tmp_path, name=name).authorization
+    payload = dict(base)
+    payload.update({
+        "authorization_contract":
+            "universe_classifier_calibration_authorization@0.6.0",
+        "output_contract": V2_6.record_contract,
+        "taxonomy_version": V2_6.taxonomy_version,
+        "prompt_template_path": V2_6.prompt_path,
+        "prompt_template_sha256":
+            sha256((ROOT / V2_6.prompt_path).read_bytes()).hexdigest(),
+        "span_index_version": rules.version,
+        "span_index_sha256": rules.sha256,
+    })
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    ((tmp_path / name) / "calibration_authorization.json").write_bytes(raw)
+    return SimpleNamespace(root=tmp_path / name,
+                           reference="calibration_authorization.json",
+                           sha256=_sha(raw), authorization=payload)
+
+
+def _v2_6_script(cohort, selection, **overrides):
+    script = _v2_5_span_script(cohort, selection)
+    for cik, extra in overrides.items():
+        script[cik] = {**script[cik], **extra}
+    return script
+
+
+def _manifest_validator(rel):
+    from jsonschema import Draft202012Validator, FormatChecker
+    return Draft202012Validator(
+        json.loads((ROOT / rel).read_text(encoding="utf-8")),
+        format_checker=FormatChecker())
+
+
+def test_one_quota_retry_completes_under_v2_6_with_a_null_report(cohort, selection,
+                                                                 tmp_path):
+    """The exact shape that stopped the live V2.5 calibration."""
+    grant = _v2_6_grant(cohort, selection, tmp_path)
+    flaky = selection.rows[0]["cik"]
+    run = _run(cohort, selection, grant, tmp_path, run_id="calibration-v2-6-retry",
+               script=_v2_6_script(cohort, selection, **{flaky: {"quota_failures": 1}}),
+               route=lcal.CALIBRATION_ROUTE_V2_6)
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+    accounting = run.result.request_accounting
+    assert accounting["rows_generate_retried"] == 1
+    assert accounting["provider_attempts_made"] == len(selection.rows) + 1
+    assert accounting["tokens_out_reported"] is None
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == \
+        "universe_classifier_calibration_manifest@0.6.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.4.0"
+    assert manifest["taxonomy_version"] == "universe_classifier_axes_v2_5"
+    assert manifest["span_index_version"] == "universe_classifier_span_index_v1"
+    assert manifest["request_accounting"]["tokens_out_reported"] is None
+    assert list(_manifest_validator(
+        "schemas/universe_classifier_calibration_manifest.v6.schema.json")
+        .iter_errors(manifest)) == []
+
+
+def test_that_same_manifest_is_refused_by_the_v2_5_contract(cohort, selection,
+                                                            tmp_path):
+    """The live failure, pinned: the fix is a successor, not a relaxation."""
+    grant = _v2_6_grant(cohort, selection, tmp_path, name="gov-v2-6-cross")
+    flaky = selection.rows[0]["cik"]
+    run = _run(cohort, selection, grant, tmp_path, run_id="calibration-v2-6-cross",
+               script=_v2_6_script(cohort, selection, **{flaky: {"quota_failures": 1}}),
+               route=lcal.CALIBRATION_ROUTE_V2_6)
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    errors = list(_manifest_validator(
+        "schemas/universe_classifier_calibration_manifest.v5.schema.json")
+        .iter_errors(manifest))
+    assert any("tokens_out_reported" in "/".join(str(x) for x in e.absolute_path)
+               for e in errors)
+
+
+def test_no_retry_reports_an_integer_under_v2_6(cohort, selection, tmp_path):
+    grant = _v2_6_grant(cohort, selection, tmp_path, name="gov-v2-6-clean")
+    run = _run(cohort, selection, grant, tmp_path, run_id="calibration-v2-6-clean",
+               script=_v2_5_span_script(cohort, selection),
+               route=lcal.CALIBRATION_ROUTE_V2_6)
+    assert run.result.status == "completed", run.result.receipt
+    accounting = run.result.request_accounting
+    assert accounting["rows_generate_retried"] == 0
+    assert isinstance(accounting["tokens_out_reported"], int)
+    assert accounting["rows_usage_verified"] == len(selection.rows)
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert list(_manifest_validator(
+        "schemas/universe_classifier_calibration_manifest.v6.schema.json")
+        .iter_errors(manifest)) == []
+
+
+def test_conservative_accounting_still_bounds_a_retry_run(cohort, selection,
+                                                          tmp_path):
+    """A null report must not buy headroom."""
+    grant = _v2_6_grant(cohort, selection, tmp_path, name="gov-v2-6-budget")
+    flaky = selection.rows[0]["cik"]
+    run = _run(cohort, selection, grant, tmp_path, run_id="calibration-v2-6-budget",
+               script=_v2_6_script(cohort, selection, **{flaky: {"quota_failures": 1}}),
+               route=lcal.CALIBRATION_ROUTE_V2_6)
+    assert run.result.status == "completed", run.result.receipt
+    a = run.result.request_accounting
+    assert a["tokens_out_reported"] is None
+    for enforced in ("tokens_in_measured", "cost_micros_settled",
+                     "rows_usage_verified", "external_requests_made",
+                     "count_attempts_made", "provider_attempts_made"):
+        assert isinstance(a[enforced], int), enforced
+    assert a["tokens_in_measured"] <= a["budget_max_input_tokens"]
+    assert a["cost_micros_settled"] <= a["budget_max_estimated_cost_micros"]
+    assert a["external_requests_made"] <= a["external_request_cap"]
+    assert a["count_attempts_made"] <= a["count_attempt_cap"]
+    assert a["provider_attempts_made"] <= a["provider_attempt_cap"]
+    # exactly the retried row failed to verify
+    assert a["rows_usage_verified"] == len(selection.rows) - 1
+
+
+def test_the_v2_6_run_keeps_the_inherited_span_archival_checks(cohort, selection,
+                                                               tmp_path):
+    """V2.6 changes a manifest property, not the evidence protocol."""
+    grant = _v2_6_grant(cohort, selection, tmp_path, name="gov-v2-6-span")
+    run = _run(cohort, selection, grant, tmp_path, run_id="calibration-v2-6-span",
+               script=_v2_5_span_script(cohort, selection),
+               route=lcal.CALIBRATION_ROUTE_V2_6)
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["reconciliation"][
+        "every classified row's evidence resolves in its packet"] is True
+    records = [json.loads(x) for x in
+               (run.result.run_dir / lcal.CALIBRATION_ROUTE_V2_6.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    checked = 0
+    for record in records:
+        if record["record_kind"] != "classified":
+            continue
+        packet = cohort.release.packets[(record["cik"], record["accession"])]
+        for item in record["axes"]["evidence"]:
+            assert "span_ref" in item and "quote" not in item
+            assert _csi.verify_stored_span(item, packet)
+            checked += 1
+    assert checked
+
+
+@pytest.mark.parametrize("grant_maker", ["_grant", "_v2_2_grant", "_v2_3_grant",
+                                         "_v2_4_grant", "_v2_5_grant"],
+                         ids=["v2_1", "v2_2", "v2_3", "v2_4", "v2_5"])
+def test_the_v2_6_route_refuses_every_earlier_grant(cohort, selection, tmp_path,
+                                                    grant_maker):
+    grant = globals()[grant_maker](cohort, selection, tmp_path, name=f"s-{grant_maker}")
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, selection, grant, tmp_path, run_id=f"cross-g-{grant_maker}",
+             output_dir=tmp_path / f"never-g-{grant_maker}",
+             script=_v2_5_span_script(cohort, selection),
+             route=lcal.CALIBRATION_ROUTE_V2_6)
+
+
+@pytest.mark.parametrize("tag,route", [
+    ("v2_1", None), ("v2_2", lcal.CALIBRATION_ROUTE_V2_2),
+    ("v2_3", lcal.CALIBRATION_ROUTE_V2_3), ("v2_4", lcal.CALIBRATION_ROUTE_V2_4),
+    ("v2_5", lcal.CALIBRATION_ROUTE_V2_5),
+], ids=["v2_1", "v2_2", "v2_3", "v2_4", "v2_5"])
+def test_every_earlier_route_refuses_the_v2_6_grant(cohort, selection, tmp_path,
+                                                    tag, route):
+    grant = _v2_6_grant(cohort, selection, tmp_path, name=f"t-{tag}")
+    kwargs = {} if route is None else {"route": route}
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, selection, grant, tmp_path, run_id=f"cross-h-{tag}",
+             output_dir=tmp_path / f"never-h-{tag}",
+             script=_v2_5_span_script(cohort, selection), **kwargs)
+
+
+def test_every_calibration_loader_refuses_the_other_five(cohort, selection, tmp_path):
+    v6 = _run(cohort, selection, _v2_6_grant(cohort, selection, tmp_path, name="s6"),
+              tmp_path, run_id="calib-iso-6", route=lcal.CALIBRATION_ROUTE_V2_6,
+              script=_v2_5_span_script(cohort, selection))
+    assert lcal.require_classifier_calibration_run(
+        v6.result.run_dir, route=lcal.CALIBRATION_ROUTE_V2_6) == \
+        v6.result.manifest_path
+    for other in (lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2,
+                  lcal.CALIBRATION_ROUTE_V2_3, lcal.CALIBRATION_ROUTE_V2_4,
+                  lcal.CALIBRATION_ROUTE_V2_5):
+        with pytest.raises(ls.ScreenInputError,
+                           match=f"holds no {other.manifest_filename}"):
+            lcal.require_classifier_calibration_run(v6.result.run_dir, route=other)
+
+
+def test_the_v2_6_calibration_cli_mode_reaches_its_route():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    assert ('if args.mode == "classify-universe-calibration-v2-6":\n'
+            "        return _main_classify_universe_calibration(\n"
+            "            args, route=CALIBRATION_ROUTE_V2_6)") in source

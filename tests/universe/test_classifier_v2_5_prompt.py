@@ -378,3 +378,33 @@ def test_the_v2_4_prompt_lacks_the_v2_5_protocol():
     for token in ("**You do not write quotes. You select them.**", "span_ref",
                   "[S001]"):
         assert token not in flat_v2_4, token
+
+
+# --- ADR-133: V2.5 is frozen, and V2.6 reuses it rather than editing it -----------
+
+
+def test_the_v2_5_prompt_is_byte_unchanged_by_adr_133():
+    assert sha256((ROOT / ccs.V2_5.prompt_path).read_bytes()).hexdigest() == \
+        "f09c6f8f2a6a74644db08333ebe1c7833692715190703c6b323617d49dc01581"
+
+
+def test_v2_6_reuses_every_v2_5_contract_by_reference():
+    """Identity, not equality: V2.6 points at V2.5's own files."""
+    assert ccs.V2_6.prompt_path == ccs.V2_5.prompt_path
+    assert ccs.V2_6.axes_schema == ccs.V2_5.axes_schema
+    assert ccs.V2_6.record_schema == ccs.V2_5.record_schema
+    assert ccs.V2_6.axes_contract == ccs.V2_5.axes_contract
+    assert ccs.V2_6.record_contract == ccs.V2_5.record_contract
+    assert ccs.V2_6.taxonomy_version == ccs.V2_5.taxonomy_version
+    assert ccs.V2_6.evidence_protocol == ccs.V2_5.evidence_protocol
+    assert ccs.V2_6.span_index_config == ccs.V2_5.span_index_config
+    assert ccs.V2_6.output_prefix == "v2_6_" != ccs.V2_5.output_prefix
+
+
+def test_the_v2_5_manifests_still_refuse_a_null_token_report():
+    """What ADR-133 fixed forward, pinned as still broken backward."""
+    accounting = json.loads(
+        (ROOT / "schemas/universe_classifier_calibration_manifest.v5.schema.json")
+        .read_text(encoding="utf-8"))["properties"]["request_accounting"]
+    assert accounting["additionalProperties"] == {"type": "integer"}
+    assert "properties" not in accounting

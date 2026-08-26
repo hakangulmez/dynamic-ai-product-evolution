@@ -72,6 +72,26 @@ widening: a V2.4 response carries ``quote`` and fails the 0.4.0 axes schema as
 an unknown property, and a V2.5 response carries ``span_ref`` and fails 0.3.0's
 the same way. The route filenames still gate archives and manifests, but here
 the contracts alone would already refuse each other.
+
+**Why V2.6 exists, and why it changes nothing the model sees.** The V2.5
+calibration sent all forty rows and then could not write its manifest. One row
+hit a Vertex quota 429, retried successfully, and ``ScreenBudget`` set
+``tokens_out_reported`` to null -- deliberately, because after a retry there is
+no verified total -- while ``request_accounting`` admitted integers only. V2.6
+widens that one property to integer-or-null in its three manifest contracts and
+changes nothing else: the prompt, the span index, the 0.4.0 axes and record
+contracts, the taxonomy version, the tier rules and the evidence protocol are
+V2.5's own files, reused by reference. Budget enforcement is untouched and
+cannot weaken, because nothing reads ``tokens_out_reported``: the ceilings are
+enforced against ``tokens_out_accounted``, ``tokens_in_measured`` and
+``cost_micros_settled``, and the first of those charges the declared per-call
+maximum for exactly the rows whose usage did not verify.
+
+**Successor because a contract moved, not because behaviour did.** V2.6 needs
+its own authorization and manifest contracts so a V2.5 grant cannot drive a
+V2.6 route and produce a manifest under a different contract, and its own
+filenames so no loader can read one version's run as the other's. That is the
+same reason V2.3 existed, and the same reason it reused V2.2's schemas.
 """
 
 from __future__ import annotations
@@ -85,6 +105,7 @@ __all__ = [
     "V2_3",
     "V2_4",
     "V2_5",
+    "V2_6",
     "ClassifierContractSet",
     "contract_set_for",
 ]
@@ -198,12 +219,33 @@ V2_5 = ClassifierContractSet(
     span_index_config="configs/universe_classifier_span_index_v1.yaml",
 )
 
+#: ADR-133. A contract-only successor. Every field the model interacts with is
+#: V2_5's own: the same prompt file, the same span index, the same 0.4.0 axes
+#: and record schema files, the same taxonomy version. ``taxonomy_version``
+#: stays ``universe_classifier_axes_v2_5`` because the axes contract genuinely
+#: does not change -- the same reasoning that kept V2_3 on the V2.2 taxonomy.
+#: What moves lives entirely in the manifest and authorization contracts, which
+#: this set does not name; the route does.
+V2_6 = ClassifierContractSet(
+    version_id="v2_6",
+    prompt_path=V2_5.prompt_path,
+    axes_schema=V2_5.axes_schema,
+    axes_contract=V2_5.axes_contract,
+    record_contract=V2_5.record_contract,
+    record_schema=V2_5.record_schema,
+    taxonomy_version=V2_5.taxonomy_version,
+    output_prefix="v2_6_",
+    evidence_protocol=V2_5.evidence_protocol,
+    span_index_config=V2_5.span_index_config,
+)
+
 CONTRACT_SETS: dict[str, ClassifierContractSet] = {
     V2_1.version_id: V2_1,
     V2_2.version_id: V2_2,
     V2_3.version_id: V2_3,
     V2_4.version_id: V2_4,
     V2_5.version_id: V2_5,
+    V2_6.version_id: V2_6,
 }
 
 

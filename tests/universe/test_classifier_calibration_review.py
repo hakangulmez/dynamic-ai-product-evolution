@@ -500,7 +500,8 @@ REVIEW_MODES = ["build-classifier-calibration-review",
                 "build-classifier-calibration-review-v2-2",
                 "build-classifier-calibration-review-v2-3",
                 "build-classifier-calibration-review-v2-4",
-                "build-classifier-calibration-review-v2-5"]
+                "build-classifier-calibration-review-v2-5",
+                "build-classifier-calibration-review-v2-6"]
 REVIEW_REQUIRED_FLAGS = ["--calibration-run-dir", "--calibration-selection",
                          "--calibration-selection-sha256", "--output-dir",
                          "--run-id"]
@@ -552,14 +553,14 @@ def test_each_review_mode_rejects_an_incompatible_flag(mode, flag, value):
     assert verdict and flag in verdict
 
 
-def test_the_cli_declares_all_five_review_modes():
+def test_the_cli_declares_all_six_review_modes():
     cli = _cli_module()
     choices = next(a.choices for a in cli.build_parser()._actions
                    if a.dest == "mode")
     for mode in REVIEW_MODES:
         assert mode in choices, mode
-    assert len(REVIEW_MODES) == 5
-    assert "Fifty-eight mutually exclusive modes" in cli.__doc__
+    assert len(REVIEW_MODES) == 6
+    assert "Sixty-two mutually exclusive modes" in cli.__doc__
 
 
 # --- ADR-130: the review route at V2.4 --------------------------------------------
@@ -756,3 +757,63 @@ def test_the_v2_5_review_cli_mode_reaches_its_route():
     assert ('if args.mode == "build-classifier-calibration-review-v2-5":\n'
             "        return _main_build_classifier_calibration_review(\n"
             "            args, calibration_route=CALIBRATION_ROUTE_V2_5)") in source
+
+
+# --- ADR-133: the review route at V2.6 ----------------------------------------------
+
+
+def test_a_v2_6_calibration_produces_a_valid_review(cohort, selection, tmp_path):
+    from jsonschema import Draft202012Validator, FormatChecker
+    from test_lineage_classifier_calibration import _v2_5_span_script, _v2_6_grant
+    from test_lineage_classifier_calibration import _run as _cal_run
+    grant = _v2_6_grant(cohort, selection, tmp_path, name="g-rev-v2-6")
+    result = _cal_run(cohort, selection, grant, tmp_path, run_id="calib-rev-v2-6",
+                      script=_v2_5_span_script(cohort, selection),
+                      route=lcal.CALIBRATION_ROUTE_V2_6).result
+    assert result.status == "completed", result.receipt
+    review = ccr.build_calibration_review(
+        repo_root=ROOT, calibration_run_dir=result.run_dir,
+        selection_path=selection.path, selection_sha256=selection.sha256,
+        output_path=tmp_path / "review-v2-6" / "review.json",
+        review_id="review-v2-6", clock=CLOCK, dry_run=True,
+        calibration_route=lcal.CALIBRATION_ROUTE_V2_6)
+    schema = json.loads(
+        (ROOT / "schemas/universe_classifier_calibration_review.schema.json")
+        .read_text(encoding="utf-8"))
+    Draft202012Validator(schema, format_checker=FormatChecker()).validate(review)
+    assert review["gate_state"] == "pending_human_reading"
+    assert review["counts"]["nominated_rows"] == len(selection.rows)
+    # the review contract still needs no successor
+    assert review["review_contract"] == \
+        "universe_classifier_calibration_review@0.1.0"
+
+
+@pytest.mark.parametrize("route", [
+    lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2, lcal.CALIBRATION_ROUTE_V2_3,
+    lcal.CALIBRATION_ROUTE_V2_4, lcal.CALIBRATION_ROUTE_V2_5,
+], ids=["v2_1", "v2_2", "v2_3", "v2_4", "v2_5"])
+def test_every_earlier_review_route_refuses_a_v2_6_run(cohort, selection, tmp_path,
+                                                       route):
+    from test_lineage_classifier_calibration import _v2_5_span_script, _v2_6_grant
+    from test_lineage_classifier_calibration import _run as _cal_run
+    tag = route.contracts.version_id
+    grant = _v2_6_grant(cohort, selection, tmp_path, name=f"g-back6-{tag}")
+    result = _cal_run(cohort, selection, grant, tmp_path, run_id=f"calib-back6-{tag}",
+                      script=_v2_5_span_script(cohort, selection),
+                      route=lcal.CALIBRATION_ROUTE_V2_6).result
+    with pytest.raises(ls.ScreenInputError,
+                       match=f"holds no {route.manifest_filename}"):
+        ccr.build_calibration_review(
+            repo_root=ROOT, calibration_run_dir=result.run_dir,
+            selection_path=selection.path, selection_sha256=selection.sha256,
+            output_path=tmp_path / f"never-back6-{tag}" / "review.json",
+            review_id=f"never-back6-{tag}", clock=CLOCK, dry_run=True,
+            calibration_route=route)
+
+
+def test_the_v2_6_review_cli_mode_reaches_its_route():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    assert ('if args.mode == "build-classifier-calibration-review-v2-6":\n'
+            "        return _main_build_classifier_calibration_review(\n"
+            "            args, calibration_route=CALIBRATION_ROUTE_V2_6)") in source

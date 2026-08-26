@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.70.0",
+  "manifest_version": "0.71.0",
   "schemas": {
     "adapter_enablement_record": "0.1.0",
     "adapter_qualification_record": "0.1.0",
@@ -180,6 +180,12 @@
     "universe_classifier_calibration_authorization_v5": "0.5.0",
     "universe_classifier_manifest_v5": "0.5.0",
     "universe_classifier_continuation_manifest_v5": "0.5.0",
-    "universe_classifier_calibration_manifest_v5": "0.5.0"
+    "universe_classifier_calibration_manifest_v5": "0.5.0",
+    "universe_classifier_authorization_v6": "0.6.0",
+    "universe_classifier_continuation_authorization_v6": "0.6.0",
+    "universe_classifier_calibration_authorization_v6": "0.6.0",
+    "universe_classifier_manifest_v6": "0.6.0",
+    "universe_classifier_continuation_manifest_v6": "0.6.0",
+    "universe_classifier_calibration_manifest_v6": "0.6.0"
   }
 }

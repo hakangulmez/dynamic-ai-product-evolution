@@ -151,7 +151,8 @@ def _continuation_grant(cohort, source, tmp_path, *, mutate=None,
         from hashlib import sha256
         version = {"v2_2": "0.2.0", "v2_3": "0.3.0",
                    "v2_4": "0.4.0",
-                   "v2_5": "0.5.0"}[route.contracts.version_id]
+                   "v2_5": "0.5.0",
+                   "v2_6": "0.6.0"}[route.contracts.version_id]
         payload.update({
             "authorization_contract":
                 f"universe_classifier_continuation_authorization@{version}",
@@ -744,6 +745,7 @@ CONTINUATION_ROUTES = [
     ("v2_3", lcc.CONTINUATION_ROUTE_V2_3, "universe_classifier_record@0.2.0"),
     ("v2_4", lcc.CONTINUATION_ROUTE_V2_4, "universe_classifier_record@0.3.0"),
     ("v2_5", lcc.CONTINUATION_ROUTE_V2_5, "universe_classifier_record@0.4.0"),
+    ("v2_6", lcc.CONTINUATION_ROUTE_V2_6, "universe_classifier_record@0.4.0"),
 ]
 
 
@@ -1128,3 +1130,101 @@ def test_the_v2_5_continuation_cli_mode_reaches_its_route():
     assert ('if args.mode == "classify-universe-cohort-continuation-v2-5":\n'
             "        return _main_classify_universe_cohort_continuation(\n"
             "            args, route=CONTINUATION_ROUTE_V2_5)") in source
+
+
+# --- ADR-133: the continuation route at V2.6 ----------------------------------------
+
+
+@pytest.fixture
+def v2_6_source(cohort, tmp_path):
+    return _failed_run(cohort, tmp_path, run_id="source-v2-6",
+                       route=lcc.CONTINUATION_ROUTE_V2_6,
+                       payloads=_v2_5_payloads(cohort))
+
+
+def test_the_v2_6_continuation_route_is_isolated_and_bound():
+    from dynamic_ai_products.classifier_contract_set import V2_5, V2_6
+    v5, v6 = lcc.CONTINUATION_ROUTE_V2_5, lcc.CONTINUATION_ROUTE_V2_6
+    assert v6.records_filename == "universe_classifier_v2_6_continuation_records.jsonl"
+    assert v6.archive_filename == "universe_classifier_v2_6_raw_responses.jsonl"
+    assert v6.manifest_contract == "universe_classifier_continuation_manifest@0.6.0"
+    assert v6.run_kind == v5.run_kind
+    # the contract set is V2.5's in everything the model touches
+    assert v6.contracts.prompt_path == V2_5.prompt_path == V2_6.prompt_path
+    assert v6.contracts.evidence_protocol == "selected_span"
+    assert v6.manifest_schema != v5.manifest_schema
+    assert v6.authorization_schema != v5.authorization_schema
+
+
+def test_a_v2_6_continuation_completes_end_to_end(cohort, v2_6_source, tmp_path):
+    route = lcc.CONTINUATION_ROUTE_V2_6
+    grant = _continuation_grant(cohort, v2_6_source, tmp_path, route=route,
+                                name="gov-v2-6")
+    run = _run(cohort, v2_6_source, grant, tmp_path, run_id="continuation-v2-6",
+               route=route, script=_v2_5_script(cohort))
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == \
+        "universe_classifier_continuation_manifest@0.6.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.4.0"
+    records = [json.loads(x) for x in
+               (run.result.run_dir / route.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(records) == len(cohort.rows)
+    reused = [r for r in records
+              if r["output_provenance"].get("source_run_id") == v2_6_source.run_id]
+    assert reused
+    for record in reused:
+        if record["record_kind"] == "classified":
+            for item in record["axes"]["evidence"]:
+                assert "span_ref" in item and "quote" not in item
+    archive = (run.result.run_dir / route.archive_filename).read_bytes()
+    assert archive.startswith(v2_6_source.archive_bytes)
+
+
+def test_a_v2_6_continuation_with_one_retry_reports_null(cohort, v2_6_source,
+                                                         tmp_path):
+    route = lcc.CONTINUATION_ROUTE_V2_6
+    grant = _continuation_grant(cohort, v2_6_source, tmp_path, route=route,
+                                name="gov-v2-6-retry")
+    flaky = cohort.rows[PREFIX_ROWS]["cik"]
+    script = _v2_5_script(cohort)
+    script[flaky] = {**script[flaky], "quota_failures": 1}
+    run = _run(cohort, v2_6_source, grant, tmp_path,
+               run_id="continuation-v2-6-retry", route=route, script=script)
+    assert run.result.status == "completed", run.result.receipt
+    assert run.result.request_accounting["rows_generate_retried"] == 1
+    assert run.result.request_accounting["tokens_out_reported"] is None
+
+
+def test_the_v2_6_continuation_cannot_read_a_v2_5_archive(cohort, tmp_path):
+    src = _failed_run(cohort, tmp_path, run_id="source-v2-5-for-v2-6",
+                      route=lcc.CONTINUATION_ROUTE_V2_5,
+                      payloads=_v2_5_payloads(cohort))
+    grant = _continuation_grant(cohort, src, tmp_path, name="gov-v2-5-src-v2-6",
+                                route=lcc.CONTINUATION_ROUTE_V2_6)
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, src, grant, tmp_path, run_id="cross-source-v2-6",
+             output_dir=tmp_path / "never-src-v2-6",
+             route=lcc.CONTINUATION_ROUTE_V2_6, script=_v2_5_script(cohort))
+
+
+def test_the_v2_5_route_refuses_a_v2_6_grant_and_source(cohort, tmp_path):
+    src = _failed_run(cohort, tmp_path, run_id="source-v2-6-for-v2-5",
+                      route=lcc.CONTINUATION_ROUTE_V2_6,
+                      payloads=_v2_5_payloads(cohort))
+    grant = _continuation_grant(cohort, src, tmp_path, name="gov-v2-6-for-v2-5",
+                                route=lcc.CONTINUATION_ROUTE_V2_6)
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, src, grant, tmp_path, run_id="cross-v2-5-from-v2-6",
+             output_dir=tmp_path / "never-back-v2-5",
+             route=lcc.CONTINUATION_ROUTE_V2_5)
+
+
+def test_the_v2_6_continuation_cli_mode_reaches_its_route():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    assert ('if args.mode == "classify-universe-cohort-continuation-v2-6":\n'
+            "        return _main_classify_universe_cohort_continuation(\n"
+            "            args, route=CONTINUATION_ROUTE_V2_6)") in source

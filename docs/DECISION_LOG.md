@@ -9311,6 +9311,96 @@ consumer modules, four CLI modes, seven test modules, the registry (0.69.0 to
 five registry/manifest guards, and the absolute registry literals in eleven
 screen suites.
 
+## ADR-133 — A manifest property learns to say "unknown"
+
+**Status.** Accepted, fixture-first. No model call, no network, no governance
+artifact, no `data/runs` write, no calibration, and no repair of the failed V2.5
+directory. The V2.5 prompt, span-index config, 0.4.0 axes and record contracts,
+taxonomy version, tier rules, economic semantics, the 40-row selection and every
+earlier artifact are byte-unchanged.
+
+**What the V2.5 calibration actually hit.** It sent all forty rows, classified
+thirty-five, and then could not write its manifest:
+`$.request_accounting.tokens_out_reported: None is not of type 'integer'`. One
+row took a Vertex quota 429 and succeeded on its second attempt, and
+`ScreenBudget.record` sets `tokens_out_reported = None` whenever any row retries
+or its usage cannot be verified. That null is correct: after a retry there is no
+complete verified output-token total, and reporting one would be an invention.
+The classifier manifests declared `request_accounting` as an object whose every
+property must be an integer, with no `properties` block at all, so the honest
+null was refused.
+
+**This was never a V2.5 defect.** The same code path and the same integer-only
+constraint exist in the V2.1 through V2.4 manifests. The `universe_screen_*`
+manifests have declared this field `["integer", "null"]` since they were
+written, with the description "null unless every screened row's usage verified";
+the classifier family was the outlier and had been since V2.1. The V2.4-T15 run
+recorded `rows_generate_retried: 0` and so never took the path. It took a single
+live quota retry to reach it, which is the second time a latent defect has
+surfaced only because a run exercised something no fixture did — the first being
+ADR-128's missing `route` parameter.
+
+**So one property moves, and only in the successor.** In the three V2.6 manifest
+contracts, `request_accounting.tokens_out_reported` becomes
+`{"type": ["integer", "null"], "minimum": 0}` and is listed in `required`.
+`additionalProperties` stays `{"type": "integer"}`, which in JSON Schema governs
+only properties not named in `properties`, so every other accounting field
+remains integer-only by construction rather than by review. A test asserts a
+null in any other field is still refused.
+
+**Budget enforcement cannot weaken, and that is a property of the code.**
+`tokens_out_reported` appears in exactly two roles across the whole source tree:
+the accumulation in `ScreenBudget` and the manifest write. Nothing reads it. The
+ceilings are enforced against `tokens_out_accounted`, `tokens_in_measured` and
+`cost_micros_settled`, all plain integers that can never be null, and
+`tokens_out_accounted` charges the declared per-call maximum for exactly the
+rows whose usage did not verify — so an unverifiable row can only shrink
+headroom, never bypass a ceiling. A fixture test asserts that on a retry run.
+
+**A contract-only successor.** V2.6 reuses V2.5's prompt file, span-index
+config, axes and record schema files, taxonomy version and evidence protocol by
+reference, not by copy, and a test asserts identity rather than equality.
+`taxonomy_version` stays `universe_classifier_axes_v2_5` because the axes
+contract genuinely does not change — the reasoning that kept V2.3 on the V2.2
+taxonomy. What forks is the manifest and authorization contracts, the filenames
+and the routes. The authorizations fork even though no authorization content
+changes: `_preflight` validates a grant against the route's authorization
+schema, so sharing one would let a single grant drive either route and silently
+produce a manifest under a different contract.
+
+**No post-settle receipt, deliberately.** `_settle` writes the capture ledger
+and the records JSONL, then validates the manifest and only then writes it. The
+failed V2.5 directory therefore holds records and a ledger with no manifest and
+no receipt, and it is left exactly that way. A
+`universe_screen_failure_receipt@0.1.0` cannot honestly describe this failure:
+its fields are row-oriented and there is no stopping row, since every row
+completed; its retention note asserts that no records JSONL, capture ledger or
+manifest exists, which would be false; and
+`load_classifier_continuation_source` refuses any source carrying records or a
+ledger, so a receipt would produce a directory claiming to be resumable that
+provably is not. That directory is neither authoritative nor continuable. It is
+dead, and saying so is better than dressing it as something the tooling
+understands. A genuine treatment — a distinct post-settle receipt contract, or
+validating the manifest before committing outputs — is deferred to its own ADR.
+The second option is the more interesting one: validating first would have left
+nothing behind at all.
+
+**Honest limits.** This fixes a reporting contract, not a classification
+behaviour. It says nothing about whether V2.5's span protocol classifies well.
+The V2.5 run's thirty-five classified rows were written to disk but never
+manifested, so they are not results and nothing here treats them as any. What a
+V2.6 calibration will measure is what the V2.5 one was meant to and did not:
+whether a model that selects spans selects the right ones. Whether other
+retry-only paths remain untested across the eleven other manifest-writing routes
+is not established here.
+
+**Scope.** Thirty-nine paths: six V2.6 authorization and manifest contracts, one
+new test module, the contract-set module, four runner and consumer modules, four
+CLI modes, seven test modules, the registry (0.70.0 to 0.71.0, 180 to 186), this
+decision log, `REPO_MANIFEST.md` (966 to 973), the five registry/manifest guards,
+and the absolute registry literals in eleven screen suites. No new prompt, no
+new config, no new source module, no new axes or record schema.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only

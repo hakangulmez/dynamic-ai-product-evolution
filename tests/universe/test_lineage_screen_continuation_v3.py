@@ -808,8 +808,8 @@ def test_the_v3_and_v4_routes_keep_their_policies():
 def test_registry_registers_the_two_v3_continuation_schemas():
     registry = json.loads(
         (ROOT / "schemas" / "schema_version_manifest.json").read_text(encoding="utf-8"))
-    assert registry["manifest_version"] == "0.70.0"
-    assert len(registry["schemas"]) == 180
+    assert registry["manifest_version"] == "0.71.0"
+    assert len(registry["schemas"]) == 186
     assert registry["schemas"]["universe_screen_continuation_authorization_v3"] == "0.3.0"
     assert registry["schemas"]["universe_screen_continuation_manifest_v3"] == "0.10.0"
     # predecessors unchanged

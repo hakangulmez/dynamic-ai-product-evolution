@@ -135,10 +135,13 @@ def test_the_v2_4_contract_set_names_its_own_everything():
 
 def test_contract_set_for_resolves_v2_4_and_still_refuses_the_unknown():
     assert ccs.contract_set_for("v2_4") is ccs.V2_4
-    # ADR-132 made v2_5 real, so the unknown-id probe moves to the next one.
+    # ADR-132 made v2_5 real and ADR-133 made v2_6 real, so the unknown-id probe
+    # moves past both. It has to name an id no successor will plausibly claim,
+    # or every version bump silently turns this guard into a passing tautology.
     assert ccs.contract_set_for("v2_5") is ccs.V2_5
-    with pytest.raises(ValueError):
-        ccs.contract_set_for("v2_6")
+    assert ccs.contract_set_for("v2_6") is ccs.V2_6
+    with pytest.raises(ValueError, match="Unknown classifier contract version"):
+        ccs.contract_set_for("v3_0")
 
 
 # --- exactly one bound moved --------------------------------------------------------

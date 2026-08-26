@@ -37,7 +37,7 @@ from typing import Any, Callable
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-from .classifier_contract_set import V2_1, V2_2, V2_3, V2_4, V2_5
+from .classifier_contract_set import V2_1, V2_2, V2_3, V2_4, V2_5, V2_6
 from .classifier_span_index import build_span_index
 from .classifier_tier_engine import derive_tier
 from .lineage_classifier_v2_1 import (
@@ -77,6 +77,7 @@ __all__ = [
     "CONTINUATION_ROUTE_V2_3",
     "CONTINUATION_ROUTE_V2_4",
     "CONTINUATION_ROUTE_V2_5",
+    "CONTINUATION_ROUTE_V2_6",
     "ClassifierSourcePrefix",
     "load_classifier_continuation_source",
     "require_classifier_continuation_run",
@@ -175,6 +176,24 @@ CONTINUATION_ROUTE_V2_5 = ClassifierRoute(
         "schemas/universe_classifier_continuation_authorization.v5.schema.json"),
     archive_filename="universe_classifier_v2_5_raw_responses.jsonl",
     contracts=V2_5,
+)
+
+#: ADR-133. The V2.6 continuation route. The archive filename keeps a V2.5
+#: failed run from being continued here, as it does at every version boundary;
+#: at this one it also matters that a V2.5 prefix was adjudicated under a
+#: manifest contract that could not express what a retried run measured.
+CONTINUATION_ROUTE_V2_6 = ClassifierRoute(
+    run_kind=CONTINUATION_RUN_KIND,
+    records_filename="universe_classifier_v2_6_continuation_records.jsonl",
+    manifest_filename="universe_classifier_v2_6_continuation_manifest.json",
+    manifest_contract="universe_classifier_continuation_manifest@0.6.0",
+    manifest_schema=(
+        "schemas/universe_classifier_continuation_manifest.v6.schema.json"),
+    record_order=RECORD_ORDER,
+    authorization_schema=(
+        "schemas/universe_classifier_continuation_authorization.v6.schema.json"),
+    archive_filename="universe_classifier_v2_6_raw_responses.jsonl",
+    contracts=V2_6,
 )
 
 #: Receipt fields a continuable classifier failure must carry. A receipt that
