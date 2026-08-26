@@ -382,6 +382,8 @@ from test_lineage_classifier_calibration import (  # noqa: E402
     _v2_2_grant,
     _v2_3_grant,
     _v2_4_grant,
+    _v2_5_grant,
+    _v2_5_span_script,
 )
 
 CALIBRATION_ROUTES = [
@@ -389,15 +391,19 @@ CALIBRATION_ROUTES = [
     ("v2_2", lcal.CALIBRATION_ROUTE_V2_2, "_v2_2_grant"),
     ("v2_3", lcal.CALIBRATION_ROUTE_V2_3, "_v2_3_grant"),
     ("v2_4", lcal.CALIBRATION_ROUTE_V2_4, "_v2_4_grant"),
+    ("v2_5", lcal.CALIBRATION_ROUTE_V2_5, "_v2_5_grant"),
 ]
 
 
 def _completed(cohort, selection, tmp_path, route, grant_maker, name):
     from test_lineage_classifier_calibration import _grant, _run
     makers = {"_grant": _grant, "_v2_2_grant": _v2_2_grant,
-              "_v2_3_grant": _v2_3_grant, "_v2_4_grant": _v2_4_grant}
+              "_v2_3_grant": _v2_3_grant, "_v2_4_grant": _v2_4_grant,
+              "_v2_5_grant": _v2_5_grant}
     grant = makers[grant_maker](cohort, selection, tmp_path, name=f"g-{name}")
     kwargs = {} if route is lcal.CALIBRATION_ROUTE else {"route": route}
+    if route is lcal.CALIBRATION_ROUTE_V2_5:
+        kwargs["script"] = _v2_5_span_script(cohort, selection)
     run = _run(cohort, selection, grant, tmp_path, run_id=f"calib-{name}", **kwargs)
     assert run.result.status == "completed", run.result.receipt
     return run.result
@@ -431,7 +437,7 @@ def test_the_default_loader_route_is_still_v2_1(cohort, selection, tmp_path):
 
 
 @pytest.mark.parametrize("version,route,grant_maker", CALIBRATION_ROUTES[1:],
-                         ids=["v2_2", "v2_3", "v2_4"])
+                         ids=["v2_2", "v2_3", "v2_4", "v2_5"])
 def test_a_later_version_run_produces_a_valid_review(
         cohort, selection, tmp_path, version, route, grant_maker):
     from jsonschema import Draft202012Validator, FormatChecker
@@ -493,7 +499,8 @@ def test_the_v2_3_review_verifies_the_route_specific_records_digest(
 REVIEW_MODES = ["build-classifier-calibration-review",
                 "build-classifier-calibration-review-v2-2",
                 "build-classifier-calibration-review-v2-3",
-                "build-classifier-calibration-review-v2-4"]
+                "build-classifier-calibration-review-v2-4",
+                "build-classifier-calibration-review-v2-5"]
 REVIEW_REQUIRED_FLAGS = ["--calibration-run-dir", "--calibration-selection",
                          "--calibration-selection-sha256", "--output-dir",
                          "--run-id"]
@@ -545,14 +552,14 @@ def test_each_review_mode_rejects_an_incompatible_flag(mode, flag, value):
     assert verdict and flag in verdict
 
 
-def test_the_cli_declares_all_four_review_modes():
+def test_the_cli_declares_all_five_review_modes():
     cli = _cli_module()
     choices = next(a.choices for a in cli.build_parser()._actions
                    if a.dest == "mode")
     for mode in REVIEW_MODES:
         assert mode in choices, mode
-    assert len(REVIEW_MODES) == 4
-    assert "Fifty-four mutually exclusive modes" in cli.__doc__
+    assert len(REVIEW_MODES) == 5
+    assert "Fifty-eight mutually exclusive modes" in cli.__doc__
 
 
 # --- ADR-130: the review route at V2.4 --------------------------------------------
@@ -579,7 +586,7 @@ def test_a_v2_4_calibration_produces_a_valid_review(cohort, selection, tmp_path)
 
 def test_the_v2_4_review_route_refuses_every_earlier_run(cohort, selection,
                                                          tmp_path):
-    for version, route, grant_maker in CALIBRATION_ROUTES[:-1]:
+    for version, route, grant_maker in CALIBRATION_ROUTES[:-2]:
         result = _completed(cohort, selection, tmp_path, route, grant_maker,
                             f"x4-{version}")
         with pytest.raises(ls.ScreenInputError,
@@ -593,7 +600,7 @@ def test_the_v2_4_review_route_refuses_every_earlier_run(cohort, selection,
                 calibration_route=lcal.CALIBRATION_ROUTE_V2_4)
 
 
-@pytest.mark.parametrize("version,route,grant_maker", CALIBRATION_ROUTES[:-1],
+@pytest.mark.parametrize("version,route,grant_maker", CALIBRATION_ROUTES[:-2],
                          ids=["v2_1", "v2_2", "v2_3"])
 def test_every_earlier_review_route_refuses_a_v2_4_run(
         cohort, selection, tmp_path, version, route, grant_maker):
@@ -649,3 +656,103 @@ def test_the_v2_4_review_dry_run_reserves_no_directory(cohort, selection, tmp_pa
     assert reported["dry_run"] is True
     assert reported["output_path"] is None
     assert not (out_dir / "dry-review-v2-4").exists()
+
+
+# --- ADR-132: the review route at V2.5 ----------------------------------------------
+
+
+def test_a_v2_5_calibration_produces_a_valid_review(cohort, selection, tmp_path):
+    from jsonschema import Draft202012Validator, FormatChecker
+    result = _completed(cohort, selection, tmp_path, lcal.CALIBRATION_ROUTE_V2_5,
+                        "_v2_5_grant", "rev-v2-5")
+    review = ccr.build_calibration_review(
+        repo_root=ROOT, calibration_run_dir=result.run_dir,
+        selection_path=selection.path, selection_sha256=selection.sha256,
+        output_path=tmp_path / "review-v2-5" / "review.json",
+        review_id="review-v2-5", clock=CLOCK, dry_run=True,
+        calibration_route=lcal.CALIBRATION_ROUTE_V2_5)
+    schema = json.loads(
+        (ROOT / "schemas/universe_classifier_calibration_review.schema.json")
+        .read_text(encoding="utf-8"))
+    Draft202012Validator(schema, format_checker=FormatChecker()).validate(review)
+    assert review["gate_state"] == "pending_human_reading"
+    assert review["counts"]["nominated_rows"] == len(selection.rows)
+
+
+def test_the_v2_5_review_shows_the_pipeline_derived_text(cohort, selection, tmp_path):
+    """The review contract has no span field, so the resolved text goes in ``quote``.
+
+    That is the projection ADR-132 chose rather than widening a released
+    contract. What a reader sees is the packet's own text; where it came from is
+    recoverable through the manifest digest the review binds.
+    """
+    from dynamic_ai_products import classifier_span_index as csi
+    result = _completed(cohort, selection, tmp_path, lcal.CALIBRATION_ROUTE_V2_5,
+                        "_v2_5_grant", "rev-v2-5-text")
+    records = [json.loads(x) for x in
+               (result.run_dir / lcal.CALIBRATION_ROUTE_V2_5.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    resolved = {(r["cik"], r["accession"]): r for r in records}
+    review = ccr.build_calibration_review(
+        repo_root=ROOT, calibration_run_dir=result.run_dir,
+        selection_path=selection.path, selection_sha256=selection.sha256,
+        output_path=tmp_path / "review-v2-5-text" / "review.json",
+        review_id="review-v2-5-text", clock=CLOCK, dry_run=True,
+        calibration_route=lcal.CALIBRATION_ROUTE_V2_5)
+    checked = 0
+    for row in review["nominated_rows"]:
+        record = resolved[(row["cik"], row["accession"])]
+        if record["record_kind"] != "classified":
+            continue
+        for shown, stored in zip(row["evidence"], record["axes"]["evidence"]):
+            assert set(shown) == {"axis", "passage_ref", "quote", "supported_claim"}
+            assert shown["quote"] == stored["resolved_quote"]
+            packet = cohort.release.packets[(row["cik"], row["accession"])]
+            assert csi.verify_stored_span(stored, packet)
+            checked += 1
+    assert checked
+
+
+def test_the_review_contract_cannot_carry_a_span_field_and_was_not_widened():
+    """Recorded as a limitation, not worked around.
+
+    ``universe_classifier_calibration_review@0.1.0``'s evidence item is
+    ``additionalProperties: false`` over four properties. Carrying ``span_ref``
+    or a derived ``span_chars`` into the review needs a contract successor, and
+    ADR-132 declined to widen a released contract in passing.
+    """
+    schema = json.loads(
+        (ROOT / "schemas/universe_classifier_calibration_review.schema.json")
+        .read_text(encoding="utf-8"))
+    item = schema["properties"]["nominated_rows"]["items"]["properties"][
+        "evidence"]["items"]
+    assert item["additionalProperties"] is False
+    assert sorted(item["properties"]) == ["axis", "passage_ref", "quote",
+                                          "supported_claim"]
+    assert "span_ref" not in item["properties"]
+    assert schema["properties"]["review_contract"]["const"] == \
+        "universe_classifier_calibration_review@0.1.0"
+
+
+@pytest.mark.parametrize("version,route,grant_maker", CALIBRATION_ROUTES[:-1],
+                         ids=["v2_1", "v2_2", "v2_3", "v2_4"])
+def test_every_earlier_review_route_refuses_a_v2_5_run(
+        cohort, selection, tmp_path, version, route, grant_maker):
+    result = _completed(cohort, selection, tmp_path, lcal.CALIBRATION_ROUTE_V2_5,
+                        "_v2_5_grant", f"back5-{version}")
+    with pytest.raises(ls.ScreenInputError,
+                       match=f"holds no {route.manifest_filename}"):
+        ccr.build_calibration_review(
+            repo_root=ROOT, calibration_run_dir=result.run_dir,
+            selection_path=selection.path, selection_sha256=selection.sha256,
+            output_path=tmp_path / f"never-back5-{version}" / "review.json",
+            review_id=f"never-back5-{version}", clock=CLOCK, dry_run=True,
+            calibration_route=route)
+
+
+def test_the_v2_5_review_cli_mode_reaches_its_route():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    assert ('if args.mode == "build-classifier-calibration-review-v2-5":\n'
+            "        return _main_build_classifier_calibration_review(\n"
+            "            args, calibration_route=CALIBRATION_ROUTE_V2_5)") in source

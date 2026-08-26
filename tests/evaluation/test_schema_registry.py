@@ -540,7 +540,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "cd0499797c0ec6cba8a74cbdd5927b82a81b601cf86aca703f812e441bdcbff3"
+    "2349e5510ebbe048457b09357677be9240abe37f8e3f62c4f8ebe496de4d40c0"
 )
 
 

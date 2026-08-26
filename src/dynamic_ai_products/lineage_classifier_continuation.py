@@ -37,7 +37,8 @@ from typing import Any, Callable
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-from .classifier_contract_set import V2_1, V2_2, V2_3, V2_4
+from .classifier_contract_set import V2_1, V2_2, V2_3, V2_4, V2_5
+from .classifier_span_index import build_span_index
 from .classifier_tier_engine import derive_tier
 from .lineage_classifier_v2_1 import (
     require_completed_run,
@@ -53,6 +54,7 @@ from .lineage_classifier_v2_1 import (
     _preflight,
     render_classifier_prompt,
     validate_axes_output,
+    validate_span_axes_output,
 )
 from .lineage_screen_live import CAPTURE_LEDGER_FILENAME
 from .universe.lineage_screen import (
@@ -74,6 +76,7 @@ __all__ = [
     "CONTINUATION_ROUTE_V2_2",
     "CONTINUATION_ROUTE_V2_3",
     "CONTINUATION_ROUTE_V2_4",
+    "CONTINUATION_ROUTE_V2_5",
     "ClassifierSourcePrefix",
     "load_classifier_continuation_source",
     "require_classifier_continuation_run",
@@ -152,6 +155,26 @@ CONTINUATION_ROUTE_V2_4 = ClassifierRoute(
         "schemas/universe_classifier_continuation_authorization.v4.schema.json"),
     archive_filename="universe_classifier_v2_4_raw_responses.jsonl",
     contracts=V2_4,
+)
+
+#: ADR-132. The V2.5 continuation route. The archive filename is what stops a
+#: V2.4 failed run from being continued here, and under ADR-132 that gate does
+#: more than separate versions: a V2.4 archive holds free-text quotes and no
+#: span reference, so replaying it under the 0.4.0 axes contract would refuse
+#: every row. The filename refuses it first, before any parse, which is the
+#: honest order -- an earlier run's evidence is not V2.5's to reinterpret.
+CONTINUATION_ROUTE_V2_5 = ClassifierRoute(
+    run_kind=CONTINUATION_RUN_KIND,
+    records_filename="universe_classifier_v2_5_continuation_records.jsonl",
+    manifest_filename="universe_classifier_v2_5_continuation_manifest.json",
+    manifest_contract="universe_classifier_continuation_manifest@0.5.0",
+    manifest_schema=(
+        "schemas/universe_classifier_continuation_manifest.v5.schema.json"),
+    record_order=RECORD_ORDER,
+    authorization_schema=(
+        "schemas/universe_classifier_continuation_authorization.v5.schema.json"),
+    archive_filename="universe_classifier_v2_5_raw_responses.jsonl",
+    contracts=V2_5,
 )
 
 #: Receipt fields a continuable classifier failure must carry. A receipt that
@@ -289,7 +312,7 @@ def load_classifier_continuation_source(
 def revalidate_classifier_prefix(
     prefix: ClassifierSourcePrefix, *, inputs, packets: dict, prompt_text: str,
     tier_rules, model_route: dict, validator: Draft202012Validator,
-    route: ClassifierRoute,
+    route: ClassifierRoute, span_rules=None,
 ) -> list[dict]:
     """Rebuild the prefix rows from evidence, recomputing every outcome.
 
@@ -328,7 +351,10 @@ def revalidate_classifier_prefix(
                 "digest."
             )
         admission = _admission_for(row, inputs, packet)
-        rendered, _refs = render_classifier_prompt(prompt_text, packet, admission)
+        span_index = (build_span_index(packet, span_rules)
+                      if span_rules is not None else None)
+        rendered, _refs = render_classifier_prompt(prompt_text, packet, admission,
+                                                   span_index=span_index)
         record = {
             "record_contract": route.contracts.record_contract,
             "cik": row["cik"],
@@ -351,13 +377,21 @@ def revalidate_classifier_prefix(
                 "source_run_id": prefix.run_id,
                 "source_raw_responses_sha256": prefix.archive_sha256,
                 "source_receipt_sha256": prefix.receipt_sha256},
+            **({"span_index_version": span_rules.version,
+                "span_index_sha256": span_rules.sha256}
+               if span_rules is not None else {}),
             "axes": None, "tier": None, "tier_rule_trace": None,
             "failure_reason_code": None, "failure_detail": None,
             "provider_attempt_telemetry": None, "truncation_evidence": None,
         }
         try:
-            axes = validate_axes_output(entry["raw_response"], packet, validator,
-                                        route.contracts.axes_contract)
+            if span_index is not None:
+                axes = validate_span_axes_output(
+                    entry["raw_response"], packet, validator,
+                    route.contracts.axes_contract, span_index)
+            else:
+                axes = validate_axes_output(entry["raw_response"], packet, validator,
+                                            route.contracts.axes_contract)
         except AxesValidationFailure as exc:
             record.update(record_kind="model_output_unusable",
                           failure_reason_code=exc.reason_code,
@@ -403,7 +437,7 @@ def run_lineage_classifier_continuation(
     holder: dict[str, Any] = {}
 
     def prefix_loader(authorization, inputs, packets, prompt_text, tier_rules,
-                      model_route):
+                      model_route, span_rules=None):
         if str(Path(authorization["source_run_path"])) != str(Path(source_run_dir)):
             raise ScreenInputError(
                 f"The grant names source run {authorization['source_run_path']!r}, "
@@ -438,7 +472,7 @@ def run_lineage_classifier_continuation(
         records = revalidate_classifier_prefix(
             prefix, inputs=inputs, packets=packets, prompt_text=prompt_text,
             tier_rules=tier_rules, model_route=model_route,
-            validator=axes_validator, route=route)
+            validator=axes_validator, route=route, span_rules=span_rules)
         stopping = (prefix.receipt["stopping_cik"],
                     prefix.receipt["stopping_accession"])
         # The stopping row sits at its own recorded ordinal, which is the last

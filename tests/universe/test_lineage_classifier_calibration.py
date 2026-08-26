@@ -803,3 +803,145 @@ def test_the_v2_4_calibration_cli_mode_reaches_its_route():
     assert ('if args.mode == "classify-universe-calibration-v2-4":\n'
             "        return _main_classify_universe_calibration(\n"
             "            args, route=CALIBRATION_ROUTE_V2_4)") in source
+
+
+# --- ADR-132: the calibration route at V2.5 -----------------------------------------
+
+from dynamic_ai_products import classifier_span_index as _csi  # noqa: E402
+
+
+def _v2_5_span_script(cohort, selection):
+    """A V2.5 script: every row answers with a span identifier, never with text."""
+    from test_lineage_classifier_v2_1 import _span_axes_payload
+    rules = _csi.load_span_index_rules(ROOT)
+    packets = cohort.release.packets
+    return {row["cik"]: {"text": _span_axes_payload(
+        packets[(row["cik"], row["accession"])], rules)}
+        for row in selection.rows}
+
+
+def _v2_5_grant(cohort, selection, tmp_path, *, name="calibration-gov-v2-5"):
+    """The V2.4 calibration grant re-pointed at V2.5 and its pinned span index."""
+    from dynamic_ai_products.classifier_contract_set import V2_5
+    rules = _csi.load_span_index_rules(ROOT)
+    base = _grant(cohort, selection, tmp_path, name=name).authorization
+    payload = dict(base)
+    payload.update({
+        "authorization_contract":
+            "universe_classifier_calibration_authorization@0.5.0",
+        "output_contract": V2_5.record_contract,
+        "taxonomy_version": V2_5.taxonomy_version,
+        "prompt_template_path": V2_5.prompt_path,
+        "prompt_template_sha256":
+            sha256((ROOT / V2_5.prompt_path).read_bytes()).hexdigest(),
+        "span_index_version": rules.version,
+        "span_index_sha256": rules.sha256,
+    })
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    ((tmp_path / name) / "calibration_authorization.json").write_bytes(raw)
+    return SimpleNamespace(root=tmp_path / name,
+                           reference="calibration_authorization.json",
+                           sha256=_sha(raw), authorization=payload)
+
+
+def test_the_v2_5_route_classifies_the_same_unchanged_selection(cohort, selection,
+                                                                tmp_path):
+    grant = _v2_5_grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path, run_id="calibration-v2-5",
+               script=_v2_5_span_script(cohort, selection),
+               route=lcal.CALIBRATION_ROUTE_V2_5)
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == \
+        "universe_classifier_calibration_manifest@0.5.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.4.0"
+    assert manifest["taxonomy_version"] == "universe_classifier_axes_v2_5"
+    assert manifest["span_index_version"] == "universe_classifier_span_index_v1"
+    assert manifest["promotable"] is False
+    assert manifest["covers_full_cohort"] is False
+    assert manifest["reconciliation"][
+        "every classified row's evidence resolves in its packet"] is True
+    records = [json.loads(x) for x in
+               (run.result.run_dir / lcal.CALIBRATION_ROUTE_V2_5.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(records) == len(selection.rows)
+    assert all(r["record_contract"] == "universe_classifier_record@0.4.0"
+               for r in records)
+
+
+def test_the_five_versions_write_five_disjoint_file_sets(cohort, selection, tmp_path):
+    runs = {
+        "v2_1": _run(cohort, selection, _grant(cohort, selection, tmp_path, name="p1"),
+                     tmp_path, run_id="calib-p1"),
+        "v2_2": _run(cohort, selection,
+                     _v2_2_grant(cohort, selection, tmp_path, name="p2"), tmp_path,
+                     run_id="calib-p2", route=lcal.CALIBRATION_ROUTE_V2_2),
+        "v2_3": _run(cohort, selection,
+                     _v2_3_grant(cohort, selection, tmp_path, name="p3"), tmp_path,
+                     run_id="calib-p3", route=lcal.CALIBRATION_ROUTE_V2_3),
+        "v2_4": _run(cohort, selection,
+                     _v2_4_grant(cohort, selection, tmp_path, name="p4"), tmp_path,
+                     run_id="calib-p4", route=lcal.CALIBRATION_ROUTE_V2_4),
+        "v2_5": _run(cohort, selection,
+                     _v2_5_grant(cohort, selection, tmp_path, name="p5"), tmp_path,
+                     run_id="calib-p5", route=lcal.CALIBRATION_ROUTE_V2_5,
+                     script=_v2_5_span_script(cohort, selection)),
+    }
+    names = {}
+    for version, run in runs.items():
+        assert run.result.status == "completed", (version, run.result.receipt)
+        names[version] = {p.name for p in run.result.run_dir.iterdir()}
+    transport = {"provider_captures", "universe_screen_capture_ledger.jsonl"}
+    versions = list(runs)
+    for i, a in enumerate(versions):
+        for b in versions[i + 1:]:
+            assert not (names[a] & names[b]) - transport, (a, b)
+
+
+@pytest.mark.parametrize("grant_maker", ["_grant", "_v2_2_grant", "_v2_3_grant",
+                                         "_v2_4_grant"],
+                         ids=["v2_1", "v2_2", "v2_3", "v2_4"])
+def test_the_v2_5_route_refuses_every_earlier_grant(cohort, selection, tmp_path,
+                                                    grant_maker):
+    grant = globals()[grant_maker](cohort, selection, tmp_path, name=f"q-{grant_maker}")
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, selection, grant, tmp_path, run_id=f"cross-e-{grant_maker}",
+             output_dir=tmp_path / f"never-e-{grant_maker}",
+             script=_v2_5_span_script(cohort, selection),
+             route=lcal.CALIBRATION_ROUTE_V2_5)
+
+
+@pytest.mark.parametrize("tag,route", [
+    ("v2_1", None), ("v2_2", lcal.CALIBRATION_ROUTE_V2_2),
+    ("v2_3", lcal.CALIBRATION_ROUTE_V2_3), ("v2_4", lcal.CALIBRATION_ROUTE_V2_4),
+], ids=["v2_1", "v2_2", "v2_3", "v2_4"])
+def test_every_earlier_route_refuses_the_v2_5_grant(cohort, selection, tmp_path,
+                                                    tag, route):
+    grant = _v2_5_grant(cohort, selection, tmp_path, name=f"r-{tag}")
+    kwargs = {} if route is None else {"route": route}
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, selection, grant, tmp_path, run_id=f"cross-f-{tag}",
+             output_dir=tmp_path / f"never-f-{tag}", **kwargs)
+
+
+def test_every_calibration_loader_refuses_the_other_four(cohort, selection, tmp_path):
+    v5 = _run(cohort, selection, _v2_5_grant(cohort, selection, tmp_path, name="p6"),
+              tmp_path, run_id="calib-iso-5", route=lcal.CALIBRATION_ROUTE_V2_5,
+              script=_v2_5_span_script(cohort, selection))
+    assert lcal.require_classifier_calibration_run(
+        v5.result.run_dir, route=lcal.CALIBRATION_ROUTE_V2_5) == \
+        v5.result.manifest_path
+    for other in (lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2,
+                  lcal.CALIBRATION_ROUTE_V2_3, lcal.CALIBRATION_ROUTE_V2_4):
+        with pytest.raises(ls.ScreenInputError,
+                           match=f"holds no {other.manifest_filename}"):
+            lcal.require_classifier_calibration_run(v5.result.run_dir, route=other)
+
+
+def test_the_v2_5_calibration_cli_mode_reaches_its_route():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    assert ('if args.mode == "classify-universe-calibration-v2-5":\n'
+            "        return _main_classify_universe_calibration(\n"
+            "            args, route=CALIBRATION_ROUTE_V2_5)") in source

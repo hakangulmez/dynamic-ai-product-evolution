@@ -1,0 +1,79 @@
+# ADR-132 deterministic span index for classifier evidence selection.
+#
+# This config is the single source of truth for turning a hash-bound Item 1
+# passage into the numbered sentence units a V2.5 model selects from. It is
+# pinned by digest in every V2.5 authorization and manifest, so the menu the
+# model chose from is identified by the run that used it.
+#
+# It is a RENDERING contract, not an archival one. A stored V2.5 evidence item
+# carries the resolved span's character offsets and SHA-256, so a later reader
+# re-derives the exact quote from the packet by offset and digest without ever
+# running this segmenter. That is deliberate: a regex and a Unicode database
+# are not things a decade-old record should have to depend on.
+span_index_version: "universe_classifier_span_index_v1"
+
+# --- normalization ------------------------------------------------------------------
+# Applied to the passage text before segmentation, and identical to the
+# whitespace normalization the classifier validator has always used for quote
+# resolution. Nothing new is introduced here.
+normalization:
+  rule: "collapse_whitespace_runs_to_single_space_and_strip"
+  equivalent_to: 'u" ".join(text.split())'
+  applies_to: "passage text only; the model's selection is an identifier, not text"
+
+# --- sentence boundary ---------------------------------------------------------------
+# A boundary is a sentence-final ., ! or ?, optionally followed by closing
+# quotation or bracket characters, then whitespace, then an opening quotation or
+# bracket character or an upper-case letter, a digit, or a bullet. A boundary is
+# suppressed when the terminator follows one of the closed abbreviations below.
+sentence_boundary:
+  terminators: [".", "!", "?"]
+  trailing_close_characters: "\"'”’)]"
+  # The close characters are matched by a LOOKBEHIND, never consumed: the
+  # split consumes whitespace only, which is what keeps segmentation
+  # lossless. Consuming them silently dropped source characters, and the
+  # losslessness guard in the module caught it on real packets.
+  leading_open_characters: "\"'“‘(["
+  next_unit_starts: "upper-case letter, digit, or ●"
+  pattern: "(?:(?<=[.!?])|(?<=[.!?][\"'”’)\\]]))(?<!\\bNo\\.)(?<!\\bInc\\.)(?<!\\bCorp\\.)(?<!\\bLtd\\.)(?<!\\bCo\\.)(?<!\\bU\\.S\\.)(?<!\\bMr\\.)(?<!\\bMs\\.)(?<!\\bDr\\.)(?<!\\bSt\\.)\\s+(?=[\"'“‘(\\[]*[A-Z0-9●])"
+
+# --- closed abbreviation list ---------------------------------------------------------
+# Closed by design. An abbreviation absent from this list splits, producing a
+# shorter menu entry; it never produces wrong text, because the text is
+# retrieved from the packet rather than reproduced from the split.
+abbreviations:
+  - "No"
+  - "Inc"
+  - "Corp"
+  - "Ltd"
+  - "Co"
+  - "U.S"
+  - "Mr"
+  - "Ms"
+  - "Dr"
+  - "St"
+
+# --- ordinals -------------------------------------------------------------------------
+# Units are numbered from 1 in reading order and zero-padded to three digits.
+# The widest passage in the 40-row calibration corpus holds 579 sentences, so
+# three digits carry the observed corpus with headroom. A passage that would
+# need a fourth digit is refused at load time rather than renumbered, because a
+# silently widened ordinal would change every span id in that passage.
+ordinals:
+  base: 1
+  width: 3
+  format: "S%03d"
+  span_ref_single: "P%03d:S%03d"
+  span_ref_range: "P%03d:S%03d-S%03d"
+  max_units_per_passage: 999
+  on_overflow: "refuse the packet"
+
+# --- selection bounds -----------------------------------------------------------------
+# A selected span is a contiguous run of whole units inside one passage. The
+# stored-text ceiling is a contract bound in the record schema; it is repeated
+# here so the two cannot drift silently. A selection that resolves above it is
+# refused with a distinct bounded reason code, never truncated.
+selection:
+  unit: "contiguous run of whole sentence units within one passage"
+  max_resolved_characters: 2000
+  on_over_bound: "refuse with span_exceeds_stored_bound"

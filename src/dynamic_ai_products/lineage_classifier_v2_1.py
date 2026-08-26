@@ -50,6 +50,15 @@ from dynamic_ai_products.providers.client_contract_v2 import (
     build_client_contract_v2,
     build_operation_endpoints,
 )
+from dynamic_ai_products.classifier_span_index import (
+    SpanIndexError,
+    SpanSelectionError,
+    build_span_index,
+    load_span_index_rules,
+    render_passage_units,
+    resolve_span,
+    verify_stored_span,
+)
 from dynamic_ai_products.providers.errors import ProviderError
 from dynamic_ai_products.providers.retry_policy import (
     RATE_LIMIT_POLICY_VERSION,
@@ -78,6 +87,7 @@ from .classifier_contract_set import (
     V2_2,
     V2_3,
     V2_4,
+    V2_5,
     ClassifierContractSet,
 )
 from .classifier_tier_engine import derive_tier, load_tier_rules
@@ -133,6 +143,7 @@ __all__ = [
     "BASE_ROUTE_V2_2",
     "BASE_ROUTE_V2_3",
     "BASE_ROUTE_V2_4",
+    "BASE_ROUTE_V2_5",
     "ClassifierRoute",
     "require_classifier_run",
     "require_completed_run",
@@ -244,6 +255,25 @@ BASE_ROUTE_V2_4 = ClassifierRoute(
     contracts=V2_4,
 )
 
+#: ADR-132. The V2.5 base route. Its contract set declares ``selected_span``,
+#: which is what makes the runner render a span menu and resolve identifiers
+#: instead of resolving typed quotes. Unlike the V2.3-to-V2.4 boundary, the
+#: contracts alone already reject each other: a V2.4 response carries ``quote``
+#: and fails the 0.4.0 axes schema as an unknown property, and a V2.5 response
+#: carries ``span_ref`` and fails 0.3.0's the same way. The filenames still gate
+#: archives and manifests, which is what keeps a V2.4 archive unreadable here.
+BASE_ROUTE_V2_5 = ClassifierRoute(
+    run_kind=RUN_KIND,
+    records_filename="universe_classifier_v2_5_records.jsonl",
+    manifest_filename="universe_classifier_v2_5_manifest.json",
+    manifest_contract="universe_classifier_manifest@0.5.0",
+    manifest_schema="schemas/universe_classifier_manifest.v5.schema.json",
+    record_order=RECORD_ORDER,
+    authorization_schema="schemas/universe_classifier_authorization.v5.schema.json",
+    archive_filename="universe_classifier_v2_5_raw_responses.jsonl",
+    contracts=V2_5,
+)
+
 #: The closed provider reasons a bounded provider-unresolved row may carry,
 #: identical to ADR-121's set. Never widened here.
 PROVIDER_UNRESOLVED_REASONS: tuple[str, ...] = (
@@ -274,14 +304,22 @@ def _detail(text: str) -> str:
 # --- rendering ----------------------------------------------------------------------
 
 
-def render_classifier_prompt(template: str, packet: dict, admission: dict
-                             ) -> tuple[str, dict[str, str]]:
+def render_classifier_prompt(template: str, packet: dict, admission: dict,
+                             *, span_index=None) -> tuple[str, dict[str, str]]:
     """Render one request: admission context plus the complete Item 1 packet.
 
     The model sees no path, digest, raw-response id, overlay id, reviewer id or
     repository content — only a natural-language admission summary and the
     displayed passages. Returns the rendered prompt and the ``Pnnn`` mapping the
     response is resolved against.
+
+    ``span_index`` is ADR-132 and is ``None`` for every ``model_quote`` version,
+    which renders exactly as it always has — byte for byte, so a V2.1 to V2.4
+    prompt digest cannot move. When a ``selected_span`` route supplies an index,
+    each passage is rendered as its numbered units instead of as one block. The
+    source text still appears exactly once: the markers sit between units the
+    segmenter derived from that same text, and the span module refuses any
+    segmentation whose units do not rejoin to the normalized passage.
     """
     for token in _PLACEHOLDERS:
         if token not in template:
@@ -290,9 +328,15 @@ def render_classifier_prompt(template: str, packet: dict, admission: dict
                 "committed template and this renderer have diverged."
             )
     refs = passage_refs(packet)
-    displayed = "\n\n".join(
-        f"[passage_ref={ref} section={passage['section']}]\n{passage['text']}"
-        for ref, passage in zip(sorted(refs), packet["passages"]))
+    if span_index is None:
+        displayed = "\n\n".join(
+            f"[passage_ref={ref} section={passage['section']}]\n{passage['text']}"
+            for ref, passage in zip(sorted(refs), packet["passages"]))
+    else:
+        displayed = "\n\n".join(
+            f"[passage_ref={ref} section={passage['section']}]\n"
+            f"{render_passage_units(span_index.passages[ref])}"
+            for ref, passage in zip(sorted(refs), packet["passages"]))
     metadata = (f"cik: {packet['cik']}\n"
                 f"accession: {packet['accession']}\n"
                 f"form: {packet['form']}\n"
@@ -637,6 +681,65 @@ def validate_axes_output(raw: str, packet: dict, validator: Draft202012Validator
     return parsed
 
 
+def validate_span_axes_output(raw: str, packet: dict,
+                             validator: Draft202012Validator, axes_contract: str,
+                             span_index) -> dict:
+    """Parse and validate one V2.5 response, then resolve its spans (ADR-132).
+
+    The model returns identifiers; this function turns them into text. Structure
+    is the model's responsibility and relevance is the reviewer's: a span that
+    parses, names a displayed passage and resolves in range is accepted even if
+    a human would judge it unconvincing. That is deliberate. Refusing a
+    well-formed but weak selection would be the pipeline scoring evidence, which
+    belongs to the review gate and to no layer here.
+
+    Returns the axes with each evidence item extended by the pipeline's own
+    ``resolved_quote``, ``span_start``, ``span_end`` and ``span_sha256``. The
+    model wrote none of those four.
+    """
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise AxesValidationFailure("invalid_model_json",
+                                    f"Model output is not valid JSON: {exc}.") from exc
+    if not isinstance(parsed, dict):
+        raise AxesValidationFailure(
+            "invalid_model_json",
+            f"Model output is JSON but not an object: {type(parsed).__name__}.")
+    for forbidden in ("tier", "candidate_tier", "tier_rule_trace"):
+        if forbidden in parsed:
+            raise AxesValidationFailure(
+                "model_emitted_tier",
+                f"Model output carries {forbidden!r}. The model returns axes "
+                "only; a tier is derived deterministically and a model-supplied "
+                "tier is never accepted.")
+    errors = sorted(validator.iter_errors(parsed), key=lambda e: e.json_path)
+    if errors:
+        raise AxesValidationFailure(
+            "axes_contract_violation",
+            f"Model output violates {axes_contract} at "
+            f"{errors[0].json_path}: {errors[0].message}")
+    resolved_evidence = []
+    for position, item in enumerate(parsed["evidence"], start=1):
+        try:
+            resolved = resolve_span(item["span_ref"], item["passage_ref"], span_index)
+        except SpanSelectionError as exc:
+            raise AxesValidationFailure(
+                exc.reason_code, f"Evidence {position}: {exc.detail}") from exc
+        resolved_evidence.append({
+            **item, "resolved_quote": resolved.text,
+            "span_start": resolved.start, "span_end": resolved.end,
+            "span_sha256": resolved.sha256})
+    stated = [parsed[f] for f in ("customer_facing_functional_product",
+                                 "economically_eligible", "data_eligible")]
+    if (parsed["software_centrality"] != "UNKNOWN" or any(v is not None for v in stated)) \
+            and not parsed["evidence"]:
+        raise AxesValidationFailure(
+            "unsupported_conclusion",
+            "The output states a non-unknown conclusion but cites no evidence.")
+    return {**parsed, "evidence": resolved_evidence}
+
+
 def require_completed_run(directory: Path, route: ClassifierRoute, *,
                           what: str) -> dict:
     """Load and verify one completed run of exactly one route.
@@ -712,6 +815,9 @@ class _Preflight:
     source: dict | None
     route: ClassifierRoute
     selection: dict | None
+    #: ADR-132. The pinned span-index rules for a ``selected_span`` route, and
+    #: ``None`` for every ``model_quote`` route, which has no span index.
+    span_rules: object | None = None
 
 
 def _preflight(
@@ -743,6 +849,27 @@ def _preflight(
                 <= now < _parse_moment(artifact["expires_at"], f"{label} expires_at")):
             raise ScreenInputError(
                 f"The {label} is outside its effective window; nothing runs.")
+    span_rules = None
+    if route.contracts.evidence_protocol == "selected_span":
+        try:
+            span_rules = load_span_index_rules(root)
+        except SpanIndexError as exc:
+            raise ScreenInputError(f"Span index unusable: {exc}") from exc
+        if authorization.get("span_index_version") != span_rules.version:
+            raise ScreenInputError(
+                f"The grant authorizes span index "
+                f"{authorization.get('span_index_version')!r}, but the committed "
+                f"config is {span_rules.version!r}.")
+        if authorization.get("span_index_sha256") != span_rules.sha256:
+            raise ScreenInputError(
+                "The grant pins a different span-index digest than the committed "
+                "config hashes to; the menu this run would render is not the one "
+                "authorized.")
+    # A model_quote route needs no symmetric guard here: every earlier
+    # authorization schema is additionalProperties:false, so a grant carrying
+    # span_index_version is refused by _validate before this point. Asserting it
+    # again would be unreachable code pretending to be a safeguard.
+
     contract = build_client_contract_v2(
         vertex_project=authorization["vertex_project"],
         vertex_location=authorization["vertex_location"])
@@ -824,7 +951,8 @@ def _preflight(
     if prefix_loader is not None:
         prefix_records, source = prefix_loader(
             authorization, inputs, packets,
-            _decode_utf8(prompt_raw, "classifier prompt"), tier_rules, model_route)
+            _decode_utf8(prompt_raw, "classifier prompt"), tier_rules, model_route,
+            span_rules)
 
     plan: list[tuple[dict, dict, dict]] = []
     for row in scope[len(prefix_records):]:
@@ -882,7 +1010,7 @@ def _preflight(
         authorization=authorization, enablement=enablement, contract_digest=digest,
         endpoints=endpoints, prompt_text=_decode_utf8(prompt_raw, "classifier prompt"),
         prompt_sha256=prompt_sha, tier_rules=tier_rules, inputs=inputs,
-        packets=packets, plan=plan, model_route=model_route,
+        packets=packets, plan=plan, model_route=model_route, span_rules=span_rules,
         prefix_records=prefix_records, source=source, route=route,
         selection=selection)
 
@@ -1082,6 +1210,9 @@ def _execute(*, root: Path, pre: _Preflight, output_dir, run_id: str,
                 "model_screen": admission["model_screen"],
                 "human_review": admission["human_review"]},
             "output_provenance": model_called_provenance(run_id, None, None),
+            **({"span_index_version": pre.span_rules.version,
+                "span_index_sha256": pre.span_rules.sha256}
+               if pre.route.contracts.evidence_protocol == "selected_span" else {}),
             "axes": None, "tier": None, "tier_rule_trace": None,
             "failure_reason_code": None, "failure_detail": None,
             "provider_attempt_telemetry": None, "truncation_evidence": None,
@@ -1151,7 +1282,10 @@ def _execute(*, root: Path, pre: _Preflight, output_dir, run_id: str,
         return result
 
     for row, packet, admission in pre.plan:
-        rendered, _refs = render_classifier_prompt(pre.prompt_text, packet, admission)
+        span_index = (build_span_index(packet, pre.span_rules)
+                      if pre.span_rules is not None else None)
+        rendered, _refs = render_classifier_prompt(pre.prompt_text, packet, admission,
+                                                   span_index=span_index)
         called_rows += 1
         before = len(ledger)
         try:
@@ -1216,8 +1350,13 @@ def _execute(*, root: Path, pre: _Preflight, output_dir, run_id: str,
                   "output_provenance": model_called_provenance(
                       run_id, response_id, raw_sha)}
         try:
-            axes = validate_axes_output(raw, packet, axes_validator,
-                                        pre.route.contracts.axes_contract)
+            if span_index is not None:
+                axes = validate_span_axes_output(
+                    raw, packet, axes_validator,
+                    pre.route.contracts.axes_contract, span_index)
+            else:
+                axes = validate_axes_output(raw, packet, axes_validator,
+                                            pre.route.contracts.axes_contract)
         except AxesValidationFailure as exc:
             unusable[exc.reason_code] = unusable.get(exc.reason_code, 0) + 1
             record.update(record_kind="model_output_unusable",
@@ -1396,7 +1535,10 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
             r["axes"] is None and r["tier"] is None and r["tier_rule_trace"] is None
             for r in records if r["record_kind"] != "classified"),
         "every classified row's evidence resolves in its packet": all(
-            _evidence_resolves(r, pre.packets) for r in classified),
+            _evidence_resolves(
+                r, pre.packets,
+                selected_span=pre.route.contracts.evidence_protocol
+                == "selected_span") for r in classified),
         "bounded outcomes stayed within their authorized tolerances": (
             counts["model_output_unusable"]
             <= pre.authorization["max_model_output_unusable"]
@@ -1504,6 +1646,9 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
         "tier_rules_version": pre.tier_rules.version,
         "tier_rules_sha256": pre.tier_rules.sha256,
         "taxonomy_version": pre.route.contracts.taxonomy_version,
+        **({"span_index_version": pre.span_rules.version,
+            "span_index_sha256": pre.span_rules.sha256}
+           if pre.span_rules is not None else {}),
         "provider": dict(pre.model_route),
         "provider_client_contract_reference": CLIENT_CONTRACT_V2_ID,
         "provider_client_contract_sha256": pre.contract_digest,
@@ -1605,10 +1750,27 @@ def _tally(records: list[dict], field: str) -> dict[str, int]:
     return tally
 
 
-def _evidence_resolves(record: dict, packets: dict) -> bool:
+def _evidence_resolves(record: dict, packets: dict, *,
+                       selected_span: bool = False) -> bool:
+    """Re-derive one stored row's evidence from its packet.
+
+    For ``model_quote`` versions this is the original check: the typed quote
+    must occur in the passage it cites. For ADR-132's ``selected_span`` it is a
+    stronger and cheaper one: the stored text must be exactly what sits at the
+    stored offsets, and must hash to the stored digest.
+
+    Neither path loads the span-index config or runs the segmenter. That is the
+    property ADR-132 claimed and an earlier revision of this function broke, by
+    rebuilding a span index here purely to reach the verifier. The span index is
+    needed to *render* the menu and to resolve a model's selection the first
+    time; it is not needed, and must not be needed, to check a stored row.
+    """
     packet = packets.get((record["cik"], record["accession"]))
     if packet is None:
         return False
+    if selected_span:
+        return all(verify_stored_span(item, packet)
+                   for item in record["axes"]["evidence"])
     refs = passage_refs(packet)
     bodies = {p["passage_id"]: " ".join(p["text"].split()) for p in packet["passages"]}
     for item in record["axes"]["evidence"]:

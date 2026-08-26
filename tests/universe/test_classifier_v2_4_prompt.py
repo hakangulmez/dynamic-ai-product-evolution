@@ -135,8 +135,10 @@ def test_the_v2_4_contract_set_names_its_own_everything():
 
 def test_contract_set_for_resolves_v2_4_and_still_refuses_the_unknown():
     assert ccs.contract_set_for("v2_4") is ccs.V2_4
+    # ADR-132 made v2_5 real, so the unknown-id probe moves to the next one.
+    assert ccs.contract_set_for("v2_5") is ccs.V2_5
     with pytest.raises(ValueError):
-        ccs.contract_set_for("v2_5")
+        ccs.contract_set_for("v2_6")
 
 
 # --- exactly one bound moved --------------------------------------------------------
@@ -507,3 +509,38 @@ def test_the_prompt_fences_are_balanced():
 def test_the_prompt_carries_no_stale_two_hundred_claim_bound():
     assert "each `supported_claim` at most 200" not in FLAT
     assert "`supported_claim`: at most 200 characters." not in FLAT
+
+
+# --- ADR-132: V2.4 is frozen, and V2.5 did not reach back into it -----------------
+
+
+def test_the_v2_4_prompt_is_byte_unchanged_by_adr_132():
+    assert sha256((ROOT / ccs.V2_4.prompt_path).read_bytes()).hexdigest() == \
+        "a0b9a7a3ee263da7a0cd278b5ae147ec8b9ed51c0918767ae67c663efe067f6b"
+
+
+def test_the_v2_4_axes_and_record_contracts_are_byte_unchanged():
+    evidence = AXES["properties"]["evidence"]
+    assert evidence["maxItems"] == 12
+    assert evidence["items"]["properties"]["quote"]["maxLength"] == 1200
+    assert evidence["items"]["properties"]["supported_claim"]["maxLength"] == 300
+    assert evidence["items"]["required"] == [
+        "axis", "passage_ref", "quote", "supported_claim"]
+    assert RECORD["properties"]["record_contract"]["const"] == \
+        "universe_classifier_record@0.3.0"
+
+
+def test_v2_5_forked_rather_than_edited_the_v2_4_contracts():
+    assert ccs.V2_5.axes_schema != ccs.V2_4.axes_schema
+    assert ccs.V2_5.record_schema != ccs.V2_4.record_schema
+    assert ccs.V2_5.prompt_path != ccs.V2_4.prompt_path
+    assert ccs.V2_4.evidence_protocol == "model_quote"
+    assert ccs.V2_5.evidence_protocol == "selected_span"
+
+
+def test_the_v2_4_prompt_still_asks_the_model_to_type_the_quote():
+    """The regime ADR-132 replaced, pinned so the contrast stays legible."""
+    assert "A quote is a copy operation, not a writing task." in FLAT
+    assert "`quote`: at most 1200 characters" in FLAT
+    assert "span_ref" not in FLAT
+    assert "[S001]" not in FLAT

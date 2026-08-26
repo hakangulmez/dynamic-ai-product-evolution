@@ -936,7 +936,7 @@ def test_the_cli_declares_both_modes():
     assert "classify-universe-cohort-continuation" in choices
     # ADR-127 added three calibration modes; ADR-128 three V2.2 modes;
     # ADR-129 three V2.3 modes and two review modes; ADR-130 four V2.4 modes.
-    assert "Fifty-four mutually exclusive modes" in cli.__doc__
+    assert "Fifty-eight mutually exclusive modes" in cli.__doc__
 
 
 # --- ADR-129: the base route at V2.3 ----------------------------------------------
@@ -1097,3 +1097,306 @@ def test_the_v2_4_cli_mode_reaches_the_v2_4_route():
     choices = next(a.choices for a in cli.build_parser()._actions
                    if a.dest == "mode")
     assert "classify-universe-cohort-v2-4" in choices
+
+
+# --- ADR-132: the base route at V2.5 ------------------------------------------------
+
+from dynamic_ai_products import classifier_span_index as _csi  # noqa: E402
+
+
+def _span_rules():
+    return _csi.load_span_index_rules(ROOT)
+
+
+def _span_axes_payload(packet, rules, *, span_ref=None, ref=None, extra=None,
+                       evidence=True):
+    """A V2.5 response: identifiers only, no source text anywhere in it."""
+    index = _csi.build_span_index(packet, rules)
+    chosen_ref = ref or sorted(index.passages)[0]
+    payload = {
+        "customer_value_archetypes": ["FUNCTIONAL_SOFTWARE"],
+        "software_centrality": "CORE",
+        "complementary_dependencies": ["NONE_OR_STANDARD_COMPUTE"],
+        "firm_structure": "PURE_PLAY", "commercial_materiality": "DOMINANT",
+        "customer_facing_functional_product": True,
+        "economically_eligible": True, "data_eligible": True,
+        "customer_market_orientation": "B2B",
+        "boundary_flags": [], "contradictions": [],
+        "evidence": [{"axis": "centrality", "passage_ref": chosen_ref,
+                      "span_ref": span_ref or f"{chosen_ref}:S001",
+                      "supported_claim": "The selected span supports this axis."}]
+        if evidence else [],
+        "confidence": "high",
+    }
+    if extra is not None:
+        payload.update(extra)
+    return json.dumps(payload)
+
+
+def _span_script(cohort, **overrides):
+    rules = _span_rules()
+    packets = cohort.release.packets
+    script = {row["cik"]: {"text": _span_axes_payload(
+        packets[(row["cik"], row["accession"])], rules)} for row in cohort.rows}
+    for cik, extra in overrides.items():
+        script[cik] = {**script.get(cik, {}), **extra}
+    return script
+
+
+def _v2_5_base_grant(cohort, tmp_path, *, name="base-gov-v2-5"):
+    """The V2.4 base grant re-pointed at V2.5 and its pinned span index."""
+    from dynamic_ai_products.classifier_contract_set import V2_5
+    rules = _span_rules()
+    base = _grant(cohort, tmp_path, name=name).authorization
+    payload = dict(base)
+    payload.update({
+        "authorization_contract": "universe_classifier_authorization@0.5.0",
+        "output_contract": V2_5.record_contract,
+        "taxonomy_version": V2_5.taxonomy_version,
+        "prompt_template_path": V2_5.prompt_path,
+        "prompt_template_sha256":
+            sha256((ROOT / V2_5.prompt_path).read_bytes()).hexdigest(),
+        "span_index_version": rules.version,
+        "span_index_sha256": rules.sha256,
+    })
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    ((tmp_path / name) / "classifier_authorization.json").write_bytes(raw)
+    return SimpleNamespace(root=tmp_path / name,
+                           reference="classifier_authorization.json",
+                           sha256=_sha(raw), authorization=payload)
+
+
+def test_the_v2_5_base_route_completes_end_to_end(cohort, tmp_path):
+    grant = _v2_5_base_grant(cohort, tmp_path)
+    run = _run(cohort, grant, tmp_path, run_id="base-v2-5",
+               script=_span_script(cohort), route=lcl.BASE_ROUTE_V2_5)
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == "universe_classifier_manifest@0.5.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.4.0"
+    assert manifest["taxonomy_version"] == "universe_classifier_axes_v2_5"
+    assert manifest["span_index_version"] == "universe_classifier_span_index_v1"
+    assert manifest["span_index_sha256"] == _span_rules().sha256
+    records = [json.loads(x) for x in
+               (run.result.run_dir / lcl.BASE_ROUTE_V2_5.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(records) == len(cohort.rows)
+    assert all(r["record_contract"] == "universe_classifier_record@0.4.0"
+               for r in records)
+
+
+def test_the_stored_v2_5_evidence_round_trips_from_the_packet(cohort, tmp_path):
+    """The property that makes a stored row verifiable without the segmenter."""
+    grant = _v2_5_base_grant(cohort, tmp_path, name="base-gov-v2-5-rt")
+    run = _run(cohort, grant, tmp_path, run_id="base-v2-5-rt",
+               script=_span_script(cohort), route=lcl.BASE_ROUTE_V2_5)
+    rules = _span_rules()
+    records = [json.loads(x) for x in
+               (run.result.run_dir / lcl.BASE_ROUTE_V2_5.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    checked = 0
+    for record in records:
+        if record["record_kind"] != "classified":
+            continue
+        assert record["span_index_version"] == rules.version
+        packet = cohort.release.packets[(record["cik"], record["accession"])]
+        index = _csi.build_span_index(packet, rules)
+        for item in record["axes"]["evidence"]:
+            assert _csi.verify_stored_span(item, packet)
+            spans = index.passages[item["passage_ref"]]
+            assert spans.normalized[item["span_start"]:item["span_end"]] == \
+                item["resolved_quote"]
+            assert item["span_sha256"] == sha256(
+                item["resolved_quote"].encode("utf-8")).hexdigest()
+            assert "quote" not in item
+            checked += 1
+    assert checked
+
+
+def test_the_model_never_supplied_the_stored_text(cohort, tmp_path):
+    """The archived model bytes carry the identifier and none of the text."""
+    grant = _v2_5_base_grant(cohort, tmp_path, name="base-gov-v2-5-arch")
+    run = _run(cohort, grant, tmp_path, run_id="base-v2-5-arch",
+               script=_span_script(cohort), route=lcl.BASE_ROUTE_V2_5)
+    archive = (run.result.run_dir / lcl.BASE_ROUTE_V2_5.archive_filename
+               ).read_text(encoding="utf-8")
+    for line in archive.splitlines():
+        if not line.strip():
+            continue
+        raw = json.loads(json.loads(line)["raw_response"])
+        for item in raw["evidence"]:
+            assert set(item) == {"axis", "passage_ref", "span_ref", "supported_claim"}
+
+
+def test_a_v2_5_grant_naming_a_different_span_index_is_refused(cohort, tmp_path):
+    grant = _v2_5_base_grant(cohort, tmp_path, name="base-gov-v2-5-drift")
+    payload = dict(grant.authorization, span_index_sha256="0" * 64)
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    (grant.root / "classifier_authorization.json").write_bytes(raw)
+    drifted = SimpleNamespace(root=grant.root,
+                              reference="classifier_authorization.json",
+                              sha256=_sha(raw), authorization=payload)
+    # span_index_sha256 is a const in the v5 contract, so the grant is refused
+    # at schema validation before the runner compares it to the config on disk.
+    # The runner's own comparison still matters for the other direction: a config
+    # edited after the grant was written.
+    with pytest.raises(ls.ScreenInputError, match="span_index_sha256"):
+        _run(cohort, drifted, tmp_path, run_id="base-v2-5-drift",
+             script=_span_script(cohort), output_dir=tmp_path / "never-drift",
+             route=lcl.BASE_ROUTE_V2_5)
+
+
+def test_a_model_quote_route_refuses_a_grant_naming_a_span_index(cohort, tmp_path):
+    """The earlier contracts are additionalProperties:false, so this is structural."""
+    grant = _v2_4_base_grant(cohort, tmp_path, name="base-gov-v2-4-span")
+    payload = dict(grant.authorization,
+                   span_index_version="universe_classifier_span_index_v1")
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    (grant.root / "classifier_authorization.json").write_bytes(raw)
+    mixed = SimpleNamespace(root=grant.root,
+                            reference="classifier_authorization.json",
+                            sha256=_sha(raw), authorization=payload)
+    with pytest.raises(ls.ScreenInputError, match="span_index_version"):
+        _run(cohort, mixed, tmp_path, run_id="base-v2-4-span",
+             output_dir=tmp_path / "never-span", route=lcl.BASE_ROUTE_V2_4)
+
+
+@pytest.mark.parametrize("route", [
+    lcl.BASE_ROUTE, lcl.BASE_ROUTE_V2_2, lcl.BASE_ROUTE_V2_3, lcl.BASE_ROUTE_V2_4,
+], ids=["v2_1", "v2_2", "v2_3", "v2_4"])
+def test_every_earlier_base_loader_refuses_a_v2_5_run(cohort, tmp_path, route):
+    tag = route.contracts.version_id
+    grant = _v2_5_base_grant(cohort, tmp_path, name=f"base-gov-v2-5-iso-{tag}")
+    run = _run(cohort, grant, tmp_path, run_id=f"base-v2-5-iso-{tag}",
+               script=_span_script(cohort), route=lcl.BASE_ROUTE_V2_5)
+    with pytest.raises(ls.ScreenInputError, match="holds no "):
+        lcl.require_classifier_run(run.result.run_dir, route=route)
+
+
+def test_the_v2_5_base_loader_refuses_a_v2_4_run(cohort, tmp_path):
+    grant = _v2_4_base_grant(cohort, tmp_path, name="base-gov-v2-4-for-v2-5")
+    run = _run(cohort, grant, tmp_path, run_id="base-v2-4-for-v2-5",
+               route=lcl.BASE_ROUTE_V2_4)
+    with pytest.raises(ls.ScreenInputError,
+                       match="holds no universe_classifier_v2_5_manifest.json"):
+        lcl.require_classifier_run(run.result.run_dir, route=lcl.BASE_ROUTE_V2_5)
+
+
+def test_the_v2_5_cli_mode_reaches_the_v2_5_route():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    assert ('if args.mode == "classify-universe-cohort-v2-5":\n'
+            "        return _main_classify_universe_cohort("
+            "args, route=BASE_ROUTE_V2_5)") in source
+    cli = _cli_module()
+    choices = next(a.choices for a in cli.build_parser()._actions if a.dest == "mode")
+    assert "classify-universe-cohort-v2-5" in choices
+    assert len(choices) == 58
+
+
+# --- ADR-132 correction: archival verification needs the packet and nothing else ----
+
+
+def _v2_5_completed(cohort, tmp_path, tag):
+    grant = _v2_5_base_grant(cohort, tmp_path, name=f"base-gov-{tag}")
+    run = _run(cohort, grant, tmp_path, run_id=f"base-{tag}",
+               script=_span_script(cohort), route=lcl.BASE_ROUTE_V2_5)
+    assert run.result.status == "completed", run.result.receipt
+    records = [json.loads(x) for x in
+               (run.result.run_dir / lcl.BASE_ROUTE_V2_5.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    return [r for r in records if r["record_kind"] == "classified"]
+
+
+def test_v2_5_reconciliation_holds_when_the_segmenter_cannot_run(cohort, tmp_path,
+                                                                 monkeypatch):
+    """The regression. Reconciliation must not reach ``build_span_index``.
+
+    An earlier revision rebuilt a span index inside ``_evidence_resolves``,
+    which made every stored row depend on the segmenter it was supposed to
+    outlive. Rigging the segmenter to raise is the only honest way to assert it
+    is gone.
+    """
+    classified = _v2_5_completed(cohort, tmp_path, "recon-segmenter")
+    assert classified
+    packets = cohort.release.packets
+
+    def _explode(*args, **kwargs):
+        raise AssertionError("reconciliation must not build a span index")
+
+    monkeypatch.setattr(lcl, "build_span_index", _explode)
+    monkeypatch.setattr(_csi, "build_span_index", _explode)
+    monkeypatch.setattr(_csi, "segment_units", _explode)
+    for record in classified:
+        assert lcl._evidence_resolves(record, packets, selected_span=True)
+
+
+def test_v2_5_reconciliation_holds_when_the_span_rules_cannot_be_loaded(
+        cohort, tmp_path, monkeypatch):
+    """A stored row outlives its config: the rules loader is never consulted."""
+    classified = _v2_5_completed(cohort, tmp_path, "recon-rules")
+    assert classified
+    packets = cohort.release.packets
+
+    def _explode(*args, **kwargs):
+        raise _csi.SpanIndexError("span index config is unavailable")
+
+    monkeypatch.setattr(lcl, "load_span_index_rules", _explode)
+    monkeypatch.setattr(_csi, "load_span_index_rules", _explode)
+    for record in classified:
+        assert lcl._evidence_resolves(record, packets, selected_span=True)
+
+
+@pytest.mark.parametrize("field,mutate", [
+    ("passage_ref", lambda v: "P999"),
+    ("span_start", lambda v: v + 1),
+    ("span_end", lambda v: v - 1),
+    ("resolved_quote", lambda v: v + " tampered"),
+    ("span_sha256", lambda v: "0" * 64),
+], ids=["passage_ref", "span_start", "span_end", "resolved_quote", "span_sha256"])
+def test_tampering_with_a_stored_v2_5_item_still_fails(cohort, tmp_path, field,
+                                                       mutate):
+    classified = _v2_5_completed(cohort, tmp_path, f"tamper-{field}")
+    record = next(r for r in classified if r["axes"]["evidence"])
+    packets = cohort.release.packets
+    assert lcl._evidence_resolves(record, packets, selected_span=True)
+    tampered = json.loads(json.dumps(record))
+    item = tampered["axes"]["evidence"][0]
+    item[field] = mutate(item[field])
+    assert not lcl._evidence_resolves(tampered, packets, selected_span=True)
+
+
+def test_v2_5_initial_validation_still_uses_the_span_index(cohort, tmp_path):
+    """The index is still required where it belongs: resolving a fresh selection."""
+    packet = cohort.release.packets[
+        (cohort.rows[0]["cik"], cohort.rows[0]["accession"])]
+    rules = _span_rules()
+    index = _csi.build_span_index(packet, rules)
+    validator = Draft202012Validator(
+        json.loads((ROOT / lcl.BASE_ROUTE_V2_5.contracts.axes_schema)
+                   .read_text(encoding="utf-8")),
+        format_checker=FormatChecker())
+    good = json.loads(_span_axes_payload(packet, rules))
+    axes = lcl.validate_span_axes_output(
+        json.dumps(good), packet, validator,
+        lcl.BASE_ROUTE_V2_5.contracts.axes_contract, index)
+    assert axes["evidence"][0]["resolved_quote"]
+
+    ref = sorted(index.passages)[0]
+    beyond = len(index.passages[ref].units) + 1
+    bad = json.loads(_span_axes_payload(packet, rules,
+                                        span_ref=f"{ref}:S{beyond:03d}"))
+    with pytest.raises(lcl.AxesValidationFailure) as exc:
+        lcl.validate_span_axes_output(
+            json.dumps(bad), packet, validator,
+            lcl.BASE_ROUTE_V2_5.contracts.axes_contract, index)
+    assert exc.value.reason_code == "span_reference_unresolvable"
+
+    malformed = json.loads(_span_axes_payload(packet, rules))
+    malformed["evidence"][0]["span_ref"] = "P001:S1"
+    with pytest.raises(lcl.AxesValidationFailure) as exc:
+        lcl.validate_span_axes_output(
+            json.dumps(malformed), packet, validator,
+            lcl.BASE_ROUTE_V2_5.contracts.axes_contract, index)
+    assert exc.value.reason_code == "axes_contract_violation"

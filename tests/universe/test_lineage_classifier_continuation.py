@@ -150,7 +150,8 @@ def _continuation_grant(cohort, source, tmp_path, *, mutate=None,
     if route is not None and route is not lcc.CONTINUATION_ROUTE:
         from hashlib import sha256
         version = {"v2_2": "0.2.0", "v2_3": "0.3.0",
-                   "v2_4": "0.4.0"}[route.contracts.version_id]
+                   "v2_4": "0.4.0",
+                   "v2_5": "0.5.0"}[route.contracts.version_id]
         payload.update({
             "authorization_contract":
                 f"universe_classifier_continuation_authorization@{version}",
@@ -160,6 +161,12 @@ def _continuation_grant(cohort, source, tmp_path, *, mutate=None,
             "prompt_template_sha256": sha256(
                 (ROOT / route.contracts.prompt_path).read_bytes()).hexdigest(),
         })
+        if route.contracts.evidence_protocol == "selected_span":
+            from dynamic_ai_products.classifier_span_index import (
+                load_span_index_rules)
+            rules = load_span_index_rules(ROOT)
+            payload.update({"span_index_version": rules.version,
+                            "span_index_sha256": rules.sha256})
     if mutate is not None:
         mutate(payload)
     raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
@@ -736,17 +743,26 @@ CONTINUATION_ROUTES = [
     ("v2_2", lcc.CONTINUATION_ROUTE_V2_2, "universe_classifier_record@0.2.0"),
     ("v2_3", lcc.CONTINUATION_ROUTE_V2_3, "universe_classifier_record@0.2.0"),
     ("v2_4", lcc.CONTINUATION_ROUTE_V2_4, "universe_classifier_record@0.3.0"),
+    ("v2_5", lcc.CONTINUATION_ROUTE_V2_5, "universe_classifier_record@0.4.0"),
 ]
 
 
 def _completed_continuation(cohort, tmp_path, route, tag):
-    """One genuine continuation at ``route``: its own prefix, its own grant."""
+    """One genuine continuation at ``route``: its own prefix, its own grant.
+
+    ADR-132 made the prefix's own shape route-dependent: a ``selected_span``
+    route's archive holds span identifiers, and seeding it with V2.4-shaped
+    quotes would refuse every reused row before the run started.
+    """
+    span = route.contracts.evidence_protocol == "selected_span"
     src = _failed_run(cohort, tmp_path, run_id=f"source-{tag}",
-                      route=None if route is lcc.CONTINUATION_ROUTE else route)
+                      route=None if route is lcc.CONTINUATION_ROUTE else route,
+                      **({"payloads": _v2_5_payloads(cohort)} if span else {}))
     grant = _continuation_grant(
         cohort, src, tmp_path, name=f"gov-{tag}",
         route=None if route is lcc.CONTINUATION_ROUTE else route)
     run = _run(cohort, src, grant, tmp_path, run_id=f"continuation-{tag}",
+               **({"script": _v2_5_script(cohort)} if span else {}),
                **({} if route is lcc.CONTINUATION_ROUTE else {"route": route}))
     assert run.result.status == "completed", run.result.receipt
     return src, run
@@ -984,3 +1000,131 @@ def test_the_v2_4_continuation_cli_mode_reaches_its_route():
     assert ('if args.mode == "classify-universe-cohort-continuation-v2-4":\n'
             "        return _main_classify_universe_cohort_continuation(\n"
             "            args, route=CONTINUATION_ROUTE_V2_4)") in source
+
+
+# --- ADR-132: the continuation route at V2.5 ----------------------------------------
+
+from dynamic_ai_products import classifier_span_index as _csi  # noqa: E402
+
+
+def _v2_5_script(cohort):
+    from test_lineage_classifier_v2_1 import _span_axes_payload
+    rules = _csi.load_span_index_rules(ROOT)
+    packets = cohort.release.packets
+    return {row["cik"]: {"text": _span_axes_payload(
+        packets[(row["cik"], row["accession"])], rules)} for row in cohort.rows}
+
+
+def _v2_5_payloads(cohort, prefix_rows=PREFIX_ROWS):
+    """Archived prefix responses in the V2.5 shape: identifiers, never text."""
+    from test_lineage_classifier_v2_1 import _span_axes_payload
+    rules = _csi.load_span_index_rules(ROOT)
+    packets = cohort.release.packets
+    return [_span_axes_payload(packets[(r["cik"], r["accession"])], rules)
+            for r in cohort.rows[:prefix_rows]]
+
+
+@pytest.fixture
+def v2_5_source(cohort, tmp_path):
+    return _failed_run(cohort, tmp_path, run_id="source-v2-5",
+                       route=lcc.CONTINUATION_ROUTE_V2_5,
+                       payloads=_v2_5_payloads(cohort))
+
+
+def test_the_v2_5_continuation_route_is_isolated_and_bound():
+    from dynamic_ai_products.classifier_contract_set import V2_4, V2_5
+    v4, v5 = lcc.CONTINUATION_ROUTE_V2_4, lcc.CONTINUATION_ROUTE_V2_5
+    assert v5.records_filename == "universe_classifier_v2_5_continuation_records.jsonl"
+    assert v5.archive_filename == "universe_classifier_v2_5_raw_responses.jsonl"
+    assert v5.manifest_contract == "universe_classifier_continuation_manifest@0.5.0"
+    assert v5.run_kind == v4.run_kind
+    assert v5.contracts.prompt_path == V2_5.prompt_path != V2_4.prompt_path
+    assert v5.contracts.evidence_protocol == "selected_span"
+    assert v4.contracts.evidence_protocol == "model_quote"
+
+
+def test_a_v2_5_continuation_completes_end_to_end(cohort, v2_5_source, tmp_path):
+    route = lcc.CONTINUATION_ROUTE_V2_5
+    grant = _continuation_grant(cohort, v2_5_source, tmp_path, route=route,
+                                name="gov-v2-5")
+    run = _run(cohort, v2_5_source, grant, tmp_path, run_id="continuation-v2-5",
+               route=route, script=_v2_5_script(cohort))
+    assert run.result.status == "completed", run.result.receipt
+    _assert_no_google()
+    manifest = json.loads(run.result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == \
+        "universe_classifier_continuation_manifest@0.5.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.4.0"
+    assert manifest["span_index_version"] == "universe_classifier_span_index_v1"
+    records = [json.loads(x) for x in
+               (run.result.run_dir / route.records_filename)
+               .read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(records) == len(cohort.rows)
+    assert all(r["record_contract"] == "universe_classifier_record@0.4.0"
+               for r in records)
+    # the reused prefix is rebuilt under the span protocol, not the quote one
+    reused = [r for r in records
+              if r["output_provenance"].get("source_run_id") == v2_5_source.run_id]
+    assert reused
+    for record in reused:
+        assert record["span_index_version"] == "universe_classifier_span_index_v1"
+        if record["record_kind"] == "classified":
+            for item in record["axes"]["evidence"]:
+                assert "span_ref" in item and "quote" not in item
+                assert item["span_sha256"]
+    archive = (run.result.run_dir / route.archive_filename).read_bytes()
+    assert archive.startswith(v2_5_source.archive_bytes)
+
+
+def test_the_v2_5_continuation_cannot_read_a_v2_4_archive(cohort, tmp_path):
+    """The archive filename refuses it before any parse.
+
+    That ordering is the point: a V2.4 archive holds free-text quotes and no
+    span reference, so replaying it under the 0.4.0 contract would refuse every
+    row anyway. Refusing on the filename first means an earlier run's evidence
+    is never reinterpreted, only declined.
+    """
+    src = _failed_run(cohort, tmp_path, run_id="source-v2-4-for-v2-5",
+                      route=lcc.CONTINUATION_ROUTE_V2_4)
+    grant = _continuation_grant(cohort, src, tmp_path, name="gov-v2-4-src",
+                                route=lcc.CONTINUATION_ROUTE_V2_5)
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, src, grant, tmp_path, run_id="cross-source-v2-5",
+             output_dir=tmp_path / "never-src-v2-5",
+             route=lcc.CONTINUATION_ROUTE_V2_5, script=_v2_5_script(cohort))
+
+
+def test_the_v2_4_route_refuses_a_v2_5_grant_and_source(cohort, tmp_path):
+    src = _failed_run(cohort, tmp_path, run_id="source-v2-5-for-v2-4",
+                      route=lcc.CONTINUATION_ROUTE_V2_5,
+                      payloads=_v2_5_payloads(cohort))
+    grant = _continuation_grant(cohort, src, tmp_path, name="gov-v2-5-for-v2-4",
+                                route=lcc.CONTINUATION_ROUTE_V2_5)
+    with pytest.raises(ls.ScreenInputError):
+        _run(cohort, src, grant, tmp_path, run_id="cross-v2-4-from-v2-5",
+             output_dir=tmp_path / "never-back-v2-4",
+             route=lcc.CONTINUATION_ROUTE_V2_4)
+
+
+def test_the_v2_5_continuation_loader_accepts_only_its_own_run(cohort, v2_5_source,
+                                                               tmp_path):
+    route = lcc.CONTINUATION_ROUTE_V2_5
+    grant = _continuation_grant(cohort, v2_5_source, tmp_path, route=route,
+                                name="gov-v2-5-iso")
+    run = _run(cohort, v2_5_source, grant, tmp_path, run_id="continuation-v2-5-iso",
+               route=route, script=_v2_5_script(cohort))
+    assert lcc.require_classifier_continuation_run(
+        run.result.run_dir, route=route) == run.result.manifest_path
+    for other in (lcc.CONTINUATION_ROUTE, lcc.CONTINUATION_ROUTE_V2_2,
+                  lcc.CONTINUATION_ROUTE_V2_3, lcc.CONTINUATION_ROUTE_V2_4):
+        with pytest.raises(ls.ScreenInputError,
+                           match=f"holds no {other.manifest_filename}"):
+            lcc.require_classifier_continuation_run(run.result.run_dir, route=other)
+
+
+def test_the_v2_5_continuation_cli_mode_reaches_its_route():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    assert ('if args.mode == "classify-universe-cohort-continuation-v2-5":\n'
+            "        return _main_classify_universe_cohort_continuation(\n"
+            "            args, route=CONTINUATION_ROUTE_V2_5)") in source

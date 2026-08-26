@@ -51,6 +51,27 @@ valid 0.2.0 axes object is a valid 0.3.0 one. Schema validity therefore cannot
 tell a V2.3 output from a V2.4 one, and nothing in this package relies on it:
 the separation is the route's output filenames plus the ``prompt_template_path``
 and ``output_contract`` consts, both of which reject in either direction.
+
+**Why V2.5 exists, and why it is a different kind of successor.** V2.2 through
+V2.4 changed how much the model could write or how it was told to write it.
+V2.5 changes what it writes at all: the free-text ``quote`` is removed, and the
+model instead selects a ``span_ref`` naming sentence units a pinned index
+derived from the hash-bound packet, with the pipeline retrieving the text. Three
+live calibrations produced ten diagnosed quote failures across five classes --
+one dropped invisible U+200B, four small visible copy errors, two splices across
+thousands of characters, one correctly copied quote attributed to the wrong
+passage, and one quote roughly 45% composed. Four of those five classes are
+unreachable when the model never types source characters. The fifth, selecting
+the wrong span, survives by design: it yields authentic packet text attached to
+a claim, which a human reviewer can adjudicate and which is not fabricated
+evidence. ``evidence_protocol`` names which regime a version runs, so the
+runner branches on a declared fact rather than on a version-id substring.
+
+**V2.5's rejection is bidirectional and structural**, unlike the 0.2.0-to-0.3.0
+widening: a V2.4 response carries ``quote`` and fails the 0.4.0 axes schema as
+an unknown property, and a V2.5 response carries ``span_ref`` and fails 0.3.0's
+the same way. The route filenames still gate archives and manifests, but here
+the contracts alone would already refuse each other.
 """
 
 from __future__ import annotations
@@ -63,6 +84,7 @@ __all__ = [
     "V2_2",
     "V2_3",
     "V2_4",
+    "V2_5",
     "ClassifierContractSet",
     "contract_set_for",
 ]
@@ -83,6 +105,15 @@ class ClassifierContractSet:
     #: V2.1, whose filenames were established before a second version existed
     #: and must not move.
     output_prefix: str
+    #: Which evidence regime this version runs. ``model_quote`` is V2.1 through
+    #: V2.4, where the model typed the quote. ``selected_span`` is ADR-132,
+    #: where the model selects an identifier and the pipeline retrieves the
+    #: text. The runner branches on this rather than on a version id, so a
+    #: future version declares its regime instead of being pattern-matched.
+    evidence_protocol: str = "model_quote"
+    #: The pinned span-index config a ``selected_span`` version renders from.
+    #: ``None`` for every ``model_quote`` version, which has no span index.
+    span_index_config: str | None = None
 
 
 V2_1 = ClassifierContractSet(
@@ -148,11 +179,31 @@ V2_4 = ClassifierContractSet(
     output_prefix="v2_4_",
 )
 
+#: ADR-132. The evidence protocol changes; the economics do not. Every axis,
+#: enum value and tier rule is V2_4's, the evidence ceiling stays at 12 objects
+#: and ``supported_claim`` at 300 characters. What moves is the evidence item:
+#: ``quote`` is gone and ``span_ref`` takes its place, so the axes and record
+#: contracts fork to 0.4.0 and ``taxonomy_version`` moves with them. The prompt
+#: is a successor because the instruction is now selection rather than copying.
+V2_5 = ClassifierContractSet(
+    version_id="v2_5",
+    prompt_path="prompts/discovery/universe_full_classification.v2_5.md",
+    axes_schema="schemas/universe_classifier_axes_record.v4.schema.json",
+    axes_contract="universe_classifier_axes_record@0.4.0",
+    record_contract="universe_classifier_record@0.4.0",
+    record_schema="schemas/universe_classifier_record.v4.schema.json",
+    taxonomy_version="universe_classifier_axes_v2_5",
+    output_prefix="v2_5_",
+    evidence_protocol="selected_span",
+    span_index_config="configs/universe_classifier_span_index_v1.yaml",
+)
+
 CONTRACT_SETS: dict[str, ClassifierContractSet] = {
     V2_1.version_id: V2_1,
     V2_2.version_id: V2_2,
     V2_3.version_id: V2_3,
     V2_4.version_id: V2_4,
+    V2_5.version_id: V2_5,
 }
 
 

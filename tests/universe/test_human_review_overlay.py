@@ -546,3 +546,26 @@ def test_the_template_is_a_scaffold_and_carries_no_decision():
     assert entry["reviewer_id"] == ""
     assert entry["evidence"][0]["quote"] == ""
     assert entry["evidence"][0]["passage_ref"] == "P001"
+
+
+# --- ADR-132: the overlay is a different loader and stays strict -------------------
+
+
+def test_the_overlay_is_untouched_by_adr_132():
+    """It shares no helper with the classifier and takes no span index.
+
+    The classifier's V2.5 route resolves evidence by identifier; the overlay
+    still requires a human quote to appear verbatim in raw passage text, with no
+    whitespace normalization at all. Relaxing it was never in ADR-132's scope,
+    and a test says so rather than leaving it to be assumed.
+    """
+    import inspect
+
+    from dynamic_ai_products import human_review_overlay as hro
+
+    source = inspect.getsource(hro)
+    assert "classifier_span_index" not in source
+    assert "span_ref" not in source
+    assert "build_span_index" not in source
+    assert 'bodies = {p["passage_id"]: p["text"] for p in packet["passages"]}' in source
+    assert 'if item["quote"] not in bodies[passage_id]:' in source

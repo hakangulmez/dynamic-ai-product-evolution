@@ -9209,6 +9209,108 @@ to 172), this decision log, `REPO_MANIFEST.md` (943 to 953), the five
 registry/manifest guards, and the absolute registry literals in eleven screen
 suites.
 
+## ADR-132 — The model stops typing the quote
+
+**Status.** Accepted, fixture-first. No model call, no network, no governance
+artifact, no `data/runs` write, no calibration. The tier rules, the economic
+axes, the evidence ceiling, the `supported_claim` bound, the 40-row selection,
+SCREEN_v1, the overlay, the cohort, the human-review overlay loader and every
+V2.1 to V2.4 artifact are byte-unchanged.
+
+**What three calibrations established.** V2.2 raised two ceilings. V2.3 changed
+the instruction. V2.4 raised one more bound and rewrote the discipline again.
+The V2.4-T15 run finally completed 40 rows, and its eight quote-resolution
+failures — ten evidence items — sorted into five classes: one dropped an
+invisible U+200B, four were small visible copy errors, two spliced spans 7,026
+and 599 characters apart, two attributed a correctly copied quote to the wrong
+passage, and one composed roughly 45% of its own text. Four successive
+instruction and bound changes had not removed the family, because all five
+classes are downstream of one decision: letting a model type characters that
+are supposed to be a copy.
+
+**So V2.5 removes the decision rather than tightening it.** The model returns a
+`span_ref` naming a sentence, or a contiguous run of sentences, that a pinned
+deterministic index derived from the hash-bound packet. The pipeline retrieves
+the text. Four of the five classes become structurally unreachable — there is
+no free text to modify, splice or compose. The fifth, selecting a real span for
+the wrong claim, survives on purpose: it produces authentic packet text
+attached to a claim, which a human reviewer can adjudicate and which is not
+fabricated evidence. Trading four impossible failures for one visible one is
+the whole of the argument.
+
+**Measured before it was designed, and re-measured after a defect.** All 267
+accepted V2.4 quotes have a minimal enclosing whole-sentence run: 267 of 267,
+with span length p50 323, p90 659 and max 1,147 characters, and median
+inflation 1.00x — the median accepted quote already *is* a whole span. The
+first segmenter written for the ADR-132 plan had its abbreviation lookbehinds
+positioned before the terminator, so none of them suppressed anything; the
+module's own consistency probe caught it, and the corrected pattern measures
+better than the planned one. A second defect followed: the boundary pattern
+consumed trailing quotation characters, dropping them from the units. The
+losslessness guard caught that on real packets. Both are recorded because both
+would have been invisible in a name-only test.
+
+**Losslessness is the safety property.** The units of a passage, joined by one
+space, reproduce that passage's normalized text exactly, and the module refuses
+to render a segmentation where they do not. That is what makes it honest to say
+the renderer adds markers rather than re-authoring source text, and it is
+asserted over all 785 passages and 12,402 units of the 40 calibration packets.
+
+**Reproducibility does not depend on the segmenter.** Each stored evidence item
+carries the resolved span's offsets into the normalized passage text and a
+SHA-256 over the resolved text. A later reader re-derives the quote
+arithmetically and re-hashes; the regex is never needed again. The run's own
+reconciliation verifies stored rows that way too. A regex and a Unicode
+database are not dependencies a decade-old observation should carry, and this
+is what lets the segmentation rules move later without stranding a record.
+
+**The stored row names who wrote what.** `axis`, `passage_ref`, `span_ref` and
+`supported_claim` are the model's; `resolved_quote`, `span_start`, `span_end`
+and `span_sha256` are the pipeline's, and the schema says so in each
+description. The model's own object is exactly the subset the axes contract
+validates, and that contract is `additionalProperties: false`, so a model can
+never write a resolution field. `resolved_quote` is bounded at 2,000
+characters against a widest observed span of 1,147; a well-formed span
+resolving above it is refused with `span_exceeds_stored_bound` rather than
+truncated, because a truncated quote is not the span the model selected.
+
+**Rejection is bidirectional and structural this time.** A V2.4 response
+carries `quote` and fails the 0.4.0 axes schema as an unknown property; a V2.5
+response carries `span_ref` and fails 0.3.0's the same way. Unlike the
+0.2.0-to-0.3.0 widening, the contracts alone already refuse each other, and the
+route filenames still gate archives and manifests. A V2.5 continuation cannot
+read a V2.4 archive: the archive filename refuses it before any parse, which is
+the honest order, because an earlier run's evidence is not V2.5's to
+reinterpret.
+
+**The review contract was not widened, and that is a limitation.** A V2.5
+evidence item carries the span selection beside the resolved text, but
+`universe_classifier_calibration_review@0.1.0`'s evidence item is
+`additionalProperties: false` over exactly `axis`, `passage_ref`, `quote` and
+`supported_claim`. The builder therefore shows the pipeline-derived text in
+`quote` and drops the span fields rather than widen a released contract in
+passing. Nothing is unreachable — the review binds the calibration manifest
+digest, and that manifest names `universe_classifier_record@0.4.0` — but
+carrying `span_ref` and a derived `span_chars` into the review itself needs a
+review-contract successor and is deliberately not done here.
+
+**Honest limits.** Nothing here is evidence that V2.5 classifies better. It is
+evidence that four of five observed failure classes cannot occur, which is a
+claim about the protocol and not about the model's judgement. Whether a model
+selects the *right* span is unmeasured and is exactly what a V2.5 calibration
+must be read for. The 17.2% of V2.4 quotes that were strictly sub-sentence will
+now carry their enclosing sentence: a real loss of precision traded for
+authenticity, and the human gate should test whether that helps or dilutes. No
+rerun, no grant and no review gate is authorized by this entry.
+
+**Scope.** Forty-five paths: the V2.5 prompt, the span-index config and module,
+the 0.4.0 axes and record contracts, six V2.5 authorization and manifest
+contracts, two new test modules, the contract-set module, four runner and
+consumer modules, four CLI modes, seven test modules, the registry (0.69.0 to
+0.70.0, 172 to 180), this decision log, `REPO_MANIFEST.md` (953 to 966), the
+five registry/manifest guards, and the absolute registry literals in eleven
+screen suites.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only

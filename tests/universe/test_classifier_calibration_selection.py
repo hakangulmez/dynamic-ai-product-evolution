@@ -631,7 +631,7 @@ def test_the_cli_declares_all_three_modes():
                  "classify-universe-calibration",
                  "build-classifier-calibration-review"):
         assert mode in choices
-    assert "Fifty-four mutually exclusive modes" in cli.__doc__
+    assert "Fifty-eight mutually exclusive modes" in cli.__doc__
 
 
 # --- dry-run semantics at the CLI boundary -----------------------------------------
@@ -1109,6 +1109,7 @@ def test_the_v2_4_review_mode_rejects_the_run_modes_flags():
 
 
 def test_all_four_versions_of_each_mode_are_declared():
+    """ADR-130's four-version assertion, kept and rebaselined by ADR-132."""
     cli = _cli_module()
     choices = next(a.choices for a in cli.build_parser()._actions
                    if a.dest == "mode")
@@ -1119,4 +1120,106 @@ def test_all_four_versions_of_each_mode_are_declared():
             assert f"{stem}{suffix}" in choices, f"{stem}{suffix}"
     for suffix in ("", "-v2-2", "-v2-3", "-v2-4"):
         assert f"build-classifier-calibration-review{suffix}" in choices, suffix
-    assert len(choices) == 54
+    assert len(choices) == 58
+
+
+# --- ADR-132: the four V2.5 modes must be reachable through their own flags --------
+
+V2_5_COHORT_ARGV = [
+    "--mode", "classify-universe-cohort-v2-5",
+    "--cohort-manifest", "c.json", "--overlay-manifest", "o.json",
+    "--release-manifest", "r.json", "--packet-manifest", "p.json",
+    "--governance-root", "gov", "--screen-authorization", "a.json",
+    "--screen-authorization-sha256", SHA_PLACEHOLDER,
+    "--output-dir", "out", "--run-id", "cli-gating-fixture",
+]
+V2_5_CONTINUATION_ARGV = (
+    ["--mode", "classify-universe-cohort-continuation-v2-5",
+     "--source-run-dir", "src", "--source-receipt-sha256", SHA_PLACEHOLDER]
+    + V2_5_COHORT_ARGV[2:])
+V2_5_CALIBRATION_ARGV = (
+    ["--mode", "classify-universe-calibration-v2-5",
+     "--calibration-selection", "s.json"] + V2_5_COHORT_ARGV[2:])
+V2_5_REVIEW_ARGV = [
+    "--mode", "build-classifier-calibration-review-v2-5",
+    "--calibration-run-dir", "run", "--calibration-selection", "s.json",
+    "--calibration-selection-sha256", SHA_PLACEHOLDER,
+    "--output-dir", "out", "--run-id", "cli-gating-fixture",
+]
+V2_5_MODES = [
+    ("classify-universe-cohort-v2-5", V2_5_COHORT_ARGV),
+    ("classify-universe-cohort-continuation-v2-5", V2_5_CONTINUATION_ARGV),
+    ("classify-universe-calibration-v2-5", V2_5_CALIBRATION_ARGV),
+    ("build-classifier-calibration-review-v2-5", V2_5_REVIEW_ARGV),
+]
+V2_5_CALIBRATION_REQUIRED_FLAGS = list(V2_4_CALIBRATION_REQUIRED_FLAGS)
+V2_5_REVIEW_REQUIRED_FLAGS = list(V2_4_REVIEW_REQUIRED_FLAGS)
+
+
+@pytest.mark.parametrize("mode,argv", V2_5_MODES, ids=[m for m, _ in V2_5_MODES])
+def test_each_v2_5_mode_accepts_its_complete_required_argv(mode, argv):
+    cli = _cli_module()
+    args = cli.build_parser().parse_args(argv)
+    assert args.mode == mode
+    assert cli._reject_cross_mode_flags(args) is None
+    _assert_no_google()
+
+
+@pytest.mark.parametrize("flag", V2_5_CALIBRATION_REQUIRED_FLAGS)
+def test_the_v2_5_calibration_mode_requires_every_flag(flag, capsys):
+    _assert_mode_requires_flag(V2_5_CALIBRATION_ARGV, flag, capsys)
+
+
+@pytest.mark.parametrize("flag", V2_5_REVIEW_REQUIRED_FLAGS)
+def test_the_v2_5_review_mode_requires_every_flag(flag, capsys):
+    _assert_mode_requires_flag(V2_5_REVIEW_ARGV, flag, capsys)
+
+
+def test_the_v2_5_required_flag_tables_match_the_pipeline():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    start = source.index('("classify-universe-calibration-v2-5", ((')
+    table = source[start:source.index('("classify-universe-calibration-v2-4",', start)]
+    assert re.findall(r'\("(--[a-z0-9-]+)"', table) == V2_5_CALIBRATION_REQUIRED_FLAGS
+    start = source.index('("build-classifier-calibration-review-v2-5", ((')
+    table = source[start:source.index(
+        '("build-classifier-calibration-review-v2-4",', start)]
+    assert re.findall(r'\("(--[a-z0-9-]+)"', table) == V2_5_REVIEW_REQUIRED_FLAGS
+
+
+@pytest.mark.parametrize("mode,argv", [
+    ("classify-universe-cohort-v2-5", V2_5_COHORT_ARGV),
+    ("classify-universe-cohort-continuation-v2-5", V2_5_CONTINUATION_ARGV),
+], ids=["cohort-v2-5", "continuation-v2-5"])
+def test_a_v2_5_run_mode_still_rejects_the_selection_flag(mode, argv):
+    cli = _cli_module()
+    verdict = cli._reject_cross_mode_flags(cli.build_parser().parse_args(
+        list(argv) + ["--calibration-selection", "s.json"]))
+    assert verdict and "--calibration-selection" in verdict
+
+
+def test_the_v2_5_cohort_mode_still_rejects_continuation_flags():
+    cli = _cli_module()
+    verdict = cli._reject_cross_mode_flags(cli.build_parser().parse_args(
+        list(V2_5_COHORT_ARGV) + ["--source-run-dir", "src"]))
+    assert verdict and "--source-run-dir" in verdict
+
+
+def test_the_v2_5_review_mode_rejects_the_run_modes_flags():
+    cli = _cli_module()
+    verdict = cli._reject_cross_mode_flags(cli.build_parser().parse_args(
+        list(V2_5_REVIEW_ARGV) + ["--governance-root", "gov"]))
+    assert verdict and "--governance-root" in verdict
+
+
+def test_all_five_versions_of_each_mode_are_declared():
+    cli = _cli_module()
+    choices = next(a.choices for a in cli.build_parser()._actions if a.dest == "mode")
+    for stem in ("classify-universe-cohort",
+                 "classify-universe-cohort-continuation",
+                 "classify-universe-calibration"):
+        for suffix in ("", "-v2-2", "-v2-3", "-v2-4", "-v2-5"):
+            assert f"{stem}{suffix}" in choices, f"{stem}{suffix}"
+    for suffix in ("", "-v2-2", "-v2-3", "-v2-4", "-v2-5"):
+        assert f"build-classifier-calibration-review{suffix}" in choices, suffix
+    assert len(choices) == 58

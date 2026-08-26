@@ -76,6 +76,18 @@ def _tally(pairs) -> dict[str, int]:
     return out
 
 
+def _review_evidence(item: dict) -> dict:
+    """Project one stored evidence item onto the review contract's four fields.
+
+    V2.1 through V2.4 items already have exactly these. A V2.5 item carries the
+    model's span selection plus the pipeline's resolution of it; the resolved
+    text is what a human reads, so it is what ``quote`` shows.
+    """
+    quote = item.get("resolved_quote", item.get("quote"))
+    return {"axis": item["axis"], "passage_ref": item["passage_ref"],
+            "quote": quote, "supported_claim": item["supported_claim"]}
+
+
 def build_calibration_review(
     *, repo_root: str | Path, calibration_run_dir: str | Path,
     selection_path: str | Path, selection_sha256: str,
@@ -88,10 +100,23 @@ def build_calibration_review(
     ``calibration_route`` names which calibration version this run is. The
     review contract itself is version-neutral — it binds the source manifest
     and prompt digests rather than naming a prompt — so the same builder reads
-    a V2.1, V2.2, V2.3 or V2.4 run; only the filenames it opens differ. The
-    route is also the whole of the version gate here: it reaches the run only
-    through ``require_classifier_calibration_run``, which refuses a manifest
-    filename or contract belonging to any other version.
+    a V2.1 through V2.5 run; only the filenames it opens differ. The route is
+    also the whole of the version gate here: it reaches the run only through
+    ``require_classifier_calibration_run``, which refuses a manifest filename or
+    contract belonging to any other version.
+
+    **ADR-132 and the review contract.** A V2.5 evidence item stores the
+    model's ``span_ref`` beside the pipeline's ``resolved_quote``. The review
+    contract's evidence item is ``additionalProperties: false`` over exactly
+    ``axis``, ``passage_ref``, ``quote`` and ``supported_claim``, so it cannot
+    carry ``span_ref`` without a successor. Rather than widen a released
+    contract in passing, the projection below puts the pipeline-derived text in
+    ``quote`` and drops the span fields. Nothing is lost to a reader who needs
+    them: the review binds ``calibration_manifest_sha256``, and that manifest
+    names ``universe_classifier_record@0.4.0``, from which the stored row and
+    its spans are reachable. Carrying ``span_ref`` and the derived
+    ``span_chars`` into the review itself needs a review-contract successor and
+    is deliberately not done here.
     """
     root = Path(repo_root)
     run_dir = Path(calibration_run_dir)
@@ -151,7 +176,8 @@ def build_calibration_review(
             "contradicts_admission": bool(contradicts),
             "boundary_flags": list(axes.get("boundary_flags") or []),
             "contradictions": list(axes.get("contradictions") or []),
-            "evidence": [dict(item) for item in (axes.get("evidence") or [])],
+            "evidence": [_review_evidence(item)
+                         for item in (axes.get("evidence") or [])],
             "packet_sha256": record["packet_sha256"],
             "failure_reason_code": record["failure_reason_code"]})
 

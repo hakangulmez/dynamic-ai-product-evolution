@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Fifty-four mutually exclusive modes, selected by ``--mode`` (default
+Fifty-eight mutually exclusive modes, selected by ``--mode`` (default
 ``sentinel`` so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -153,6 +153,27 @@ Fifty-four mutually exclusive modes, selected by ``--mode`` (default
   row ordinal, under the closed rule ``unverified_rows_ascending_ordinal@1``
   and with no status-based filter; the artifact is written write-once and no
   model is called.
+- ``classify-universe-cohort-v2-5``, ``classify-universe-cohort-continuation-v2-5``
+  and ``classify-universe-calibration-v2-5`` are the ADR-132 successors, and the
+  first to change what the model produces rather than how much. The free-text
+  ``quote`` is gone. The model selects a ``span_ref`` naming a sentence or a
+  contiguous run of sentences that a pinned deterministic index derived from the
+  hash-bound packet, and the pipeline retrieves the exact text. Three live
+  calibrations produced ten diagnosed quote failures across five classes -- one
+  dropped invisible U+200B, four small visible copy errors, two splices across
+  thousands of characters, one correctly copied quote attributed to the wrong
+  passage, and one quote roughly 45% composed. Four of those five are
+  unreachable when the model never types source characters; the fifth,
+  selecting the wrong span, survives on purpose, because it yields authentic
+  packet text a human reviewer can adjudicate rather than fabricated evidence.
+  The stored row separates the model's selection from the pipeline's
+  resolution by name, and carries the span's offsets and digest so it stays
+  verifiable without re-running the segmenter. The economic axes, the tier
+  rules, the 12-object evidence ceiling and the 300-character
+  ``supported_claim`` bound are unchanged. Unlike the V2.3-to-V2.4 widening the
+  rejection is bidirectional and structural: a V2.4 response carries ``quote``
+  and fails the 0.4.0 axes contract, a V2.5 response carries ``span_ref`` and
+  fails 0.3.0's. The V2.1 to V2.4 modes stay available and unchanged.
 - ``classify-universe-cohort-v2-4``, ``classify-universe-cohort-continuation-v2-4``
   and ``classify-universe-calibration-v2-4`` are the ADR-130 successors: one
   bound moves and the instruction moves with it. The V2.3 calibration stopped
@@ -224,14 +245,13 @@ Fifty-four mutually exclusive modes, selected by ``--mode`` (default
   own run root, ``promotable`` and ``covers_full_cohort`` both false, and a row
   count the preflight proves is strictly below the cohort's. Its three
   bounded-outcome tolerances are stated for this sample alone.
-- ``build-classifier-calibration-review-v2-2``,
-  ``build-classifier-calibration-review-v2-3`` and
-  ``build-classifier-calibration-review-v2-4`` are the same gate over a V2.2,
-  V2.3 or V2.4 calibration run. The review contract is version-neutral -- it
+- ``build-classifier-calibration-review-v2-2`` through
+  ``build-classifier-calibration-review-v2-5`` are the same gate over a
+  V2.2, V2.3, V2.4 or V2.5 calibration run. The review contract is version-neutral -- it
   binds the source manifest and prompt digests rather than naming a prompt --
-  so one builder reads all four, and only the manifest and records filenames
+  so one builder reads all five, and only the manifest and records filenames
   it opens differ. A calibration loader accepts exactly its own version's
-  completed run and refuses the other three, so a review can never be built
+  completed run and refuses the others, so a review can never be built
   from a run of a different version than the mode names.
 - ``build-classifier-calibration-review`` derives the qualitative gate from one
   completed calibration run: it nominates *every* selected row for human
@@ -460,6 +480,7 @@ from dynamic_ai_products.lineage_classifier_calibration import (  # noqa: E402
     CALIBRATION_ROUTE_V2_2,
     CALIBRATION_ROUTE_V2_3,
     CALIBRATION_ROUTE_V2_4,
+    CALIBRATION_ROUTE_V2_5,
     run_lineage_classifier_calibration,
 )
 from dynamic_ai_products.lineage_classifier_v2_1 import (  # noqa: E402
@@ -467,6 +488,7 @@ from dynamic_ai_products.lineage_classifier_v2_1 import (  # noqa: E402
     BASE_ROUTE_V2_2,
     BASE_ROUTE_V2_3,
     BASE_ROUTE_V2_4,
+    BASE_ROUTE_V2_5,
     run_lineage_classifier,
 )
 from dynamic_ai_products.lineage_classifier_continuation import (  # noqa: E402
@@ -474,6 +496,7 @@ from dynamic_ai_products.lineage_classifier_continuation import (  # noqa: E402
     CONTINUATION_ROUTE_V2_2,
     CONTINUATION_ROUTE_V2_3,
     CONTINUATION_ROUTE_V2_4,
+    CONTINUATION_ROUTE_V2_5,
     run_lineage_classifier_continuation,
 )
 from dynamic_ai_products.human_review_overlay import (  # noqa: E402
@@ -544,12 +567,16 @@ def build_parser() -> argparse.ArgumentParser:
                  "classify-universe-cohort-v2-4",
                  "classify-universe-cohort-continuation-v2-4",
                  "classify-universe-calibration-v2-4",
+                 "classify-universe-cohort-v2-5",
+                 "classify-universe-cohort-continuation-v2-5",
+                 "classify-universe-calibration-v2-5",
                  "select-classifier-calibration-rows",
                  "classify-universe-calibration",
                  "build-classifier-calibration-review",
                  "build-classifier-calibration-review-v2-2",
                  "build-classifier-calibration-review-v2-3",
                  "build-classifier-calibration-review-v2-4",
+                 "build-classifier-calibration-review-v2-5",
                  "plan-acquisition-queue", "execute-acquisition-queue",
                  "aggregate-acquisition-queue",
                  "aggregate-acquisition-lineage"],
@@ -1002,7 +1029,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-universe-calibration",
                          "classify-universe-cohort-v2-2", "classify-universe-cohort-continuation-v2-2", "classify-universe-calibration-v2-2",
                          "classify-universe-cohort-v2-3", "classify-universe-cohort-continuation-v2-3", "classify-universe-calibration-v2-3",
-                         "classify-universe-cohort-v2-4", "classify-universe-cohort-continuation-v2-4", "classify-universe-calibration-v2-4"):
+                         "classify-universe-cohort-v2-4", "classify-universe-cohort-continuation-v2-4", "classify-universe-calibration-v2-4",
+                         "classify-universe-cohort-v2-5", "classify-universe-cohort-continuation-v2-5", "classify-universe-calibration-v2-5"):
         screen_offenders += _present(
             (("--packet-manifest", args.packet_manifest),)
         )
@@ -1053,7 +1081,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-universe-calibration",
                          "classify-universe-cohort-v2-2", "classify-universe-cohort-continuation-v2-2", "classify-universe-calibration-v2-2",
                          "classify-universe-cohort-v2-3", "classify-universe-cohort-continuation-v2-3", "classify-universe-calibration-v2-3",
-                         "classify-universe-cohort-v2-4", "classify-universe-cohort-continuation-v2-4", "classify-universe-calibration-v2-4"):
+                         "classify-universe-cohort-v2-4", "classify-universe-cohort-continuation-v2-4", "classify-universe-calibration-v2-4",
+                         "classify-universe-cohort-v2-5", "classify-universe-cohort-continuation-v2-5", "classify-universe-calibration-v2-5"):
         screen_offenders += _present((
             ("--governance-root", args.governance_root),
             ("--screen-authorization", args.screen_authorization),
@@ -1073,7 +1102,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-universe-calibration",
                          "classify-universe-cohort-v2-2", "classify-universe-cohort-continuation-v2-2", "classify-universe-calibration-v2-2",
                          "classify-universe-cohort-v2-3", "classify-universe-cohort-continuation-v2-3", "classify-universe-calibration-v2-3",
-                         "classify-universe-cohort-v2-4", "classify-universe-cohort-continuation-v2-4", "classify-universe-calibration-v2-4"):
+                         "classify-universe-cohort-v2-4", "classify-universe-cohort-continuation-v2-4", "classify-universe-calibration-v2-4",
+                         "classify-universe-cohort-v2-5", "classify-universe-cohort-continuation-v2-5", "classify-universe-calibration-v2-5"):
         screen_offenders += _present((
             ("--release-manifest", args.release_manifest),
         ))
@@ -1096,7 +1126,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-universe-calibration",
                          "classify-universe-cohort-v2-2", "classify-universe-cohort-continuation-v2-2", "classify-universe-calibration-v2-2",
                          "classify-universe-cohort-v2-3", "classify-universe-cohort-continuation-v2-3", "classify-universe-calibration-v2-3",
-                         "classify-universe-cohort-v2-4", "classify-universe-cohort-continuation-v2-4", "classify-universe-calibration-v2-4"):
+                         "classify-universe-cohort-v2-4", "classify-universe-cohort-continuation-v2-4", "classify-universe-calibration-v2-4",
+                         "classify-universe-cohort-v2-5", "classify-universe-cohort-continuation-v2-5", "classify-universe-calibration-v2-5"):
         screen_offenders += _present((
             ("--overlay-manifest", args.overlay_manifest),
         ))
@@ -1110,7 +1141,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-universe-calibration",
                          "classify-universe-cohort-v2-2", "classify-universe-cohort-continuation-v2-2", "classify-universe-calibration-v2-2",
                          "classify-universe-cohort-v2-3", "classify-universe-cohort-continuation-v2-3", "classify-universe-calibration-v2-3",
-                         "classify-universe-cohort-v2-4", "classify-universe-cohort-continuation-v2-4", "classify-universe-calibration-v2-4"):
+                         "classify-universe-cohort-v2-4", "classify-universe-cohort-continuation-v2-4", "classify-universe-calibration-v2-4",
+                         "classify-universe-cohort-v2-5", "classify-universe-cohort-continuation-v2-5", "classify-universe-calibration-v2-5"):
         screen_offenders += _present((
             ("--cohort-manifest", args.cohort_manifest),
         ))
@@ -1118,11 +1150,12 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-universe-calibration-v2-2",
                          "classify-universe-calibration-v2-3",
                          "classify-universe-calibration-v2-4",
-                         "build-classifier-calibration-review", "build-classifier-calibration-review-v2-2", "build-classifier-calibration-review-v2-3", "build-classifier-calibration-review-v2-4"):
+                         "classify-universe-calibration-v2-5",
+                         "build-classifier-calibration-review", "build-classifier-calibration-review-v2-2", "build-classifier-calibration-review-v2-3", "build-classifier-calibration-review-v2-4", "build-classifier-calibration-review-v2-5"):
         screen_offenders += _present((
             ("--calibration-selection", args.calibration_selection),
         ))
-    if args.mode not in ("build-classifier-calibration-review", "build-classifier-calibration-review-v2-2", "build-classifier-calibration-review-v2-3", "build-classifier-calibration-review-v2-4"):
+    if args.mode not in ("build-classifier-calibration-review", "build-classifier-calibration-review-v2-2", "build-classifier-calibration-review-v2-3", "build-classifier-calibration-review-v2-4", "build-classifier-calibration-review-v2-5"):
         screen_offenders += _present((
             ("--calibration-selection-sha256", args.calibration_selection_sha256),
             ("--calibration-run-dir", args.calibration_run_dir),
@@ -1147,7 +1180,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "screen-universe-lineage-continuation-v5",
                          "classify-universe-cohort-continuation",
                          "classify-universe-cohort-continuation-v2-2", "classify-universe-cohort-continuation-v2-3",
-                         "classify-universe-cohort-continuation-v2-4"):
+                         "classify-universe-cohort-continuation-v2-4",
+                         "classify-universe-cohort-continuation-v2-5"):
         screen_offenders += _present((
             ("--source-run-dir", args.source_run_dir),
             ("--source-receipt-sha256", args.source_receipt_sha256),
@@ -1757,6 +1791,16 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                    ("--overlay-manifest", "overlay_manifest"),
                    ("--overlay-manifest-sha256", "overlay_manifest_sha256"),
                    ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
+        ("classify-universe-calibration-v2-5", (("--cohort-manifest", "cohort_manifest"),
+                   ("--overlay-manifest", "overlay_manifest"),
+                   ("--release-manifest", "release_manifest"),
+                   ("--packet-manifest", "packet_manifest"),
+                   ("--calibration-selection", "calibration_selection"),
+                   ("--governance-root", "governance_root"),
+                   ("--screen-authorization", "screen_authorization"),
+                   ("--screen-authorization-sha256",
+                    "screen_authorization_sha256"),
+                   ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
         ("classify-universe-calibration-v2-4", (("--cohort-manifest", "cohort_manifest"),
                    ("--overlay-manifest", "overlay_manifest"),
                    ("--release-manifest", "release_manifest"),
@@ -1798,6 +1842,11 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                     "screen_authorization_sha256"),
                    ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
         ("build-classifier-calibration-review-v2-2", (("--calibration-run-dir", "calibration_run_dir"),
+                   ("--calibration-selection", "calibration_selection"),
+                   ("--calibration-selection-sha256",
+                    "calibration_selection_sha256"),
+                   ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
+        ("build-classifier-calibration-review-v2-5", (("--calibration-run-dir", "calibration_run_dir"),
                    ("--calibration-selection", "calibration_selection"),
                    ("--calibration-selection-sha256",
                     "calibration_selection_sha256"),
@@ -1851,6 +1900,9 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                     ("--source-receipt-sha256", "source_receipt_sha256"))),
         ("classify-universe-cohort-v2-4", ()),
         ("classify-universe-cohort-continuation-v2-4", (("--source-run-dir", "source_run_dir"),
+                    ("--source-receipt-sha256", "source_receipt_sha256"))),
+        ("classify-universe-cohort-v2-5", ()),
+        ("classify-universe-cohort-continuation-v2-5", (("--source-run-dir", "source_run_dir"),
                     ("--source-receipt-sha256", "source_receipt_sha256"))),
     ):
         if args.mode != classifier_mode:
@@ -4402,8 +4454,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode == "build-classifier-calibration-review-v2-4":
         return _main_build_classifier_calibration_review(
             args, calibration_route=CALIBRATION_ROUTE_V2_4)
+    if args.mode == "build-classifier-calibration-review-v2-5":
+        return _main_build_classifier_calibration_review(
+            args, calibration_route=CALIBRATION_ROUTE_V2_5)
     if args.mode == "build-classifier-calibration-review":
         return _main_build_classifier_calibration_review(args)
+    if args.mode == "classify-universe-cohort-v2-5":
+        return _main_classify_universe_cohort(args, route=BASE_ROUTE_V2_5)
+    if args.mode == "classify-universe-cohort-continuation-v2-5":
+        return _main_classify_universe_cohort_continuation(
+            args, route=CONTINUATION_ROUTE_V2_5)
+    if args.mode == "classify-universe-calibration-v2-5":
+        return _main_classify_universe_calibration(
+            args, route=CALIBRATION_ROUTE_V2_5)
     if args.mode == "classify-universe-cohort-v2-4":
         return _main_classify_universe_cohort(args, route=BASE_ROUTE_V2_4)
     if args.mode == "classify-universe-cohort-continuation-v2-4":
