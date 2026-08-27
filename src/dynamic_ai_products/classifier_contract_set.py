@@ -239,6 +239,31 @@ V2_6 = ClassifierContractSet(
     span_index_config=V2_5.span_index_config,
 )
 
+#: ADR-134. Output-schema discipline only. The V2.6 calibration completed but
+#: spent its whole unusable tolerance on contract violations the model could
+#: have avoided: four ``boundary_flags`` entries written as explanatory
+#: sentences instead of labels, and one response that simply omitted
+#: ``confidence``. Neither is a bound that was too tight -- among the rows that
+#: did classify, the longest flag ran 133 characters against a ceiling of 160 --
+#: so nothing here relaxes a limit. The prompt gains a genre rule for
+#: ``boundary_flags`` and states that ``confidence`` is mandatory in both places
+#: the other bounds are already stated. Everything the span protocol touches is
+#: V2_5's own file, unchanged: the axes and record schemas, the span index, the
+#: taxonomy. Only ``prompt_path`` moves, and it moves because a new prompt file
+#: cannot be authorized under a V7 contract that pins the V2.5 path.
+V2_7 = ClassifierContractSet(
+    version_id="v2_7",
+    prompt_path="prompts/discovery/universe_full_classification.v2_7.md",
+    axes_schema=V2_5.axes_schema,
+    axes_contract=V2_5.axes_contract,
+    record_contract=V2_5.record_contract,
+    record_schema=V2_5.record_schema,
+    taxonomy_version=V2_5.taxonomy_version,
+    output_prefix="v2_7_",
+    evidence_protocol=V2_5.evidence_protocol,
+    span_index_config=V2_5.span_index_config,
+)
+
 CONTRACT_SETS: dict[str, ClassifierContractSet] = {
     V2_1.version_id: V2_1,
     V2_2.version_id: V2_2,
@@ -246,6 +271,7 @@ CONTRACT_SETS: dict[str, ClassifierContractSet] = {
     V2_4.version_id: V2_4,
     V2_5.version_id: V2_5,
     V2_6.version_id: V2_6,
+    V2_7.version_id: V2_7,
 }
 
 

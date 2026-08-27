@@ -383,6 +383,10 @@ from test_lineage_classifier_calibration import (  # noqa: E402
     _v2_3_grant,
     _v2_4_grant,
     _v2_5_grant,
+    _v2_6_grant,
+    _v2_6_script,
+    _v2_7_grant,
+    _v2_7_script,
     _v2_5_span_script,
 )
 
@@ -494,6 +498,111 @@ def test_the_v2_3_review_verifies_the_route_specific_records_digest(
             calibration_route=lcal.CALIBRATION_ROUTE_V2_3)
 
 
+# --- ADR-134: the V2.7 review path, end to end ---------------------------------------
+
+
+def _completed_versioned(cohort, selection, tmp_path, route, grant, script, name):
+    from test_lineage_classifier_calibration import _run
+    run = _run(cohort, selection, grant, tmp_path, run_id=f"calib-{name}",
+               script=script, route=route)
+    assert run.result.status == "completed", run.result.receipt
+    return run.result
+
+
+def _completed_v2_7_run(cohort, selection, tmp_path, name="v2-7"):
+    return _completed_versioned(
+        cohort, selection, tmp_path, lcal.CALIBRATION_ROUTE_V2_7,
+        _v2_7_grant(cohort, selection, tmp_path, name=f"gov-{name}"),
+        _v2_7_script(cohort, selection), name)
+
+
+def _completed_v2_6_run(cohort, selection, tmp_path, name="v2-6"):
+    return _completed_versioned(
+        cohort, selection, tmp_path, lcal.CALIBRATION_ROUTE_V2_6,
+        _v2_6_grant(cohort, selection, tmp_path, name=f"gov-{name}"),
+        _v2_6_script(cohort, selection), name)
+
+
+def test_a_v2_7_run_produces_a_valid_pending_human_reading_review(
+        cohort, selection, tmp_path):
+    from hashlib import sha256
+
+    from jsonschema import Draft202012Validator, FormatChecker
+    route = lcal.CALIBRATION_ROUTE_V2_7
+    result = _completed_v2_7_run(cohort, selection, tmp_path, "rev-v2-7")
+    review = ccr.build_calibration_review(
+        repo_root=ROOT, calibration_run_dir=result.run_dir,
+        selection_path=selection.path, selection_sha256=selection.sha256,
+        output_path=tmp_path / "review-v2-7" / ccr.REVIEW_FILENAME,
+        review_id="review-v2-7", clock=CLOCK, calibration_route=route)
+    Draft202012Validator(REVIEW_SCHEMA,
+                         format_checker=FormatChecker()).validate(review)
+    assert review["review_contract"] == "universe_classifier_calibration_review@0.1.0"
+    assert review["gate_state"] == "pending_human_reading"
+    assert review["promotable"] is False
+    assert review["no_model_call"] is True
+    assert review["counts"]["nominated_rows"] == len(selection.rows)
+    assert len(review["nominated_rows"]) == len(selection.rows)
+    manifest_path = result.run_dir / route.manifest_filename
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["manifest_contract"] == \
+        "universe_classifier_calibration_manifest@0.7.0"
+    assert review["calibration_manifest_sha256"] == \
+        sha256(manifest_path.read_bytes()).hexdigest()
+    assert review["calibration_run_id"] == manifest["run_id"]
+    # the review binds the V2.7 prompt, because the run it read was a V2.7 run
+    assert review["prompt_template_sha256"] == manifest["prompt_template_sha256"]
+    assert review["prompt_template_sha256"] == sha256(
+        (ROOT / "prompts/discovery/universe_full_classification.v2_7.md"
+         ).read_bytes()).hexdigest()
+    assert review["tier_rules_sha256"] == manifest["tier_rules_sha256"]
+
+
+def test_the_v2_6_review_route_refuses_a_v2_7_run(cohort, selection, tmp_path):
+    result = _completed_v2_7_run(cohort, selection, tmp_path, "cross-a")
+    with pytest.raises(ls.ScreenInputError,
+                       match=f"holds no "
+                             f"{lcal.CALIBRATION_ROUTE_V2_6.manifest_filename}"):
+        ccr.build_calibration_review(
+            repo_root=ROOT, calibration_run_dir=result.run_dir,
+            selection_path=selection.path, selection_sha256=selection.sha256,
+            output_path=tmp_path / "never-v2-6" / ccr.REVIEW_FILENAME,
+            review_id="crossed", clock=CLOCK,
+            calibration_route=lcal.CALIBRATION_ROUTE_V2_6)
+
+
+def test_the_v2_7_review_route_refuses_a_v2_6_run(cohort, selection, tmp_path):
+    result = _completed_v2_6_run(cohort, selection, tmp_path, "cross-b")
+    with pytest.raises(ls.ScreenInputError,
+                       match=f"holds no "
+                             f"{lcal.CALIBRATION_ROUTE_V2_7.manifest_filename}"):
+        ccr.build_calibration_review(
+            repo_root=ROOT, calibration_run_dir=result.run_dir,
+            selection_path=selection.path, selection_sha256=selection.sha256,
+            output_path=tmp_path / "never-v2-7" / ccr.REVIEW_FILENAME,
+            review_id="crossed", clock=CLOCK,
+            calibration_route=lcal.CALIBRATION_ROUTE_V2_7)
+
+
+def test_the_v2_7_review_mode_dispatches_to_the_v2_7_route_only():
+    """Production dispatch, read from the CLI source and from the parser."""
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text(
+        encoding="utf-8")
+    assert ('if args.mode == "build-classifier-calibration-review-v2-7":\n'
+            "        return _main_build_classifier_calibration_review(\n"
+            "            args, calibration_route=CALIBRATION_ROUTE_V2_7)") in source
+    cli = _cli_module()
+    choices = next(a.choices for a in cli.build_parser()._actions
+                   if a.dest == "mode")
+    assert "build-classifier-calibration-review-v2-7" in choices
+    # the symbol the dispatch names is the route object the loader will use
+    assert cli.CALIBRATION_ROUTE_V2_7 is lcal.CALIBRATION_ROUTE_V2_7
+    assert cli.CALIBRATION_ROUTE_V2_7.manifest_contract == \
+        "universe_classifier_calibration_manifest@0.7.0"
+    assert cli.CALIBRATION_ROUTE_V2_7.manifest_filename == \
+        "universe_classifier_v2_7_calibration_manifest.json"
+
+
 # --- the two new review CLI modes --------------------------------------------------
 
 REVIEW_MODES = ["build-classifier-calibration-review",
@@ -501,7 +610,8 @@ REVIEW_MODES = ["build-classifier-calibration-review",
                 "build-classifier-calibration-review-v2-3",
                 "build-classifier-calibration-review-v2-4",
                 "build-classifier-calibration-review-v2-5",
-                "build-classifier-calibration-review-v2-6"]
+                "build-classifier-calibration-review-v2-6",
+                "build-classifier-calibration-review-v2-7"]
 REVIEW_REQUIRED_FLAGS = ["--calibration-run-dir", "--calibration-selection",
                          "--calibration-selection-sha256", "--output-dir",
                          "--run-id"]
@@ -553,13 +663,13 @@ def test_each_review_mode_rejects_an_incompatible_flag(mode, flag, value):
     assert verdict and flag in verdict
 
 
-def test_the_cli_declares_all_six_review_modes():
+def test_the_cli_declares_all_seven_review_modes():
     cli = _cli_module()
     choices = next(a.choices for a in cli.build_parser()._actions
                    if a.dest == "mode")
     for mode in REVIEW_MODES:
         assert mode in choices, mode
-    assert len(REVIEW_MODES) == 6
+    assert len(REVIEW_MODES) == 7
     assert "Sixty-two mutually exclusive modes" in cli.__doc__
 
 

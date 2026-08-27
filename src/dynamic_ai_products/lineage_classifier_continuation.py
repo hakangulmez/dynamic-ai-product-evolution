@@ -37,7 +37,8 @@ from typing import Any, Callable
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-from .classifier_contract_set import V2_1, V2_2, V2_3, V2_4, V2_5, V2_6
+from .classifier_contract_set import (
+    V2_1, V2_2, V2_3, V2_4, V2_5, V2_6, V2_7)
 from .classifier_span_index import build_span_index
 from .classifier_tier_engine import derive_tier
 from .lineage_classifier_v2_1 import (
@@ -78,6 +79,7 @@ __all__ = [
     "CONTINUATION_ROUTE_V2_4",
     "CONTINUATION_ROUTE_V2_5",
     "CONTINUATION_ROUTE_V2_6",
+    "CONTINUATION_ROUTE_V2_7",
     "ClassifierSourcePrefix",
     "load_classifier_continuation_source",
     "require_classifier_continuation_run",
@@ -194,6 +196,24 @@ CONTINUATION_ROUTE_V2_6 = ClassifierRoute(
         "schemas/universe_classifier_continuation_authorization.v6.schema.json"),
     archive_filename="universe_classifier_v2_6_raw_responses.jsonl",
     contracts=V2_6,
+)
+
+#: ADR-134. The V2.7 successor: same route mechanics, same span protocol,
+#: a prompt that states the two output rules the V2.6 calibration showed the
+#: model breaking. Distinct filenames and a V7 contract keep the two runs
+#: structurally unmixable.
+CONTINUATION_ROUTE_V2_7 = ClassifierRoute(
+    run_kind=CONTINUATION_RUN_KIND,
+    records_filename="universe_classifier_v2_7_continuation_records.jsonl",
+    manifest_filename="universe_classifier_v2_7_continuation_manifest.json",
+    manifest_contract="universe_classifier_continuation_manifest@0.7.0",
+    manifest_schema=(
+        "schemas/universe_classifier_continuation_manifest.v7.schema.json"),
+    record_order=RECORD_ORDER,
+    authorization_schema=(
+        "schemas/universe_classifier_continuation_authorization.v7.schema.json"),
+    archive_filename="universe_classifier_v2_7_raw_responses.jsonl",
+    contracts=V2_7,
 )
 
 #: Receipt fields a continuable classifier failure must carry. A receipt that

@@ -152,7 +152,8 @@ def _continuation_grant(cohort, source, tmp_path, *, mutate=None,
         version = {"v2_2": "0.2.0", "v2_3": "0.3.0",
                    "v2_4": "0.4.0",
                    "v2_5": "0.5.0",
-                   "v2_6": "0.6.0"}[route.contracts.version_id]
+                   "v2_6": "0.6.0",
+                   "v2_7": "0.7.0"}[route.contracts.version_id]
         payload.update({
             "authorization_contract":
                 f"universe_classifier_continuation_authorization@{version}",
@@ -746,6 +747,7 @@ CONTINUATION_ROUTES = [
     ("v2_4", lcc.CONTINUATION_ROUTE_V2_4, "universe_classifier_record@0.3.0"),
     ("v2_5", lcc.CONTINUATION_ROUTE_V2_5, "universe_classifier_record@0.4.0"),
     ("v2_6", lcc.CONTINUATION_ROUTE_V2_6, "universe_classifier_record@0.4.0"),
+    ("v2_7", lcc.CONTINUATION_ROUTE_V2_7, "universe_classifier_record@0.4.0"),
 ]
 
 

@@ -89,6 +89,7 @@ from .classifier_contract_set import (
     V2_4,
     V2_5,
     V2_6,
+    V2_7,
     ClassifierContractSet,
 )
 from .classifier_tier_engine import derive_tier, load_tier_rules
@@ -146,6 +147,7 @@ __all__ = [
     "BASE_ROUTE_V2_4",
     "BASE_ROUTE_V2_5",
     "BASE_ROUTE_V2_6",
+    "BASE_ROUTE_V2_7",
     "ClassifierRoute",
     "require_classifier_run",
     "require_completed_run",
@@ -292,6 +294,22 @@ BASE_ROUTE_V2_6 = ClassifierRoute(
     authorization_schema="schemas/universe_classifier_authorization.v6.schema.json",
     archive_filename="universe_classifier_v2_6_raw_responses.jsonl",
     contracts=V2_6,
+)
+
+#: ADR-134. The V2.7 successor: same route mechanics, same span protocol,
+#: a prompt that states the two output rules the V2.6 calibration showed the
+#: model breaking. Distinct filenames and a V7 contract keep the two runs
+#: structurally unmixable.
+BASE_ROUTE_V2_7 = ClassifierRoute(
+    run_kind=RUN_KIND,
+    records_filename="universe_classifier_v2_7_records.jsonl",
+    manifest_filename="universe_classifier_v2_7_manifest.json",
+    manifest_contract="universe_classifier_manifest@0.7.0",
+    manifest_schema="schemas/universe_classifier_manifest.v7.schema.json",
+    record_order=RECORD_ORDER,
+    authorization_schema="schemas/universe_classifier_authorization.v7.schema.json",
+    archive_filename="universe_classifier_v2_7_raw_responses.jsonl",
+    contracts=V2_7,
 )
 
 #: The closed provider reasons a bounded provider-unresolved row may carry,

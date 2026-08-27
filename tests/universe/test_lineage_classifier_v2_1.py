@@ -1292,7 +1292,7 @@ def test_the_v2_5_cli_mode_reaches_the_v2_5_route():
     cli = _cli_module()
     choices = next(a.choices for a in cli.build_parser()._actions if a.dest == "mode")
     assert "classify-universe-cohort-v2-5" in choices
-    assert len(choices) == 62
+    assert len(choices) == 66
 
 
 # --- ADR-132 correction: archival verification needs the packet and nothing else ----

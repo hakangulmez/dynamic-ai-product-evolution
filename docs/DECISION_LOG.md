@@ -9311,6 +9311,68 @@ consumer modules, four CLI modes, seven test modules, the registry (0.69.0 to
 five registry/manifest guards, and the absolute registry literals in eleven
 screen suites.
 
+## ADR-134 — A flag is a label, not an argument
+
+**Status.** Accepted, fixture-first. No model call, no network, no governance
+artifact, no `data/runs` write, no calibration, and no change to the completed
+V2.6 run or its review. The selected-span evidence protocol, the span-index
+config, the 0.4.0 axes and record contracts, the taxonomy version, the tier and
+strata rules, the 40-row selection, the source packets and every earlier
+artifact are byte-unchanged.
+
+**What the V2.6 calibration actually hit.** It completed — forty rows sent,
+thirty-five classified, zero provider failures, zero truncations, and a manifest
+that validated. It is still not promotable, because all five of its unusable
+allowance went to contract violations: four `boundary_flags` entries that ran
+past 160 characters, and one response that omitted `confidence`.
+
+**Why no bound moves.** The four overlong flags exceeded the ceiling by 2, 9,
+15 and 51 characters, which invites raising it. The distribution says not to.
+Among the thirty-five rows that classified, only two emitted flags at all — four
+flags, the longest 133 characters against a ceiling of 160. Nothing correct came
+within twenty characters of the limit. Every failing string is instead a full
+explanatory sentence: *"The firm's products are physical vehicles, not software.
+Software is embedded within the vehicles for telemetrics and control, but not
+sold as a standalone product or service."* That is reasoning written into a
+label field — a genre error, not a bound that is too tight. Raising `maxLength`
+would relax acceptance and ratify the error as legitimate output.
+
+**Why `confidence` was omitted.** It is required by the 0.4.0 axes contract, but
+the V2.5 prompt names it exactly once, inside the JSON skeleton. It appears in
+neither the contractual-limits block nor the closing checklist, while every
+other bound is restated in both. It was the only required axis reinforced
+nowhere, and exactly one response dropped it.
+
+**What V2.7 changes.** The prompt, and only the prompt. `boundary_flags` gains a
+genre rule: a flag names the boundary condition, never explains it, and a flag
+needing more than 160 characters has become reasoning and belongs in no output
+field. `confidence` is declared mandatory in the limits block and asserted again
+in the closing checklist. The V2.7 prompt differs from V2.5 by those two edits
+and nothing else.
+
+**Why six new contract files for a prompt edit.** Both the authorization and the
+manifest schemas const-pin `prompt_template_path` to the V2.5 file, so a new
+prompt cannot be authorized under any V6 contract. The V7 pair for each of the
+three roles is otherwise identical to its V6 predecessor, including the
+ADR-133 integer-or-null `tokens_out_reported` and its unchanged
+`additionalProperties`. `V2_7` reuses V2.5's axes schema, record schema, axes
+and record contracts, taxonomy version, evidence protocol and span-index config
+by identity; only `prompt_path` and `output_prefix` move.
+
+**Gate.** A fresh 40-row calibration on the same selection and seed must
+complete under a V2.7 grant before any full-cohort grant is drafted. The
+run-fatal tolerances stay at 5 / 2 / 2; nothing here relaxes them. Whether
+promotion should require a threshold strictly stronger than the run-fatal one
+is open, and is not decided here — this run completed and is still not
+promotable precisely because it sat on the ceiling.
+
+**Deferred.** Three rows of the V2.6 run — CIK 0001405528, 0001867072 and
+0001056285 — are semantic questions rather than contract failures: each
+classified TIER_B on CO_ESSENTIAL centrality with high confidence and no
+boundary flags. Carrying them as review nominations needs a successor to
+`universe_classifier_calibration_review@0.1.0`, which has no field for them.
+That is a separate decision and no record or tier is changed here.
+
 ## ADR-133 — A manifest property learns to say "unknown"
 
 **Status.** Accepted, fixture-first. No model call, no network, no governance

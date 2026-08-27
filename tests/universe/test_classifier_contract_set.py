@@ -46,6 +46,7 @@ ALL_ROUTES = [
     lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2, lcal.CALIBRATION_ROUTE_V2_3,
     lcal.CALIBRATION_ROUTE_V2_4, lcal.CALIBRATION_ROUTE_V2_5,
     lcal.CALIBRATION_ROUTE_V2_6,
+    lcl.BASE_ROUTE_V2_7, lcc.CONTINUATION_ROUTE_V2_7, lcal.CALIBRATION_ROUTE_V2_7,
 ]
 ROUTE_TRIPLES = [
     (lcl.BASE_ROUTE, lcl.BASE_ROUTE_V2_2, lcl.BASE_ROUTE_V2_3),
@@ -258,24 +259,25 @@ def test_each_route_triple_is_mutually_isolated(v1, v2, v3):
 
 
 def test_every_output_filename_is_unique_across_every_route():
-    """ADR-130 took this from nine routes to twelve; ADR-132 to fifteen."""
+    """ADR-130 took this from nine routes to twelve; ADR-132 to fifteen,
+    ADR-133 to eighteen, ADR-134 to twenty-one."""
     names = [n for r in ALL_ROUTES
              for n in (r.records_filename, r.manifest_filename, r.archive_filename)]
     # each version has one archive name shared by its own three routes
     assert len(set(names)) == len(set(names))
     records = [r.records_filename for r in ALL_ROUTES]
     manifests = [r.manifest_filename for r in ALL_ROUTES]
-    assert len(set(records)) == len(records) == len(ALL_ROUTES) == 18
-    assert len(set(manifests)) == len(manifests) == 18
+    assert len(set(records)) == len(records) == len(ALL_ROUTES) == 21
+    assert len(set(manifests)) == len(manifests) == 21
     archives = {r.archive_filename for r in ALL_ROUTES}
-    assert len(archives) == 6, "one archive filename per contract version"
+    assert len(archives) == 7, "one archive filename per contract version"
 
 
 def test_every_manifest_and_authorization_contract_is_unique():
     manifests = [r.manifest_contract for r in ALL_ROUTES]
     grants = [r.authorization_schema for r in ALL_ROUTES]
-    assert len(set(manifests)) == len(manifests) == 18
-    assert len(set(grants)) == len(grants) == 18
+    assert len(set(manifests)) == len(manifests) == 21
+    assert len(set(grants)) == len(grants) == 21
 
 
 @pytest.mark.parametrize("route", ALL_ROUTES,
@@ -333,14 +335,14 @@ def test_each_route_quad_is_mutually_isolated(v1, v2, v3, v4):
         "the route's kind is a role, not a prompt version"
 
 
-def test_every_output_filename_is_unique_across_all_eighteen_routes():
-    assert len(ALL_ROUTES) == 18
+def test_every_output_filename_is_unique_across_all_twenty_one_routes():
+    assert len(ALL_ROUTES) == 21
     names = [r.records_filename for r in ALL_ROUTES]
     names += [r.manifest_filename for r in ALL_ROUTES]
     assert len(set(names)) == len(names)
 
 
-def test_every_contract_id_is_unique_across_all_eighteen_routes():
+def test_every_contract_id_is_unique_across_all_twenty_one_routes():
     ids = [r.manifest_contract for r in ALL_ROUTES]
     ids += [r.authorization_schema for r in ALL_ROUTES]
     assert len(set(ids)) == len(ids)

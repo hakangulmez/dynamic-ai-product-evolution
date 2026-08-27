@@ -978,6 +978,145 @@ def _v2_6_grant(cohort, selection, tmp_path, *, name="calibration-gov-v2-6"):
                            sha256=_sha(raw), authorization=payload)
 
 
+def _v2_7_grant(cohort, selection, tmp_path, *, name="calibration-gov-v2-7"):
+    """The V2.6 calibration grant re-pointed at V2.7's prompt and 0.7.0 contract.
+
+    ADR-134 moves the prompt and nothing else, so this grant differs from the
+    V2.6 one in exactly two fields the model can observe -- the prompt path and
+    its digest -- plus the contract id the route resolves on.
+    """
+    from dynamic_ai_products.classifier_contract_set import V2_7
+    rules = _csi.load_span_index_rules(ROOT)
+    base = _grant(cohort, selection, tmp_path, name=name).authorization
+    payload = dict(base)
+    payload.update({
+        "authorization_contract":
+            "universe_classifier_calibration_authorization@0.7.0",
+        "output_contract": V2_7.record_contract,
+        "taxonomy_version": V2_7.taxonomy_version,
+        "prompt_template_path": V2_7.prompt_path,
+        "prompt_template_sha256":
+            sha256((ROOT / V2_7.prompt_path).read_bytes()).hexdigest(),
+        "span_index_version": rules.version,
+        "span_index_sha256": rules.sha256,
+    })
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    ((tmp_path / name) / "calibration_authorization.json").write_bytes(raw)
+    return SimpleNamespace(root=tmp_path / name,
+                           reference="calibration_authorization.json",
+                           sha256=_sha(raw), authorization=payload)
+
+
+def _v2_7_script(cohort, selection, **overrides):
+    """V2.7 sees the same span protocol as V2.5, so the payloads are V2.5's."""
+    script = _v2_5_span_script(cohort, selection)
+    for cik, extra in overrides.items():
+        script[cik] = {**script[cik], **extra}
+    return script
+
+
+def _completed_v2_7(cohort, selection, tmp_path, *, run_id="calibration-v2-7"):
+    grant = _v2_7_grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path, run_id=run_id,
+               script=_v2_7_script(cohort, selection),
+               route=lcal.CALIBRATION_ROUTE_V2_7)
+    assert run.result.status == "completed", run.result.receipt
+    return run
+
+
+def test_the_v2_7_route_classifies_the_same_unchanged_selection(cohort, selection,
+                                                                tmp_path):
+    run = _completed_v2_7(cohort, selection, tmp_path)
+    assert run.result.counts["selected_rows"] == len(selection.rows)
+    assert run.result.counts["classified"] >= 1
+    manifest = json.loads(Path(run.result.manifest_path).read_bytes())
+    assert manifest["manifest_contract"] == \
+        "universe_classifier_calibration_manifest@0.7.0"
+    assert manifest["prompt_template_path"] == \
+        "prompts/discovery/universe_full_classification.v2_7.md"
+    # the ADR-133 accounting property is carried forward, not re-narrowed
+    assert "tokens_out_reported" in manifest["request_accounting"]
+
+
+def test_a_completed_v2_7_run_is_accepted_only_by_its_own_route(cohort, selection,
+                                                                tmp_path):
+    run = _completed_v2_7(cohort, selection, tmp_path)
+    run_dir = Path(run.result.run_dir)
+    accepted = lcal.require_classifier_calibration_run(
+        run_dir, route=lcal.CALIBRATION_ROUTE_V2_7)
+    assert accepted == run_dir / lcal.CALIBRATION_ROUTE_V2_7.manifest_filename
+    assert accepted.is_file()
+    for other in (lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2,
+                  lcal.CALIBRATION_ROUTE_V2_3, lcal.CALIBRATION_ROUTE_V2_4,
+                  lcal.CALIBRATION_ROUTE_V2_5, lcal.CALIBRATION_ROUTE_V2_6):
+        with pytest.raises(Exception):
+            lcal.require_classifier_calibration_run(run_dir, route=other)
+
+
+def test_the_v2_7_route_refuses_a_v2_6_run(cohort, selection, tmp_path):
+    grant = _v2_6_grant(cohort, selection, tmp_path)
+    run = _run(cohort, selection, grant, tmp_path, run_id="calibration-v2-6-for-v2-7",
+               script=_v2_6_script(cohort, selection),
+               route=lcal.CALIBRATION_ROUTE_V2_6)
+    assert run.result.status == "completed", run.result.receipt
+    with pytest.raises(Exception):
+        lcal.require_classifier_calibration_run(
+            Path(run.result.run_dir), route=lcal.CALIBRATION_ROUTE_V2_7)
+
+
+def test_the_v2_7_grant_is_refused_by_the_v2_6_route(cohort, selection, tmp_path):
+    grant = _v2_7_grant(cohort, selection, tmp_path, name="gov-v2-7-crossed")
+    with pytest.raises(Exception):
+        _run(cohort, selection, grant, tmp_path, run_id="crossed-v2-6",
+             script=_v2_7_script(cohort, selection),
+             route=lcal.CALIBRATION_ROUTE_V2_6)
+
+
+def test_every_v7_schema_agrees_with_its_v2_7_route():
+    """The schema files, not the symbol names, are what a run is checked against."""
+    from dynamic_ai_products.lineage_classifier_continuation import (
+        CONTINUATION_ROUTE_V2_7)
+    from dynamic_ai_products.lineage_classifier_v2_1 import BASE_ROUTE_V2_7
+    cases = [
+        (BASE_ROUTE_V2_7, "universe_classifier_authorization",
+         "universe_classifier_manifest", "Universe classifier manifest v0.7.0"),
+        (CONTINUATION_ROUTE_V2_7, "universe_classifier_continuation_authorization",
+         "universe_classifier_continuation_manifest",
+         "Universe classifier continuation manifest v0.7.0"),
+        (lcal.CALIBRATION_ROUTE_V2_7, "universe_classifier_calibration_authorization",
+         "universe_classifier_calibration_manifest",
+         "Universe classifier calibration manifest v0.7.0"),
+    ]
+    for route, auth_base, man_base, man_title in cases:
+        assert route.authorization_schema == f"schemas/{auth_base}.v7.schema.json"
+        assert route.manifest_schema == f"schemas/{man_base}.v7.schema.json"
+        auth = json.loads((ROOT / route.authorization_schema).read_bytes())
+        man = json.loads((ROOT / route.manifest_schema).read_bytes())
+        for doc, base in ((auth, auth_base), (man, man_base)):
+            assert doc["$id"].endswith(f"{base}.v7.schema.json")
+            assert doc["title"].endswith("v0.7.0"), doc["title"]
+            assert "v0.6.0" not in doc["title"]
+            assert "ADR-134" in doc["description"]
+            assert doc["properties"]["prompt_template_path"]["const"] == \
+                route.contracts.prompt_path == \
+                "prompts/discovery/universe_full_classification.v2_7.md"
+            assert doc["properties"]["taxonomy_version"]["const"] == \
+                route.contracts.taxonomy_version
+        assert man["title"] == man_title
+        assert man["properties"]["manifest_contract"]["const"] == \
+            route.manifest_contract == f"{man_base}@0.7.0"
+        assert auth["properties"]["authorization_contract"]["const"] == \
+            f"{auth_base}@0.7.0"
+        # the manifest names this route's own output files, not V2.6's
+        declared = set(man["properties"]["output_hashes"]["properties"])
+        assert route.records_filename in declared
+        assert route.archive_filename in declared
+        assert not any("v2_6" in name for name in declared)
+        acct = man["properties"]["request_accounting"]
+        assert acct["properties"]["tokens_out_reported"]["type"] == ["integer", "null"]
+        assert acct["additionalProperties"] == {"type": "integer"}
+
+
 def _v2_6_script(cohort, selection, **overrides):
     script = _v2_5_span_script(cohort, selection)
     for cik, extra in overrides.items():

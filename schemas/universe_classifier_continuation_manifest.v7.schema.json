@@ -1,0 +1,490 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_continuation_manifest.v7.schema.json",
+  "title": "Universe classifier continuation manifest v0.7.0",
+  "description": "ADR-134. Successor to the 0.6.0 contracts, and an output-discipline one: the selected-span evidence protocol, the span-index config, the 0.4.0 axes and record contracts, the taxonomy version, the tier and strata rules and the economic semantics are reused byte for byte, and the ADR-133 integer-or-null tokens_out_reported accounting is carried forward unchanged. What moves is the prompt. The V2.6 calibration completed -- forty rows sent, thirty-five classified, a manifest that validated -- and was still not promotable, because all five of its unusable allowance went to contract violations: four boundary_flags entries written as explanatory sentences that ran past 160 characters, and one response that omitted confidence. No bound moves in response. Among the rows that did classify the longest flag ran 133 characters against a ceiling of 160, so the ceiling was never the constraint; the failure was a genre error, reasoning placed in a label field. The V2.7 prompt therefore says what a flag is, and states that confidence is mandatory in both the contractual-limits block and the closing checklist -- it was the only required axis named in neither. This contract exists because the V6 pair const-pins the V2.5 prompt path, so a new prompt cannot be authorized under it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorization_id",
+    "authorization_sha256",
+    "bounded_outcomes",
+    "continuation",
+    "counts",
+    "endpoint_allowlist",
+    "envelope_text_extraction_rule",
+    "limitations",
+    "manifest_contract",
+    "output_contract",
+    "output_hashes",
+    "promotable",
+    "prompt_template_path",
+    "prompt_template_sha256",
+    "provider",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "reconciliation",
+    "record_order",
+    "request_accounting",
+    "run_id",
+    "run_kind",
+    "run_timestamp",
+    "schema_versions",
+    "screen_adapter_enablement_sha256",
+    "sources",
+    "span_index_sha256",
+    "span_index_version",
+    "taxonomy_version",
+    "tier_rules_sha256",
+    "tier_rules_version"
+  ],
+  "properties": {
+    "manifest_contract": {
+      "const": "universe_classifier_continuation_manifest@0.7.0"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_kind": {
+      "const": "classifier_v2_1_continuation"
+    },
+    "run_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "promotable": {
+      "const": false
+    },
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorization_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cohort",
+        "overlay",
+        "release",
+        "packet",
+        "sources_unmodified"
+      ],
+      "properties": {
+        "cohort": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cohort_id",
+            "manifest_sha256",
+            "records_jsonl_sha256"
+          ],
+          "properties": {
+            "cohort_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "records_jsonl_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "overlay": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "overlay_id",
+            "manifest_sha256",
+            "decisions_jsonl_sha256"
+          ],
+          "properties": {
+            "overlay_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "decisions_jsonl_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "release": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "release_id",
+            "manifest_sha256",
+            "records_jsonl_sha256"
+          ],
+          "properties": {
+            "release_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "records_jsonl_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "description": "The frozen SCREEN_v1 release. Screen evidence is read from the release's own records, so the classifier depends on the release rather than on the mutable runs that produced it; the raw-response id and digest each cohort row names are still matched against its release row."
+        },
+        "packet": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "packet_manifest_path",
+            "packet_manifest_sha256",
+            "packets_jsonl_sha256"
+          ],
+          "properties": {
+            "packet_manifest_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "packet_manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "packets_jsonl_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "sources_unmodified": {
+          "const": true
+        }
+      }
+    },
+    "prompt_template_path": {
+      "const": "prompts/discovery/universe_full_classification.v2_7.md"
+    },
+    "prompt_template_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "tier_rules_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tier_rules_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "taxonomy_version": {
+      "description": "The axes-contract identity this run used. It denotes the contract version, not a change in the economic axes vocabulary, which is unchanged from V2.1.",
+      "const": "universe_classifier_axes_v2_5"
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model_label"
+      ],
+      "properties": {
+        "provider": {
+          "const": "google_vertex_ai"
+        },
+        "model_label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "provider_client_contract_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_client_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_adapter_enablement_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "endpoint_allowlist": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "envelope_text_extraction_rule": {
+      "type": "string",
+      "minLength": 1
+    },
+    "output_contract": {
+      "const": "universe_classifier_record@0.4.0"
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_classifier_v2_7_continuation_records.jsonl",
+        "universe_classifier_v2_7_raw_responses.jsonl",
+        "universe_screen_capture_ledger.jsonl"
+      ],
+      "properties": {
+        "universe_classifier_v2_7_continuation_records.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "universe_classifier_v2_7_raw_responses.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "universe_screen_capture_ledger.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "record_order": {
+      "const": "cohort_row_order"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cohort_rows",
+        "classified",
+        "model_output_unusable",
+        "provider_unresolved",
+        "model_output_truncated",
+        "by_admission_origin",
+        "by_tier",
+        "by_software_centrality",
+        "by_firm_structure",
+        "by_commercial_materiality",
+        "by_customer_market_orientation",
+        "contradiction_rows",
+        "boundary_flag_rows",
+        "unusable_by_reason"
+      ],
+      "properties": {
+        "cohort_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "classified": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_output_unusable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider_unresolved": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_output_truncated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contradiction_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "boundary_flag_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_admission_origin": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "by_tier": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "by_software_centrality": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "by_firm_structure": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "by_commercial_materiality": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "by_customer_market_orientation": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "unusable_by_reason": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "request_accounting": {
+      "type": "object",
+      "minProperties": 10,
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "required": [
+        "tokens_out_reported"
+      ],
+      "properties": {
+        "tokens_out_reported": {
+          "description": "Sum of usageMetadata candidate-token counts over rows whose usage verified on their first attempt. NULL whenever any row retried or its usage could not be verified: there is then no complete verified total, and reporting one would be an invention. Budget enforcement never reads this field. It reads tokens_out_accounted, which charges the declared per-call maximum for exactly those rows, so an unverifiable row can only shrink headroom, never bypass a ceiling.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "bounded_outcomes": {
+      "description": "The tolerances this grant authorized and what the run actually spent against them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_provider_unresolved",
+        "max_model_output_truncated",
+        "max_model_output_unusable",
+        "tier_excludes_market_orientation"
+      ],
+      "properties": {
+        "max_provider_unresolved": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_model_output_truncated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_model_output_unusable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tier_excludes_market_orientation": {
+          "const": true
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 24,
+      "additionalProperties": {
+        "const": true
+      }
+    },
+    "schema_versions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_run_id",
+        "source_kind",
+        "source_receipt_sha256",
+        "source_raw_responses_sha256",
+        "reused_prefix_rows",
+        "model_called_rows",
+        "first_model_called_row_ordinal",
+        "source_archive_is_byte_identical_prefix"
+      ],
+      "properties": {
+        "source_run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_kind": {
+          "const": "failed_classifier_run"
+        },
+        "source_receipt_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_raw_responses_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "reused_prefix_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_called_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "first_model_called_row_ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_archive_is_byte_identical_prefix": {
+          "const": true
+        }
+      }
+    },
+    "span_index_version": {
+      "description": "The pinned deterministic span index this grant authorizes. It names the numbering the model selects from.",
+      "const": "universe_classifier_span_index_v1"
+    },
+    "span_index_sha256": {
+      "description": "Digest of the span-index config. Pinned as a const so a config edit cannot reach a run without a new contract.",
+      "const": "0f98b00f861fbaee710612af3cda681f99c5f642e1e6323f91a1deb9ec219499"
+    }
+  }
+}

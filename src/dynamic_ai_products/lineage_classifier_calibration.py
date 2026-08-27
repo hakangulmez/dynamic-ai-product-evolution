@@ -29,7 +29,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .classifier_calibration_selection import require_calibration_selection
-from .classifier_contract_set import V2_1, V2_2, V2_3, V2_4, V2_5, V2_6
+from .classifier_contract_set import (
+    V2_1, V2_2, V2_3, V2_4, V2_5, V2_6, V2_7)
 from .lineage_classifier_v2_1 import (
     CLASSIFIER_RAW_RESPONSES_FILENAME,
     ClassifierRoute,
@@ -54,6 +55,7 @@ __all__ = [
     "CALIBRATION_ROUTE_V2_4",
     "CALIBRATION_ROUTE_V2_5",
     "CALIBRATION_ROUTE_V2_6",
+    "CALIBRATION_ROUTE_V2_7",
     "require_classifier_calibration_run",
     "run_lineage_classifier_calibration",
 ]
@@ -164,6 +166,24 @@ CALIBRATION_ROUTE_V2_6 = ClassifierRoute(
         "schemas/universe_classifier_calibration_authorization.v6.schema.json"),
     archive_filename="universe_classifier_v2_6_raw_responses.jsonl",
     contracts=V2_6,
+)
+
+#: ADR-134. The V2.7 successor: same route mechanics, same span protocol,
+#: a prompt that states the two output rules the V2.6 calibration showed the
+#: model breaking. Distinct filenames and a V7 contract keep the two runs
+#: structurally unmixable.
+CALIBRATION_ROUTE_V2_7 = ClassifierRoute(
+    run_kind=CALIBRATION_RUN_KIND,
+    records_filename="universe_classifier_v2_7_calibration_records.jsonl",
+    manifest_filename="universe_classifier_v2_7_calibration_manifest.json",
+    manifest_contract="universe_classifier_calibration_manifest@0.7.0",
+    manifest_schema=(
+        "schemas/universe_classifier_calibration_manifest.v7.schema.json"),
+    record_order=CALIBRATION_RECORD_ORDER,
+    authorization_schema=(
+        "schemas/universe_classifier_calibration_authorization.v7.schema.json"),
+    archive_filename="universe_classifier_v2_7_raw_responses.jsonl",
+    contracts=V2_7,
 )
 
 
