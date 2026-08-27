@@ -387,6 +387,8 @@ from test_lineage_classifier_calibration import (  # noqa: E402
     _v2_6_script,
     _v2_7_grant,
     _v2_7_script,
+    _v2_8_grant,
+    _v2_8_script,
     _v2_5_span_script,
 )
 
@@ -603,6 +605,107 @@ def test_the_v2_7_review_mode_dispatches_to_the_v2_7_route_only():
         "universe_classifier_v2_7_calibration_manifest.json"
 
 
+# --- ADR-135: the V2.8 review path, end to end ---------------------------------------
+
+
+def _completed_v2_8_run(cohort, selection, tmp_path, name="v2-8", **per_cik):
+    from test_lineage_classifier_calibration import _run
+    run = _run(cohort, selection,
+               _v2_8_grant(cohort, selection, tmp_path, name=f"gov-{name}"),
+               tmp_path, run_id=f"calib-{name}",
+               script=_v2_8_script(cohort, selection, **per_cik),
+               route=lcal.CALIBRATION_ROUTE_V2_8)
+    assert run.result.status == "completed", run.result.receipt
+    return run.result
+
+
+def test_a_v2_8_run_produces_a_0_2_0_review_showing_every_provenance_class(
+        cohort, selection, tmp_path):
+    from jsonschema import Draft202012Validator, FormatChecker
+    route = lcal.CALIBRATION_ROUTE_V2_8
+    result = _completed_v2_8_run(cohort, selection, tmp_path, "rev-v2-8")
+    review = ccr.build_calibration_review(
+        repo_root=ROOT, calibration_run_dir=result.run_dir,
+        selection_path=selection.path, selection_sha256=selection.sha256,
+        output_path=tmp_path / "review-v2-8" / ccr.REVIEW_FILENAME,
+        review_id="review-v2-8", clock=CLOCK, calibration_route=route)
+    schema_v2 = json.loads((ROOT / ccr.REVIEW_SCHEMA_V2).read_text(encoding="utf-8"))
+    Draft202012Validator(schema_v2, format_checker=FormatChecker()).validate(review)
+    assert review["review_contract"] == "universe_classifier_calibration_review@0.2.0"
+    assert review["gate_state"] == "pending_human_reading"
+    assert review["promotable"] is False and review["no_model_call"] is True
+    item = review["nominated_rows"][0]["evidence"][0]
+    assert sorted(item) == ["annotation_provenance", "annotation_status", "axis",
+                            "evidence_quote", "passage_ref", "span_end",
+                            "span_interpretation", "span_ref", "span_sha256",
+                            "span_start"]
+    assert item["annotation_provenance"] == "model_authored"
+    assert "supported_claim" not in item and "quote" not in item
+
+
+def test_the_0_1_0_review_schema_refuses_that_same_v2_8_review(cohort, selection,
+                                                               tmp_path):
+    """The successor was required, not chosen for taste."""
+    from jsonschema import Draft202012Validator, FormatChecker
+    result = _completed_v2_8_run(cohort, selection, tmp_path, "rev-v2-8-refused")
+    review = ccr.build_calibration_review(
+        repo_root=ROOT, calibration_run_dir=result.run_dir,
+        selection_path=selection.path, selection_sha256=selection.sha256,
+        output_path=tmp_path / "review-v2-8b" / ccr.REVIEW_FILENAME,
+        review_id="review-v2-8b", clock=CLOCK, dry_run=True,
+        calibration_route=lcal.CALIBRATION_ROUTE_V2_8)
+    old = Draft202012Validator(json.loads((ROOT / ccr.REVIEW_SCHEMA).read_text("utf-8")),
+                               format_checker=FormatChecker())
+    assert list(old.iter_errors(review)), "0.1.0 must refuse a V2.8 review"
+
+
+def test_a_v2_8_review_carries_a_null_interpretation_without_failing(
+        cohort, selection, tmp_path):
+    from jsonschema import Draft202012Validator, FormatChecker
+    target = selection.rows[0]["cik"]
+    result = _completed_v2_8_run(cohort, selection, tmp_path, "rev-v2-8-null",
+                                 **{target: {"omit_interpretation": True}})
+    review = ccr.build_calibration_review(
+        repo_root=ROOT, calibration_run_dir=result.run_dir,
+        selection_path=selection.path, selection_sha256=selection.sha256,
+        output_path=tmp_path / "review-v2-8-null" / ccr.REVIEW_FILENAME,
+        review_id="review-v2-8-null", clock=CLOCK,
+        calibration_route=lcal.CALIBRATION_ROUTE_V2_8)
+    Draft202012Validator(json.loads((ROOT / ccr.REVIEW_SCHEMA_V2).read_text("utf-8")),
+                         format_checker=FormatChecker()).validate(review)
+    row = next(r for r in review["nominated_rows"] if r["cik"] == target)
+    item = row["evidence"][0]
+    assert item["span_interpretation"] is None
+    assert item["annotation_status"] == "absent"
+
+
+def test_a_v2_7_run_still_gets_the_0_1_0_review(cohort, selection, tmp_path):
+    """Old routes are untouched: their reviews keep the contract they always had."""
+    from jsonschema import Draft202012Validator, FormatChecker
+    result = _completed_v2_7_run(cohort, selection, tmp_path, "still-0-1-0")
+    review = ccr.build_calibration_review(
+        repo_root=ROOT, calibration_run_dir=result.run_dir,
+        selection_path=selection.path, selection_sha256=selection.sha256,
+        output_path=tmp_path / "review-v2-7-old" / ccr.REVIEW_FILENAME,
+        review_id="review-v2-7-old", clock=CLOCK,
+        calibration_route=lcal.CALIBRATION_ROUTE_V2_7)
+    assert review["review_contract"] == "universe_classifier_calibration_review@0.1.0"
+    Draft202012Validator(REVIEW_SCHEMA, format_checker=FormatChecker()).validate(review)
+    assert sorted(review["nominated_rows"][0]["evidence"][0]) == [
+        "axis", "passage_ref", "quote", "supported_claim"]
+
+
+def test_the_v2_8_review_mode_dispatches_to_the_v2_8_route_only():
+    source = (ROOT / "pipelines" / "00_build_company_universe.py").read_text("utf-8")
+    assert ('if args.mode == "build-classifier-calibration-review-v2-8":\n'
+            "        return _main_build_classifier_calibration_review(\n"
+            "            args, calibration_route=CALIBRATION_ROUTE_V2_8)") in source
+    cli = _cli_module()
+    assert cli.CALIBRATION_ROUTE_V2_8 is lcal.CALIBRATION_ROUTE_V2_8
+    assert cli.CALIBRATION_ROUTE_V2_8.manifest_contract == \
+        "universe_classifier_calibration_manifest@0.8.0"
+
+
 # --- the two new review CLI modes --------------------------------------------------
 
 REVIEW_MODES = ["build-classifier-calibration-review",
@@ -611,7 +714,8 @@ REVIEW_MODES = ["build-classifier-calibration-review",
                 "build-classifier-calibration-review-v2-4",
                 "build-classifier-calibration-review-v2-5",
                 "build-classifier-calibration-review-v2-6",
-                "build-classifier-calibration-review-v2-7"]
+                "build-classifier-calibration-review-v2-7",
+                "build-classifier-calibration-review-v2-8"]
 REVIEW_REQUIRED_FLAGS = ["--calibration-run-dir", "--calibration-selection",
                          "--calibration-selection-sha256", "--output-dir",
                          "--run-id"]
@@ -663,13 +767,13 @@ def test_each_review_mode_rejects_an_incompatible_flag(mode, flag, value):
     assert verdict and flag in verdict
 
 
-def test_the_cli_declares_all_seven_review_modes():
+def test_the_cli_declares_all_eight_review_modes():
     cli = _cli_module()
     choices = next(a.choices for a in cli.build_parser()._actions
                    if a.dest == "mode")
     for mode in REVIEW_MODES:
         assert mode in choices, mode
-    assert len(REVIEW_MODES) == 7
+    assert len(REVIEW_MODES) == 8
     assert "Sixty-two mutually exclusive modes" in cli.__doc__
 
 

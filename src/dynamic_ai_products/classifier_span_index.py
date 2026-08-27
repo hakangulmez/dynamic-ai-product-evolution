@@ -325,7 +325,9 @@ def verify_stored_span(item: dict, packet: dict) -> bool:
     stored ``passage_ref`` through the deterministic reference mapping,
     normalizes that one raw passage with the established whitespace rule, and
     then checks three things — that the offsets are in range, that the text at
-    them is exactly ``resolved_quote``, and that its digest is ``span_sha256``.
+    them is exactly the stored pipeline-derived text (``evidence_quote``, or
+    ``resolved_quote`` on a V2.5-V2.7 row), and that its digest is
+    ``span_sha256``.
 
     ``span_ref`` is not parsed here, and that is the point. The reference was the
     model's selection and was validated when the response arrived; what survives
@@ -352,6 +354,11 @@ def verify_stored_span(item: dict, packet: dict) -> bool:
     if not (0 <= start < end <= len(normalized)):
         return False
     text = normalized[start:end]
-    if text != item.get("resolved_quote"):
+    # ADR-132 named this field ``resolved_quote``; ADR-135 renamed it
+    # ``evidence_quote`` to say plainly who authored it. Both are the same
+    # pipeline-derived text and each contract admits exactly one of them, so
+    # one verifier serves every stored row from V2.5 onward.
+    stored_text = item.get("evidence_quote", item.get("resolved_quote"))
+    if text != stored_text:
         return False
     return hashlib.sha256(text.encode("utf-8")).hexdigest() == item.get("span_sha256")

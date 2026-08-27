@@ -1108,6 +1108,36 @@ def _span_rules():
     return _csi.load_span_index_rules(ROOT)
 
 
+def _v2_8_axes_payload(packet, rules, *, interpretation="The selected span supports this axis.",
+                       omit_interpretation=False, span_ref=None, ref=None, extra=None):
+    """A V2.8 response: identifiers plus an optional, unbounded interpretation.
+
+    ``omit_interpretation`` leaves the property out entirely, which the V2.8
+    contract permits and the V2.5 one did not.
+    """
+    index = _csi.build_span_index(packet, rules)
+    chosen_ref = ref or sorted(index.passages)[0]
+    item = {"axis": "centrality", "passage_ref": chosen_ref,
+            "span_ref": span_ref or f"{chosen_ref}:S001"}
+    if not omit_interpretation:
+        item["span_interpretation"] = interpretation
+    payload = {
+        "customer_value_archetypes": ["FUNCTIONAL_SOFTWARE"],
+        "software_centrality": "CORE",
+        "complementary_dependencies": ["NONE_OR_STANDARD_COMPUTE"],
+        "firm_structure": "PURE_PLAY", "commercial_materiality": "DOMINANT",
+        "customer_facing_functional_product": True,
+        "economically_eligible": True, "data_eligible": True,
+        "customer_market_orientation": "B2B",
+        "boundary_flags": [], "contradictions": [],
+        "evidence": [item],
+        "confidence": "high",
+    }
+    if extra is not None:
+        payload.update(extra)
+    return json.dumps(payload)
+
+
 def _span_axes_payload(packet, rules, *, span_ref=None, ref=None, extra=None,
                        evidence=True):
     """A V2.5 response: identifiers only, no source text anywhere in it."""
@@ -1292,7 +1322,7 @@ def test_the_v2_5_cli_mode_reaches_the_v2_5_route():
     cli = _cli_module()
     choices = next(a.choices for a in cli.build_parser()._actions if a.dest == "mode")
     assert "classify-universe-cohort-v2-5" in choices
-    assert len(choices) == 66
+    assert len(choices) == 70
 
 
 # --- ADR-132 correction: archival verification needs the packet and nothing else ----

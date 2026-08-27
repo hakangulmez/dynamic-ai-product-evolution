@@ -38,7 +38,7 @@ from typing import Any, Callable
 from jsonschema import Draft202012Validator, FormatChecker
 
 from .classifier_contract_set import (
-    V2_1, V2_2, V2_3, V2_4, V2_5, V2_6, V2_7)
+    V2_1, V2_2, V2_3, V2_4, V2_5, V2_6, V2_7, V2_8)
 from .classifier_span_index import build_span_index
 from .classifier_tier_engine import derive_tier
 from .lineage_classifier_v2_1 import (
@@ -54,6 +54,7 @@ from .lineage_classifier_v2_1 import (
     _execute,
     _preflight,
     render_classifier_prompt,
+    validate_annotated_span_axes_output,
     validate_axes_output,
     validate_span_axes_output,
 )
@@ -80,6 +81,7 @@ __all__ = [
     "CONTINUATION_ROUTE_V2_5",
     "CONTINUATION_ROUTE_V2_6",
     "CONTINUATION_ROUTE_V2_7",
+    "CONTINUATION_ROUTE_V2_8",
     "ClassifierSourcePrefix",
     "load_classifier_continuation_source",
     "require_classifier_continuation_run",
@@ -214,6 +216,23 @@ CONTINUATION_ROUTE_V2_7 = ClassifierRoute(
         "schemas/universe_classifier_continuation_authorization.v7.schema.json"),
     archive_filename="universe_classifier_v2_7_raw_responses.jsonl",
     contracts=V2_7,
+)
+
+#: ADR-135. The V2.8 successor: same span protocol and span index, a new
+#: evidence item that separates the address from the interpretation of it.
+#: Distinct filenames and an 0.8.0 contract keep the runs unmixable.
+CONTINUATION_ROUTE_V2_8 = ClassifierRoute(
+    run_kind=CONTINUATION_RUN_KIND,
+    records_filename="universe_classifier_v2_8_continuation_records.jsonl",
+    manifest_filename="universe_classifier_v2_8_continuation_manifest.json",
+    manifest_contract="universe_classifier_continuation_manifest@0.8.0",
+    manifest_schema=(
+        "schemas/universe_classifier_continuation_manifest.v8.schema.json"),
+    record_order=RECORD_ORDER,
+    authorization_schema=(
+        "schemas/universe_classifier_continuation_authorization.v8.schema.json"),
+    archive_filename="universe_classifier_v2_8_raw_responses.jsonl",
+    contracts=V2_8,
 )
 
 #: Receipt fields a continuable classifier failure must carry. A receipt that
@@ -425,7 +444,14 @@ def revalidate_classifier_prefix(
         }
         try:
             if span_index is not None:
-                axes = validate_span_axes_output(
+                # ADR-135. A reused prefix row must be rebuilt under the same
+                # evidence regime the run itself uses, or the continuation would
+                # store V2.5-shaped rows inside a V2.8 records file.
+                validate = (
+                    validate_annotated_span_axes_output
+                    if route.contracts.annotation_policy == "span_interpretation_v1"
+                    else validate_span_axes_output)
+                axes = validate(
                     entry["raw_response"], packet, validator,
                     route.contracts.axes_contract, span_index)
             else:

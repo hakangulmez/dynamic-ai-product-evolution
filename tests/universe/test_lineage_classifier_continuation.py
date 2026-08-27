@@ -153,7 +153,8 @@ def _continuation_grant(cohort, source, tmp_path, *, mutate=None,
                    "v2_4": "0.4.0",
                    "v2_5": "0.5.0",
                    "v2_6": "0.6.0",
-                   "v2_7": "0.7.0"}[route.contracts.version_id]
+                   "v2_7": "0.7.0",
+                   "v2_8": "0.8.0"}[route.contracts.version_id]
         payload.update({
             "authorization_contract":
                 f"universe_classifier_continuation_authorization@{version}",
@@ -748,6 +749,7 @@ CONTINUATION_ROUTES = [
     ("v2_5", lcc.CONTINUATION_ROUTE_V2_5, "universe_classifier_record@0.4.0"),
     ("v2_6", lcc.CONTINUATION_ROUTE_V2_6, "universe_classifier_record@0.4.0"),
     ("v2_7", lcc.CONTINUATION_ROUTE_V2_7, "universe_classifier_record@0.4.0"),
+    ("v2_8", lcc.CONTINUATION_ROUTE_V2_8, "universe_classifier_record@0.5.0"),
 ]
 
 
@@ -761,12 +763,12 @@ def _completed_continuation(cohort, tmp_path, route, tag):
     span = route.contracts.evidence_protocol == "selected_span"
     src = _failed_run(cohort, tmp_path, run_id=f"source-{tag}",
                       route=None if route is lcc.CONTINUATION_ROUTE else route,
-                      **({"payloads": _v2_5_payloads(cohort)} if span else {}))
+                      **({"payloads": _v2_5_payloads(cohort, route=route)} if span else {}))
     grant = _continuation_grant(
         cohort, src, tmp_path, name=f"gov-{tag}",
         route=None if route is lcc.CONTINUATION_ROUTE else route)
     run = _run(cohort, src, grant, tmp_path, run_id=f"continuation-{tag}",
-               **({"script": _v2_5_script(cohort)} if span else {}),
+               **({"script": _v2_5_script(cohort, route=route)} if span else {}),
                **({} if route is lcc.CONTINUATION_ROUTE else {"route": route}))
     assert run.result.status == "completed", run.result.receipt
     return src, run
@@ -1011,20 +1013,33 @@ def test_the_v2_4_continuation_cli_mode_reaches_its_route():
 from dynamic_ai_products import classifier_span_index as _csi  # noqa: E402
 
 
-def _v2_5_script(cohort):
-    from test_lineage_classifier_v2_1 import _span_axes_payload
+def _payload_builder(route):
+    """Pick the response shape this route's contract actually admits.
+
+    A V2.8 evidence item has no ``supported_claim`` and may carry a
+    ``span_interpretation``; feeding it a V2.5-shaped payload would refuse every
+    row before the continuation began.
+    """
+    from test_lineage_classifier_v2_1 import _span_axes_payload, _v2_8_axes_payload
+    annotated = route is not None and \
+        getattr(route.contracts, "annotation_policy", None) == "span_interpretation_v1"
+    return _v2_8_axes_payload if annotated else _span_axes_payload
+
+
+def _v2_5_script(cohort, route=None):
+    build = _payload_builder(route)
     rules = _csi.load_span_index_rules(ROOT)
     packets = cohort.release.packets
-    return {row["cik"]: {"text": _span_axes_payload(
+    return {row["cik"]: {"text": build(
         packets[(row["cik"], row["accession"])], rules)} for row in cohort.rows}
 
 
-def _v2_5_payloads(cohort, prefix_rows=PREFIX_ROWS):
-    """Archived prefix responses in the V2.5 shape: identifiers, never text."""
-    from test_lineage_classifier_v2_1 import _span_axes_payload
+def _v2_5_payloads(cohort, prefix_rows=PREFIX_ROWS, route=None):
+    """Archived prefix responses in the span shape: identifiers, never text."""
+    build = _payload_builder(route)
     rules = _csi.load_span_index_rules(ROOT)
     packets = cohort.release.packets
-    return [_span_axes_payload(packets[(r["cik"], r["accession"])], rules)
+    return [build(packets[(r["cik"], r["accession"])], rules)
             for r in cohort.rows[:prefix_rows]]
 
 

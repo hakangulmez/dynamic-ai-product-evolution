@@ -135,6 +135,15 @@ class ClassifierContractSet:
     #: The pinned span-index config a ``selected_span`` version renders from.
     #: ``None`` for every ``model_quote`` version, which has no span index.
     span_index_config: str | None = None
+    #: ADR-135. Which interpretation regime this version runs. ``None`` is V2.1
+    #: through V2.7, where the model's claim about a span sat inside the same
+    #: required, length-bounded object as the span address, so a bad claim
+    #: discarded a good citation. ``span_interpretation_v1`` is V2.8, where the
+    #: interpretation is optional and unbounded and the pipeline records an
+    #: ``annotation_status`` instead of refusing the row. Declared here rather
+    #: than inferred from a version id, for the same reason
+    #: ``evidence_protocol`` is: the runner should branch on a stated regime.
+    annotation_policy: str | None = None
 
 
 V2_1 = ClassifierContractSet(
@@ -264,6 +273,35 @@ V2_7 = ClassifierContractSet(
     span_index_config=V2_5.span_index_config,
 )
 
+#: ADR-135. The evidence item stops being one indivisible object. V2.5 gave the
+#: pipeline the quote text; V2.8 gives it authority over what counts as a
+#: failure. ``axis``, ``passage_ref`` and ``span_ref`` are the address and stay
+#: strictly validated -- an unresolvable span is still fatal, which is what makes
+#: a fabricated quote unrepresentable rather than merely detectable. What was
+#: ``supported_claim`` becomes ``span_interpretation``: optional, unbounded, and
+#: classified into an ``annotation_status`` rather than refusing the row. The
+#: V2.7 calibration lost a row to a 300-character overrun on a claim that no
+#: tier rule reads; under V2.8 that row classifies and carries
+#: ``annotation_status: over_length`` instead.
+#:
+#: A non-string interpretation is still refused. Type discipline is uniform
+#: across every model-authored field, and 996 accepted evidence items across
+#: three completed runs produced no non-string value; tolerating one would build
+#: machinery for a shape never observed.
+V2_8 = ClassifierContractSet(
+    version_id="v2_8",
+    prompt_path="prompts/discovery/universe_full_classification.v2_8.md",
+    axes_schema="schemas/universe_classifier_axes_record.v5.schema.json",
+    axes_contract="universe_classifier_axes_record@0.5.0",
+    record_contract="universe_classifier_record@0.5.0",
+    record_schema="schemas/universe_classifier_record.v5.schema.json",
+    taxonomy_version="universe_classifier_axes_v2_8",
+    output_prefix="v2_8_",
+    evidence_protocol=V2_5.evidence_protocol,
+    span_index_config=V2_5.span_index_config,
+    annotation_policy="span_interpretation_v1",
+)
+
 CONTRACT_SETS: dict[str, ClassifierContractSet] = {
     V2_1.version_id: V2_1,
     V2_2.version_id: V2_2,
@@ -272,6 +310,7 @@ CONTRACT_SETS: dict[str, ClassifierContractSet] = {
     V2_5.version_id: V2_5,
     V2_6.version_id: V2_6,
     V2_7.version_id: V2_7,
+    V2_8.version_id: V2_8,
 }
 
 

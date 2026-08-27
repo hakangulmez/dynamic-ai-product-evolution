@@ -1,0 +1,868 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_record.v5.schema.json",
+  "title": "Universe classifier record v0.5.0",
+  "description": "ADR-135. The canonical stored row for a V2.8 classification. Three provenance classes sit side by side and are labelled as such: the model's evidence address (axis, passage_ref, span_ref), the pipeline's derivation of it (evidence_quote, span_start, span_end, span_sha256) and the model's non-authoritative interpretation of it (span_interpretation, annotation_status, annotation_provenance). The tier is a fourth thing again, derived deterministically from six axes by the pinned rule config. A stored row always carries span_interpretation: an omitted or null model value is canonicalised to null here so the review contract can require the field, and the raw response archive preserves which of the two the model actually sent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_contract",
+    "record_kind",
+    "cik",
+    "accession",
+    "company_id",
+    "form",
+    "baseline_filing_date",
+    "source_id",
+    "packet_sha256",
+    "prompt_sha256",
+    "model_route",
+    "admission_provenance",
+    "output_provenance",
+    "axes",
+    "tier",
+    "tier_rule_trace",
+    "failure_reason_code",
+    "failure_detail",
+    "provider_attempt_telemetry",
+    "truncation_evidence",
+    "span_index_version",
+    "span_index_sha256"
+  ],
+  "properties": {
+    "record_contract": {
+      "const": "universe_classifier_record@0.5.0"
+    },
+    "record_kind": {
+      "enum": [
+        "classified",
+        "model_output_unusable",
+        "provider_unresolved",
+        "model_output_truncated"
+      ]
+    },
+    "cik": {
+      "type": "string",
+      "pattern": "^[0-9]{10}$"
+    },
+    "accession": {
+      "type": "string",
+      "minLength": 1
+    },
+    "company_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "form": {
+      "type": "string",
+      "minLength": 1
+    },
+    "baseline_filing_date": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packet_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prompt_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "model_route": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "admission_provenance": {
+      "description": "Why this firm was admitted. Non-authoritative for the classification: the axes are judged against the complete Item 1 packet, not against this context.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cohort_id",
+        "admission_origin",
+        "admitted_status",
+        "non_authoritative",
+        "model_screen",
+        "human_review"
+      ],
+      "properties": {
+        "cohort_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "admission_origin": {
+          "enum": [
+            "model_screen",
+            "human_review"
+          ]
+        },
+        "admitted_status": {
+          "enum": [
+            "LIKELY_ELIGIBLE",
+            "BOUNDARY_OR_UNCERTAIN"
+          ]
+        },
+        "non_authoritative": {
+          "const": true
+        },
+        "model_screen": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "release_id",
+                "release_origin",
+                "raw_response_id",
+                "raw_response_sha256"
+              ],
+              "properties": {
+                "release_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "release_origin": {
+                  "description": "Which SCREEN_v1 release origin produced the named response, so a reader can tell a first-pass screen from a repaired one without reopening the release.",
+                  "enum": [
+                    "base_valid",
+                    "repaired"
+                  ]
+                },
+                "raw_response_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "raw_response_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          ]
+        },
+        "human_review": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "overlay_id",
+                "reviewer_id",
+                "review_protocol_version",
+                "decision_timestamp",
+                "evidence_items"
+              ],
+              "properties": {
+                "overlay_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reviewer_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "review_protocol_version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "decision_timestamp": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "evidence_items": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "output_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "origin",
+        "raw_response_id",
+        "raw_response_sha256",
+        "source_run_id",
+        "source_raw_responses_sha256",
+        "source_receipt_sha256"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "raw_response_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "raw_response_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "origin": {
+          "enum": [
+            "model_called",
+            "reused_source_prefix"
+          ]
+        },
+        "source_run_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "source_raw_responses_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_receipt_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "description": "Where this row's model output came from. A row a continuation reused names the failed run it was archived in; a row this run called names nothing."
+    },
+    "axes": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "$id": "https://dynamic-ai-products/schemas/universe_classifier_axes_record.v4.schema.json",
+          "title": "Universe classifier stored axes (record-inlined) v0.4.0",
+          "description": "The 0.4.0 axes contract as STORED: identical to what the model returns, with each evidence item extended by the pipeline's resolution of the span the model selected. The model half and the derived half are named separately so no later reader can mistake retrieved text for typed text.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "customer_value_archetypes",
+            "software_centrality",
+            "complementary_dependencies",
+            "firm_structure",
+            "commercial_materiality",
+            "customer_facing_functional_product",
+            "economically_eligible",
+            "data_eligible",
+            "customer_market_orientation",
+            "boundary_flags",
+            "contradictions",
+            "evidence",
+            "confidence"
+          ],
+          "properties": {
+            "customer_value_archetypes": {
+              "type": "array",
+              "maxItems": 4,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "FUNCTIONAL_SOFTWARE",
+                  "ADAPTIVE_DIGITAL_SERVICE",
+                  "DATA_ANALYTICS_PRODUCT",
+                  "TRANSACTION_INFRASTRUCTURE",
+                  "MARKETPLACE_COORDINATION",
+                  "CONTENT_CATALOG",
+                  "ATTENTION_SOCIAL_PLATFORM",
+                  "INTERACTIVE_ENTERTAINMENT",
+                  "HARDWARE_SOFTWARE_SYSTEM",
+                  "HUMAN_MANAGED_SERVICE",
+                  "ECOMMERCE_RETAIL",
+                  "PHYSICAL_SERVICE_NETWORK",
+                  "OTHER"
+                ]
+              }
+            },
+            "software_centrality": {
+              "enum": [
+                "CORE",
+                "CO_ESSENTIAL",
+                "ENABLING",
+                "PERIPHERAL",
+                "UNKNOWN"
+              ]
+            },
+            "complementary_dependencies": {
+              "type": "array",
+              "maxItems": 5,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "NONE_OR_STANDARD_COMPUTE",
+                  "CUSTOMER_DATA",
+                  "FIRM_PROPRIETARY_DATA",
+                  "LICENSED_DATA",
+                  "LICENSED_CONTENT",
+                  "NETWORK_OR_INSTALLED_BASE",
+                  "REGULATED_TRANSACTION_RAIL",
+                  "EXECUTION_PERMISSIONS",
+                  "HARDWARE_OR_DEVICE",
+                  "PHYSICAL_SUPPLY_NETWORK",
+                  "LIVE_HUMAN_LABOR",
+                  "SPECIALIZED_NON_LLM_ENGINE",
+                  "OTHER"
+                ]
+              }
+            },
+            "firm_structure": {
+              "enum": [
+                "PURE_PLAY",
+                "SOFTWARE_DOMINANT",
+                "MIXED_SEPARABLE",
+                "MIXED_NONSEPARABLE",
+                "SOFTWARE_PERIPHERAL",
+                "UNKNOWN"
+              ]
+            },
+            "commercial_materiality": {
+              "enum": [
+                "DOMINANT",
+                "MATERIAL",
+                "MINOR",
+                "UNKNOWN"
+              ]
+            },
+            "customer_facing_functional_product": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "economically_eligible": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "data_eligible": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "customer_market_orientation": {
+              "description": "Descriptive metadata only. The deterministic tier engine takes this as no input at all.",
+              "enum": [
+                "B2B",
+                "B2C",
+                "MIXED",
+                "UNKNOWN"
+              ]
+            },
+            "boundary_flags": {
+              "type": "array",
+              "maxItems": 4,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            },
+            "contradictions": {
+              "description": "Where the complete Item 1 packet qualifies or contradicts the non-authoritative admission context.",
+              "type": "array",
+              "maxItems": 4,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "evidence": {
+              "type": "array",
+              "maxItems": 12,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "axis",
+                  "passage_ref",
+                  "span_ref",
+                  "span_interpretation",
+                  "evidence_quote",
+                  "span_start",
+                  "span_end",
+                  "span_sha256",
+                  "annotation_status",
+                  "annotation_provenance"
+                ],
+                "properties": {
+                  "axis": {
+                    "enum": [
+                      "customer_value",
+                      "centrality",
+                      "dependency",
+                      "structure",
+                      "materiality",
+                      "eligibility"
+                    ]
+                  },
+                  "passage_ref": {
+                    "type": "string",
+                    "pattern": "^P[0-9]{3}$"
+                  },
+                  "span_ref": {
+                    "description": "A contiguous run of whole sentence units inside one displayed passage, named by the pinned span index. Pnnn:Snnn selects one unit; Pnnn:Snnn-Snnn selects a run in reading order. The model returns this identifier and no source text.",
+                    "type": "string",
+                    "pattern": "^P[0-9]{3}:S[0-9]{3}(-S[0-9]{3})?$"
+                  },
+                  "span_start": {
+                    "description": "PIPELINE-DERIVED. Character offset of the span's first unit in the normalized passage text.",
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "span_end": {
+                    "description": "PIPELINE-DERIVED. Character offset one past the span's last unit. Always strictly greater than span_start.",
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "span_sha256": {
+                    "description": "PIPELINE-DERIVED. SHA-256 over resolved_quote, so a stored row is verifiable from the packet by offset and digest without re-running the segmenter.",
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "span_interpretation": {
+                    "description": "MODEL-AUTHORED, non-authoritative, stored verbatim. Never truncated, normalised or repaired. Null when the model omitted the property or sent null; the raw response archive distinguishes those two.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "annotation_status": {
+                    "description": "PIPELINE-DERIVED classification of span_interpretation. 'absent' when the model omitted it or sent null; 'empty' for the empty string; 'accepted' at 300 characters or fewer; 'over_length' beyond that. None of the four refuses the row: an interpretation defect never invalidates an authentic span or a deterministic tier.",
+                    "enum": [
+                      "accepted",
+                      "over_length",
+                      "empty",
+                      "absent"
+                    ]
+                  },
+                  "annotation_provenance": {
+                    "description": "Names who authored span_interpretation. Always the model.",
+                    "const": "model_authored"
+                  },
+                  "evidence_quote": {
+                    "description": "PIPELINE-DERIVED, not model-authored. The exact text of the selected span, cut from the hash-bound packet's normalized passage text at span_start:span_end. The model never authors quote text, which is what makes a fabricated quote unrepresentable rather than merely detectable.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  }
+                },
+                "description": "One stored evidence item: the model-authored selection plus the pipeline-derived resolution of it. The model wrote axis, passage_ref, span_ref and supported_claim, and nothing else here."
+              }
+            },
+            "confidence": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "tier": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            "TIER_A",
+            "TIER_B",
+            "TIER_C",
+            "EXCLUDED",
+            "UNCERTAIN"
+          ]
+        }
+      ]
+    },
+    "tier_rule_trace": {
+      "description": "The complete ordered trace the deterministic engine produced. Replayable: the same axes and the same pinned rule config always yield this trace.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tier_rules_version",
+            "tier_rules_sha256",
+            "entries"
+          ],
+          "properties": {
+            "tier_rules_version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tier_rules_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "entries": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 24,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "rule_id",
+                  "result"
+                ],
+                "properties": {
+                  "rule_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "result": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "detail": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "failure_reason_code": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "failure_detail": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "provider_attempt_telemetry": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "truncation_evidence": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "span_index_version": {
+      "description": "The pinned span index whose numbering the model selected from. Row-level, because it identifies the menu, not a span.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "span_index_sha256": {
+      "description": "Digest of the span-index config this row's menu was built under.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^([0-9a-f]{64})?$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "classified"
+          }
+        },
+        "required": [
+          "record_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "axes": {
+            "type": "object"
+          },
+          "tier": {
+            "enum": [
+              "TIER_A",
+              "TIER_B",
+              "TIER_C",
+              "EXCLUDED",
+              "UNCERTAIN"
+            ]
+          },
+          "tier_rule_trace": {
+            "type": "object"
+          },
+          "failure_reason_code": {
+            "type": "null"
+          },
+          "truncation_evidence": {
+            "type": "null"
+          },
+          "provider_attempt_telemetry": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "model_output_unusable"
+          }
+        },
+        "required": [
+          "record_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "axes": {
+            "type": "null"
+          },
+          "tier": {
+            "type": "null"
+          },
+          "tier_rule_trace": {
+            "type": "null"
+          },
+          "failure_reason_code": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "provider_unresolved"
+          }
+        },
+        "required": [
+          "record_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "axes": {
+            "type": "null"
+          },
+          "tier": {
+            "type": "null"
+          },
+          "tier_rule_trace": {
+            "type": "null"
+          },
+          "provider_attempt_telemetry": {
+            "type": "object"
+          },
+          "failure_reason_code": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "record_kind": {
+            "const": "model_output_truncated"
+          }
+        },
+        "required": [
+          "record_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "axes": {
+            "type": "null"
+          },
+          "tier": {
+            "type": "null"
+          },
+          "tier_rule_trace": {
+            "type": "null"
+          },
+          "truncation_evidence": {
+            "type": "object"
+          },
+          "failure_reason_code": {
+            "const": "max_tokens"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_provenance": {
+            "properties": {
+              "admission_origin": {
+                "const": "model_screen"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "admission_provenance": {
+            "properties": {
+              "model_screen": {
+                "type": "object"
+              },
+              "human_review": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_provenance": {
+            "properties": {
+              "admission_origin": {
+                "const": "human_review"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "admission_provenance": {
+            "properties": {
+              "model_screen": {
+                "type": "null"
+              },
+              "human_review": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "output_provenance": {
+            "properties": {
+              "origin": {
+                "const": "reused_source_prefix"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output_provenance": {
+            "required": [
+              "source_run_id",
+              "source_raw_responses_sha256",
+              "source_receipt_sha256"
+            ],
+            "properties": {
+              "source_run_id": {
+                "type": "string"
+              },
+              "source_raw_responses_sha256": {
+                "type": "string"
+              },
+              "source_receipt_sha256": {
+                "type": "string"
+              },
+              "raw_response_id": {
+                "type": "string"
+              },
+              "raw_response_sha256": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "output_provenance": {
+            "properties": {
+              "origin": {
+                "const": "model_called"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output_provenance": {
+            "properties": {
+              "source_run_id": {
+                "type": "null"
+              },
+              "source_raw_responses_sha256": {
+                "type": "null"
+              },
+              "source_receipt_sha256": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

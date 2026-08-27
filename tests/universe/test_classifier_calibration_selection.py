@@ -1120,7 +1120,7 @@ def test_all_four_versions_of_each_mode_are_declared():
             assert f"{stem}{suffix}" in choices, f"{stem}{suffix}"
     for suffix in ("", "-v2-2", "-v2-3", "-v2-4"):
         assert f"build-classifier-calibration-review{suffix}" in choices, suffix
-    assert len(choices) == 66
+    assert len(choices) == 70
 
 
 # --- ADR-132: the four V2.5 modes must be reachable through their own flags --------
@@ -1222,4 +1222,4 @@ def test_all_five_versions_of_each_mode_are_declared():
             assert f"{stem}{suffix}" in choices, f"{stem}{suffix}"
     for suffix in ("", "-v2-2", "-v2-3", "-v2-4", "-v2-5"):
         assert f"build-classifier-calibration-review{suffix}" in choices, suffix
-    assert len(choices) == 66
+    assert len(choices) == 70

@@ -978,6 +978,163 @@ def _v2_6_grant(cohort, selection, tmp_path, *, name="calibration-gov-v2-6"):
                            sha256=_sha(raw), authorization=payload)
 
 
+def _v2_8_grant(cohort, selection, tmp_path, *, name="calibration-gov-v2-8"):
+    """The V2.7 calibration grant re-pointed at V2.8's prompt and 0.8.0 contract."""
+    from dynamic_ai_products.classifier_contract_set import V2_8
+    rules = _csi.load_span_index_rules(ROOT)
+    base = _grant(cohort, selection, tmp_path, name=name).authorization
+    payload = dict(base)
+    payload.update({
+        "authorization_contract":
+            "universe_classifier_calibration_authorization@0.8.0",
+        "output_contract": V2_8.record_contract,
+        "taxonomy_version": V2_8.taxonomy_version,
+        "prompt_template_path": V2_8.prompt_path,
+        "prompt_template_sha256":
+            sha256((ROOT / V2_8.prompt_path).read_bytes()).hexdigest(),
+        "span_index_version": rules.version,
+        "span_index_sha256": rules.sha256,
+    })
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    ((tmp_path / name) / "calibration_authorization.json").write_bytes(raw)
+    return SimpleNamespace(root=tmp_path / name,
+                           reference="calibration_authorization.json",
+                           sha256=_sha(raw), authorization=payload)
+
+
+def _v2_8_script(cohort, selection, **per_cik):
+    """Every row answers V2.8-shaped; ``per_cik`` overrides one row's payload kwargs."""
+    from test_lineage_classifier_v2_1 import _v2_8_axes_payload
+    rules = _csi.load_span_index_rules(ROOT)
+    packets = cohort.release.packets
+    script = {}
+    for row in selection.rows:
+        kwargs = per_cik.get(row["cik"], {})
+        script[row["cik"]] = {"text": _v2_8_axes_payload(
+            packets[(row["cik"], row["accession"])], rules, **kwargs)}
+    return script
+
+
+def _completed_v2_8(cohort, selection, tmp_path, *, run_id="calibration-v2-8", **per_cik):
+    grant = _v2_8_grant(cohort, selection, tmp_path, name=f"gov-{run_id}")
+    run = _run(cohort, selection, grant, tmp_path, run_id=run_id,
+               script=_v2_8_script(cohort, selection, **per_cik),
+               route=lcal.CALIBRATION_ROUTE_V2_8)
+    assert run.result.status == "completed", run.result.receipt
+    return run
+
+
+def test_the_v2_8_route_classifies_and_reports_annotation_status(cohort, selection,
+                                                                 tmp_path):
+    run = _completed_v2_8(cohort, selection, tmp_path)
+    manifest = json.loads(Path(run.result.manifest_path).read_bytes())
+    assert manifest["manifest_contract"] == \
+        "universe_classifier_calibration_manifest@0.8.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.5.0"
+    assert manifest["taxonomy_version"] == "universe_classifier_axes_v2_8"
+    counts = manifest["annotation_status_counts"]
+    assert sorted(counts) == ["absent", "accepted", "empty", "over_length"]
+    records = [json.loads(line) for line in
+               (Path(run.result.run_dir) / lcal.CALIBRATION_ROUTE_V2_8.records_filename)
+               .read_text().splitlines() if line.strip()]
+    items = [e for r in records if r.get("axes") for e in r["axes"]["evidence"]]
+    assert sum(counts.values()) == len(items)
+    assert counts["accepted"] == len(items)
+    for e in items:
+        assert e["annotation_provenance"] == "model_authored"
+        assert "evidence_quote" in e and "resolved_quote" not in e
+        assert "supported_claim" not in e
+
+
+@pytest.mark.parametrize("kwargs,expected,label", [
+    ({"omit_interpretation": True}, "absent", "property omitted"),
+    ({"interpretation": None}, "absent", "explicit null"),
+    ({"interpretation": ""}, "empty", "empty string"),
+    ({"interpretation": "a" * 300}, "accepted", "exactly 300"),
+    ({"interpretation": "a" * 301}, "over_length", "301"),
+    ({"interpretation": "z" * 5000}, "over_length", "5000"),
+])
+def test_every_interpretation_shape_still_classifies_and_tiers(
+        cohort, selection, tmp_path, kwargs, expected, label):
+    """The whole point of ADR-135: none of these discards the row."""
+    target = selection.rows[0]["cik"]
+    run = _completed_v2_8(cohort, selection, tmp_path,
+                          run_id=f"calib-v2-8-{expected}-{len(label)}",
+                          **{target: kwargs})
+    records = [json.loads(line) for line in
+               (Path(run.result.run_dir) / lcal.CALIBRATION_ROUTE_V2_8.records_filename)
+               .read_text().splitlines() if line.strip()]
+    row = next(r for r in records if r["cik"] == target)
+    assert row["record_kind"] == "classified", label
+    assert row["tier"] == "TIER_A", label
+    assert row["tier_rule_trace"]["entries"][-1]["rule_id"] == \
+        "tier_a_core_software_dominant_firm"
+    item = row["axes"]["evidence"][0]
+    assert item["annotation_status"] == expected, label
+    if expected == "absent":
+        assert item["span_interpretation"] is None
+    else:
+        assert item["span_interpretation"] == kwargs["interpretation"]
+        assert len(item["span_interpretation"]) == len(kwargs["interpretation"])
+
+
+def test_an_overlong_interpretation_is_stored_untruncated(cohort, selection, tmp_path):
+    target = selection.rows[0]["cik"]
+    run = _completed_v2_8(cohort, selection, tmp_path, run_id="calib-v2-8-verbatim",
+                          **{target: {"interpretation": "q" * 5000}})
+    records = [json.loads(line) for line in
+               (Path(run.result.run_dir) / lcal.CALIBRATION_ROUTE_V2_8.records_filename)
+               .read_text().splitlines() if line.strip()]
+    item = next(r for r in records if r["cik"] == target)["axes"]["evidence"][0]
+    assert item["span_interpretation"] == "q" * 5000
+    archive = (Path(run.result.run_dir)
+               / lcal.CALIBRATION_ROUTE_V2_8.archive_filename).read_text()
+    assert "q" * 5000 in archive, "raw model bytes must survive in the archive"
+
+
+def test_a_non_string_interpretation_is_refused_under_v2_8(cohort, selection, tmp_path):
+    from test_lineage_classifier_v2_1 import _v2_8_axes_payload
+    rules = _csi.load_span_index_rules(ROOT)
+    packets = cohort.release.packets
+    target = selection.rows[0]
+    grant = _v2_8_grant(cohort, selection, tmp_path, name="gov-v2-8-nonstring")
+    script = _v2_8_script(cohort, selection)
+    bad = json.loads(_v2_8_axes_payload(packets[(target["cik"], target["accession"])], rules))
+    bad["evidence"][0]["span_interpretation"] = 42
+    script[target["cik"]] = {"text": json.dumps(bad)}
+    run = _run(cohort, selection, grant, tmp_path, run_id="calib-v2-8-nonstring",
+               script=script, route=lcal.CALIBRATION_ROUTE_V2_8)
+    records = [json.loads(line) for line in
+               (Path(run.result.run_dir) / lcal.CALIBRATION_ROUTE_V2_8.records_filename)
+               .read_text().splitlines() if line.strip()] if run.result.run_dir else []
+    row = next(r for r in records if r["cik"] == target["cik"])
+    assert row["record_kind"] == "model_output_unusable"
+    assert row["failure_reason_code"] == "axes_contract_violation"
+    assert "span_interpretation" in json.dumps(row["failure_detail"])
+
+
+def test_a_completed_v2_8_run_is_accepted_only_by_its_own_route(cohort, selection,
+                                                                tmp_path):
+    run = _completed_v2_8(cohort, selection, tmp_path, run_id="calib-v2-8-iso")
+    run_dir = Path(run.result.run_dir)
+    accepted = lcal.require_classifier_calibration_run(
+        run_dir, route=lcal.CALIBRATION_ROUTE_V2_8)
+    assert accepted == run_dir / lcal.CALIBRATION_ROUTE_V2_8.manifest_filename
+    for other in (lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2,
+                  lcal.CALIBRATION_ROUTE_V2_3, lcal.CALIBRATION_ROUTE_V2_4,
+                  lcal.CALIBRATION_ROUTE_V2_5, lcal.CALIBRATION_ROUTE_V2_6,
+                  lcal.CALIBRATION_ROUTE_V2_7):
+        with pytest.raises(Exception):
+            lcal.require_classifier_calibration_run(run_dir, route=other)
+
+
+def test_the_v2_8_route_refuses_a_v2_7_run(cohort, selection, tmp_path):
+    run = _completed_v2_7(cohort, selection, tmp_path, run_id="calib-v2-7-for-v2-8")
+    with pytest.raises(Exception):
+        lcal.require_classifier_calibration_run(
+            Path(run.result.run_dir), route=lcal.CALIBRATION_ROUTE_V2_8)
+
+
 def _v2_7_grant(cohort, selection, tmp_path, *, name="calibration-gov-v2-7"):
     """The V2.6 calibration grant re-pointed at V2.7's prompt and 0.7.0 contract.
 

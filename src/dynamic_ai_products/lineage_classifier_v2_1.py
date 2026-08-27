@@ -90,6 +90,7 @@ from .classifier_contract_set import (
     V2_5,
     V2_6,
     V2_7,
+    V2_8,
     ClassifierContractSet,
 )
 from .classifier_tier_engine import derive_tier, load_tier_rules
@@ -148,6 +149,7 @@ __all__ = [
     "BASE_ROUTE_V2_5",
     "BASE_ROUTE_V2_6",
     "BASE_ROUTE_V2_7",
+    "BASE_ROUTE_V2_8",
     "ClassifierRoute",
     "require_classifier_run",
     "require_completed_run",
@@ -310,6 +312,21 @@ BASE_ROUTE_V2_7 = ClassifierRoute(
     authorization_schema="schemas/universe_classifier_authorization.v7.schema.json",
     archive_filename="universe_classifier_v2_7_raw_responses.jsonl",
     contracts=V2_7,
+)
+
+#: ADR-135. The V2.8 successor: same span protocol and span index, a new
+#: evidence item that separates the address from the interpretation of it.
+#: Distinct filenames and an 0.8.0 contract keep the runs unmixable.
+BASE_ROUTE_V2_8 = ClassifierRoute(
+    run_kind=RUN_KIND,
+    records_filename="universe_classifier_v2_8_records.jsonl",
+    manifest_filename="universe_classifier_v2_8_manifest.json",
+    manifest_contract="universe_classifier_manifest@0.8.0",
+    manifest_schema="schemas/universe_classifier_manifest.v8.schema.json",
+    record_order=RECORD_ORDER,
+    authorization_schema="schemas/universe_classifier_authorization.v8.schema.json",
+    archive_filename="universe_classifier_v2_8_raw_responses.jsonl",
+    contracts=V2_8,
 )
 
 #: The closed provider reasons a bounded provider-unresolved row may carry,
@@ -719,21 +736,14 @@ def validate_axes_output(raw: str, packet: dict, validator: Draft202012Validator
     return parsed
 
 
-def validate_span_axes_output(raw: str, packet: dict,
-                             validator: Draft202012Validator, axes_contract: str,
-                             span_index) -> dict:
-    """Parse and validate one V2.5 response, then resolve its spans (ADR-132).
+def _parse_model_axes(raw: str, validator: Draft202012Validator,
+                      axes_contract: str) -> dict:
+    """Parse one model response and hold it to its axes contract.
 
-    The model returns identifiers; this function turns them into text. Structure
-    is the model's responsibility and relevance is the reviewer's: a span that
-    parses, names a displayed passage and resolves in range is accepted even if
-    a human would judge it unconvincing. That is deliberate. Refusing a
-    well-formed but weak selection would be the pipeline scoring evidence, which
-    belongs to the review gate and to no layer here.
-
-    Returns the axes with each evidence item extended by the pipeline's own
-    ``resolved_quote``, ``span_start``, ``span_end`` and ``span_sha256``. The
-    model wrote none of those four.
+    Shared verbatim by the V2.5 and V2.8 evidence paths so the two cannot drift:
+    the same JSON refusal, the same tier refusal, the same contract validation,
+    reported the same way. What differs between the versions is the evidence item
+    the contract describes, not how a response is admitted.
     """
     try:
         parsed = json.loads(raw)
@@ -757,6 +767,37 @@ def validate_span_axes_output(raw: str, packet: dict,
             "axes_contract_violation",
             f"Model output violates {axes_contract} at "
             f"{errors[0].json_path}: {errors[0].message}")
+    return parsed
+
+
+def _require_evidence_for_conclusions(parsed: dict) -> None:
+    """A stated conclusion must cite something. Shared by V2.5 and V2.8."""
+    stated = [parsed[f] for f in ("customer_facing_functional_product",
+                                 "economically_eligible", "data_eligible")]
+    if (parsed["software_centrality"] != "UNKNOWN" or any(v is not None for v in stated)) \
+            and not parsed["evidence"]:
+        raise AxesValidationFailure(
+            "unsupported_conclusion",
+            "The output states a non-unknown conclusion but cites no evidence.")
+
+
+def validate_span_axes_output(raw: str, packet: dict,
+                             validator: Draft202012Validator, axes_contract: str,
+                             span_index) -> dict:
+    """Parse and validate one V2.5 response, then resolve its spans (ADR-132).
+
+    The model returns identifiers; this function turns them into text. Structure
+    is the model's responsibility and relevance is the reviewer's: a span that
+    parses, names a displayed passage and resolves in range is accepted even if
+    a human would judge it unconvincing. That is deliberate. Refusing a
+    well-formed but weak selection would be the pipeline scoring evidence, which
+    belongs to the review gate and to no layer here.
+
+    Returns the axes with each evidence item extended by the pipeline's own
+    ``resolved_quote``, ``span_start``, ``span_end`` and ``span_sha256``. The
+    model wrote none of those four.
+    """
+    parsed = _parse_model_axes(raw, validator, axes_contract)
     resolved_evidence = []
     for position, item in enumerate(parsed["evidence"], start=1):
         try:
@@ -768,14 +809,95 @@ def validate_span_axes_output(raw: str, packet: dict,
             **item, "resolved_quote": resolved.text,
             "span_start": resolved.start, "span_end": resolved.end,
             "span_sha256": resolved.sha256})
-    stated = [parsed[f] for f in ("customer_facing_functional_product",
-                                 "economically_eligible", "data_eligible")]
-    if (parsed["software_centrality"] != "UNKNOWN" or any(v is not None for v in stated)) \
-            and not parsed["evidence"]:
-        raise AxesValidationFailure(
-            "unsupported_conclusion",
-            "The output states a non-unknown conclusion but cites no evidence.")
+    _require_evidence_for_conclusions(parsed)
     return {**parsed, "evidence": resolved_evidence}
+
+
+#: ADR-135. The soft target for ``span_interpretation``. Not a contract bound:
+#: exceeding it yields a status, never a refusal.
+ANNOTATION_ACCEPTED_MAX = 300
+
+#: The closed set of annotation statuses, in report order.
+ANNOTATION_STATUSES: tuple[str, ...] = ("accepted", "over_length", "empty", "absent")
+
+
+def classify_annotation(value: object) -> str:
+    """Classify one ``span_interpretation`` without altering it (ADR-135).
+
+    Total over every value the V2.8 axes contract can admit, which is a string
+    or null or nothing at all. A non-string never reaches here: the contract
+    refuses it first, and that refusal is deliberate -- type discipline is
+    uniform across every model-authored field.
+
+    Omitted and null collapse to one status on purpose. The difference is not
+    something any consumer can act on, and inventing two statuses would imply a
+    distinction the pipeline does not make. The raw response archive still
+    records which of the two the model actually sent.
+    """
+    if value is None:
+        return "absent"
+    if not isinstance(value, str):
+        # Unreachable through the contract; refusing rather than defaulting keeps
+        # it that way instead of silently classifying a shape we never admitted.
+        raise AxesValidationFailure(
+            "axes_contract_violation",
+            f"span_interpretation is {type(value).__name__}, not a string or null.")
+    if value == "":
+        return "empty"
+    return "accepted" if len(value) <= ANNOTATION_ACCEPTED_MAX else "over_length"
+
+
+def validate_annotated_span_axes_output(
+        raw: str, packet: dict, validator: Draft202012Validator,
+        axes_contract: str, span_index) -> dict:
+    """Parse and validate one V2.8 response, then resolve and annotate (ADR-135).
+
+    Identical to the V2.5 path in everything the address touches: the same
+    forbidden-field refusals, the same contract validation, the same strict span
+    resolution, the same pipeline-derived text. What differs is one field. The
+    model's interpretation is optional and unbounded, so it cannot fail the row;
+    the pipeline records what it was instead. Nothing is truncated, normalised
+    or repaired -- an overlong interpretation is stored at full length beside the
+    status that says so.
+    """
+    parsed = _parse_model_axes(raw, validator, axes_contract)
+    resolved_evidence = []
+    for position, item in enumerate(parsed["evidence"], start=1):
+        try:
+            resolved = resolve_span(item["span_ref"], item["passage_ref"], span_index)
+        except SpanSelectionError as exc:
+            raise AxesValidationFailure(
+                exc.reason_code, f"Evidence {position}: {exc.detail}") from exc
+        interpretation = item.get("span_interpretation")
+        status = classify_annotation(interpretation)
+        resolved_evidence.append({
+            "axis": item["axis"], "passage_ref": item["passage_ref"],
+            "span_ref": item["span_ref"],
+            "span_interpretation": interpretation,
+            "evidence_quote": resolved.text,
+            "span_start": resolved.start, "span_end": resolved.end,
+            "span_sha256": resolved.sha256,
+            "annotation_status": status,
+            "annotation_provenance": "model_authored"})
+    _require_evidence_for_conclusions(parsed)
+    return {**parsed, "evidence": resolved_evidence}
+
+
+def annotation_status_counts(records: list[dict]) -> dict[str, int]:
+    """Count every stored evidence item by annotation status (ADR-135).
+
+    All four keys are always present, so a run that produced no overlong
+    interpretation says ``over_length: 0`` rather than omitting the key and
+    leaving a reader to guess whether it was zero or unmeasured.
+    """
+    counts = dict.fromkeys(ANNOTATION_STATUSES, 0)
+    for record in records:
+        axes = record.get("axes")
+        if not axes:
+            continue
+        for item in axes.get("evidence", ()):
+            counts[item["annotation_status"]] += 1
+    return counts
 
 
 def require_completed_run(directory: Path, route: ClassifierRoute, *,
@@ -1389,7 +1511,11 @@ def _execute(*, root: Path, pre: _Preflight, output_dir, run_id: str,
                       run_id, response_id, raw_sha)}
         try:
             if span_index is not None:
-                axes = validate_span_axes_output(
+                validate = (
+                    validate_annotated_span_axes_output
+                    if pre.route.contracts.annotation_policy == "span_interpretation_v1"
+                    else validate_span_axes_output)
+                axes = validate(
                     raw, packet, axes_validator,
                     pre.route.contracts.axes_contract, span_index)
             else:
@@ -1586,6 +1712,15 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
             <= pre.authorization["max_model_output_truncated"]),
         "the unusable breakdown sums to the unusable population": (
             sum(unusable_by_reason.values()) == counts["model_output_unusable"]),
+        # ADR-135. Every stored evidence item carries exactly one status, so the
+        # four counts must account for all of them and for nothing else. A run
+        # whose annotation counts do not close is a run whose interpretation
+        # reporting cannot be trusted, and it fails rather than reporting a
+        # partial tally.
+        "every stored evidence item carries exactly one annotation status": (
+            True if pre.route.contracts.annotation_policy != "span_interpretation_v1"
+            else sum(annotation_status_counts(records).values())
+            == sum(len(r["axes"]["evidence"]) for r in records if r.get("axes"))),
         "the archive holds one line per answered row": (
             len(archive_entries) == len(answered)),
         "only answered rows carry a response id": all(
@@ -1699,6 +1834,9 @@ def _settle(*, root, pre, run_dir, run_id, authorization_sha256, clock, records,
                           pre.route.archive_filename: _sha256(archive_raw),
                           CAPTURE_LEDGER_FILENAME: _sha256(ledger_bytes)},
         "record_order": pre.route.record_order, "counts": counts,
+        **({"annotation_status_counts": annotation_status_counts(records)}
+           if pre.route.contracts.annotation_policy == "span_interpretation_v1"
+           else {}),
         "request_accounting": request_accounting,
         "bounded_outcomes": {
             "max_provider_unresolved": pre.authorization["max_provider_unresolved"],

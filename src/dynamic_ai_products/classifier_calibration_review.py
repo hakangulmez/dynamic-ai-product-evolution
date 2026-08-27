@@ -50,7 +50,9 @@ from .universe.lineage_screen import (
 __all__ = [
     "REVIEWER_ID",
     "REVIEW_CONTRACT",
+    "REVIEW_CONTRACT_V2",
     "REVIEW_FILENAME",
+    "REVIEW_SCHEMA_V2",
     "REVIEW_PROTOCOL_VERSION",
     "build_calibration_review",
 ]
@@ -58,6 +60,13 @@ __all__ = [
 REVIEW_FILENAME = "universe_classifier_calibration_review.json"
 REVIEW_CONTRACT = "universe_classifier_calibration_review@0.1.0"
 REVIEW_SCHEMA = "schemas/universe_classifier_calibration_review.schema.json"
+
+#: ADR-135. The V2.8 successor. Required, not preferred: the 0.1.0 evidence item
+#: is ``additionalProperties: false`` over ``axis``, ``passage_ref``, ``quote``
+#: and ``supported_claim``, so a V2.8 row cannot be displayed under it at all.
+#: 0.1.0 is unchanged and every V2.1-V2.7 review keeps using it.
+REVIEW_CONTRACT_V2 = "universe_classifier_calibration_review@0.2.0"
+REVIEW_SCHEMA_V2 = "schemas/universe_classifier_calibration_review.v2.schema.json"
 REVIEW_KIND = "qualitative_human_reading"
 
 #: The named human gate. Both are consts in the contract: this artifact records
@@ -77,7 +86,7 @@ def _tally(pairs) -> dict[str, int]:
 
 
 def _review_evidence(item: dict) -> dict:
-    """Project one stored evidence item onto the review contract's four fields.
+    """Project one stored evidence item onto the 0.1.0 review contract.
 
     V2.1 through V2.4 items already have exactly these. A V2.5 item carries the
     model's span selection plus the pipeline's resolution of it; the resolved
@@ -86,6 +95,26 @@ def _review_evidence(item: dict) -> dict:
     quote = item.get("resolved_quote", item.get("quote"))
     return {"axis": item["axis"], "passage_ref": item["passage_ref"],
             "quote": quote, "supported_claim": item["supported_claim"]}
+
+
+def _review_evidence_v2(item: dict) -> dict:
+    """Project one V2.8 stored evidence item onto the 0.2.0 review contract.
+
+    Nothing is flattened here, which is the point. The reader sees the model's
+    address, the pipeline's text and offsets, and the model's interpretation
+    with the status the pipeline gave it, each still identifiable as what it is.
+    The span address is carried because the V2.6/V2.7 audit found the same
+    verified sentence read two opposite ways across runs; a reviewer can only
+    adjudicate that with the address in hand.
+    """
+    return {"axis": item["axis"], "passage_ref": item["passage_ref"],
+            "span_ref": item["span_ref"],
+            "evidence_quote": item["evidence_quote"],
+            "span_interpretation": item["span_interpretation"],
+            "span_start": item["span_start"], "span_end": item["span_end"],
+            "span_sha256": item["span_sha256"],
+            "annotation_status": item["annotation_status"],
+            "annotation_provenance": item["annotation_provenance"]}
 
 
 def build_calibration_review(
@@ -153,6 +182,14 @@ def build_calibration_review(
             "names; every selected row must be nominated."
         )
 
+    # ADR-135. Which review contract this run gets is a property of the run's
+    # own route, not of the caller: a V2.8 row cannot be projected onto 0.1.0,
+    # and a V2.1-V2.7 row has no span address to put in 0.2.0.
+    annotated = calibration_route.contracts.annotation_policy == "span_interpretation_v1"
+    project_evidence = _review_evidence_v2 if annotated else _review_evidence
+    review_contract = REVIEW_CONTRACT_V2 if annotated else REVIEW_CONTRACT
+    review_schema = REVIEW_SCHEMA_V2 if annotated else REVIEW_SCHEMA
+
     nominated = []
     for record in records:
         key = (record["cik"], record["accession"])
@@ -176,7 +213,7 @@ def build_calibration_review(
             "contradicts_admission": bool(contradicts),
             "boundary_flags": list(axes.get("boundary_flags") or []),
             "contradictions": list(axes.get("contradictions") or []),
-            "evidence": [_review_evidence(item)
+            "evidence": [project_evidence(item)
                          for item in (axes.get("evidence") or [])],
             "packet_sha256": record["packet_sha256"],
             "failure_reason_code": record["failure_reason_code"]})
@@ -187,7 +224,7 @@ def build_calibration_review(
             bucket = tier_by_stratum.setdefault(row["stratum"], {})
             bucket[row["tier"]] = bucket.get(row["tier"], 0) + 1
     review = {
-        "review_contract": REVIEW_CONTRACT, "review_kind": REVIEW_KIND,
+        "review_contract": review_contract, "review_kind": REVIEW_KIND,
         "review_id": review_id,
         "calibration_run_id": manifest["run_id"],
         "calibration_manifest_sha256": _sha256(manifest_path.read_bytes()),
@@ -239,7 +276,7 @@ def build_calibration_review(
             f"{review['counts']['nominated_rows']} of "
             f"{review['counts']['selected_rows']}."
         )
-    _validate(review, _load_schema(root, REVIEW_SCHEMA), "Calibration review")
+    _validate(review, _load_schema(root, review_schema), "Calibration review")
     if dry_run:
         return review
     payload = (json.dumps(review, indent=2, sort_keys=True) + "\n").encode("utf-8")

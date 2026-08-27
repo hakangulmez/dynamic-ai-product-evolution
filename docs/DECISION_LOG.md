@@ -9311,6 +9311,67 @@ consumer modules, four CLI modes, seven test modules, the registry (0.69.0 to
 five registry/manifest guards, and the absolute registry literals in eleven
 screen suites.
 
+## ADR-135 — An interpretation stops being able to destroy its evidence
+
+**Status.** Accepted, fixture-first. No model call, no network, no governance
+artifact, no `data/runs` write, no calibration, no review, and no change to any
+completed run. The selected-span protocol, the span-index config, the tier and
+strata rules, the 40-row selection, the source packets, every V2.1–V2.7 prompt
+and contract, and the 0.1.0 review contract are byte-unchanged.
+
+**What the V2.7 calibration showed.** It completed — 36 classified, 0 provider
+failures, 0 truncations — and was still not promotable, on four unusable rows.
+One of them died on a `supported_claim` of over 300 characters: a product
+catalogue pasted into a conclusion clause. That row's axes were well-formed, its
+span selection resolved against the hash-bound packet, and its tier would have
+derived deterministically. It was discarded because a field no tier rule reads
+was too long.
+
+**The precise scope of the problem.** `supported_claim` is not used by the tier
+engine or the tier rules — the engine conditions on six axes and this is not one
+— but it *is* carried by the calibration review for human reading, and the 0.1.0
+review contract lists it as required. So it cannot simply be deleted: it is the
+reviewer's only prose bridge from a span to an axis. What it can stop being is
+fatal.
+
+**What V2.8 changes.** The evidence item splits along its provenance seams.
+`axis`, `passage_ref` and `span_ref` are the address, stay required and stay
+strictly validated; an unresolvable span is still fatal, which is what keeps a
+fabricated quote unrepresentable rather than merely detectable.
+`supported_claim` becomes `span_interpretation`: optional, typed
+`["string","null"]`, with no `minLength` and no `maxLength`. The pipeline
+classifies it — `absent`, `empty`, `accepted`, `over_length` — and stores the
+value verbatim. Nothing is truncated, normalised or repaired at any length. All
+four statuses leave the row classified and tiered.
+
+**Why a non-string is still refused.** Type discipline is uniform across every
+model-authored field, and across three completed runs 996 accepted evidence
+items produced no non-string value. Tolerating one would build a second storage
+channel for a shape never observed. The condition that would reverse this is
+explicit: if a live run emits a non-string interpretation, the design should
+move to a preserved raw-annotation channel.
+
+**Why the review contract had to fork.** The 0.1.0 evidence item is
+`additionalProperties: false` over `axis`, `passage_ref`, `quote` and
+`supported_claim`. A V2.8 row cannot be displayed under it at all. 0.2.0 shows
+each provenance class as what it is — model address, pipeline text and offsets,
+model interpretation with its status — and carries the span address, because the
+V2.6/V2.7 audit found the same verified sentence read two opposite ways across
+runs and a reviewer can only adjudicate that with the address in hand.
+
+**What this does not fix.** Three of V2.7's four failures survive: an invented
+archetype enum, an `axis` named after an output field, and an unresolvable span.
+The first two need provider-side response constraint; the third is the
+fabrication guard working correctly and must never be softened. ADR-135 removes
+one failure class of four, and its larger value is architectural rather than
+numerical: after V2.8, a defect in what the model *says about* evidence can no
+longer destroy the evidence itself or the tier derived from it.
+
+**Out of scope.** Provider `response_schema` and any client-contract change
+belong to a separate decision: adding a seventh generation-config key changes
+the client-contract digest and therefore invalidates every existing grant, and
+bundling it here would make one failed run ambiguous between two changes.
+
 ## ADR-134 — A flag is a label, not an argument
 
 **Status.** Accepted, fixture-first. No model call, no network, no governance
