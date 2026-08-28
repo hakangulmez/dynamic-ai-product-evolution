@@ -9311,6 +9311,60 @@ consumer modules, four CLI modes, seven test modules, the registry (0.69.0 to
 five registry/manifest guards, and the absolute registry literals in eleven
 screen suites.
 
+## ADR-136 — A semantic A/B, with every mechanism held still
+
+**Status.** Accepted, fixture-first, and explicitly non-promotable. No model
+call, no network, no governance artifact, no `data/runs` write, no calibration
+and no review. The V2.8 run and review artifacts, every earlier prompt and
+contract, the span-index config, the tier and strata rules and the 40-row
+selection are byte-unchanged.
+
+**What the V2.8 audit found.** V2.8 completed with 2 unusable rows of 40, the
+best of any calibration, and every output-discipline failure class at zero.
+Reading its 38 classified rows against their own selected evidence showed the
+residual problem is no longer format. It is selection: internal R&D tooling, a
+franchisor's reservation system, an exchange's own price feed and a firm's
+internal image-analysis engine were each cited as the firm's customer-facing
+software, and in several rows one span was made to serve two different axes.
+
+**Why a new prompt rather than a new contract.** Nothing in the evidence
+protocol failed. The model selected real spans, the pipeline retrieved their
+text, 375 of 375 verified from the packet, and the tier derived deterministically
+every time. What the model got wrong was the economic question, so the economic
+instruction is what moves.
+
+**What V2.9 changes.** The prompt, and only the prompt. It leads with the
+decision that has to come first -- what an external customer actually purchases
+-- and states that internal R&D tools, employee tools, supplier technology,
+exchange infrastructure and third-party platforms cannot alone justify CORE or
+CO_ESSENTIAL. It returns to the concise economic core of the original
+`universe_full_classification.md`: the counterfactual checks, the required
+distinctions and the prohibited shortcuts, carrying forward only the
+selected-span mechanics, the closed vocabularies, the output bounds and the
+unknown-over-guess rule that V2.8 genuinely needs.
+
+**What it deliberately drops.** V2.5 through V2.8 accumulated one failure
+explanation per calibration, and the semantic instructions grew to 2,215 words
+around them. V2.9 does not carry that history: a prompt that recounts every past
+mistake teaches the shape of the mistakes, not the question. The result is 1,338
+words, 40% shorter, with no bound relaxed.
+
+**Why every other contract is held identical.** The axes schema, record schema,
+taxonomy version, evidence protocol, annotation policy and span-index config are
+V2_8's own objects, reused by identity rather than copied. Two runs over the same
+forty rows can then differ only in what the model was told to think about. That
+is what makes this an experiment; a version that changed mechanics and semantics
+together would produce a result nobody could attribute.
+
+**Review contract.** Unchanged at 0.2.0. Direct inspection: V2.9's record schema
+*is* V2.8's, so the stored evidence shape is identical and the 0.2.0 evidence
+item fits without widening. A successor was considered and found structurally
+unnecessary.
+
+**Not decided here.** Whether V2.9 is better than V2.8 is an empirical question
+this ADR does not answer and must not pre-judge. Neither version is promotable on
+the strength of one run, and no full-cohort grant follows from either.
+
 ## ADR-135 — An interpretation stops being able to destroy its evidence
 
 **Status.** Accepted, fixture-first. No model call, no network, no governance

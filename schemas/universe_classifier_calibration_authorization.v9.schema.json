@@ -1,0 +1,307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_calibration_authorization.v9.schema.json",
+  "title": "Universe classifier calibration authorization v0.9.0",
+  "description": "A controlled A/B successor to the 0.8.0 contracts. Every technical binding is V2.8's own -- the selected-span protocol, the span index, the 0.5.0 axes and record contracts, the taxonomy, the annotation policy and the integer-or-null tokens_out_reported accounting are reused unchanged. Only the prompt differs, and it differs in what the model is asked to reason about rather than in how it answers: V2.9 leads with what an external customer actually purchases and refuses to let internal, supplier, exchange or third-party technology alone justify CORE or CO_ESSENTIAL. Holding every other contract identical is what makes a V2.8/V2.9 comparison over the same forty rows an experiment rather than an anecdote. This version is not promotable on its own.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorization_contract",
+    "authorization_id",
+    "authorized_by",
+    "budget_max_estimated_cost_micros",
+    "budget_max_external_requests",
+    "budget_max_input_tokens",
+    "budget_max_output_tokens",
+    "budget_max_wall_clock_seconds",
+    "cohort_id",
+    "cohort_manifest_sha256",
+    "count_attempt_cap",
+    "count_attempts_per_row",
+    "covers_full_cohort",
+    "deployment_environment_id",
+    "effective_at",
+    "endpoint_allowlist",
+    "expires_at",
+    "external_requests_per_row",
+    "generate_attempts_per_row",
+    "logical_row_cap",
+    "max_model_output_truncated",
+    "max_model_output_unusable",
+    "max_provider_unresolved",
+    "model_route",
+    "output_contract",
+    "overlay_id",
+    "overlay_manifest_sha256",
+    "packet_manifest_sha256",
+    "promotable",
+    "prompt_template_path",
+    "prompt_template_sha256",
+    "provider_attempt_cap",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "rate_limit_policy_version",
+    "release_id",
+    "release_manifest_sha256",
+    "retry_policy_version",
+    "rollout_state",
+    "run_kind",
+    "screen_adapter_enablement_reference",
+    "screen_adapter_enablement_sha256",
+    "screen_count_retry_policy_version",
+    "screen_generate_retry_policy_version",
+    "selection_artifact_path",
+    "selection_artifact_sha256",
+    "selection_kind",
+    "selection_seed",
+    "span_index_sha256",
+    "span_index_version",
+    "strata_rules_sha256",
+    "strata_rules_version",
+    "taxonomy_version",
+    "tier_rules_sha256",
+    "tier_rules_version",
+    "vertex_location",
+    "vertex_project"
+  ],
+  "properties": {
+    "authorization_contract": {
+      "const": "universe_classifier_calibration_authorization@0.9.0"
+    },
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorized_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "budget_max_estimated_cost_micros": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_external_requests": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_input_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_output_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_wall_clock_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "cohort_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cohort_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "count_attempt_cap": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "count_attempts_per_row": {
+      "const": 3
+    },
+    "deployment_environment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "effective_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "endpoint_allowlist": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "external_requests_per_row": {
+      "const": 8
+    },
+    "generate_attempts_per_row": {
+      "const": 5
+    },
+    "logical_row_cap": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "max_model_output_truncated": {
+      "description": "ADR-122 mechanism carried forward: bounded, visible, authorization-controlled. The value is a governance choice made per grant, not a constant. Stated for this calibration sample alone. It carries no implication for the full cohort run, whose tolerance is a separate decision.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "max_model_output_unusable": {
+      "description": "The evidence-validation tolerance. ADR-126 fixes no number: every grant must state it explicitly. Stated for this calibration sample alone. It carries no implication for the full cohort run, whose tolerance is a separate decision.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "max_provider_unresolved": {
+      "description": "ADR-121 mechanism carried forward, per-grant. Stated for this calibration sample alone. It carries no implication for the full cohort run, whose tolerance is a separate decision.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "model_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model_label"
+      ],
+      "properties": {
+        "provider": {
+          "const": "google_vertex_ai"
+        },
+        "model_label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "output_contract": {
+      "const": "universe_classifier_record@0.5.0"
+    },
+    "overlay_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "overlay_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "promotable": {
+      "const": false
+    },
+    "prompt_template_path": {
+      "const": "prompts/discovery/universe_full_classification.v2_9.md"
+    },
+    "prompt_template_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provider_attempt_cap": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "provider_client_contract_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_client_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rate_limit_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "release_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "release_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "retry_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rollout_state": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_kind": {
+      "const": "classifier_calibration_v2_1"
+    },
+    "screen_adapter_enablement_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "screen_adapter_enablement_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_count_retry_policy_version": {
+      "const": "universe_screen_count_retry_policy_v1"
+    },
+    "screen_generate_retry_policy_version": {
+      "const": "universe_screen_generate_retry_policy_v1"
+    },
+    "taxonomy_version": {
+      "description": "The axes-contract identity this run used. It denotes the contract version, not a change in the economic axes vocabulary, which is unchanged from V2.1.",
+      "const": "universe_classifier_axes_v2_8"
+    },
+    "tier_rules_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "tier_rules_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vertex_location": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vertex_project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "covers_full_cohort": {
+      "description": "Always false. A calibration observes a sample; a manifest claiming cohort coverage is a different artifact.",
+      "const": false
+    },
+    "selection_artifact_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selection_artifact_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "selection_kind": {
+      "const": "classifier_calibration_v1"
+    },
+    "selection_seed": {
+      "description": "Must equal the seed the selection artifact records; a grant cannot silently re-draw the sample.",
+      "type": "integer"
+    },
+    "strata_rules_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "strata_rules_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "span_index_version": {
+      "description": "The pinned deterministic span index this grant authorizes. It names the numbering the model selects from.",
+      "const": "universe_classifier_span_index_v1"
+    },
+    "span_index_sha256": {
+      "description": "Digest of the span-index config. Pinned as a const so a config edit cannot reach a run without a new contract.",
+      "const": "0f98b00f861fbaee710612af3cda681f99c5f642e1e6323f91a1deb9ec219499"
+    }
+  }
+}

@@ -978,6 +978,114 @@ def _v2_6_grant(cohort, selection, tmp_path, *, name="calibration-gov-v2-6"):
                            sha256=_sha(raw), authorization=payload)
 
 
+def _v2_9_grant(cohort, selection, tmp_path, *, name="calibration-gov-v2-9"):
+    """The V2.8 calibration grant re-pointed at V2.9's prompt and 0.9.0 contract."""
+    from dynamic_ai_products.classifier_contract_set import V2_9
+    rules = _csi.load_span_index_rules(ROOT)
+    base = _grant(cohort, selection, tmp_path, name=name).authorization
+    payload = dict(base)
+    payload.update({
+        "authorization_contract":
+            "universe_classifier_calibration_authorization@0.9.0",
+        "output_contract": V2_9.record_contract,
+        "taxonomy_version": V2_9.taxonomy_version,
+        "prompt_template_path": V2_9.prompt_path,
+        "prompt_template_sha256":
+            sha256((ROOT / V2_9.prompt_path).read_bytes()).hexdigest(),
+        "span_index_version": rules.version,
+        "span_index_sha256": rules.sha256,
+    })
+    raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    ((tmp_path / name) / "calibration_authorization.json").write_bytes(raw)
+    return SimpleNamespace(root=tmp_path / name,
+                           reference="calibration_authorization.json",
+                           sha256=_sha(raw), authorization=payload)
+
+
+def _v2_9_script(cohort, selection, **per_cik):
+    """V2.9 answers in the V2.8 evidence shape; only the instruction differs."""
+    return _v2_8_script(cohort, selection, **per_cik)
+
+
+def _completed_v2_9(cohort, selection, tmp_path, *, run_id="calibration-v2-9", **per_cik):
+    grant = _v2_9_grant(cohort, selection, tmp_path, name=f"gov-{run_id}")
+    run = _run(cohort, selection, grant, tmp_path, run_id=run_id,
+               script=_v2_9_script(cohort, selection, **per_cik),
+               route=lcal.CALIBRATION_ROUTE_V2_9)
+    assert run.result.status == "completed", run.result.receipt
+    return run
+
+
+def test_the_v2_9_route_completes_with_the_v2_8_record_structure(cohort, selection,
+                                                                 tmp_path):
+    run = _completed_v2_9(cohort, selection, tmp_path)
+    manifest = json.loads(Path(run.result.manifest_path).read_bytes())
+    assert manifest["manifest_contract"] == \
+        "universe_classifier_calibration_manifest@0.9.0"
+    assert manifest["output_contract"] == "universe_classifier_record@0.5.0"
+    assert manifest["prompt_template_path"].endswith("universe_full_classification.v2_9.md")
+    counts = manifest["annotation_status_counts"]
+    assert sorted(counts) == ["absent", "accepted", "empty", "over_length"]
+    records = [json.loads(line) for line in
+               (Path(run.result.run_dir) / lcal.CALIBRATION_ROUTE_V2_9.records_filename)
+               .read_text().splitlines() if line.strip()]
+    items = [e for r in records if r.get("axes") for e in r["axes"]["evidence"]]
+    assert sum(counts.values()) == len(items)
+    for e in items:
+        assert sorted(e) == ["annotation_provenance", "annotation_status", "axis",
+                             "evidence_quote", "passage_ref", "span_end",
+                             "span_interpretation", "span_ref", "span_sha256",
+                             "span_start"]
+
+
+@pytest.mark.parametrize("kwargs,expected", [
+    ({"omit_interpretation": True}, "absent"),
+    ({"interpretation": ""}, "empty"),
+    ({"interpretation": "a" * 301}, "over_length"),
+])
+def test_v2_9_keeps_the_v2_8_annotation_policy(cohort, selection, tmp_path,
+                                               kwargs, expected):
+    target = selection.rows[0]["cik"]
+    run = _completed_v2_9(cohort, selection, tmp_path,
+                          run_id=f"calib-v2-9-{expected}", **{target: kwargs})
+    records = [json.loads(line) for line in
+               (Path(run.result.run_dir) / lcal.CALIBRATION_ROUTE_V2_9.records_filename)
+               .read_text().splitlines() if line.strip()]
+    row = next(r for r in records if r["cik"] == target)
+    assert row["record_kind"] == "classified" and row["tier"] == "TIER_A"
+    assert row["axes"]["evidence"][0]["annotation_status"] == expected
+
+
+def test_a_completed_v2_9_run_is_accepted_only_by_its_own_route(cohort, selection,
+                                                                tmp_path):
+    run = _completed_v2_9(cohort, selection, tmp_path, run_id="calib-v2-9-iso")
+    run_dir = Path(run.result.run_dir)
+    assert lcal.require_classifier_calibration_run(
+        run_dir, route=lcal.CALIBRATION_ROUTE_V2_9) == \
+        run_dir / lcal.CALIBRATION_ROUTE_V2_9.manifest_filename
+    for other in (lcal.CALIBRATION_ROUTE, lcal.CALIBRATION_ROUTE_V2_2,
+                  lcal.CALIBRATION_ROUTE_V2_3, lcal.CALIBRATION_ROUTE_V2_4,
+                  lcal.CALIBRATION_ROUTE_V2_5, lcal.CALIBRATION_ROUTE_V2_6,
+                  lcal.CALIBRATION_ROUTE_V2_7, lcal.CALIBRATION_ROUTE_V2_8):
+        with pytest.raises(Exception):
+            lcal.require_classifier_calibration_run(run_dir, route=other)
+
+
+def test_the_v2_9_route_refuses_a_v2_8_run(cohort, selection, tmp_path):
+    run = _completed_v2_8(cohort, selection, tmp_path, run_id="calib-v2-8-for-v2-9")
+    with pytest.raises(Exception):
+        lcal.require_classifier_calibration_run(
+            Path(run.result.run_dir), route=lcal.CALIBRATION_ROUTE_V2_9)
+
+
+def test_a_v2_9_grant_is_refused_by_the_v2_8_route(cohort, selection, tmp_path):
+    grant = _v2_9_grant(cohort, selection, tmp_path, name="gov-v2-9-crossed")
+    with pytest.raises(Exception):
+        _run(cohort, selection, grant, tmp_path, run_id="crossed-v2-8",
+             script=_v2_9_script(cohort, selection),
+             route=lcal.CALIBRATION_ROUTE_V2_8)
+
+
 def _v2_8_grant(cohort, selection, tmp_path, *, name="calibration-gov-v2-8"):
     """The V2.7 calibration grant re-pointed at V2.8's prompt and 0.8.0 contract."""
     from dynamic_ai_products.classifier_contract_set import V2_8

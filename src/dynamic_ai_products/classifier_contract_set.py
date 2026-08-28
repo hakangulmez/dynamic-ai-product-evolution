@@ -302,6 +302,30 @@ V2_8 = ClassifierContractSet(
     annotation_policy="span_interpretation_v1",
 )
 
+#: A controlled A/B successor. Every technical contract here is V2_8's own
+#: object: the same axes and record schemas, the same taxonomy, the same
+#: selected-span protocol, the same annotation policy, the same span index. Only
+#: the prompt differs, and it differs semantically rather than mechanically --
+#: the V2.8 semantic instructions accumulated one failure explanation per
+#: calibration, and V2.9 states the economic question once instead, leading with
+#: what an external customer actually purchases. Holding every other contract
+#: identical is what makes the comparison an experiment rather than an anecdote:
+#: two runs over the same forty rows can differ only in what the model was told
+#: to think about. It is not promotable on its own.
+V2_9 = ClassifierContractSet(
+    version_id="v2_9",
+    prompt_path="prompts/discovery/universe_full_classification.v2_9.md",
+    axes_schema=V2_8.axes_schema,
+    axes_contract=V2_8.axes_contract,
+    record_contract=V2_8.record_contract,
+    record_schema=V2_8.record_schema,
+    taxonomy_version=V2_8.taxonomy_version,
+    output_prefix="v2_9_",
+    evidence_protocol=V2_8.evidence_protocol,
+    span_index_config=V2_8.span_index_config,
+    annotation_policy=V2_8.annotation_policy,
+)
+
 CONTRACT_SETS: dict[str, ClassifierContractSet] = {
     V2_1.version_id: V2_1,
     V2_2.version_id: V2_2,
@@ -311,6 +335,7 @@ CONTRACT_SETS: dict[str, ClassifierContractSet] = {
     V2_6.version_id: V2_6,
     V2_7.version_id: V2_7,
     V2_8.version_id: V2_8,
+    V2_9.version_id: V2_9,
 }
 
 

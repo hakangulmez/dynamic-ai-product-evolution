@@ -38,7 +38,7 @@ from typing import Any, Callable
 from jsonschema import Draft202012Validator, FormatChecker
 
 from .classifier_contract_set import (
-    V2_1, V2_2, V2_3, V2_4, V2_5, V2_6, V2_7, V2_8)
+    V2_1, V2_2, V2_3, V2_4, V2_5, V2_6, V2_7, V2_8, V2_9)
 from .classifier_span_index import build_span_index
 from .classifier_tier_engine import derive_tier
 from .lineage_classifier_v2_1 import (
@@ -82,6 +82,7 @@ __all__ = [
     "CONTINUATION_ROUTE_V2_6",
     "CONTINUATION_ROUTE_V2_7",
     "CONTINUATION_ROUTE_V2_8",
+    "CONTINUATION_ROUTE_V2_9",
     "ClassifierSourcePrefix",
     "load_classifier_continuation_source",
     "require_classifier_continuation_run",
@@ -233,6 +234,23 @@ CONTINUATION_ROUTE_V2_8 = ClassifierRoute(
         "schemas/universe_classifier_continuation_authorization.v8.schema.json"),
     archive_filename="universe_classifier_v2_8_raw_responses.jsonl",
     contracts=V2_8,
+)
+
+#: The V2.9 A/B successor: identical mechanics, a different semantic prompt.
+#: Distinct filenames and an 0.9.0 contract keep the two runs unmixable, which
+#: is what lets them be compared.
+CONTINUATION_ROUTE_V2_9 = ClassifierRoute(
+    run_kind=CONTINUATION_RUN_KIND,
+    records_filename="universe_classifier_v2_9_continuation_records.jsonl",
+    manifest_filename="universe_classifier_v2_9_continuation_manifest.json",
+    manifest_contract="universe_classifier_continuation_manifest@0.9.0",
+    manifest_schema=(
+        "schemas/universe_classifier_continuation_manifest.v9.schema.json"),
+    record_order=RECORD_ORDER,
+    authorization_schema=(
+        "schemas/universe_classifier_continuation_authorization.v9.schema.json"),
+    archive_filename="universe_classifier_v2_9_raw_responses.jsonl",
+    contracts=V2_9,
 )
 
 #: Receipt fields a continuable classifier failure must carry. A receipt that

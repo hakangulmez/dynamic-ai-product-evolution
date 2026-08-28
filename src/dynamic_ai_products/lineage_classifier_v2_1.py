@@ -91,6 +91,7 @@ from .classifier_contract_set import (
     V2_6,
     V2_7,
     V2_8,
+    V2_9,
     ClassifierContractSet,
 )
 from .classifier_tier_engine import derive_tier, load_tier_rules
@@ -150,6 +151,7 @@ __all__ = [
     "BASE_ROUTE_V2_6",
     "BASE_ROUTE_V2_7",
     "BASE_ROUTE_V2_8",
+    "BASE_ROUTE_V2_9",
     "ClassifierRoute",
     "require_classifier_run",
     "require_completed_run",
@@ -327,6 +329,21 @@ BASE_ROUTE_V2_8 = ClassifierRoute(
     authorization_schema="schemas/universe_classifier_authorization.v8.schema.json",
     archive_filename="universe_classifier_v2_8_raw_responses.jsonl",
     contracts=V2_8,
+)
+
+#: The V2.9 A/B successor: identical mechanics, a different semantic prompt.
+#: Distinct filenames and an 0.9.0 contract keep the two runs unmixable, which
+#: is what lets them be compared.
+BASE_ROUTE_V2_9 = ClassifierRoute(
+    run_kind=RUN_KIND,
+    records_filename="universe_classifier_v2_9_records.jsonl",
+    manifest_filename="universe_classifier_v2_9_manifest.json",
+    manifest_contract="universe_classifier_manifest@0.9.0",
+    manifest_schema="schemas/universe_classifier_manifest.v9.schema.json",
+    record_order=RECORD_ORDER,
+    authorization_schema="schemas/universe_classifier_authorization.v9.schema.json",
+    archive_filename="universe_classifier_v2_9_raw_responses.jsonl",
+    contracts=V2_9,
 )
 
 #: The closed provider reasons a bounded provider-unresolved row may carry,
