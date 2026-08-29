@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_annual_coverage_cohort_record.v1.schema.json",
+  "title": "Universe annual coverage cohort record v0.1.0",
+  "description": "One firm kept by the annual filing-year continuity rule. This record asserts one mechanical fact -- the firm filed an annual report in every required calendar filing year -- and nothing about its business. The high-recall screen's verdict and provenance are carried through unchanged and are neither re-derived nor revised here; no model was called and no tier exists. Membership in this cohort is analysis eligibility, never membership in a software universe.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_contract",
+    "cik",
+    "accession",
+    "company_id",
+    "source_id",
+    "form",
+    "baseline_filing_date",
+    "packet_sha256",
+    "admission_origin",
+    "screen_status",
+    "admission_provenance",
+    "observed_annual_filing_years",
+    "coverage_class",
+    "required_filing_years",
+    "has_optional_2021"
+  ],
+  "properties": {
+    "record_contract": {
+      "const": "universe_annual_coverage_cohort_record@0.1.0"
+    },
+    "cik": {
+      "type": "string",
+      "pattern": "^[0-9]{10}$"
+    },
+    "accession": {
+      "description": "The baseline filing this row was admitted on. A row is (cik, accession), never a CIK alone.",
+      "type": "string",
+      "minLength": 1
+    },
+    "company_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "form": {
+      "type": "string",
+      "minLength": 1
+    },
+    "baseline_filing_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "packet_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "admission_origin": {
+      "description": "CARRIED THROUGH from the candidate cohort, unchanged. This filter did not admit or re-admit anything.",
+      "enum": [
+        "model_screen",
+        "human_review"
+      ]
+    },
+    "screen_status": {
+      "description": "CARRIED THROUGH from the candidate cohort, unchanged.",
+      "enum": [
+        "LIKELY_ELIGIBLE",
+        "BOUNDARY_OR_UNCERTAIN"
+      ]
+    },
+    "admission_provenance": {
+      "description": "CARRIED THROUGH from the candidate cohort, unchanged: the screen response or reviewer decision that admitted this firm.",
+      "type": "object"
+    },
+    "observed_annual_filing_years": {
+      "description": "Every calendar filing year in which FRAME records an annual filing for this CIK, ascending. Years after the last required one appear here and decide nothing.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "integer"
+      }
+    },
+    "coverage_class": {
+      "description": "Which included population this firm belongs to. The two are labelled rather than pooled because they support panels of different length.",
+      "enum": [
+        "complete_2021_2025",
+        "2021_missing_2022_2025_present"
+      ]
+    },
+    "required_filing_years": {
+      "description": "The rule this row was decided under, written into the row so a stored record is interpretable without its manifest.",
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "enum": [
+          2022,
+          2023,
+          2024,
+          2025
+        ]
+      }
+    },
+    "has_optional_2021": {
+      "description": "Whether the optional pre-period year is present. Recorded, never required.",
+      "type": "boolean"
+    }
+  }
+}

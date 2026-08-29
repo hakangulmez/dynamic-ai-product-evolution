@@ -174,6 +174,30 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-138 (the annual filing-year coverage cohort):
+    # manifest_version 0.76.0 -> 0.77.0, 212 -> 215 entries, registering the
+    # coverage record, exclusion and manifest contracts. Nothing else moved.
+    # The three are a model-free, post-screen analysis-eligibility filter over
+    # the immutable 4,045-row candidate cohort: the screen release, the human
+    # overlay and that cohort are byte-unchanged and nothing was re-run. The
+    # rule keeps a firm with an annual filing in each calendar filing year
+    # 2022-2025, records 2021 without requiring it, and lets no year after 2025
+    # decide anything, yielding 2,799 kept and 1,246 dropped. Every dropped firm
+    # is retained in its own artifact with the years it filed and the required
+    # years it did not. None of the three joins EVALUATION_SCHEMA_CONTRACTS or
+    # RELEASED_EVALUATION_CONTRACTS below.
+    # Before it,
+    # Rebaselined by ADR-137 (the pilot's governed execution path):
+    # manifest_version 0.75.0 -> 0.76.0, 210 -> 212 entries, registering the
+    # pilot authorization and manifest contracts. Nothing else moved: the three
+    # ADR-137 contracts registered by the previous entry -- the pilot axes,
+    # record and selection schemas -- are byte-unchanged, and so is every V2.x
+    # contract, prompt and config. The two new schemas are the pilot's own and
+    # join neither EVALUATION_SCHEMA_CONTRACTS nor RELEASED_EVALUATION_CONTRACTS
+    # below. What they deliberately omit is the point: no tier rules, no
+    # taxonomy version, no strata or span-index binding and no bounded-outcome
+    # tolerance, all refused structurally by additionalProperties: false.
+    # Before it,
     # Rebaselined by ADR-130 (classifier V2.4, one bound and a prompt):
     # manifest_version 0.68.0 -> 0.69.0, 164 -> 172 entries, registering the
     # 0.3.0 axes and record contracts and the six V2.4 authorization and
@@ -540,7 +564,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "6b6876eac2c31c52ce88b57729914ed2a35c6eb1f8c3ba70231df93be30c9551"
+    "b64f1287bf01b99a7697daa3986300bb213ffab97ea7a10cad2da57355a99ab0"
 )
 
 

@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_annual_coverage_cohort_manifest.v1.schema.json",
+  "title": "Universe annual coverage cohort manifest v0.1.0",
+  "description": "The run manifest for one deterministic annual filing-year coverage restriction. It binds the candidate cohort and the FRAME annual-filer inventory by digest, records the rule it applied, and reports the kept and dropped populations. Four consts carry the claims a reader must not have to infer: no model was called, this is not a software universe, it is not a classifier output, and it was applied after the historical high-recall screen rather than before it. The limitations block is required and states the survivor-sample conditioning the rule induces.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_contract",
+    "coverage_cohort_id",
+    "cohort_kind",
+    "artifact_role",
+    "no_model_call",
+    "is_software_universe",
+    "is_classifier_output",
+    "applied_after_high_recall_screen",
+    "coverage_rule",
+    "sources",
+    "output_contract",
+    "exclusion_contract",
+    "record_order",
+    "output_hashes",
+    "counts",
+    "reconciliation",
+    "schema_versions",
+    "run_timestamp",
+    "limitations"
+  ],
+  "properties": {
+    "manifest_contract": {
+      "const": "universe_annual_coverage_cohort_manifest@0.1.0"
+    },
+    "coverage_cohort_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cohort_kind": {
+      "const": "annual_coverage_cohort_v1"
+    },
+    "artifact_role": {
+      "description": "What this artifact is for. An analysis-eligibility cohort answers who can be observed in every required year; it does not answer who belongs in the software universe.",
+      "const": "analysis_eligibility_cohort"
+    },
+    "no_model_call": {
+      "const": true
+    },
+    "is_software_universe": {
+      "description": "Always false. Stated so a consumer refuses to read this as a universe rather than inferring it from the absence of a claim.",
+      "const": false
+    },
+    "is_classifier_output": {
+      "const": false
+    },
+    "applied_after_high_recall_screen": {
+      "description": "Always true. The screen saw every firm in the source cohort; this restriction runs afterwards and scoped nothing that came before it.",
+      "const": true
+    },
+    "coverage_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule_id",
+        "required_filing_years",
+        "optional_filing_year",
+        "last_eligibility_year",
+        "filing_year_basis",
+        "annual_forms_read"
+      ],
+      "properties": {
+        "rule_id": {
+          "const": "annual_filing_year_continuity_2022_2025@1"
+        },
+        "required_filing_years": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "enum": [
+              2022,
+              2023,
+              2024,
+              2025
+            ]
+          }
+        },
+        "optional_filing_year": {
+          "const": 2021
+        },
+        "last_eligibility_year": {
+          "description": "No filing after this year bears on eligibility.",
+          "const": 2025
+        },
+        "filing_year_basis": {
+          "const": "calendar year of the SEC filing date"
+        },
+        "annual_forms_read": {
+          "description": "Both FRAME annual-filer outputs. Reading only the domestic file would drop foreign private issuers for filing the annual form their regime requires.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_cohort",
+        "frame",
+        "sources_unmodified"
+      ],
+      "properties": {
+        "candidate_cohort": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cohort_id",
+            "manifest_sha256",
+            "records_jsonl_sha256",
+            "cohort_rows"
+          ],
+          "properties": {
+            "cohort_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "records_jsonl_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "cohort_rows": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "frame": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "run_id",
+            "manifest_sha256",
+            "annual_filer_jsonl_sha256",
+            "filing_window_start",
+            "filing_window_end"
+          ],
+          "properties": {
+            "run_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "annual_filer_jsonl_sha256": {
+              "type": "object",
+              "minProperties": 2,
+              "maxProperties": 2,
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "filing_window_start": {
+              "type": "string",
+              "minLength": 1
+            },
+            "filing_window_end": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "sources_unmodified": {
+          "const": true
+        }
+      }
+    },
+    "output_contract": {
+      "const": "universe_annual_coverage_cohort_record@0.1.0"
+    },
+    "exclusion_contract": {
+      "const": "universe_annual_coverage_cohort_exclusion@0.1.0"
+    },
+    "record_order": {
+      "const": "candidate_cohort_row_order"
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_annual_coverage_cohort_records.jsonl",
+        "universe_annual_coverage_cohort_exclusions.jsonl"
+      ],
+      "properties": {
+        "universe_annual_coverage_cohort_records.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "universe_annual_coverage_cohort_exclusions.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_cohort_rows",
+        "included",
+        "excluded",
+        "complete_2021_2025",
+        "2021_missing_2022_2025_present",
+        "by_admission_origin",
+        "by_screen_status",
+        "excluded_by_missing_year",
+        "excluded_by_missing_year_count"
+      ],
+      "properties": {
+        "source_cohort_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "included": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "excluded": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete_2021_2025": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "2021_missing_2022_2025_present": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_admission_origin": {
+          "type": "object"
+        },
+        "by_screen_status": {
+          "type": "object"
+        },
+        "excluded_by_missing_year": {
+          "description": "How many excluded firms are missing each required year. A firm missing several years is counted under each, so these do not sum to the excluded total.",
+          "type": "object"
+        },
+        "excluded_by_missing_year_count": {
+          "description": "How many excluded firms are missing exactly one, two, three or four required years. These do sum to the excluded total.",
+          "type": "object"
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "const": true
+      }
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_annual_coverage_cohort_record",
+        "universe_annual_coverage_cohort_exclusion",
+        "universe_annual_coverage_cohort_manifest"
+      ],
+      "properties": {
+        "universe_annual_coverage_cohort_record": {
+          "type": "string",
+          "minLength": 1
+        },
+        "universe_annual_coverage_cohort_exclusion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "universe_annual_coverage_cohort_manifest": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "run_timestamp": {
+      "type": "string",
+      "minLength": 1
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 6,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

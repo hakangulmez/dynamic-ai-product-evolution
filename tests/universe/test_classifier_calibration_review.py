@@ -851,7 +851,7 @@ def test_the_cli_declares_all_nine_review_modes():
     for mode in REVIEW_MODES:
         assert mode in choices, mode
     assert len(REVIEW_MODES) == 9
-    assert "Sixty-two mutually exclusive modes" in cli.__doc__
+    assert "Sixty-five mutually exclusive modes" in cli.__doc__
 
 
 # --- ADR-130: the review route at V2.4 --------------------------------------------

@@ -11,8 +11,11 @@ high-recall result, human-review decision, prior classification, or Tier.
 
 ## Core question
 
-Using only Item 1, decide whether a customer-facing digital or software offering
-is economically central to the firm’s business.
+Using only Item 1, first decide whether the firm offers a commercially
+meaningful customer-facing digital or software offering.
+
+Then independently decide how central that offering is to the firm’s overall
+commercial value.
 
 Assess the firm as a whole. A mention of technology alone is not enough.
 

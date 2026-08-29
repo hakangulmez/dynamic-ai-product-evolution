@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_pilot_authorization.v1.schema.json",
+  "title": "Software universe classifier pilot authorization v0.1.0",
+  "description": "The grant for one ten-firm firm-level pilot run. It is not a V2.x calibration grant and cannot be read as one: the contract id, run kind, output contract and prompt path are all consts belonging to the pilot alone. What this schema leaves out is as deliberate as what it requires. There is no tier_rules_version or tier_rules_sha256, because the pilot derives no tier; no taxonomy_version, because it does not extend the V2.x axes taxonomy; no strata_rules or selection_seed, because its ten rows are named rather than drawn; no span_index binding, because it cites whole evidence blocks rather than sentence spans; and no bounded-outcome tolerance of any kind, because a response the pilot cannot use costs one row and never the run. additionalProperties is false, so a grant carrying any of them is refused before a run directory exists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorization_contract",
+    "authorization_id",
+    "authorized_by",
+    "budget_max_estimated_cost_micros",
+    "budget_max_external_requests",
+    "budget_max_input_tokens",
+    "budget_max_output_tokens",
+    "budget_max_wall_clock_seconds",
+    "cohort_id",
+    "cohort_manifest_sha256",
+    "count_attempt_cap",
+    "count_attempts_per_row",
+    "covers_full_cohort",
+    "deployment_environment_id",
+    "effective_at",
+    "endpoint_allowlist",
+    "expires_at",
+    "external_requests_per_row",
+    "generate_attempts_per_row",
+    "logical_row_cap",
+    "model_route",
+    "output_axes_contract",
+    "output_contract",
+    "packet_manifest_sha256",
+    "promotable",
+    "prompt_template_path",
+    "prompt_template_sha256",
+    "provider_attempt_cap",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "rate_limit_policy_version",
+    "retry_policy_version",
+    "rollout_state",
+    "run_kind",
+    "screen_adapter_enablement_reference",
+    "screen_adapter_enablement_sha256",
+    "screen_count_retry_policy_version",
+    "screen_generate_retry_policy_version",
+    "selection_artifact_path",
+    "selection_artifact_sha256",
+    "selection_kind",
+    "vertex_location",
+    "vertex_project"
+  ],
+  "properties": {
+    "authorization_contract": {
+      "const": "universe_classifier_pilot_authorization@0.1.0"
+    },
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorized_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "deployment_environment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rollout_state": {
+      "type": "string",
+      "minLength": 1
+    },
+    "effective_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "run_kind": {
+      "const": "classifier_pilot_v1"
+    },
+    "promotable": {
+      "description": "Always false. The pilot settles no firm's membership and nothing downstream may consume it as a decision.",
+      "const": false
+    },
+    "covers_full_cohort": {
+      "description": "Always false. Ten named filings are not a universe and not a sample of one.",
+      "const": false
+    },
+    "output_contract": {
+      "const": "universe_classifier_pilot_record@0.1.0"
+    },
+    "output_axes_contract": {
+      "description": "The model-facing contract this run holds responses to. Named separately from the record contract because the two are different surfaces: the model authors the axes, the pipeline authors the record around them.",
+      "const": "universe_classifier_pilot_axes_record@0.1.0"
+    },
+    "prompt_template_path": {
+      "const": "prompts/discovery/software_universe_classifier_pilot.v1.md"
+    },
+    "prompt_template_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "cohort_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cohort_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "selection_artifact_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selection_artifact_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "selection_kind": {
+      "const": "classifier_pilot_v1"
+    },
+    "provider_client_contract_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_client_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_adapter_enablement_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "screen_adapter_enablement_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "vertex_project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vertex_location": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model_label"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "endpoint_allowlist": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "logical_row_cap": {
+      "description": "Exactly ten. The pilot's scope is a committed list of ten named filings, so the cap is a const rather than a number a grant may choose. A run over any other count is a different experiment and needs a successor contract.",
+      "const": 10
+    },
+    "count_attempt_cap": {
+      "description": "Exactly ten rows at three countTokens attempts each.",
+      "const": 30
+    },
+    "provider_attempt_cap": {
+      "description": "Exactly ten rows at five generateContent attempts each.",
+      "const": 50
+    },
+    "budget_max_external_requests": {
+      "description": "Exactly ten rows at eight external requests each.",
+      "const": 80
+    },
+    "count_attempts_per_row": {
+      "const": 3
+    },
+    "generate_attempts_per_row": {
+      "const": 5
+    },
+    "external_requests_per_row": {
+      "const": 8
+    },
+    "retry_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rate_limit_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "screen_generate_retry_policy_version": {
+      "const": "universe_screen_generate_retry_policy_v1"
+    },
+    "screen_count_retry_policy_version": {
+      "const": "universe_screen_count_retry_policy_v1"
+    },
+    "budget_max_input_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_output_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_estimated_cost_micros": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_wall_clock_seconds": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

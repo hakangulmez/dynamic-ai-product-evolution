@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **1006**
+Total tracked/scaffold files listed: **1016**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -464,8 +464,13 @@ Total tracked/scaffold files listed: **1006**
 - `schemas/task_transition.schema.json`
 - `schemas/universe_baseline_carrier_manifest.schema.json`
 - `schemas/universe_baseline_packet.schema.json`
+- `schemas/universe_annual_coverage_cohort_exclusion.v1.schema.json`
+- `schemas/universe_annual_coverage_cohort_manifest.v1.schema.json`
+- `schemas/universe_annual_coverage_cohort_record.v1.schema.json`
 - `schemas/universe_baseline_packet.v2.schema.json`
+- `schemas/universe_classifier_pilot_authorization.v1.schema.json`
 - `schemas/universe_classifier_pilot_axes_record.v1.schema.json`
+- `schemas/universe_classifier_pilot_manifest.v1.schema.json`
 - `schemas/universe_classifier_pilot_record.v1.schema.json`
 - `schemas/universe_classifier_pilot_selection.v1.schema.json`
 - `schemas/universe_run_manifest.schema.json`
@@ -751,10 +756,13 @@ Total tracked/scaffold files listed: **1006**
 - `src/dynamic_ai_products/lineage_classifier_continuation.py`
 - `src/dynamic_ai_products/lineage_classifier_v2_1.py`
 - `src/dynamic_ai_products/classifier_calibration_review.py`
+- `src/dynamic_ai_products/classifier_annual_coverage_cohort.py`
 - `src/dynamic_ai_products/classifier_calibration_selection.py`
+- `src/dynamic_ai_products/classifier_pilot_selection.py`
 - `src/dynamic_ai_products/classifier_contract_set.py`
 - `src/dynamic_ai_products/classifier_span_index.py`
 - `src/dynamic_ai_products/lineage_classifier_calibration.py`
+- `src/dynamic_ai_products/lineage_classifier_pilot_v1.py`
 - `src/dynamic_ai_products/lineage_screen_live_v3.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/providers/__init__.py`
@@ -952,8 +960,10 @@ Total tracked/scaffold files listed: **1006**
 - `tests/temporal/test_temporal_rule.py`
 - `tests/ui/test_local_ui_scaffold.py`
 - `tests/universe/test_acquisition_queue.py`
+- `tests/universe/test_annual_coverage_cohort.py`
 - `tests/universe/test_baseline_carrier.py`
 - `tests/universe/test_classifier_pilot_v1.py`
+- `tests/universe/test_classifier_pilot_v1_run.py`
 - `tests/universe/test_classifier_v2_7_prompt.py`
 - `tests/universe/test_classifier_v2_8_evidence.py`
 - `tests/universe/test_classifier_v2_9_prompt.py`

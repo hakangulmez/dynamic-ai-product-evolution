@@ -936,7 +936,7 @@ def test_the_cli_declares_both_modes():
     assert "classify-universe-cohort-continuation" in choices
     # ADR-127 added three calibration modes; ADR-128 three V2.2 modes;
     # ADR-129 three V2.3 modes and two review modes; ADR-130 four V2.4 modes.
-    assert "Sixty-two mutually exclusive modes" in cli.__doc__
+    assert "Sixty-five mutually exclusive modes" in cli.__doc__
 
 
 # --- ADR-129: the base route at V2.3 ----------------------------------------------
@@ -1322,7 +1322,7 @@ def test_the_v2_5_cli_mode_reaches_the_v2_5_route():
     cli = _cli_module()
     choices = next(a.choices for a in cli.build_parser()._actions if a.dest == "mode")
     assert "classify-universe-cohort-v2-5" in choices
-    assert len(choices) == 74
+    assert len(choices) == 77
 
 
 # --- ADR-132 correction: archival verification needs the packet and nothing else ----

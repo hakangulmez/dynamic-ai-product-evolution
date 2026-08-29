@@ -9311,6 +9311,98 @@ consumer modules, four CLI modes, seven test modules, the registry (0.69.0 to
 five registry/manifest guards, and the absolute registry literals in eleven
 screen suites.
 
+## ADR-138 — A filing-year restriction, applied after the screen and never before it
+
+**Status.** Accepted, fixture-first. Model-free by construction: no prompt, no
+provider, no network, no governance artifact and no `data/runs` write. The screen
+release, the human-review overlay, the 4,045-row classifier candidate cohort and
+the FRAME run are byte-unchanged, and nothing was re-run to produce this.
+
+**What it is.** A deterministic post-screen filter that asks one mechanical question
+per firm: did it file an annual report in every calendar filing year the analysis
+window requires? Firms that did are kept; firms that did not are written to a
+separate artifact with the years they filed and the years they did not.
+
+**What it is not.** Not a high-recall prompt change, not a re-screen, not a
+classifier result, and not a software universe. No judgement about any firm's
+business was made or revised. The manifest carries four consts rather than leaving
+this to prose — `no_model_call: true`, `is_software_universe: false`,
+`is_classifier_output: false`, `applied_after_high_recall_screen: true` — so a
+consumer refuses the wrong reading structurally instead of inferring the right one.
+
+**Order is the claim most easily lost.** This restriction runs *after* the
+historical high-recall invocation. The screen saw all 4,045 firms; the filter sees
+the same 4,045 and keeps 2,799. Describing the result as though the coverage rule
+had scoped the screen would misstate both the screen's coverage and this cohort's
+provenance, so the manifest says the order outright and a test asserts the sentence
+is present.
+
+**The rule, exactly.** An annual filing is required in each of 2022, 2023, 2024 and
+2025. A 2021 filing is recorded and never required. No filing after 2025 bears on
+eligibility, and a test asserts that adding a 2026, 2027 or 2030 filing changes no
+verdict in either direction. Coverage is counted by calendar filing year, taken from
+FRAME's own `filing_date`.
+
+**Both annual-filer inputs are read.** Domestic annual filings (10-K, 10-KT) and the
+foreign-private-issuer extension forms (20-F, 40-F) are separate FRAME outputs and
+both are annual coverage. Reading only the domestic file would drop foreign private
+issuers for filing the form their regime requires -- a data-plumbing artifact, not a
+fact about the firm -- and would give 2,794 rather than 2,799. Both files are
+hash-bound by the same FRAME manifest and both are pinned. A test asserts the
+counterfactual directly, so the second input cannot be quietly dropped later.
+
+**The counts, for this source cohort.** 4,045 in; 2,799 kept, of which 2,545 have
+the full 2021-2025 span and 254 have 2022-2025 without 2021; 1,246 dropped. The two
+kept classes are labelled rather than pooled, because they support panels of
+different length. Of the dropped, 275 are missing exactly one required year, 293
+two, 257 three and 421 all four.
+
+**It selects a survivor sample, and that is a real limitation.** Requiring a filing
+in every year from 2022 through 2025 keeps continuing reporters and drops firms
+acquired, taken private, deregistered, delisted or failed inside the window, along
+with firms that first registered after it opened. Any estimate computed on this
+cohort is conditional on surviving as a reporting registrant, and that conditioning
+is not ignorable for questions about entry, exit or firm survival. A fiscal-year-end
+change can also put two filings in one calendar year and none in the next, which
+this rule excludes even where fiscal-year coverage is continuous. All of this is in
+the manifest's own limitations rather than left for a reader to notice.
+
+**Nothing is discarded.** Every dropped firm is retained in an immutable exclusions
+artifact carrying its `(cik, accession)` identity, its high-recall admission origin
+and screen status, its admission provenance, the years it filed and the required
+years it did not. The drop is auditable by reading rather than by re-running, and a
+reconciliation identity refuses to write anything unless the kept and dropped sets
+partition the source exactly.
+
+**The screen's verdict travels unchanged.** `admission_origin`, `screen_status` and
+`admission_provenance` are copied through on both the kept and the dropped rows and
+are neither re-derived nor revised. This filter observes filing dates and has no
+opinion about admission.
+
+**Not decided here.** Which cohort the classifier or the pilot should run over. This
+entry creates the artifact and states what it may and may not be read as; choosing
+to use it is a later decision with its own entry. `PILOT_ROWS`, the pilot selection
+rule and the pilot runner are untouched by this increment.
+
+**Scope.** Thirty-two paths, of which twenty-nine are this restriction and three
+are an unrelated pilot-prompt change carried in the same increment.
+
+The restriction: the coverage builder, its three contracts, one CLI mode with its
+own flag-gating block and a new `--frame-manifest-sha256`, one new test module, the
+registry (0.76.0 to 0.77.0, 212 to 215), this decision log, `REPO_MANIFEST.md`
+(1011 to 1016), the Stage 00 reproducibility notebook, the five registry and
+manifest guards, the absolute registry literals in eleven screen suites, and the CLI
+mode-count literals in three classifier suites.
+
+The unrelated three: the pilot prompt's core question, split into an existence step
+and an independent centrality step; the prompt tests that assert the new wording and
+the absence of the old combined formulation; and the pilot run suite, whose
+predecessor-freeze list no longer pins the pilot prompt's digest, because that
+prompt is the artifact under revision and a byte pin there would have to be
+rebaselined by every wording change while asserting nothing about meaning.
+
+`PILOT_ROWS`, the pilot selection rule and the pilot runner are unchanged.
+
 ## ADR-137 — A smaller question, asked outside the ladder
 
 **Status.** Accepted, fixture-first, explicitly non-promotable. No model call, no
@@ -9401,9 +9493,78 @@ the same two filings, so that label could never be taken, and coverage of the fo
 required admission dimensions is asserted from `admission_origin` and
 `screen_status` instead.
 
+**The execution substrate.** The contracts above were fixture-first and had no way
+to run. This entry adds the minimal governed path that can: a write-once selection
+builder around the existing pure `build_pilot_selection`, a pilot authorization and
+manifest contract, one live CLI mode, and a runner. Still fixture-first: no
+selection, grant, run or review artifact exists, and no model has been called.
+
+**A separate route, not a V2.x variant.** The runner imports no V2 route, no V2
+authorization or manifest contract, no axes or record contract of that ladder, no
+tier rules and no tier engine. It reuses only the generic transport every governed
+run here reuses -- the connector, the per-row capture ledger, the retry and
+rate-limit policies, the cohort budget, the write-once discipline. Its outputs
+carry their own filenames, so a V2 loader refuses a pilot run before reading a
+contract and the pilot loader refuses a V2 run the same way; tests assert both
+directions rather than the naming convention that suggests them.
+
+**A smaller input surface, because of what must not be read.** A V2 run hydrates
+the release and the overlay in order to render the earlier verdict and invite the
+model to contradict it. The pilot must never render that verdict, so it never
+loads it: its inputs are the pinned ten-row selection, the cohort manifest that
+selection was built from, and the packet cohort. Admission provenance travels on
+the selection row, is copied into the stored record for audit, and reaches no
+prompt -- `render_pilot_prompt` takes a template and a packet, and the runner
+calls nothing else. A test renders all ten prompts and asserts that no admission,
+overlay, screen-status or tier token appears in any of them.
+
+**A model-response defect costs one row; a provider failure costs the run.** The
+four review reasons all describe a response the pipeline could read and refuse, so
+each becomes a `review_uncertain` record and the run continues through all ten
+rows. A provider failure -- an exhausted budget, a terminal transport error --
+describes neither the filing nor the model. It stops the run and writes a receipt,
+so no records file and no manifest exist. Storing it beside a judgement would let
+an outage read as a finding, and the closed review vocabulary has no reason that
+would honestly name it.
+
+**No tolerance, and no field for one.** Because the four review reasons are
+non-fatal by construction rather than by budget, the pilot states no
+bounded-outcome ceiling and the authorization schema declares none. Ten rows could
+not calibrate a tolerance in any case. The same reasoning removes `tier_rules_*`,
+`taxonomy_version`, the strata and seed bindings and the span-index binding: the
+grant is `additionalProperties: false`, so a grant carrying any of them is refused
+before a run directory exists rather than having it quietly ignored.
+
+**Ten is structural in four places.** The committed `PILOT_ROWS` list, the
+selection schema's exact ten-row bound, the grant's `logical_row_cap` const, and
+the runner's own check that the plan length equals the list's. The request caps
+are not accepted from the grant either: they are derived from the retry policies
+for ten rows -- 30 countTokens, 50 generateContent, 80 external requests -- and
+compared. The selection builder takes no row argument of any kind, so changing
+which firms the pilot covers means editing a committed constant.
+
+**Fixture rows, real contracts.** The run suite drives the machinery over ten rows
+of the synthetic ADR-127 cohort, substituted for `PILOT_ROWS` inside a test. The
+production ten are real filings no synthetic cohort contains; asserting *those*
+remains the contract suite's job against the real artifacts. Stating the
+substitution is the point -- a suite that appeared to exercise the production ten
+while exercising something else would be worse than one that says which it is.
+
 **Not decided here.** Whether a simpler firm-level classifier is better than V2.x
 is an empirical question this ADR does not answer. The pilot is not promotable, no
 governance exists for it, and no full-cohort work follows from it.
+
+**Scope.** Two commits. The first, twenty-five paths: the pilot prompt, the axes,
+record and selection contracts, the pure builder module, its test module, the
+registry (0.74.0 to 0.75.0, 207 to 210), `REPO_MANIFEST.md` (1000 to 1006) and the
+guards that bind them. The second, twenty-eight paths:
+the selection builder and the runner, the pilot authorization and
+manifest contracts, two CLI modes with their flag gating, one new test module, the
+registry (0.75.0 to 0.76.0, 210 to 212), this decision log, `REPO_MANIFEST.md`
+(1006 to 1011), the five registry and manifest guards, the absolute registry
+literals in eleven screen suites, and the CLI mode-count literals in three
+classifier suites. No V2.x contract, prompt, config, route, run or review artifact
+is touched, and a test pins six predecessor digests to prove it.
 
 ## ADR-136 — A semantic A/B, with every mechanism held still
 

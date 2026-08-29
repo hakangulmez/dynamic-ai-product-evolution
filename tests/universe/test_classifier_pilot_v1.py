@@ -72,9 +72,33 @@ def test_the_prompt_asks_the_firm_level_question_only():
     assert "Your task is to make a firm-level judgement. Do not build a product" in PROMPT
     assert "Do not list products, capabilities, tasks, customers, revenue shares" in PROMPT
     collapsed = " ".join(PROMPT.split())
-    assert ("decide whether a customer-facing digital or software offering is "
-            "economically central to the firm’s business") in collapsed
     assert "Assess the firm as a whole. A mention of technology alone is not enough." in collapsed
+
+
+def test_the_core_question_is_asked_in_two_independent_steps():
+    """Existence first, centrality second, and the two are decided separately.
+
+    The combined formulation asked one question whose answer conflated the two:
+    a firm with an obvious customer-facing offering that is commercially
+    peripheral, and a firm with no such offering at all, both failed it, and
+    nothing in the wording distinguished them.
+    """
+    collapsed = " ".join(PROMPT.split())
+    assert ("Using only Item 1, first decide whether the firm offers a commercially "
+            "meaningful customer-facing digital or software offering.") in collapsed
+    assert ("Then independently decide how central that offering is to the "
+            "firm’s overall commercial value.") in collapsed
+    # order matters: existence is asked before centrality
+    assert collapsed.index("first decide whether the firm offers") < \
+        collapsed.index("Then independently decide how central")
+
+
+def test_the_old_combined_question_is_gone():
+    """The single question the split replaced must not survive anywhere."""
+    collapsed = " ".join(PROMPT.split())
+    assert ("decide whether a customer-facing digital or software offering is "
+            "economically central to the firm’s business") not in collapsed
+    assert "is economically central to the firm" not in collapsed
 
 
 def test_the_prompt_withholds_the_earlier_result():

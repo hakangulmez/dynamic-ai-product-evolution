@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_annual_coverage_cohort_exclusion.v1.schema.json",
+  "title": "Universe annual coverage cohort exclusion v0.1.0",
+  "description": "One firm dropped by the annual filing-year continuity rule, retained in full. Nothing is discarded: every dropped firm keeps its identity, its high-recall admission provenance, the years it did file and the required years it did not, so the drop is auditable by reading rather than by re-running anything. An exclusion is a statement about filing coverage and never about the firm's business; a firm dropped here may well sell software.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_contract",
+    "cik",
+    "accession",
+    "company_id",
+    "source_id",
+    "form",
+    "baseline_filing_date",
+    "packet_sha256",
+    "admission_origin",
+    "screen_status",
+    "admission_provenance",
+    "observed_annual_filing_years",
+    "exclusion_reason_code",
+    "required_filing_years",
+    "missing_required_filing_years"
+  ],
+  "properties": {
+    "record_contract": {
+      "const": "universe_annual_coverage_cohort_exclusion@0.1.0"
+    },
+    "cik": {
+      "type": "string",
+      "pattern": "^[0-9]{10}$"
+    },
+    "accession": {
+      "type": "string",
+      "minLength": 1
+    },
+    "company_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "form": {
+      "type": "string",
+      "minLength": 1
+    },
+    "baseline_filing_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "packet_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "admission_origin": {
+      "description": "CARRIED THROUGH unchanged. A dropped firm keeps the admission it earned.",
+      "enum": [
+        "model_screen",
+        "human_review"
+      ]
+    },
+    "screen_status": {
+      "description": "CARRIED THROUGH unchanged.",
+      "enum": [
+        "LIKELY_ELIGIBLE",
+        "BOUNDARY_OR_UNCERTAIN"
+      ]
+    },
+    "admission_provenance": {
+      "description": "CARRIED THROUGH unchanged.",
+      "type": "object"
+    },
+    "observed_annual_filing_years": {
+      "description": "Every calendar filing year FRAME records an annual filing for this CIK in, ascending. May be empty.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "integer"
+      }
+    },
+    "exclusion_reason_code": {
+      "const": "excluded_missing_required_year"
+    },
+    "required_filing_years": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "enum": [
+          2022,
+          2023,
+          2024,
+          2025
+        ]
+      }
+    },
+    "missing_required_filing_years": {
+      "description": "The required years this firm has no annual filing in. Never empty for an exclusion, and never carries the optional year or any year the rule did not require.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          2022,
+          2023,
+          2024,
+          2025
+        ]
+      }
+    }
+  }
+}

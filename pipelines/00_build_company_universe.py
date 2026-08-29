@@ -7,7 +7,7 @@ Governing documents:
 - docs/THESIS_EXECUTION_PLAN.md
 - prompts/implementation/phase_0_company_universe.md
 
-Sixty-two mutually exclusive modes, selected by ``--mode`` (default
+Sixty-five mutually exclusive modes, selected by ``--mode`` (default
 ``sentinel`` so every pre-existing invocation is unchanged):
 
 - ``sentinel`` runs the fixture-driven sentinel described in
@@ -268,6 +268,34 @@ Sixty-two mutually exclusive modes, selected by ``--mode`` (default
   only: never truth about a firm, never a tier input. Deterministic and
   offline: no model call, and the selection size is derived from the config
   rather than written down.
+- ``select-classifier-pilot-rows`` materializes the ADR-137 ten-firm pilot
+  selection: the committed ``PILOT_ROWS`` list, resolved against the candidate
+  cohort and the 40-row calibration selection those ten are a chosen subset of.
+  It accepts no row argument, so changing which firms the pilot covers means
+  editing a committed constant. It pins the cohort manifest and the source
+  selection by digest, cross-binds the two, validates the pilot selection
+  contract and writes once. Deterministic and offline: no model call.
+- ``classify-software-universe-pilot-v1`` runs the governed live firm-level
+  pilot over exactly those ten filings (ADR-137). It is not a V2.x route and no
+  V2.x loader can read it: its own authorization and manifest contracts, its own
+  output filenames, its own run root. It derives no tier, holds no tier rules
+  and states no bounded-outcome tolerance -- an unusable model response costs one
+  row, recorded as ``review_uncertain`` with a reason, while a genuine provider
+  failure stops the run and writes a receipt rather than being stored as a
+  judgement. Its dry run resolves all ten inputs and reports the derived caps
+  without constructing a provider client or writing anything.
+- ``build-annual-coverage-cohort`` derives the ADR-138 annual filing-year
+  coverage restriction over the immutable candidate cohort. Model-free and
+  deterministic: it reads the cohort and both hash-bound FRAME annual-filer
+  inventories, and keeps a firm when it filed an annual report in every calendar
+  filing year from 2022 through 2025. A 2021 filing is recorded and never
+  required, and no filing after 2025 bears on eligibility. It writes two immutable
+  artifacts -- the kept firms and, separately, every dropped firm with the years it
+  filed and the required years it did not -- so nothing is discarded. The result is
+  an analysis-eligibility cohort, not a software universe and not a classifier
+  result: it runs AFTER the historical high-recall screen, carries every firm's
+  screen verdict and review provenance through unchanged, and its manifest states
+  that the rule selects a survivor / continuing-reporter sample.
 - ``classify-universe-calibration`` runs the governed live classifier over exactly
   that selection (ADR-127). It binds the identical prompt bytes, tier-rule
   bytes, cohort, overlay, release and packet chain the full run will use, so
@@ -506,6 +534,16 @@ from dynamic_ai_products.classifier_calibration_review import (  # noqa: E402
     REVIEW_FILENAME,
     build_calibration_review,
 )
+from dynamic_ai_products.classifier_annual_coverage_cohort import (  # noqa: E402
+    build_annual_coverage_cohort,
+)
+from dynamic_ai_products.classifier_pilot_selection import (  # noqa: E402
+    PILOT_SELECTION_FILENAME,
+    build_pilot_selection_artifact,
+)
+from dynamic_ai_products.lineage_classifier_pilot_v1 import (  # noqa: E402
+    run_lineage_classifier_pilot_v1,
+)
 from dynamic_ai_products.lineage_classifier_calibration import (  # noqa: E402
     CALIBRATION_ROUTE,
     CALIBRATION_ROUTE_V2_2,
@@ -627,6 +665,9 @@ def build_parser() -> argparse.ArgumentParser:
                  "classify-universe-calibration-v2-9",
                  "select-classifier-calibration-rows",
                  "classify-universe-calibration",
+                 "select-classifier-pilot-rows",
+                 "classify-software-universe-pilot-v1",
+                 "build-annual-coverage-cohort",
                  "build-classifier-calibration-review",
                  "build-classifier-calibration-review-v2-2",
                  "build-classifier-calibration-review-v2-3",
@@ -672,6 +713,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Sentinel and screen-universe-lineage modes: only the "
              "deterministic 'mock' fixture-replay provider exists in this "
              "phase.",
+    )
+    parser.add_argument(
+        "--pilot-selection", default=None,
+        help=(
+            "classify-software-universe-pilot-v1 mode: the immutable ten-row "
+            "pilot selection artifact "
+            "(universe_classifier_pilot_selection.json) the grant pins by "
+            "digest. Refused by every other mode."
+        ),
     )
     parser.add_argument(
         "--dry-run", action="store_true",
@@ -731,6 +781,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--frame-manifest", default=None,
         help="Dera-validate and baseline-carrier modes: path to a completed "
              "FRAME run's filer_frame_manifest.json.",
+    )
+    parser.add_argument(
+        "--frame-manifest-sha256", default=None,
+        help="Build-annual-coverage-cohort mode only: the digest the FRAME "
+             "manifest must hash to. Refused by every other mode.",
     )
     parser.add_argument(
         "--dera-dir", default=None,
@@ -1093,7 +1148,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-universe-cohort-v2-6", "classify-universe-cohort-continuation-v2-6", "classify-universe-calibration-v2-6",
                          "classify-universe-cohort-v2-7", "classify-universe-cohort-continuation-v2-7", "classify-universe-calibration-v2-7",
                          "classify-universe-cohort-v2-8", "classify-universe-cohort-continuation-v2-8", "classify-universe-calibration-v2-8",
-                         "classify-universe-cohort-v2-9", "classify-universe-cohort-continuation-v2-9", "classify-universe-calibration-v2-9"):
+                         "classify-universe-cohort-v2-9", "classify-universe-cohort-continuation-v2-9", "classify-universe-calibration-v2-9",
+                         "classify-software-universe-pilot-v1"):
         screen_offenders += _present(
             (("--packet-manifest", args.packet_manifest),)
         )
@@ -1149,7 +1205,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-universe-cohort-v2-6", "classify-universe-cohort-continuation-v2-6", "classify-universe-calibration-v2-6",
                          "classify-universe-cohort-v2-7", "classify-universe-cohort-continuation-v2-7", "classify-universe-calibration-v2-7",
                          "classify-universe-cohort-v2-8", "classify-universe-cohort-continuation-v2-8", "classify-universe-calibration-v2-8",
-                         "classify-universe-cohort-v2-9", "classify-universe-cohort-continuation-v2-9", "classify-universe-calibration-v2-9"):
+                         "classify-universe-cohort-v2-9", "classify-universe-cohort-continuation-v2-9", "classify-universe-calibration-v2-9",
+                         "classify-software-universe-pilot-v1"):
         screen_offenders += _present((
             ("--governance-root", args.governance_root),
             ("--screen-authorization", args.screen_authorization),
@@ -1221,7 +1278,10 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-universe-cohort-v2-6", "classify-universe-cohort-continuation-v2-6", "classify-universe-calibration-v2-6",
                          "classify-universe-cohort-v2-7", "classify-universe-cohort-continuation-v2-7", "classify-universe-calibration-v2-7",
                          "classify-universe-cohort-v2-8", "classify-universe-cohort-continuation-v2-8", "classify-universe-calibration-v2-8",
-                         "classify-universe-cohort-v2-9", "classify-universe-cohort-continuation-v2-9", "classify-universe-calibration-v2-9"):
+                         "classify-universe-cohort-v2-9", "classify-universe-cohort-continuation-v2-9", "classify-universe-calibration-v2-9",
+                         "select-classifier-pilot-rows",
+                         "classify-software-universe-pilot-v1",
+                         "build-annual-coverage-cohort"):
         screen_offenders += _present((
             ("--cohort-manifest", args.cohort_manifest),
         ))
@@ -1234,18 +1294,41 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-universe-calibration-v2-7",
                          "classify-universe-calibration-v2-8",
                          "classify-universe-calibration-v2-9",
-                         "build-classifier-calibration-review", "build-classifier-calibration-review-v2-2", "build-classifier-calibration-review-v2-3", "build-classifier-calibration-review-v2-4", "build-classifier-calibration-review-v2-5", "build-classifier-calibration-review-v2-6", "build-classifier-calibration-review-v2-7", "build-classifier-calibration-review-v2-8", "build-classifier-calibration-review-v2-9"):
+                         "build-classifier-calibration-review", "build-classifier-calibration-review-v2-2", "build-classifier-calibration-review-v2-3", "build-classifier-calibration-review-v2-4", "build-classifier-calibration-review-v2-5", "build-classifier-calibration-review-v2-6", "build-classifier-calibration-review-v2-7", "build-classifier-calibration-review-v2-8", "build-classifier-calibration-review-v2-9",
+                         "select-classifier-pilot-rows"):
         screen_offenders += _present((
             ("--calibration-selection", args.calibration_selection),
         ))
-    if args.mode not in ("build-classifier-calibration-review", "build-classifier-calibration-review-v2-2", "build-classifier-calibration-review-v2-3", "build-classifier-calibration-review-v2-4", "build-classifier-calibration-review-v2-5", "build-classifier-calibration-review-v2-6", "build-classifier-calibration-review-v2-7", "build-classifier-calibration-review-v2-8", "build-classifier-calibration-review-v2-9"):
+    _REVIEW_MODES = ("build-classifier-calibration-review", "build-classifier-calibration-review-v2-2", "build-classifier-calibration-review-v2-3", "build-classifier-calibration-review-v2-4", "build-classifier-calibration-review-v2-5", "build-classifier-calibration-review-v2-6", "build-classifier-calibration-review-v2-7", "build-classifier-calibration-review-v2-8", "build-classifier-calibration-review-v2-9")
+    # The two flags were one gate while only the review modes used either. The
+    # pilot selection builder pins its source 40-row artifact by digest and
+    # consumes no calibration run, so they are gated apart now.
+    if args.mode not in _REVIEW_MODES + ("select-classifier-pilot-rows",):
         screen_offenders += _present((
             ("--calibration-selection-sha256", args.calibration_selection_sha256),
+        ))
+    if args.mode not in _REVIEW_MODES:
+        screen_offenders += _present((
             ("--calibration-run-dir", args.calibration_run_dir),
         ))
-    if args.mode != "select-classifier-calibration-rows":
+    if args.mode not in ("select-classifier-calibration-rows",
+                         "select-classifier-pilot-rows",
+                         "build-annual-coverage-cohort"):
         screen_offenders += _present((
             ("--cohort-manifest-sha256", args.cohort_manifest_sha256),
+        ))
+    # The FRAME digest belongs to the coverage builder alone. --frame-manifest
+    # itself is shared with the DERA and baseline-carrier modes, which pin it a
+    # different way, so only the digest flag is gated here.
+    if args.mode != "build-annual-coverage-cohort":
+        screen_offenders += _present((
+            ("--frame-manifest-sha256", args.frame_manifest_sha256),
+        ))
+    # The pilot selection artifact belongs to the live pilot run alone. Every
+    # other mode, the builder that writes it included, refuses it.
+    if args.mode != "classify-software-universe-pilot-v1":
+        screen_offenders += _present((
+            ("--pilot-selection", args.pilot_selection),
         ))
     if args.mode != "build-screen-release":
         screen_offenders += _present((
@@ -1397,6 +1480,32 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                 "aggregate-acquisition-lineage mode requires: "
                 f"{', '.join(missing)}"
             )
+        return None
+
+    if args.mode == "build-annual-coverage-cohort":
+        # Its own block rather than a seat in the classifier loop below: that
+        # loop rejects every DERA flag wholesale, and this is the one non-DERA
+        # mode that legitimately consumes --frame-manifest.
+        offending = _present(
+            sentinel_flags + frame_flags + acquire_flags + queue_flags
+            + (("--dera-dir", args.dera_dir),)
+            + (("--bundle-dir", args.bundle_dir),)
+            + (("--config", args.config),)
+        )
+        if offending:
+            return (f"build-annual-coverage-cohort mode does not accept: "
+                    f"{', '.join(offending)}")
+        missing = _missing((
+            ("--cohort-manifest", args.cohort_manifest),
+            ("--cohort-manifest-sha256", args.cohort_manifest_sha256),
+            ("--frame-manifest", args.frame_manifest),
+            ("--frame-manifest-sha256", args.frame_manifest_sha256),
+            ("--output-dir", args.output_dir),
+            ("--run-id", args.run_id),
+        ))
+        if missing:
+            return (f"build-annual-coverage-cohort mode requires: "
+                    f"{', '.join(missing)}")
         return None
 
     if args.mode == "dera-validate":
@@ -1871,6 +1980,20 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         return None
 
     for calibration_mode, required_flags in (
+        ("select-classifier-pilot-rows", (("--cohort-manifest", "cohort_manifest"),
+                   ("--cohort-manifest-sha256", "cohort_manifest_sha256"),
+                   ("--calibration-selection", "calibration_selection"),
+                   ("--calibration-selection-sha256",
+                    "calibration_selection_sha256"),
+                   ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
+        ("classify-software-universe-pilot-v1", (("--cohort-manifest", "cohort_manifest"),
+                   ("--packet-manifest", "packet_manifest"),
+                   ("--pilot-selection", "pilot_selection"),
+                   ("--governance-root", "governance_root"),
+                   ("--screen-authorization", "screen_authorization"),
+                   ("--screen-authorization-sha256",
+                    "screen_authorization_sha256"),
+                   ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
         ("select-classifier-calibration-rows", (("--cohort-manifest", "cohort_manifest"),
                    ("--cohort-manifest-sha256", "cohort_manifest_sha256"),
                    ("--release-manifest", "release_manifest"),
@@ -3846,6 +3969,129 @@ def _main_select_classifier_calibration_rows(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_build_annual_coverage_cohort(args: argparse.Namespace) -> int:
+    """CLI boundary for the ADR-138 annual filing-year restriction. No model call."""
+    cohort = Path(args.cohort_manifest)
+    frame = Path(args.frame_manifest)
+    for label, path in (("candidate cohort manifest", cohort),
+                        ("FRAME manifest", frame)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    cohort_dir = Path(args.output_dir) / args.run_id
+    # The directory is the write-once reservation of a coverage cohort id, so only
+    # an invocation that will actually write may claim it. A dry run derives the
+    # identical partition and leaves the id free.
+    if not args.dry_run:
+        try:
+            cohort_dir.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            print(f"ERROR: {cohort_dir} already exists; a coverage cohort is "
+                  "written once.", file=sys.stderr)
+            return 2
+    try:
+        result = build_annual_coverage_cohort(
+            repo_root=REPO_ROOT, cohort_manifest_path=cohort,
+            cohort_manifest_sha256=args.cohort_manifest_sha256,
+            frame_manifest_path=frame,
+            frame_manifest_sha256=args.frame_manifest_sha256,
+            output_dir=Path(args.output_dir), coverage_cohort_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run)
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid annual coverage input: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "coverage_cohort_id": result.manifest["coverage_cohort_id"],
+        "dry_run": args.dry_run,
+        "cohort_dir": str(result.cohort_dir) if result.cohort_dir else None,
+        "counts": result.manifest["counts"],
+        "coverage_rule": result.manifest["coverage_rule"],
+        "artifact_role": result.manifest["artifact_role"],
+        "no_model_call": result.manifest["no_model_call"],
+    }, indent=2))
+    return 0
+
+
+def _main_select_classifier_pilot_rows(args: argparse.Namespace) -> int:
+    """CLI boundary for the ADR-137 ten-firm pilot selection. No model call."""
+    cohort = Path(args.cohort_manifest)
+    source = Path(args.calibration_selection)
+    for label, path in (("cohort manifest", cohort),
+                        ("source calibration selection", source)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    output_path = Path(args.output_dir) / args.run_id / PILOT_SELECTION_FILENAME
+    # As with the calibration selection, the directory is the write-once
+    # reservation of a selection id, so only an invocation that will actually
+    # write may claim it. A dry run derives the same ten rows and leaves the id
+    # free for the run that will keep them.
+    if not args.dry_run:
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            print(f"ERROR: {output_path.parent} already exists; a selection is "
+                  "written once.", file=sys.stderr)
+            return 2
+    try:
+        selection = build_pilot_selection_artifact(
+            repo_root=REPO_ROOT, cohort_manifest_path=cohort,
+            cohort_manifest_sha256=args.cohort_manifest_sha256,
+            source_selection_path=source,
+            source_selection_sha256=args.calibration_selection_sha256,
+            output_path=output_path, selection_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run)
+    except (ScreenInputError, ValueError) as exc:
+        print(f"ERROR: invalid pilot selection input: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "selection_id": selection["selection_id"], "dry_run": args.dry_run,
+        "output_path": None if args.dry_run else str(output_path),
+        "counts": selection["counts"], "sampling": selection["sampling"],
+    }, indent=2))
+    return 0
+
+
+def _main_classify_software_universe_pilot_v1(args: argparse.Namespace) -> int:
+    """CLI boundary for the ADR-137 governed live firm-level pilot run.
+
+    Deliberately not routed through ``_classifier_paths``: that helper resolves
+    the overlay and release a V2.x run needs to render the earlier verdict, and
+    the pilot must never load them. Its inputs are the cohort, the packet cohort
+    and its own ten-row selection.
+    """
+    cohort = Path(args.cohort_manifest)
+    packet = Path(args.packet_manifest)
+    selection = Path(args.pilot_selection)
+    for label, path in (("cohort manifest", cohort), ("packet manifest", packet),
+                        ("pilot selection", selection)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    governance_root = Path(args.governance_root)
+    if not governance_root.is_dir():
+        print(f"ERROR: governance root not found: {governance_root}",
+              file=sys.stderr)
+        return 2
+    try:
+        result = run_lineage_classifier_pilot_v1(
+            repo_root=REPO_ROOT, cohort_manifest_path=cohort,
+            packet_manifest_path=packet, selection_path=selection,
+            governance_root=governance_root,
+            authorization_reference=args.screen_authorization,
+            authorization_sha256=args.screen_authorization_sha256,
+            output_dir=Path(args.output_dir), run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid pilot input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    return _report_classifier_run(result, what="pilot run")
+
+
 def _main_classify_universe_calibration(args: argparse.Namespace, *,
                                         route=None) -> int:
     """CLI boundary for the ADR-127 governed live calibration run."""
@@ -4600,6 +4846,12 @@ def main(argv: list[str] | None = None) -> int:
         return _main_build_human_review_overlay(args)
     if args.mode == "build-classifier-candidate-cohort":
         return _main_build_classifier_candidate_cohort(args)
+    if args.mode == "build-annual-coverage-cohort":
+        return _main_build_annual_coverage_cohort(args)
+    if args.mode == "select-classifier-pilot-rows":
+        return _main_select_classifier_pilot_rows(args)
+    if args.mode == "classify-software-universe-pilot-v1":
+        return _main_classify_software_universe_pilot_v1(args)
     if args.mode == "select-classifier-calibration-rows":
         return _main_select_classifier_calibration_rows(args)
     if args.mode == "classify-universe-calibration":
