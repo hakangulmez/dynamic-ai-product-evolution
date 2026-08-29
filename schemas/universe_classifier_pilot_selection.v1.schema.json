@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_pilot_selection.v1.schema.json",
+  "title": "Software universe classifier pilot selection v0.1.0",
+  "description": "The immutable ten-filing pilot selection. Each row is identified by (cik, accession), never by CIK alone, and carries its high-recall and human-overlay provenance so a later audit can ask which admission path produced it -- provenance the pilot renderer never reads, because showing the model an earlier verdict would make this a test of agreement rather than of judgement. The ten are a deliberate mixed stress set: obvious software, services/software boundaries, retail/e-commerce boundaries, internal or third-party technology cases, and one clear negative control. They are chosen to probe whether the prompt yields sensible four-axis judgements with resolving evidence references, not to compare against any earlier classifier.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "selection_contract",
+    "selection_id",
+    "selection_kind",
+    "cohort_id",
+    "cohort_manifest_sha256",
+    "packet_manifest_sha256",
+    "source_selection_path",
+    "source_selection_sha256",
+    "sampling",
+    "rows",
+    "counts",
+    "no_model_call",
+    "limitations",
+    "run_timestamp"
+  ],
+  "properties": {
+    "selection_contract": {
+      "const": "universe_classifier_pilot_selection@0.1.0"
+    },
+    "selection_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selection_kind": {
+      "const": "classifier_pilot_v1"
+    },
+    "cohort_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cohort_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_selection_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_selection_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "strata"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "named_pilot_strata@1"
+        },
+        "strata": {
+          "type": "array",
+          "minItems": 1
+        }
+      }
+    },
+    "rows": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "accession",
+          "admission_origin",
+          "admission_provenance",
+          "cik",
+          "company_id",
+          "packet_sha256",
+          "pilot_stratum",
+          "screen_status",
+          "source_id"
+        ],
+        "properties": {
+          "cik": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$"
+          },
+          "accession": {
+            "type": "string",
+            "minLength": 1
+          },
+          "company_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "packet_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "pilot_stratum": {
+            "description": "The analytic role a row plays in the pilot. This is NOT the admission path: that is carried separately by admission_origin and screen_status, and those are what the pilot's coverage requirement is checked against. In this ten the human-overlay admissions and the obvious-software anchors happen to be the same two firms, so a separate human-overlay label would name an empty stratum and is deliberately absent.",
+            "enum": [
+              "P1_obvious_software",
+              "P2_model_screen_likely",
+              "P3_model_screen_boundary",
+              "P5_economically_ambiguous",
+              "P6_clear_negative"
+            ]
+          },
+          "admission_origin": {
+            "description": "AUDIT ONLY. Never rendered to the model.",
+            "enum": [
+              "model_screen",
+              "human_review"
+            ]
+          },
+          "screen_status": {
+            "description": "AUDIT ONLY. Never rendered to the model.",
+            "enum": [
+              "LIKELY_ELIGIBLE",
+              "BOUNDARY_OR_UNCERTAIN"
+            ]
+          },
+          "admission_provenance": {
+            "description": "AUDIT ONLY. Never rendered to the model.",
+            "type": "object"
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object"
+    },
+    "no_model_call": {
+      "const": true
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1
+    },
+    "run_timestamp": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

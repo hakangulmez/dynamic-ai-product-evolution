@@ -9311,6 +9311,100 @@ consumer modules, four CLI modes, seven test modules, the registry (0.69.0 to
 five registry/manifest guards, and the absolute registry literals in eleven
 screen suites.
 
+## ADR-137 — A smaller question, asked outside the ladder
+
+**Status.** Accepted, fixture-first, explicitly non-promotable. No model call, no
+network, no governance artifact, no `data/runs` write, no selection materialised,
+no calibration. Every V2.x contract, prompt, selection, governance artifact, run
+and review is byte-unchanged.
+
+**What this is not.** Not V2.10 and not a patch to the V2.x classifier ladder. It
+shares no contract, schema, prompt, route or filename with any V2.x version, and a
+test asserts the two contract sets cannot read each other's output.
+
+**The question it asks.** V2.x asks what a firm sells, on six economic axes, citing
+sentence spans. The pilot asks one firm-level thing -- is a customer-facing digital
+or software offering economically central -- on four axes, citing whole Item 1
+evidence blocks. It builds no product catalogue and performs no
+product-capability-task extraction; that stage studies products and tasks later.
+
+**Four axes, and no tier.** `customer_facing_functional_product`,
+`software_centrality`, `firm_structure` and `commercial_materiality`, plus a
+confidence. `data_eligible` and `economically_eligible` are absent: they are
+eligibility judgements a firm-level read of Item 1 cannot settle, and asking for
+them would invite exactly the guessing the prompt spends a section forbidding.
+The pilot also derives **no tier at all** -- no `tier` field, no rule trace, no
+import of the tier engine. A tier is a question for a later stage with more than
+Item 1 in front of it, and deriving one here would lend a rule config's authority
+to a deliberately narrower judgement.
+
+**Three properties are enforced, not requested.** The model never sees the earlier
+verdict: `render_pilot_prompt` takes a template and a packet, and there is no
+parameter through which a prior screen result, overlay decision or classification
+could arrive. The model never writes evidence text: it returns `passage_ref`
+addresses and the pipeline retrieves the block's identity, text, offsets and
+digest, so there is no field to fabricate into. And every stored evidence item
+carries the packet's own `passage_id`, because `P001` is an ordinal over one
+packet's blocks and the `passage_id` is what still names the block if a future
+packet build renumbers them.
+
+**Offsets are raw-source offsets.** `byte_start` and `byte_end` are the packet's
+boundaries into the raw SEC source document, not into a normalized or re-rendered
+Item 1. They are copied unchanged, so a stored row is checkable against the filing
+rather than against a rendering of it.
+
+**Zero to three references, with one conditional, enforced twice.** An empty
+evidence array is correct only when all four substantive axes are UNKNOWN, and that
+condition is expressed in the schema rather than in prose: a response that concludes
+something while citing nothing is refused, not merely discouraged. The same rule is
+mirrored in the stored record contract, so a row cannot reach disk asserting a
+conclusion it cites nothing for even if it arrived by some path other than the
+model-facing validator.
+
+**Where it deliberately differs from V2.x.** Invalid JSON, a contract violation, a
+forbidden field and an unresolvable reference each degrade one row to
+`review_uncertain` with a reason, and the run continues. The V2.x path refuses the
+row and can exhaust a tolerance; the V2.9 run ended at row 16 that way. A pilot
+exists to find out what happens across its rows, so a bad response must cost one
+row rather than the answer.
+
+**Evidence blocks, not paragraphs.** No new segmentation is introduced. The packet
+already carries heading-derived Item 1 blocks and `passage_refs` already numbers
+them P001, P002, and so on; the pilot reuses that mapping exactly, so a reference
+means the same thing here as everywhere else. Across all 7,042 packets the block
+count runs 1 to 306, so the three-digit reference space is not near its ceiling.
+
+**Ten named filings: a mixed stress set.** Each row is identified by
+`(cik, accession)`, never by CIK alone, because one issuer can file more than once
+and a CIK-keyed row would silently merge two filings. The ten are chosen, not
+sampled, to put the prompt under the pressures it is most likely to fail on:
+firms whose software offering is obvious, the services-versus-software boundary,
+the retail-plus-e-commerce boundary, cases where the only technology in the filing
+is internal or belongs to a third party, and one clear negative control. They are
+drawn from the existing 40-row calibration selection, which makes them a chosen
+subset rather than an independent sample. Ten rows cannot estimate a rate, and
+these counts describe these rows only.
+
+**What this pilot is for, and what it is not.** Its immediate purpose is to inspect
+whether this prompt can produce sensible four-axis firm-level judgements with
+evidence-block references that actually resolve. It is **not** a comparison against
+V2.8, V2.9 or any other classifier, and it carries no machinery that would imply
+one: no per-row pairing flags, no reads of any earlier run's archive, and no claim
+in the selection artifact that a comparison is available. A comparison may be worth
+running later, but it would be a separate piece of work with its own design, and
+building half of it here would have let a reader assume the pilot had already made
+the case.
+
+**Vocabulary.** A `pilot_stratum` value naming human-overlay admissions was drafted
+and removed: in this ten the overlay admissions and the obvious-software anchors are
+the same two filings, so that label could never be taken, and coverage of the four
+required admission dimensions is asserted from `admission_origin` and
+`screen_status` instead.
+
+**Not decided here.** Whether a simpler firm-level classifier is better than V2.x
+is an empirical question this ADR does not answer. The pilot is not promotable, no
+governance exists for it, and no full-cohort work follows from it.
+
 ## ADR-136 — A semantic A/B, with every mechanism held still
 
 **Status.** Accepted, fixture-first, and explicitly non-promotable. No model

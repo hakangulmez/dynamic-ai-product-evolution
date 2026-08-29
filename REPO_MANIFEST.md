@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **1000**
+Total tracked/scaffold files listed: **1006**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -328,6 +328,7 @@ Total tracked/scaffold files listed: **1000**
 - `prompts/adjudication/disagreement_adjudication.md`
 - `prompts/adjudication/universe_boundary_adjudication.md`
 - `prompts/discovery/official_source_discovery.md`
+- `prompts/discovery/software_universe_classifier_pilot.v1.md`
 - `prompts/discovery/universe_full_classification.md`
 - `prompts/discovery/universe_full_classification.v2_1.md`
 - `prompts/discovery/universe_full_classification.v2_2.md`
@@ -464,6 +465,9 @@ Total tracked/scaffold files listed: **1000**
 - `schemas/universe_baseline_carrier_manifest.schema.json`
 - `schemas/universe_baseline_packet.schema.json`
 - `schemas/universe_baseline_packet.v2.schema.json`
+- `schemas/universe_classifier_pilot_axes_record.v1.schema.json`
+- `schemas/universe_classifier_pilot_record.v1.schema.json`
+- `schemas/universe_classifier_pilot_selection.v1.schema.json`
 - `schemas/universe_run_manifest.schema.json`
 - `schemas/universe_run_manifest.v2.schema.json`
 - `schemas/universe_screen_adapter_enablement.schema.json`
@@ -626,6 +630,7 @@ Total tracked/scaffold files listed: **1000**
 - `specs/SPEC-027-adapter-qualification-and-enablement.md`
 - `src/README.md`
 - `src/dynamic_ai_products/__init__.py`
+- `src/dynamic_ai_products/classifier_pilot_v1.py`
 - `src/dynamic_ai_products/cli.py`
 - `src/dynamic_ai_products/collection/__init__.py`
 - `src/dynamic_ai_products/collection/canonical_url.py`
@@ -948,6 +953,7 @@ Total tracked/scaffold files listed: **1000**
 - `tests/ui/test_local_ui_scaffold.py`
 - `tests/universe/test_acquisition_queue.py`
 - `tests/universe/test_baseline_carrier.py`
+- `tests/universe/test_classifier_pilot_v1.py`
 - `tests/universe/test_classifier_v2_7_prompt.py`
 - `tests/universe/test_classifier_v2_8_evidence.py`
 - `tests/universe/test_classifier_v2_9_prompt.py`

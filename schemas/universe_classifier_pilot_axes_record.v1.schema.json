@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_pilot_axes_record.v1.schema.json",
+  "title": "Software universe classifier pilot axes record v0.1.0",
+  "description": "The model-facing contract for the firm-level pilot. Four substantive axes, a confidence, and zero to three evidence-block references. It shares nothing with the V2.x classifier ladder. The model selects addresses and never writes text: there is no quote field, no offsets, no digest and no tier, so a fabricated quote and a model-supplied tier are unrepresentable rather than merely refused. An empty evidence array is admitted only when every substantive axis is UNKNOWN -- a conclusion with no citation is a contract violation, not a style problem.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "customer_facing_functional_product",
+    "software_centrality",
+    "firm_structure",
+    "commercial_materiality",
+    "confidence",
+    "evidence"
+  ],
+  "properties": {
+    "customer_facing_functional_product": {
+      "enum": [
+        "YES",
+        "NO",
+        "UNKNOWN"
+      ]
+    },
+    "software_centrality": {
+      "enum": [
+        "CORE",
+        "CO_ESSENTIAL",
+        "ENABLING",
+        "PERIPHERAL",
+        "UNKNOWN"
+      ]
+    },
+    "firm_structure": {
+      "enum": [
+        "PURE_PLAY",
+        "SOFTWARE_DOMINANT",
+        "MIXED_SEPARABLE",
+        "MIXED_NONSEPARABLE",
+        "SOFTWARE_PERIPHERAL",
+        "UNKNOWN"
+      ]
+    },
+    "commercial_materiality": {
+      "enum": [
+        "DOMINANT",
+        "MATERIAL",
+        "MINOR",
+        "UNKNOWN"
+      ]
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "evidence": {
+      "description": "Zero to three evidence-block references. Addresses only: the pipeline retrieves each block's text, identity and offsets.",
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "axis",
+          "passage_ref"
+        ],
+        "properties": {
+          "axis": {
+            "enum": [
+              "customer_facing_functional_product",
+              "software_centrality",
+              "firm_structure",
+              "commercial_materiality"
+            ]
+          },
+          "passage_ref": {
+            "type": "string",
+            "pattern": "^P[0-9]{3}$"
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "description": "An empty evidence array requires that every substantive axis be UNKNOWN. Any stated conclusion must cite at least one block.",
+      "if": {
+        "properties": {
+          "evidence": {
+            "maxItems": 0
+          }
+        },
+        "required": [
+          "evidence"
+        ]
+      },
+      "then": {
+        "properties": {
+          "customer_facing_functional_product": {
+            "const": "UNKNOWN"
+          },
+          "software_centrality": {
+            "const": "UNKNOWN"
+          },
+          "firm_structure": {
+            "const": "UNKNOWN"
+          },
+          "commercial_materiality": {
+            "const": "UNKNOWN"
+          }
+        },
+        "required": [
+          "customer_facing_functional_product",
+          "software_centrality",
+          "firm_structure",
+          "commercial_materiality"
+        ]
+      }
+    },
+    {
+      "description": "The prompt's own rule, made structural: software cannot be CORE or CO_ESSENTIAL to a customer outcome the filing says does not exist. Stated only for NO -- an UNKNOWN customer-facing product leaves the centrality question genuinely open, and constraining it would force a guess the prompt spends a section forbidding.",
+      "if": {
+        "properties": {
+          "customer_facing_functional_product": {
+            "const": "NO"
+          }
+        },
+        "required": [
+          "customer_facing_functional_product"
+        ]
+      },
+      "then": {
+        "properties": {
+          "software_centrality": {
+            "not": {
+              "enum": [
+                "CORE",
+                "CO_ESSENTIAL"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

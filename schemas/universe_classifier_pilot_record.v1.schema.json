@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_pilot_record.v1.schema.json",
+  "title": "Software universe classifier pilot record v0.1.0",
+  "description": "One stored pilot row. Two provenance classes sit side by side: the model's firm-level judgement with its evidence-block addresses, and the pipeline's retrieval of those blocks. There is no tier here and no rule trace -- the pilot answers four axes and stops, and any tier question belongs to a later stage that can see more than Item 1. A row whose response cannot be used is stored as review_uncertain with a reason and no axes; the run continues, because a pilot exists to find out what happens across its rows.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_contract",
+    "record_kind",
+    "cik",
+    "accession",
+    "company_id",
+    "source_id",
+    "packet_sha256",
+    "prompt_sha256",
+    "model_route",
+    "admission_provenance",
+    "axes",
+    "review_reason_code",
+    "review_detail"
+  ],
+  "properties": {
+    "record_contract": {
+      "const": "universe_classifier_pilot_record@0.1.0"
+    },
+    "record_kind": {
+      "enum": [
+        "classified",
+        "review_uncertain"
+      ]
+    },
+    "cik": {
+      "type": "string",
+      "pattern": "^[0-9]{10}$"
+    },
+    "accession": {
+      "description": "Names the filing. A row is (cik, accession), never a CIK alone.",
+      "type": "string",
+      "minLength": 1
+    },
+    "company_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packet_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prompt_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "model_route": {
+      "type": "object"
+    },
+    "admission_provenance": {
+      "description": "Carried for audit and NEVER rendered to the model. The pilot prompt shows Item 1 and nothing else.",
+      "type": "object"
+    },
+    "axes": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "customer_facing_functional_product",
+            "software_centrality",
+            "firm_structure",
+            "commercial_materiality",
+            "confidence",
+            "evidence"
+          ],
+          "properties": {
+            "customer_facing_functional_product": {
+              "enum": [
+                "YES",
+                "NO",
+                "UNKNOWN"
+              ]
+            },
+            "software_centrality": {
+              "enum": [
+                "CORE",
+                "CO_ESSENTIAL",
+                "ENABLING",
+                "PERIPHERAL",
+                "UNKNOWN"
+              ]
+            },
+            "firm_structure": {
+              "enum": [
+                "PURE_PLAY",
+                "SOFTWARE_DOMINANT",
+                "MIXED_SEPARABLE",
+                "MIXED_NONSEPARABLE",
+                "SOFTWARE_PERIPHERAL",
+                "UNKNOWN"
+              ]
+            },
+            "commercial_materiality": {
+              "enum": [
+                "DOMINANT",
+                "MATERIAL",
+                "MINOR",
+                "UNKNOWN"
+              ]
+            },
+            "confidence": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            },
+            "evidence": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "axis",
+                  "passage_ref",
+                  "passage_id",
+                  "evidence_text",
+                  "byte_start",
+                  "byte_end",
+                  "text_sha256",
+                  "provenance"
+                ],
+                "properties": {
+                  "axis": {
+                    "description": "MODEL-AUTHORED address component.",
+                    "enum": [
+                      "customer_facing_functional_product",
+                      "software_centrality",
+                      "firm_structure",
+                      "commercial_materiality"
+                    ]
+                  },
+                  "passage_ref": {
+                    "description": "MODEL-AUTHORED address component.",
+                    "type": "string",
+                    "pattern": "^P[0-9]{3}$"
+                  },
+                  "passage_id": {
+                    "description": "PIPELINE-DERIVED. The packet's own stable identifier for the evidence block the reference resolved to. Stored because P-numbering is an ordinal over one packet's blocks: the passage_id is what still names this block if a future packet build renumbers them.",
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evidence_text": {
+                    "description": "PIPELINE-DERIVED. The exact text of the referenced Item 1 evidence block, retrieved from the hash-bound packet. The model authored none of it.",
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "byte_start": {
+                    "description": "PIPELINE-DERIVED. Offset of the block's first byte in the RAW SEC source document, not in any normalized or re-rendered Item 1 text. The packet carries these boundaries and they are copied unchanged.",
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "byte_end": {
+                    "description": "PIPELINE-DERIVED. Offset one past the block's last byte in the RAW SEC source document, on the same basis as byte_start.",
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "text_sha256": {
+                    "description": "PIPELINE-DERIVED digest over evidence_text.",
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "provenance": {
+                    "description": "Names who authored the retrieved fields.",
+                    "const": "pipeline_derived"
+                  }
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "description": "The same rule the model-facing contract enforces, mirrored here so a stored row cannot assert a conclusion it cites nothing for. An empty evidence array is admitted only when every substantive axis is UNKNOWN.",
+              "if": {
+                "properties": {
+                  "evidence": {
+                    "maxItems": 0
+                  }
+                },
+                "required": [
+                  "evidence"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "customer_facing_functional_product": {
+                    "const": "UNKNOWN"
+                  },
+                  "software_centrality": {
+                    "const": "UNKNOWN"
+                  },
+                  "firm_structure": {
+                    "const": "UNKNOWN"
+                  },
+                  "commercial_materiality": {
+                    "const": "UNKNOWN"
+                  }
+                },
+                "required": [
+                  "customer_facing_functional_product",
+                  "software_centrality",
+                  "firm_structure",
+                  "commercial_materiality"
+                ]
+              }
+            },
+            {
+              "description": "The prompt's own rule, made structural: software cannot be CORE or CO_ESSENTIAL to a customer outcome the filing says does not exist. Stated only for NO -- an UNKNOWN customer-facing product leaves the centrality question genuinely open, and constraining it would force a guess the prompt spends a section forbidding.",
+              "if": {
+                "properties": {
+                  "customer_facing_functional_product": {
+                    "const": "NO"
+                  }
+                },
+                "required": [
+                  "customer_facing_functional_product"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "software_centrality": {
+                    "not": {
+                      "enum": [
+                        "CORE",
+                        "CO_ESSENTIAL"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "review_reason_code": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "review_detail": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}
