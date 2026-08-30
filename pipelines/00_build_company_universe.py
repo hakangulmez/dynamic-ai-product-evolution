@@ -1238,7 +1238,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-universe-cohort-v2-7", "classify-universe-cohort-continuation-v2-7", "classify-universe-calibration-v2-7",
                          "classify-universe-cohort-v2-8", "classify-universe-cohort-continuation-v2-8", "classify-universe-calibration-v2-8",
                          "classify-universe-cohort-v2-9", "classify-universe-cohort-continuation-v2-9", "classify-universe-calibration-v2-9",
-                         "classify-software-universe-pilot-v1"):
+                         "classify-software-universe-pilot-v1",
+                         "classify-software-universe-pilot-v2"):
         screen_offenders += _present((
             ("--governance-root", args.governance_root),
             ("--screen-authorization", args.screen_authorization),

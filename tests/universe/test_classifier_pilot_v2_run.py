@@ -60,6 +60,26 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def test_v2_cli_accepts_its_own_governance_flags():
+    """ADR-140: a governed route must not reject its required authority."""
+    spec = importlib.util.spec_from_file_location(
+        "pilot_v2_cli_under_test", ROOT / "pipelines" / "00_build_company_universe.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    args = cli.build_parser().parse_args([
+        "--mode", "classify-software-universe-pilot-v2",
+        "--cohort-manifest", "/tmp/cohort.json",
+        "--annual-coverage-cohort-manifest", "/tmp/coverage.json",
+        "--packet-manifest", "/tmp/packets.json",
+        "--pilot-selection", "/tmp/selection.json",
+        "--governance-root", "/tmp/governance",
+        "--screen-authorization", "pilot_authorization.json",
+        "--screen-authorization-sha256", "0" * 64,
+        "--output-dir", "/tmp/output", "--run-id", "pilot-v2-cli-fixture",
+    ])
+    assert cli._reject_cross_mode_flags(args) is None
+
+
 def _grant(tmp_path: Path) -> tuple[Path, str]:
     if not all(path.is_file() for path in (COVERAGE, COHORT, PACKETS, SELECTION)):
         pytest.skip("the governed ADR-138/139 data inputs are absent")
