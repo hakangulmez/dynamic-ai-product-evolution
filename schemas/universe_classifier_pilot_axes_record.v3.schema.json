@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_pilot_axes_record.v3.schema.json",
+  "title": "Software universe classifier pilot axes record v0.3.0",
+  "description": "Model-facing Item 1 product gate. The model first decides whether the firm sells a separately identifiable customer-facing digital or software product; it then classifies centrality only for YES. It selects shared Item 1 addresses and cannot author evidence text, quotations, products, capabilities, tasks, tiers, offsets or digests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["customer_facing_digital_product", "software_centrality", "confidence", "passage_refs"],
+  "properties": {
+    "customer_facing_digital_product": {"enum": ["YES", "NO", "UNKNOWN"]},
+    "software_centrality": {"enum": ["CORE", "CO_ESSENTIAL", "ENABLING", "PERIPHERAL", "UNKNOWN"]},
+    "confidence": {"enum": ["high", "medium", "low"]},
+    "passage_refs": {"type": "array", "minItems": 0, "maxItems": 3, "uniqueItems": true, "items": {"type": "string", "pattern": "^P[0-9]{3}$"}}
+  },
+  "allOf": [
+    {"if": {"properties": {"passage_refs": {"maxItems": 0}}, "required": ["passage_refs"]}, "then": {"properties": {"customer_facing_digital_product": {"const": "UNKNOWN"}, "software_centrality": {"const": "UNKNOWN"}}}},
+    {"if": {"properties": {"customer_facing_digital_product": {"enum": ["NO", "UNKNOWN"]}}, "required": ["customer_facing_digital_product"]}, "then": {"properties": {"software_centrality": {"const": "UNKNOWN"}}}}
+  ]
+}

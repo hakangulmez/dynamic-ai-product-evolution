@@ -9934,3 +9934,15 @@ non-promotable. A V3 grant, dry run, and live call remain separately governed.
 - RESOLVED by ADR-112: a per-row model-output failure is a recorded outcome in a separate, structurally non-promotable diagnostic canary, while the authoritative screen keeps its all-or-nothing fail-closed contract unchanged. The authoritative path was not weakened; a second path was added beside it.
 - Which cases remain eligible for the frozen test partition after ADR-015 exposure. The product-stage predictions of all fifteen firms at their most recent period were inspected during design work and are permanently ever-exposed; no blind frozen case can be built from that stage at that period. Capability-stage output was inspected for two firms and task-stage output for one, and the 2021-2024 periods were examined only in aggregate. A frozen partition is therefore still constructible from the capability and task stages of the thirteen unexamined firms and from earlier periods, and does not require ingesting new firms. The partition membership itself is a case-set-manifest decision and is not settled here.
 - Whether a verb-less feature name is a capability. `docs/methodology/PRODUCT_CAPABILITY_TASK_ONTOLOGY.md` defines a capability as "a concrete function the product provides" and every one of its five examples is a verb phrase, but the definition sentence does not require one; the verb rule is stated in `capability_discovery_schema_v3` and nowhere in the governing documents. Measured on one filing, HubSpot FY2024, three readings put the capability count at 58, 66 and 69: the rule changes the recorded form rather than the count, because the registered prompt verbalises each noun one-for-one (`call tracking` becomes `track calls`). The structural divergence sits one layer down and is stated as a count rather than a rate: of the pipeline's 64 tasks, 60 reference exactly one capability. A single smoke run supports that count; it does not support a rate, and an earlier revision of this entry claimed a factor-of-two capability difference and a task-per-capability ratio without checking either against the outputs on disk. It is a construct decision and belongs to the methodology owner; recording it in the ontology rather than in a prompt is what would bind a gold annotation.
+
+
+## ADR-142 — product-first Item 1 gate
+
+The V3 ten-filing pilot made structurally valid two-axis outputs but exposed a
+semantic ambiguity: an online channel, internal/embedded technology, or a
+third-party system can sound like a broad “digital offering” without being a
+separately identifiable product a customer obtains from the firm. V4 therefore
+asks product existence first and centrality only conditional on product YES. For
+NO or UNKNOWN product, centrality is contractually UNKNOWN. This is a successor
+route with its own prompt, axes/record contracts, authorization, manifest and
+output names; V3 artifacts stay immutable.
