@@ -125,6 +125,7 @@ from .universe.lineage_screen import (
 )
 
 __all__ = [
+    "PilotRunRoute",
     "PILOT_AUTHORIZATION_CONTRACT",
     "PILOT_AUTHORIZATION_SCHEMA",
     "PILOT_MANIFEST_CONTRACT",
@@ -160,6 +161,46 @@ PILOT_AUTHORIZATION_SCHEMA = (
 #: it wants and the name exists so the CLI and the decision log can agree on one.
 PILOT_RUN_ROOT_NAME = "universe-classifier-pilot-v1-runs"
 
+
+@dataclass(frozen=True)
+class PilotRunRoute:
+    """Contract-owned names for one isolated pilot execution route."""
+
+    run_kind: str
+    records_filename: str
+    manifest_filename: str
+    raw_responses_filename: str
+    manifest_contract: str
+    manifest_schema: str
+    authorization_contract: str
+    authorization_schema: str
+    run_root_name: str
+    selection_contract: str
+    selection_kind: str
+    selection_source: str
+    load_selection: Callable[[Path, str, Path], dict]
+
+
+def _load_v1_selection(path: Path, digest: str, _root: Path) -> dict:
+    return require_pilot_selection(path, expected_sha256=digest)
+
+
+PILOT_V1_ROUTE = PilotRunRoute(
+    run_kind=PILOT_RUN_KIND,
+    records_filename=PILOT_RECORDS_FILENAME,
+    manifest_filename=PILOT_MANIFEST_FILENAME,
+    raw_responses_filename=PILOT_RAW_RESPONSES_FILENAME,
+    manifest_contract=PILOT_MANIFEST_CONTRACT,
+    manifest_schema=PILOT_MANIFEST_SCHEMA,
+    authorization_contract=PILOT_AUTHORIZATION_CONTRACT,
+    authorization_schema=PILOT_AUTHORIZATION_SCHEMA,
+    run_root_name=PILOT_RUN_ROOT_NAME,
+    selection_contract=PILOT_SELECTION_CONTRACT,
+    selection_kind="classifier_pilot_v1",
+    selection_source="calibration",
+    load_selection=_load_v1_selection,
+)
+
 RECEIPT_CONTRACT = "universe_screen_failure_receipt@0.1.0"
 
 _DETAIL_LIMIT = 400
@@ -181,6 +222,7 @@ def _detail(text: str) -> str:
 
 @dataclass
 class _PilotPreflight:
+    route: PilotRunRoute
     authorization: dict
     enablement: dict
     contract_digest: str
@@ -192,6 +234,7 @@ class _PilotPreflight:
     selection_path: str
     cohort: dict
     cohort_digests: dict
+    coverage_digests: dict | None
     packet_digests: dict
     packets: dict
     model_route: dict
@@ -202,6 +245,7 @@ def _pilot_preflight(
     *, root: Path, governance_root: Path, authorization_reference: str,
     authorization_sha256: str, cohort_manifest_path: Path,
     packet_manifest_path: str | Path, selection_path: str | Path,
+    coverage_manifest_path: str | Path | None, route: PilotRunRoute,
     clock: Callable[[], datetime],
 ) -> _PilotPreflight:
     """Everything provable, proven, before any output or network exists.
@@ -213,12 +257,12 @@ def _pilot_preflight(
     authorization, _ = _hydrate_pinned(
         governance_root, authorization_reference, authorization_sha256,
         "classifier pilot authorization")
-    if authorization.get("authorization_contract") != PILOT_AUTHORIZATION_CONTRACT:
+    if authorization.get("authorization_contract") != route.authorization_contract:
         raise ScreenInputError(
             f"The grant declares "
             f"{authorization.get('authorization_contract')!r}; this route runs "
-            f"{PILOT_AUTHORIZATION_CONTRACT!r} only.")
-    _validate(authorization, _load_schema(root, PILOT_AUTHORIZATION_SCHEMA),
+            f"{route.authorization_contract!r} only.")
+    _validate(authorization, _load_schema(root, route.authorization_schema),
               "Classifier pilot authorization")
     enablement, _ = _hydrate_pinned(
         governance_root, authorization["screen_adapter_enablement_reference"],
@@ -264,7 +308,7 @@ def _pilot_preflight(
         raise ScreenInputError(
             "Authorization route, policy versions, ceilings or contracts do not "
             "match the committed ones.")
-    if authorization["run_kind"] != PILOT_RUN_KIND:
+    if authorization["run_kind"] != route.run_kind:
         raise ScreenInputError("The grant names a different run kind.")
     if authorization["promotable"] is not False:
         raise ScreenInputError("A pilot grant may never be promotable.")
@@ -325,21 +369,70 @@ def _pilot_preflight(
             f"The grant names selection "
             f"{authorization['selection_artifact_path']!r}, not "
             f"{str(resolved_selection)!r}.")
-    selection = require_pilot_selection(
-        resolved_selection,
-        expected_sha256=authorization["selection_artifact_sha256"])
+    selection = route.load_selection(
+        resolved_selection, authorization["selection_artifact_sha256"], root)
     if selection["selection_kind"] != authorization["selection_kind"]:
         raise ScreenInputError("The grant names a different selection kind.")
-    if selection["cohort_manifest_sha256"] != authorization["cohort_manifest_sha256"]:
+    selection_cohort_sha = (selection["cohort_manifest_sha256"]
+                            if route.selection_source == "calibration"
+                            else selection["candidate_cohort_manifest_sha256"])
+    selection_cohort_id = (selection["cohort_id"]
+                           if route.selection_source == "calibration"
+                           else selection["candidate_cohort_id"])
+    if selection_cohort_sha != authorization["cohort_manifest_sha256"]:
         raise ScreenInputError(
             "The selection was built from a different cohort than the one this "
             "grant binds.")
-    if selection["cohort_id"] != authorization["cohort_id"]:
+    if selection_cohort_id != authorization["cohort_id"]:
         raise ScreenInputError("The selection names a different cohort id.")
     if selection["packet_manifest_sha256"] != authorization["packet_manifest_sha256"]:
         raise ScreenInputError(
             "The selection was built against a different packet cohort than the "
             "one this grant binds.")
+
+    coverage_digests = None
+    if route.selection_source == "annual_coverage":
+        if coverage_manifest_path is None:
+            raise ScreenInputError(
+                "The annual-coverage pilot route requires its coverage manifest.")
+        from .classifier_annual_coverage_cohort import (
+            COVERAGE_MANIFEST_FILENAME,
+            COVERAGE_RECORDS_FILENAME,
+            require_annual_coverage_cohort,
+        )
+
+        coverage_path = Path(coverage_manifest_path)
+        if coverage_path.name != COVERAGE_MANIFEST_FILENAME or not coverage_path.is_file():
+            raise ScreenInputError("The annual coverage manifest is missing or has the wrong filename.")
+        coverage_raw = coverage_path.read_bytes()
+        if _sha256(coverage_raw) != authorization["coverage_cohort_manifest_sha256"]:
+            raise ScreenInputError("Authorization binds a different annual coverage manifest.")
+        require_annual_coverage_cohort(coverage_path.parent)
+        coverage = json.loads(_decode_utf8(coverage_raw, COVERAGE_MANIFEST_FILENAME))
+        coverage_source = coverage["sources"]["candidate_cohort"]
+        if (coverage_source["cohort_id"] != cohort["cohort_id"]
+                or coverage_source["manifest_sha256"]
+                != authorization["cohort_manifest_sha256"]
+                or coverage_source["records_jsonl_sha256"]
+                != _sha256(cohort_records_raw)):
+            raise ScreenInputError(
+                "The annual coverage cohort was built from a different "
+                "candidate cohort than this grant binds.")
+        if (coverage["coverage_cohort_id"] != authorization["coverage_cohort_id"]
+                or selection["coverage_cohort_id"] != authorization["coverage_cohort_id"]
+                or selection["coverage_cohort_manifest_sha256"]
+                != authorization["coverage_cohort_manifest_sha256"]
+                or selection["coverage_cohort_records_sha256"]
+                != authorization["coverage_cohort_records_sha256"]):
+            raise ScreenInputError("Selection, coverage cohort and authorization disagree.")
+        records_raw = (coverage_path.parent / COVERAGE_RECORDS_FILENAME).read_bytes()
+        if _sha256(records_raw) != authorization["coverage_cohort_records_sha256"]:
+            raise ScreenInputError("Annual coverage records no longer match the grant.")
+        coverage_digests = {
+            "coverage_cohort_id": coverage["coverage_cohort_id"],
+            "manifest_sha256": authorization["coverage_cohort_manifest_sha256"],
+            "records_jsonl_sha256": _sha256(records_raw),
+        }
 
     plan: list[tuple[dict, dict]] = []
     for row in selection["rows"]:
@@ -380,6 +473,7 @@ def _pilot_preflight(
             f"{screen_external_request_cap_v2(called)}.")
 
     return _PilotPreflight(
+        route=route,
         authorization=authorization, enablement=enablement, contract_digest=digest,
         endpoints=endpoints,
         prompt_text=_decode_utf8(prompt_raw, "classifier pilot prompt"),
@@ -389,6 +483,7 @@ def _pilot_preflight(
         cohort_digests={"cohort_id": cohort["cohort_id"],
                         "manifest_sha256": authorization["cohort_manifest_sha256"],
                         "records_jsonl_sha256": _sha256(cohort_records_raw)},
+        coverage_digests=coverage_digests,
         packet_digests={"packet_manifest_path": str(Path(packet_manifest_path)),
                         "packet_manifest_sha256": packet_inputs.manifest_sha256,
                         "packets_jsonl_sha256": packet_inputs.packets_jsonl_sha256},
@@ -409,6 +504,26 @@ def run_lineage_classifier_pilot_v1(
     the derived caps, and stops there: no run directory is created, no provider
     client is constructed, no credential is resolved and nothing is written.
     """
+    return _run_lineage_classifier_pilot(
+        route=PILOT_V1_ROUTE, repo_root=repo_root,
+        cohort_manifest_path=cohort_manifest_path,
+        packet_manifest_path=packet_manifest_path, selection_path=selection_path,
+        coverage_manifest_path=None, governance_root=governance_root,
+        authorization_reference=authorization_reference,
+        authorization_sha256=authorization_sha256, output_dir=output_dir,
+        run_id=run_id, clock=clock, dry_run=dry_run,
+        client_factory=client_factory, sleep=sleep)
+
+
+def _run_lineage_classifier_pilot(
+    *, route: PilotRunRoute, repo_root: str | Path, cohort_manifest_path: str | Path,
+    packet_manifest_path: str | Path, selection_path: str | Path,
+    coverage_manifest_path: str | Path | None, governance_root: str | Path,
+    authorization_reference: str, authorization_sha256: str, output_dir: str | Path,
+    run_id: str, clock: Callable[[], datetime], dry_run: bool = False,
+    client_factory: Any = None, sleep: Callable[[float], None] | None = None,
+) -> ScreenRunResult:
+    """Execute one configured pilot route; public wrappers own route identity."""
     root = Path(repo_root)
     if not _RUN_ID_RE.match(run_id):
         raise ScreenInputError("Invalid run id.")
@@ -418,7 +533,7 @@ def run_lineage_classifier_pilot_v1(
         authorization_sha256=authorization_sha256,
         cohort_manifest_path=Path(cohort_manifest_path),
         packet_manifest_path=packet_manifest_path, selection_path=selection_path,
-        clock=clock)
+        coverage_manifest_path=coverage_manifest_path, route=route, clock=clock)
     if dry_run:
         for _row, packet in pre.plan:
             render_pilot_prompt(pre.prompt_text, packet)
@@ -475,7 +590,7 @@ def _pilot_execute(*, root: Path, pre: _PilotPreflight, output_dir, run_id: str,
                            for _, p in pre.plan},
         prompt_template_sha256=pre.prompt_sha256, ledger=ledger)
 
-    archive_path = run_dir / PILOT_RAW_RESPONSES_FILENAME
+    archive_path = run_dir / pre.route.raw_responses_filename
     archive = os.fdopen(
         os.open(archive_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644), "wb")
     axes_validator = Draft202012Validator(
@@ -500,7 +615,7 @@ def _pilot_execute(*, root: Path, pre: _PilotPreflight, output_dir, run_id: str,
         generates = sum(e["operation_label"] == "generate_content" for e in ledger)
         receipt = {
             "receipt_contract": RECEIPT_CONTRACT, "run_id": run_id,
-            "run_kind": PILOT_RUN_KIND, "reason_code": reason,
+            "run_kind": pre.route.run_kind, "reason_code": reason,
             "detail": _detail(detail), "stopping_cik": row["cik"],
             "stopping_accession": row["accession"],
             "stopping_row_index": len(records) + 1,
@@ -611,6 +726,43 @@ def _tally(rows: list[dict], key: Callable[[dict], object]) -> dict[str, int]:
     return tally
 
 
+def _manifest_selection_source(pre: _PilotPreflight) -> dict:
+    """Return the route-specific provenance shape the manifest contract names."""
+    common = {
+        "selection_artifact_path": pre.selection_path,
+        "selection_artifact_sha256": pre.selection_sha256,
+        "selection_id": pre.selection["selection_id"],
+        "selection_kind": pre.selection["selection_kind"],
+        "selected_rows": len(pre.selection["rows"]),
+    }
+    if pre.route.selection_source == "calibration":
+        return {
+            **common,
+            "source_selection_path": pre.selection["source_selection_path"],
+            "source_selection_sha256": pre.selection["source_selection_sha256"],
+        }
+    assert pre.coverage_digests is not None
+    return {
+        **common,
+        "coverage_cohort_id": pre.coverage_digests["coverage_cohort_id"],
+        "coverage_cohort_manifest_sha256": pre.coverage_digests["manifest_sha256"],
+        "coverage_cohort_records_sha256": pre.coverage_digests["records_jsonl_sha256"],
+    }
+
+
+def _selection_limitation(route: PilotRunRoute) -> str:
+    if route.selection_source == "calibration":
+        return (
+            "The ten are chosen, not sampled, and are a subset of the 40-row "
+            "calibration selection. They are a mixed stress set, not an "
+            "independent draw, so even their internal proportions carry no "
+            "sampling interpretation.")
+    return (
+        "The ten are chosen, not sampled, from the annual-coverage cohort. "
+        "They are a mixed stress set, not an independent draw, so even their "
+        "internal proportions carry no sampling interpretation.")
+
+
 def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: str,
                   authorization_sha256: str, clock, records: list[dict],
                   ledger: list[dict], budget, archive_path: Path,
@@ -623,7 +775,7 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
     try:
         write_bytes_once(run_dir / CAPTURE_LEDGER_FILENAME, ledger_bytes,
                          what="classifier pilot capture ledger")
-        write_bytes_once(run_dir / PILOT_RECORDS_FILENAME, records_bytes,
+        write_bytes_once(run_dir / pre.route.records_filename, records_bytes,
                          what="classifier pilot records")
     except WriteOnceError as exc:
         raise ScreenInputError(str(exc)) from exc
@@ -631,7 +783,7 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
     archive_raw = archive_path.read_bytes()
     archive_entries = [json.loads(line) for line
                        in _decode_utf8(archive_raw,
-                                       PILOT_RAW_RESPONSES_FILENAME).splitlines()
+                                       pre.route.raw_responses_filename).splitlines()
                        if line.strip()]
     classified = [r for r in records if r["record_kind"] == "classified"]
     review = [r for r in records if r["record_kind"] == "review_uncertain"]
@@ -745,14 +897,22 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
         "the prompt is the authorized one": (
             pre.prompt_sha256 == pre.authorization["prompt_template_sha256"]),
         "the selection and its sources are the authorized ones": (
-            pre.selection["cohort_manifest_sha256"]
+            (pre.selection["cohort_manifest_sha256"]
+             if pre.route.selection_source == "calibration"
+             else pre.selection["candidate_cohort_manifest_sha256"])
             == pre.authorization["cohort_manifest_sha256"]
             and pre.selection["packet_manifest_sha256"]
             == pre.authorization["packet_manifest_sha256"]
             and pre.cohort_digests["manifest_sha256"]
             == pre.authorization["cohort_manifest_sha256"]
             and pre.packet_digests["packet_manifest_sha256"]
-            == pre.authorization["packet_manifest_sha256"]),
+            == pre.authorization["packet_manifest_sha256"]
+            and (pre.route.selection_source != "annual_coverage" or (
+                pre.coverage_digests is not None
+                and pre.coverage_digests["manifest_sha256"]
+                == pre.authorization["coverage_cohort_manifest_sha256"]
+                and pre.coverage_digests["records_jsonl_sha256"]
+                == pre.authorization["coverage_cohort_records_sha256"]))),
     }
     if not all(reconciliation.values()):
         failed = sorted(k for k, v in reconciliation.items() if not v)
@@ -761,24 +921,21 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
             f"identities: {failed}.")
 
     manifest = {
-        "manifest_contract": PILOT_MANIFEST_CONTRACT, "run_id": run_id,
-        "run_kind": PILOT_RUN_KIND, "run_timestamp": clock().isoformat(),
+        "manifest_contract": pre.route.manifest_contract, "run_id": run_id,
+        "run_kind": pre.route.run_kind, "run_timestamp": clock().isoformat(),
         "promotable": False, "covers_full_cohort": False,
         "derives_no_tier": True, "settles_no_membership": True,
         "authorization_id": pre.authorization["authorization_id"],
         "authorization_sha256": authorization_sha256,
         "sources": {
             "cohort": dict(pre.cohort_digests),
+            **({"coverage": {
+                "cohort_id": pre.coverage_digests["coverage_cohort_id"],
+                "manifest_sha256": pre.coverage_digests["manifest_sha256"],
+                "records_jsonl_sha256": pre.coverage_digests["records_jsonl_sha256"],
+            }} if pre.coverage_digests is not None else {}),
             "packet": dict(pre.packet_digests),
-            "selection": {
-                "selection_artifact_path": pre.selection_path,
-                "selection_artifact_sha256": pre.selection_sha256,
-                "selection_id": pre.selection["selection_id"],
-                "selection_kind": pre.selection["selection_kind"],
-                "selected_rows": len(pre.selection["rows"]),
-                "source_selection_path": pre.selection["source_selection_path"],
-                "source_selection_sha256":
-                    pre.selection["source_selection_sha256"]},
+            "selection": _manifest_selection_source(pre),
             "sources_unmodified": True},
         "prompt_template_path": PILOT_PROMPT_PATH,
         "prompt_template_sha256": pre.prompt_sha256,
@@ -792,8 +949,8 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
         "output_contract": PILOT_RECORD_CONTRACT,
         "output_axes_contract": PILOT_AXES_CONTRACT,
         "output_hashes": {
-            PILOT_RECORDS_FILENAME: _sha256(records_bytes),
-            PILOT_RAW_RESPONSES_FILENAME: _sha256(archive_raw),
+            pre.route.records_filename: _sha256(records_bytes),
+            pre.route.raw_responses_filename: _sha256(archive_raw),
             CAPTURE_LEDGER_FILENAME: _sha256(ledger_bytes)},
         "record_order": PILOT_RECORD_ORDER,
         "counts": counts, "request_accounting": request_accounting,
@@ -804,9 +961,9 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
             "universe_classifier_pilot_record":
                 PILOT_RECORD_CONTRACT.rsplit("@", 1)[1],
             "universe_classifier_pilot_manifest":
-                PILOT_MANIFEST_CONTRACT.rsplit("@", 1)[1],
+                pre.route.manifest_contract.rsplit("@", 1)[1],
             "universe_classifier_pilot_selection":
-                PILOT_SELECTION_CONTRACT.rsplit("@", 1)[1],
+                pre.route.selection_contract.rsplit("@", 1)[1],
             "screen_connector": SCREEN_CONNECTOR_V6_ID},
         "limitations": [
             "This run is a pilot over ten named filings. It is structurally "
@@ -815,10 +972,7 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
             "Ten rows cannot estimate a rate. Every count in this manifest "
             "describes these ten rows and may not be extrapolated to the "
             "candidate cohort or to any other population.",
-            "The ten are chosen, not sampled, and are a subset of the 40-row "
-            "calibration selection. They are a mixed stress set, not an "
-            "independent draw, so even their internal proportions carry no "
-            "sampling interpretation.",
+            _selection_limitation(pre.route),
             "The pilot derives no tier and holds no tier rules. It answers four "
             "firm-level axes and stops; a tier is a question for a later stage "
             "with more than Item 1 in front of it.",
@@ -831,11 +985,11 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
             "not a finding about the filing.",
         ],
     }
-    _validate(manifest, _load_schema(root, PILOT_MANIFEST_SCHEMA),
+    _validate(manifest, _load_schema(root, pre.route.manifest_schema),
               "Classifier pilot manifest")
     try:
         write_bytes_once(
-            run_dir / PILOT_MANIFEST_FILENAME,
+            run_dir / pre.route.manifest_filename,
             (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8"),
             what="classifier pilot manifest")
     except WriteOnceError as exc:
@@ -844,7 +998,7 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
     result.counts = counts
     result.request_accounting = request_accounting
     result.reconciliation = reconciliation
-    result.manifest_path = run_dir / PILOT_MANIFEST_FILENAME
+    result.manifest_path = run_dir / pre.route.manifest_filename
     return result
 
 
@@ -880,23 +1034,28 @@ def require_pilot_run(run_dir: str | Path) -> Path:
     ``universe_classifier_pilot_v1_manifest.json`` and is refused here before a
     contract is read, exactly as a pilot run is refused by every V2.x loader.
     """
+    return _require_pilot_run(run_dir, route=PILOT_V1_ROUTE)
+
+
+def _require_pilot_run(run_dir: str | Path, *, route: PilotRunRoute) -> Path:
+    """Load one completed run for an explicit pilot route only."""
     directory = Path(run_dir)
     if (directory / FAILURE_RECEIPT_FILENAME).exists():
         raise ScreenInputError(
             f"Pilot run {directory} holds a failure receipt; it is "
             "non-authoritative and may not be consumed.")
-    manifest_path = directory / PILOT_MANIFEST_FILENAME
+    manifest_path = directory / route.manifest_filename
     if not manifest_path.is_file():
         raise ScreenInputError(
-            f"Directory {directory} holds no {PILOT_MANIFEST_FILENAME}; this "
+            f"Directory {directory} holds no {route.manifest_filename}; this "
             "loader consumes pilot runs only.")
     manifest = json.loads(_decode_utf8(manifest_path.read_bytes(),
-                                       PILOT_MANIFEST_FILENAME))
-    if manifest.get("manifest_contract") != PILOT_MANIFEST_CONTRACT:
+                                       route.manifest_filename))
+    if manifest.get("manifest_contract") != route.manifest_contract:
         raise ScreenInputError(
             f"Pilot run {directory} declares "
             f"{manifest.get('manifest_contract')!r}; this loader consumes "
-            f"{PILOT_MANIFEST_CONTRACT!r} only.")
+            f"{route.manifest_contract!r} only.")
     for filename, recorded in manifest["output_hashes"].items():
         target = directory / filename
         if not target.is_file() or _sha256(target.read_bytes()) != recorded:

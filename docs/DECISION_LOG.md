@@ -9850,6 +9850,24 @@ stress set, not a sample, software universe, tier assignment, or membership
 decision. A separate governed run successor is required before this selection
 can reach a model.
 
+## ADR-140 — annual-coverage-backed firm-pilot run
+
+ADR-139's ten-file selection cannot be consumed by the V1 pilot runner: V1
+binds a calibration-selection provenance shape. The V2 pilot runner is a
+separate route with its own `universe_classifier_pilot_authorization@0.2.0`,
+`universe_classifier_pilot_manifest@0.2.0`, output filenames and loader. It
+binds the candidate cohort, the completed annual-coverage cohort and its
+records, packet cohort and V2 selection before a provider client is
+constructed. The prompt and four-axis record contract are unchanged, no tier
+is derived, and model-response defects remain non-fatal `review_uncertain`
+rows. A provider failure still terminates with a receipt rather than becoming a
+fictional filing judgement.
+
+The V2 run is structurally non-promotable and settles no membership decision.
+It proves only whether the Item 1 pilot produces readable four-axis responses
+for ten named, annual-coverage-qualified filings. No governance pair, dry run
+or live model call is authorized by this ADR entry.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only

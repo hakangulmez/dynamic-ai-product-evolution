@@ -174,11 +174,11 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-139: manifest_version 0.77.0 -> 0.78.0, 215 -> 216
-    # entries, registering only the annual-coverage-backed pilot-selection
-    # successor. It names ten filed rows from ADR-138's immutable 2,799-row
-    # analysis-eligibility cohort, binds their packet source, and carries no
-    # model output or software-universe decision. It does not join
+    # Rebaselined by ADR-140: manifest_version 0.78.0 -> 0.79.0, 216 -> 218
+    # entries, registering the annual-coverage-backed pilot authorization and
+    # manifest. The V2 pilot is isolated from V1 by grant, manifest and
+    # filename while retaining its Item 1 prompt and four-axis record contract.
+    # It does not join
     # EVALUATION_SCHEMA_CONTRACTS or RELEASED_EVALUATION_CONTRACTS below.
     # Before it,
     # Rebaselined by ADR-137 (the pilot's governed execution path):
@@ -558,7 +558,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "700521f1b8b92b74f2c553075026250c2fcc1dedae1a6d2daa7bdaa7c2726960"
+    "4bcc0846d0c7edcf3efd432b25cae6f5623ad827db9e2d0efce2430b466e7182"
 )
 
 
