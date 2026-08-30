@@ -19,9 +19,16 @@ from .classifier_pilot_selection_v2 import (
 )
 from .lineage_classifier_pilot_v1 import (
     PilotRunRoute,
+    PILOT_AXES,
+    PILOT_AXES_CONTRACT,
+    PILOT_AXES_SCHEMA,
+    PILOT_PROMPT_PATH,
+    PILOT_RECORD_CONTRACT,
+    PILOT_RECORD_SCHEMA,
     _require_pilot_run,
     _run_lineage_classifier_pilot,
 )
+from .classifier_pilot_v1 import build_pilot_record
 from .universe.lineage_screen import ScreenRunResult
 
 __all__ = [
@@ -50,6 +57,13 @@ PILOT_V2_ROUTE = PilotRunRoute(
     selection_kind=PILOT_SELECTION_V2_KIND,
     selection_source="annual_coverage",
     load_selection=_load_v2_selection,
+    prompt_path=PILOT_PROMPT_PATH,
+    axes_schema=PILOT_AXES_SCHEMA,
+    axes_contract=PILOT_AXES_CONTRACT,
+    record_schema=PILOT_RECORD_SCHEMA,
+    record_contract=PILOT_RECORD_CONTRACT,
+    judgement_axes=PILOT_AXES,
+    build_record=build_pilot_record,
 )
 
 

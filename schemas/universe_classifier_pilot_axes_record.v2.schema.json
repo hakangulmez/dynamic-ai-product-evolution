@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_pilot_axes_record.v2.schema.json",
+  "title": "Software universe classifier pilot axes record v0.2.0",
+  "description": "Model-facing contract for the Item 1 software-universe gate. The model makes only two firm-level judgements, records confidence, and selects zero to three shared Item 1 block addresses. It cannot author quotations, retrieved text, offsets, digests, products, capabilities, tasks, or a tier. Those exclusions keep this gate separate from later PCT extraction.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["customer_facing_digital_product", "software_centrality", "confidence", "passage_refs"],
+  "properties": {
+    "customer_facing_digital_product": {"enum": ["YES", "NO", "UNKNOWN"]},
+    "software_centrality": {"enum": ["CORE", "CO_ESSENTIAL", "ENABLING", "PERIPHERAL", "UNKNOWN"]},
+    "confidence": {"enum": ["high", "medium", "low"]},
+    "passage_refs": {
+      "description": "MODEL-AUTHORED shared Item 1 block addresses. The pipeline retrieves their text, stable ids, raw-source byte offsets and digests.",
+      "type": "array", "minItems": 0, "maxItems": 3, "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^P[0-9]{3}$"}
+    }
+  },
+  "allOf": [
+    {
+      "description": "A response that cites no Item 1 block may assert no conclusion.",
+      "if": {"properties": {"passage_refs": {"maxItems": 0}}, "required": ["passage_refs"]},
+      "then": {"properties": {"customer_facing_digital_product": {"const": "UNKNOWN"}, "software_centrality": {"const": "UNKNOWN"}}}
+    },
+    {
+      "description": "A firm that does not offer a customer-facing digital product cannot be CORE or CO_ESSENTIAL on this gate.",
+      "if": {"properties": {"customer_facing_digital_product": {"const": "NO"}}, "required": ["customer_facing_digital_product"]},
+      "then": {"properties": {"software_centrality": {"not": {"enum": ["CORE", "CO_ESSENTIAL"]}}}}
+    }
+  ]
+}

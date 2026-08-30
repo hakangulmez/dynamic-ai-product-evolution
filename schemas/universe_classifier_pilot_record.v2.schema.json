@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_pilot_record.v2.schema.json",
+  "title": "Software universe classifier pilot record v0.2.0",
+  "description": "Stored record for the narrow Item 1 software-universe gate. A classified row keeps the model-authored two judgements and shared addresses next to the pipeline-derived Item 1 blocks. A review_uncertain row asserts no conclusion. No tier or membership decision is stored.",
+  "type": "object", "additionalProperties": false,
+  "required": ["record_contract", "record_kind", "cik", "accession", "company_id", "source_id", "packet_sha256", "prompt_sha256", "model_route", "admission_provenance", "axes", "review_reason_code", "review_detail"],
+  "properties": {
+    "record_contract": {"const": "universe_classifier_pilot_record@0.2.0"},
+    "record_kind": {"enum": ["classified", "review_uncertain"]},
+    "cik": {"type": "string", "pattern": "^[0-9]{10}$"},
+    "accession": {"type": "string", "minLength": 1},
+    "company_id": {"type": "string", "minLength": 1},
+    "source_id": {"type": "string", "minLength": 1},
+    "packet_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "prompt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "model_route": {"type": "object"},
+    "admission_provenance": {"description": "Audit-only and never rendered to the model.", "type": "object"},
+    "axes": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["customer_facing_digital_product", "software_centrality", "confidence", "passage_refs", "evidence"],
+          "properties": {
+            "customer_facing_digital_product": {"enum": ["YES", "NO", "UNKNOWN"]},
+            "software_centrality": {"enum": ["CORE", "CO_ESSENTIAL", "ENABLING", "PERIPHERAL", "UNKNOWN"]},
+            "confidence": {"enum": ["high", "medium", "low"]},
+            "passage_refs": {"type": "array", "minItems": 0, "maxItems": 3, "uniqueItems": true, "items": {"type": "string", "pattern": "^P[0-9]{3}$"}},
+            "evidence": {
+              "description": "PIPELINE-DERIVED Item 1 blocks in the model-authored passage_refs order.",
+              "type": "array", "minItems": 0, "maxItems": 3,
+              "items": {
+                "type": "object", "additionalProperties": false,
+                "required": ["passage_ref", "passage_id", "evidence_text", "byte_start", "byte_end", "text_sha256", "provenance"],
+                "properties": {
+                  "passage_ref": {"description": "MODEL-AUTHORED address.", "type": "string", "pattern": "^P[0-9]{3}$"},
+                  "passage_id": {"description": "PIPELINE-DERIVED stable packet identifier.", "type": "string", "minLength": 1},
+                  "evidence_text": {"description": "PIPELINE-DERIVED exact Item 1 block text.", "type": "string", "minLength": 1},
+                  "byte_start": {"description": "PIPELINE-DERIVED offset into the raw SEC source document.", "type": "integer", "minimum": 0},
+                  "byte_end": {"description": "PIPELINE-DERIVED raw-source end offset.", "type": "integer", "minimum": 1},
+                  "text_sha256": {"description": "PIPELINE-DERIVED digest over evidence_text.", "type": "string", "pattern": "^[0-9a-f]{64}$"},
+                  "provenance": {"const": "pipeline_derived"}
+                }
+              }
+            }
+          },
+          "allOf": [
+            {"if": {"properties": {"passage_refs": {"maxItems": 0}}, "required": ["passage_refs"]}, "then": {"properties": {"customer_facing_digital_product": {"const": "UNKNOWN"}, "software_centrality": {"const": "UNKNOWN"}, "evidence": {"maxItems": 0}}}},
+            {"if": {"properties": {"customer_facing_digital_product": {"const": "NO"}}, "required": ["customer_facing_digital_product"]}, "then": {"properties": {"software_centrality": {"not": {"enum": ["CORE", "CO_ESSENTIAL"]}}}}},
+            {"description": "Stored resolved blocks must have exactly the same count as the model-authored addresses.", "if": {"properties": {"passage_refs": {"maxItems": 0}}}, "then": {"properties": {"evidence": {"maxItems": 0}}}}
+          ]
+        }
+      ]
+    },
+    "review_reason_code": {"type": ["string", "null"]},
+    "review_detail": {"type": ["string", "null"]}
+  },
+  "allOf": [
+    {"if": {"properties": {"record_kind": {"const": "classified"}}}, "then": {"properties": {"axes": {"type": "object"}, "review_reason_code": {"type": "null"}, "review_detail": {"type": "null"}}}},
+    {"if": {"properties": {"record_kind": {"const": "review_uncertain"}}}, "then": {"properties": {"axes": {"type": "null"}, "review_reason_code": {"type": "string", "minLength": 1}, "review_detail": {"type": "string", "minLength": 1}}}}
+  ]
+}

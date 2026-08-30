@@ -963,8 +963,8 @@ def test_registry_registers_the_two_v3_screen_schemas():
         (ROOT / "schemas" / "schema_version_manifest.json")
         .read_text(encoding="utf-8"))
     # ADR-117 adds the v0.3 authorization and v0.7 manifest (115 -> 117).
-    assert registry["manifest_version"] == "0.79.0"
-    assert len(registry["schemas"]) == 218
+    assert registry["manifest_version"] == "0.80.0"
+    assert len(registry["schemas"]) == 222
     assert registry["schemas"]["universe_screen_live_authorization_v3"] == "0.3.0"
     assert registry["schemas"]["universe_screen_manifest_v7"] == "0.7.0"
     # Every predecessor entry is unchanged.

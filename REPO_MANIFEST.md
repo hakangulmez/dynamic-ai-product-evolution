@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **1023**
+Total tracked/scaffold files listed: **1031**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -329,6 +329,7 @@ Total tracked/scaffold files listed: **1023**
 - `prompts/adjudication/universe_boundary_adjudication.md`
 - `prompts/discovery/official_source_discovery.md`
 - `prompts/discovery/software_universe_classifier_pilot.v1.md`
+- `prompts/discovery/software_universe_classifier_pilot.v2.md`
 - `prompts/discovery/universe_full_classification.md`
 - `prompts/discovery/universe_full_classification.v2_1.md`
 - `prompts/discovery/universe_full_classification.v2_2.md`
@@ -470,10 +471,14 @@ Total tracked/scaffold files listed: **1023**
 - `schemas/universe_baseline_packet.v2.schema.json`
 - `schemas/universe_classifier_pilot_authorization.v1.schema.json`
 - `schemas/universe_classifier_pilot_authorization.v2.schema.json`
+- `schemas/universe_classifier_pilot_authorization.v3.schema.json`
 - `schemas/universe_classifier_pilot_axes_record.v1.schema.json`
+- `schemas/universe_classifier_pilot_axes_record.v2.schema.json`
 - `schemas/universe_classifier_pilot_manifest.v1.schema.json`
 - `schemas/universe_classifier_pilot_manifest.v2.schema.json`
+- `schemas/universe_classifier_pilot_manifest.v3.schema.json`
 - `schemas/universe_classifier_pilot_record.v1.schema.json`
+- `schemas/universe_classifier_pilot_record.v2.schema.json`
 - `schemas/universe_classifier_pilot_selection.v1.schema.json`
 - `schemas/universe_classifier_pilot_selection.v2.schema.json`
 - `schemas/universe_run_manifest.schema.json`
@@ -639,6 +644,7 @@ Total tracked/scaffold files listed: **1023**
 - `src/README.md`
 - `src/dynamic_ai_products/__init__.py`
 - `src/dynamic_ai_products/classifier_pilot_v1.py`
+- `src/dynamic_ai_products/classifier_pilot_v2.py`
 - `src/dynamic_ai_products/cli.py`
 - `src/dynamic_ai_products/collection/__init__.py`
 - `src/dynamic_ai_products/collection/canonical_url.py`
@@ -768,6 +774,7 @@ Total tracked/scaffold files listed: **1023**
 - `src/dynamic_ai_products/lineage_classifier_calibration.py`
 - `src/dynamic_ai_products/lineage_classifier_pilot_v1.py`
 - `src/dynamic_ai_products/lineage_classifier_pilot_v2.py`
+- `src/dynamic_ai_products/lineage_classifier_pilot_v3.py`
 - `src/dynamic_ai_products/lineage_screen_live_v3.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/providers/__init__.py`
@@ -970,6 +977,7 @@ Total tracked/scaffold files listed: **1023**
 - `tests/universe/test_classifier_pilot_v1.py`
 - `tests/universe/test_classifier_pilot_v1_run.py`
 - `tests/universe/test_classifier_pilot_v2_run.py`
+- `tests/universe/test_classifier_pilot_v3.py`
 - `tests/universe/test_classifier_pilot_selection_v2.py`
 - `tests/universe/test_classifier_v2_7_prompt.py`
 - `tests/universe/test_classifier_v2_8_evidence.py`

@@ -180,6 +180,13 @@ class PilotRunRoute:
     selection_kind: str
     selection_source: str
     load_selection: Callable[[Path, str, Path], dict]
+    prompt_path: str
+    axes_schema: str
+    axes_contract: str
+    record_schema: str
+    record_contract: str
+    judgement_axes: tuple[str, ...]
+    build_record: Callable[..., dict]
 
 
 def _load_v1_selection(path: Path, digest: str, _root: Path) -> dict:
@@ -200,6 +207,18 @@ PILOT_V1_ROUTE = PilotRunRoute(
     selection_kind="classifier_pilot_v1",
     selection_source="calibration",
     load_selection=_load_v1_selection,
+    prompt_path=PILOT_PROMPT_PATH,
+    axes_schema=PILOT_AXES_SCHEMA,
+    axes_contract=PILOT_AXES_CONTRACT,
+    record_schema=PILOT_RECORD_SCHEMA,
+    record_contract=PILOT_RECORD_CONTRACT,
+    judgement_axes=(
+        "customer_facing_functional_product",
+        "software_centrality",
+        "firm_structure",
+        "commercial_materiality",
+    ),
+    build_record=build_pilot_record,
 )
 
 RECEIPT_CONTRACT = "universe_screen_failure_receipt@0.1.0"
@@ -304,8 +323,8 @@ def _pilot_preflight(
             != SCREEN_GENERATE_MAX_ATTEMPTS
             or authorization["external_requests_per_row"]
             != SCREEN_EXTERNAL_REQUESTS_PER_ROW_V2
-            or authorization["output_contract"] != PILOT_RECORD_CONTRACT
-            or authorization["output_axes_contract"] != PILOT_AXES_CONTRACT):
+            or authorization["output_contract"] != route.record_contract
+            or authorization["output_axes_contract"] != route.axes_contract):
         raise ScreenInputError(
             "Authorization route, policy versions, ceilings or contracts do not "
             "match the committed ones.")
@@ -327,11 +346,11 @@ def _pilot_preflight(
             "Authorization/enablement endpoint allowlists are not exactly the "
             "derived operation endpoints.")
 
-    if authorization["prompt_template_path"] != PILOT_PROMPT_PATH:
+    if authorization["prompt_template_path"] != route.prompt_path:
         raise ScreenInputError(
             f"The grant binds prompt {authorization['prompt_template_path']!r}; "
-            f"this route runs {PILOT_PROMPT_PATH!r} only.")
-    prompt_raw = (root / PILOT_PROMPT_PATH).read_bytes()
+            f"this route runs {route.prompt_path!r} only.")
+    prompt_raw = (root / route.prompt_path).read_bytes()
     prompt_sha = _sha256(prompt_raw)
     if prompt_sha != authorization["prompt_template_sha256"]:
         raise ScreenInputError(
@@ -595,7 +614,7 @@ def _pilot_execute(*, root: Path, pre: _PilotPreflight, output_dir, run_id: str,
     archive = os.fdopen(
         os.open(archive_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644), "wb")
     axes_validator = Draft202012Validator(
-        _load_schema(root, PILOT_AXES_SCHEMA), format_checker=FormatChecker())
+        _load_schema(root, pre.route.axes_schema), format_checker=FormatChecker())
 
     records: list[dict] = []
     called_rows = count_attempts = generate_attempts = 0
@@ -687,7 +706,7 @@ def _pilot_execute(*, root: Path, pre: _PilotPreflight, output_dir, run_id: str,
         # a released contract to make a bookkeeping check convenient would be
         # exactly the wrong trade. The archive is bound to the records by
         # position and identity instead, which the reconciliation proves.
-        records.append(build_pilot_record(
+        records.append(pre.route.build_record(
             row=row, packet=packet,
             prompt_sha256=_sha256(rendered.encode("utf-8")),
             model_route=dict(adapter.model_route), raw=raw,
@@ -697,12 +716,12 @@ def _pilot_execute(*, root: Path, pre: _PilotPreflight, output_dir, run_id: str,
     archive.close()
 
     validator = Draft202012Validator(
-        _load_schema(root, PILOT_RECORD_SCHEMA), format_checker=FormatChecker())
+        _load_schema(root, pre.route.record_schema), format_checker=FormatChecker())
     for record in records:
         errors = sorted(validator.iter_errors(record), key=lambda e: e.json_path)
         if errors:
             raise ScreenInputError(
-                f"Built pilot record violates {PILOT_RECORD_CONTRACT} at "
+                f"Built pilot record violates {pre.route.record_contract} at "
                 f"{errors[0].json_path}: {errors[0].message}")
     return _pilot_settle(
         root=root, pre=pre, run_dir=run_dir, run_id=run_id,
@@ -818,7 +837,7 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
             records, lambda r: stratum_by_key[(r["cik"], r["accession"])]),
         "by_confidence": _tally(classified, lambda r: r["axes"]["confidence"]),
         **{f"by_{axis}": _tally(classified, lambda r, a=axis: r["axes"][a])
-           for axis in PILOT_AXES},
+           for axis in pre.route.judgement_axes},
         "evidence_items": evidence_items,
         "rows_with_no_evidence": sum(
             not r["axes"]["evidence"] for r in classified),
@@ -876,7 +895,7 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
         "every stored evidence block re-derives from its packet": all(
             _evidence_resolves(r, pre.packets) for r in classified),
         "a row citing nothing concluded nothing": all(
-            all(r["axes"][axis] == "UNKNOWN" for axis in PILOT_AXES)
+            all(r["axes"][axis] == "UNKNOWN" for axis in pre.route.judgement_axes)
             for r in classified if not r["axes"]["evidence"]),
         "the archive holds one line per row": (
             len(archive_entries) == len(records)),
@@ -938,7 +957,7 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
             "packet": dict(pre.packet_digests),
             "selection": _manifest_selection_source(pre),
             "sources_unmodified": True},
-        "prompt_template_path": PILOT_PROMPT_PATH,
+        "prompt_template_path": pre.route.prompt_path,
         "prompt_template_sha256": pre.prompt_sha256,
         "provider": dict(pre.model_route),
         "provider_client_contract_reference": CLIENT_CONTRACT_V2_ID,
@@ -947,8 +966,8 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
             pre.authorization["screen_adapter_enablement_sha256"],
         "endpoint_allowlist": sorted(pre.endpoints.values()),
         "envelope_text_extraction_rule": ENVELOPE_TEXT_EXTRACTION_RULE,
-        "output_contract": PILOT_RECORD_CONTRACT,
-        "output_axes_contract": PILOT_AXES_CONTRACT,
+        "output_contract": pre.route.record_contract,
+        "output_axes_contract": pre.route.axes_contract,
         "output_hashes": {
             pre.route.records_filename: _sha256(records_bytes),
             pre.route.raw_responses_filename: _sha256(archive_raw),
@@ -958,9 +977,9 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
         "reconciliation": reconciliation,
         "schema_versions": {
             "universe_classifier_pilot_axes_record":
-                PILOT_AXES_CONTRACT.rsplit("@", 1)[1],
+                pre.route.axes_contract.rsplit("@", 1)[1],
             "universe_classifier_pilot_record":
-                PILOT_RECORD_CONTRACT.rsplit("@", 1)[1],
+                pre.route.record_contract.rsplit("@", 1)[1],
             "universe_classifier_pilot_manifest":
                 pre.route.manifest_contract.rsplit("@", 1)[1],
             "universe_classifier_pilot_selection":
@@ -979,8 +998,8 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
             ),
             _selection_limitation(pre.route),
             (
-                "The pilot derives no tier and holds no tier rules. It answers four "
-                "firm-level axes and stops; a tier is a question for a later stage "
+                "The pilot derives no tier and holds no tier rules. It answers "
+                f"{len(pre.route.judgement_axes)} firm-level axes and stops; a tier is a question for a later stage "
                 "with more than Item 1 in front of it."
             ),
             (

@@ -9868,6 +9868,30 @@ It proves only whether the Item 1 pilot produces readable four-axis responses
 for ten named, annual-coverage-qualified filings. No governance pair, dry run
 or live model call is authorized by this ADR entry.
 
+## ADR-141 — two-axis Item 1 software-universe gate
+
+The first annual-coverage-backed pilot run completed transport and provenance
+checks but every model response was stored `review_uncertain`: the prompt asked
+four separate axis judgements, the model supplied one evidence address per axis,
+and the contract correctly limited total evidence addresses to three. This is a
+prompt/contract accounting mismatch, not evidence fabrication and not a reason to
+alter the immutable V2 run.
+
+The successor narrows the universe gate instead of raising that cap. It asks only
+whether a commercially meaningful customer-facing digital product exists and how
+central it is, plus confidence. The model selects zero to three **shared** Item 1
+block addresses. It cannot author a quote, evidence text, product list,
+capability, task, offset, digest, tier, or reasoning. The pipeline retrieves the
+selected blocks from the same hash-bound packets. `firm_structure` and
+`commercial_materiality` leave this gate; they are not needed to choose a
+software-oriented universe and remain questions for later measurement.
+
+This is a new `classifier_pilot_v3` route with prompt v2, axes and record
+contracts @0.2.0, authorization and manifest @0.3.0, and its own output
+filenames. It reuses ADR-139's immutable ten-filing annual-coverage selection
+only as an input. It derives no tier, settles no membership, and is structurally
+non-promotable. A V3 grant, dry run, and live call remain separately governed.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only
