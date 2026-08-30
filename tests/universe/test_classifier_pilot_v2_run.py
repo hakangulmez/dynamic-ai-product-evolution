@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from dynamic_ai_products.extraction.provider_adapter import client_contract_digest
+from dynamic_ai_products.lineage_classifier_pilot_v1 import require_pilot_run
 from dynamic_ai_products.lineage_classifier_pilot_v2 import (
     PILOT_V2_ROUTE,
     require_pilot_run_v2,
     run_lineage_classifier_pilot_v2,
 )
-from dynamic_ai_products.lineage_classifier_pilot_v1 import require_pilot_run
 from dynamic_ai_products.providers.client_contract_v2 import (
     CLIENT_CONTRACT_V2_ID,
     build_client_contract_v2,
@@ -36,11 +37,9 @@ from dynamic_ai_products.providers.screen_retry_policy import (
     SCREEN_GENERATE_RETRY_POLICY_VERSION,
 )
 
-
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).parent))
-
-from test_classifier_pilot_v1_run import _PilotFactory  # noqa: E402
+_PilotFactory = importlib.import_module("test_classifier_pilot_v1_run")._PilotFactory
 
 COVERAGE = ROOT / ("data/runs/universe-annual-coverage-cohorts/"
                    "universe-annual-coverage-cohort-v1-20260829/"
@@ -54,7 +53,7 @@ PACKETS = ROOT / ("data/runs/baseline-packets/"
 SELECTION = ROOT / ("data/runs/universe-classifier-pilot-selections-v2/"
                     "universe-classifier-pilot-selection-v2-20260830/"
                     "universe_classifier_pilot_v2_selection.json")
-CLOCK = lambda: datetime(2026, 8, 30, tzinfo=timezone.utc)
+CLOCK = lambda: datetime(2026, 8, 30, tzinfo=UTC)
 
 
 def _sha(path: Path) -> str:

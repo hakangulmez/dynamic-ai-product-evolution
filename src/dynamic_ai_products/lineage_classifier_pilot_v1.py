@@ -46,14 +46,16 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
 
 from dynamic_ai_products.extraction.provider_adapter import client_contract_digest
+from dynamic_ai_products.provenance import WriteOnceError, write_bytes_once
 from dynamic_ai_products.providers.client_contract_v2 import (
     CLIENT_CONTRACT_V2_ID,
     build_client_contract_v2,
@@ -80,7 +82,6 @@ from dynamic_ai_products.providers.vertex_gemini_screen_v6 import (
     SCREEN_CONNECTOR_V6_ID,
     VertexGeminiScreenV6,
 )
-from dynamic_ai_products.provenance import WriteOnceError, write_bytes_once
 
 from .classifier_candidate_cohort import (
     COHORT_MANIFEST_FILENAME,
@@ -111,11 +112,11 @@ from .lineage_screen_live import (
 from .lineage_screen_live_v3 import ScreenCohortBudgetV3
 from .universe.freeze import create_run_directory
 from .universe.lineage_screen import (
+    _RUN_ID_RE,
     FAILURE_RECEIPT_FILENAME,
     ScreenInputError,
     ScreenProviderTerminalError,
     ScreenRunResult,
-    _RUN_ID_RE,
     _canonical_line,
     _decode_utf8,
     _load_schema,
@@ -125,7 +126,6 @@ from .universe.lineage_screen import (
 )
 
 __all__ = [
-    "PilotRunRoute",
     "PILOT_AUTHORIZATION_CONTRACT",
     "PILOT_AUTHORIZATION_SCHEMA",
     "PILOT_MANIFEST_CONTRACT",
@@ -136,6 +136,7 @@ __all__ = [
     "PILOT_RECORD_ORDER",
     "PILOT_RUN_KIND",
     "PILOT_RUN_ROOT_NAME",
+    "PilotRunRoute",
     "require_pilot_run",
     "run_lineage_classifier_pilot_v1",
 ]
@@ -966,23 +967,33 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
                 pre.route.selection_contract.rsplit("@", 1)[1],
             "screen_connector": SCREEN_CONNECTOR_V6_ID},
         "limitations": [
-            "This run is a pilot over ten named filings. It is structurally "
-            "non-promotable, it settles no firm's membership, and nothing "
-            "downstream may consume it as a decision.",
-            "Ten rows cannot estimate a rate. Every count in this manifest "
-            "describes these ten rows and may not be extrapolated to the "
-            "candidate cohort or to any other population.",
+            (
+                "This run is a pilot over ten named filings. It is structurally "
+                "non-promotable, it settles no firm's membership, and nothing "
+                "downstream may consume it as a decision."
+            ),
+            (
+                "Ten rows cannot estimate a rate. Every count in this manifest "
+                "describes these ten rows and may not be extrapolated to the "
+                "candidate cohort or to any other population."
+            ),
             _selection_limitation(pre.route),
-            "The pilot derives no tier and holds no tier rules. It answers four "
-            "firm-level axes and stops; a tier is a question for a later stage "
-            "with more than Item 1 in front of it.",
-            "The admission context is carried for audit and reached no prompt. "
-            "The model saw Item 1 and nothing else, so these judgements are "
-            "neither agreement with nor contradiction of any earlier screen, "
-            "overlay decision or classifier run.",
-            "A row stored as review_uncertain is a row this pilot concluded "
-            "nothing about. Its reason names a defect in one model response, "
-            "not a finding about the filing.",
+            (
+                "The pilot derives no tier and holds no tier rules. It answers four "
+                "firm-level axes and stops; a tier is a question for a later stage "
+                "with more than Item 1 in front of it."
+            ),
+            (
+                "The admission context is carried for audit and reached no prompt. "
+                "The model saw Item 1 and nothing else, so these judgements are "
+                "neither agreement with nor contradiction of any earlier screen, "
+                "overlay decision or classifier run."
+            ),
+            (
+                "A row stored as review_uncertain is a row this pilot concluded "
+                "nothing about. Its reason names a defect in one model response, "
+                "not a finding about the filing."
+            ),
         ],
     }
     _validate(manifest, _load_schema(root, pre.route.manifest_schema),

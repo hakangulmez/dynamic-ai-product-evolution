@@ -7,9 +7,10 @@ contract and non-fatal review semantics remain the released V1 values.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .classifier_pilot_selection_v2 import (
     PILOT_SELECTION_V2_CONTRACT,
