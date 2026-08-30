@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_pilot_selection.v2.schema.json",
+  "title": "Software universe classifier pilot selection v0.2.0",
+  "description": "A named ten-filing pilot selection drawn directly from one completed annual-coverage analysis-eligibility cohort. It does not use the older calibration selection and carries audit provenance that is never rendered to the model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "selection_contract",
+    "selection_id",
+    "selection_kind",
+    "coverage_cohort_id",
+    "coverage_cohort_manifest_path",
+    "coverage_cohort_manifest_sha256",
+    "coverage_cohort_records_sha256",
+    "candidate_cohort_id",
+    "candidate_cohort_manifest_path",
+    "candidate_cohort_manifest_sha256",
+    "packet_manifest_path",
+    "packet_manifest_sha256",
+    "sampling",
+    "rows",
+    "counts",
+    "no_model_call",
+    "limitations",
+    "run_timestamp"
+  ],
+  "properties": {
+    "selection_contract": {"const": "universe_classifier_pilot_selection@0.2.0"},
+    "selection_id": {"type": "string", "minLength": 1},
+    "selection_kind": {"const": "classifier_pilot_v2"},
+    "coverage_cohort_id": {"type": "string", "minLength": 1},
+    "coverage_cohort_manifest_path": {"type": "string", "minLength": 1},
+    "coverage_cohort_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "coverage_cohort_records_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "candidate_cohort_id": {"type": "string", "minLength": 1},
+    "candidate_cohort_manifest_path": {"type": "string", "minLength": 1},
+    "candidate_cohort_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "packet_manifest_path": {"type": "string", "minLength": 1},
+    "packet_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "strata"],
+      "properties": {
+        "algorithm": {"const": "named_annual_coverage_pilot_strata@1"},
+        "strata": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["pilot_stratum", "selected"],
+            "properties": {
+              "pilot_stratum": {"type": "string"},
+              "selected": {"type": "integer", "minimum": 1}
+            }
+          }
+        }
+      }
+    },
+    "rows": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cik", "accession", "company_id", "source_id", "packet_sha256",
+          "pilot_stratum", "admission_origin", "screen_status", "admission_provenance",
+          "coverage_class", "observed_annual_filing_years"
+        ],
+        "properties": {
+          "cik": {"type": "string", "pattern": "^[0-9]{10}$"},
+          "accession": {"type": "string", "minLength": 1},
+          "company_id": {"type": "string", "minLength": 1},
+          "source_id": {"type": "string", "minLength": 1},
+          "packet_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "pilot_stratum": {"enum": ["P1_obvious_software", "P2_model_screen_likely", "P3_model_screen_boundary", "P5_economically_ambiguous", "P6_clear_negative"]},
+          "admission_origin": {"enum": ["model_screen", "human_review"]},
+          "screen_status": {"enum": ["LIKELY_ELIGIBLE", "BOUNDARY_OR_UNCERTAIN"]},
+          "admission_provenance": {"type": "object"},
+          "coverage_class": {"enum": ["complete_2021_2025", "2021_missing_2022_2025_present"]},
+          "observed_annual_filing_years": {"type": "array", "items": {"type": "integer"}}
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selected_rows", "by_pilot_stratum", "by_admission_origin", "by_screen_status"],
+      "properties": {
+        "selected_rows": {"const": 10},
+        "by_pilot_stratum": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}},
+        "by_admission_origin": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}},
+        "by_screen_status": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}}
+      }
+    },
+    "no_model_call": {"const": true},
+    "limitations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "run_timestamp": {"type": "string", "format": "date-time"}
+  }
+}

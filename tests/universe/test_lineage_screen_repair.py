@@ -699,8 +699,8 @@ def test_predecessors_are_byte_identical():
 def test_the_registry_registers_the_repair_contracts():
     registry = json.loads(
         (ROOT / "schemas/schema_version_manifest.json").read_text(encoding="utf-8"))
-    assert registry["manifest_version"] == "0.77.0"
-    assert len(registry["schemas"]) == 215
+    assert registry["manifest_version"] == "0.78.0"
+    assert len(registry["schemas"]) == 216
     for key, version in (("universe_screen_record_v6", "0.6.0"),
                          ("universe_screen_repair_selection", "0.1.0"),
                          ("universe_screen_repair_authorization", "0.1.0"),

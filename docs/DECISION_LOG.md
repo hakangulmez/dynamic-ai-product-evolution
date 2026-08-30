@@ -9833,6 +9833,23 @@ decision log, `REPO_MANIFEST.md` (966 to 973), the five registry/manifest guards
 and the absolute registry literals in eleven screen suites. No new prompt, no
 new config, no new source module, no new axes or record schema.
 
+## ADR-139 — annual-coverage-backed firm-pilot selection
+
+The original ten-firm pilot selection is a named subset of the older
+forty-row calibration selection. It cannot honestly stand for the new annual
+coverage cohort because four of its ten filings are outside the completed
+2022--2025 panel. A separate `universe_classifier_pilot_selection@0.2.0`
+therefore names ten filings directly from the ADR-138 annual-coverage cohort.
+It binds that cohort's manifest and records digest, the candidate-cohort
+manifest from which it was derived, and the packet manifest used to render Item
+1. It does not bind, load, or refer to the older calibration selection.
+
+This is a selection change only. The firm-level pilot prompt and its four-axis
+record contract are unchanged; the resulting selection is a deliberate mixed
+stress set, not a sample, software universe, tier assignment, or membership
+decision. A separate governed run successor is required before this selection
+can reach a model.
+
 ## Open decisions
 
 - **Why 7.5% of V5 screen rows fail quote validation.** Read-only

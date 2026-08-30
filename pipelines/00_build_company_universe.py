@@ -488,6 +488,7 @@ from dynamic_ai_products.universe.freeze import FreezeBlockedError  # noqa: E402
 from dynamic_ai_products.universe.lineage_screen import (  # noqa: E402
     MockLineageScreenProvider,
     ScreenInputError,
+    _sha256,
     run_lineage_screen,
 )
 from dynamic_ai_products.lineage_screen_diagnostic import (  # noqa: E402
@@ -540,6 +541,10 @@ from dynamic_ai_products.classifier_annual_coverage_cohort import (  # noqa: E40
 from dynamic_ai_products.classifier_pilot_selection import (  # noqa: E402
     PILOT_SELECTION_FILENAME,
     build_pilot_selection_artifact,
+)
+from dynamic_ai_products.classifier_pilot_selection_v2 import (  # noqa: E402
+    PILOT_SELECTION_V2_FILENAME,
+    build_pilot_selection_v2_artifact,
 )
 from dynamic_ai_products.lineage_classifier_pilot_v1 import (  # noqa: E402
     run_lineage_classifier_pilot_v1,
@@ -666,6 +671,7 @@ def build_parser() -> argparse.ArgumentParser:
                  "select-classifier-calibration-rows",
                  "classify-universe-calibration",
                  "select-classifier-pilot-rows",
+                 "select-classifier-pilot-rows-v2",
                  "classify-software-universe-pilot-v1",
                  "build-annual-coverage-cohort",
                  "build-classifier-calibration-review",
@@ -966,6 +972,21 @@ def build_parser() -> argparse.ArgumentParser:
              "authorization, never by this flag.",
     )
     parser.add_argument(
+        "--annual-coverage-cohort-manifest", default=None,
+        help=(
+            "Select-classifier-pilot-rows-v2 mode only: the completed "
+            "annual-coverage cohort manifest that supplies the eligible "
+            "population for the named ten-filing pilot."
+        ),
+    )
+    parser.add_argument(
+        "--annual-coverage-cohort-manifest-sha256", default=None,
+        help=(
+            "Select-classifier-pilot-rows-v2 mode only: the pinned SHA-256 "
+            "of that annual-coverage cohort manifest."
+        ),
+    )
+    parser.add_argument(
         "--overlay-manifest", default=None,
         help="Build-classifier-candidate-cohort mode only: the human-review "
              "overlay's universe_human_review_overlay_manifest.json.",
@@ -1149,7 +1170,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-universe-cohort-v2-7", "classify-universe-cohort-continuation-v2-7", "classify-universe-calibration-v2-7",
                          "classify-universe-cohort-v2-8", "classify-universe-cohort-continuation-v2-8", "classify-universe-calibration-v2-8",
                          "classify-universe-cohort-v2-9", "classify-universe-cohort-continuation-v2-9", "classify-universe-calibration-v2-9",
-                         "classify-software-universe-pilot-v1"):
+                         "classify-software-universe-pilot-v1",
+                         "select-classifier-pilot-rows-v2"):
         screen_offenders += _present(
             (("--packet-manifest", args.packet_manifest),)
         )
@@ -1280,6 +1302,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-universe-cohort-v2-8", "classify-universe-cohort-continuation-v2-8", "classify-universe-calibration-v2-8",
                          "classify-universe-cohort-v2-9", "classify-universe-cohort-continuation-v2-9", "classify-universe-calibration-v2-9",
                          "select-classifier-pilot-rows",
+                         "select-classifier-pilot-rows-v2",
                          "classify-software-universe-pilot-v1",
                          "build-annual-coverage-cohort"):
         screen_offenders += _present((
@@ -1313,6 +1336,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
         ))
     if args.mode not in ("select-classifier-calibration-rows",
                          "select-classifier-pilot-rows",
+                         "select-classifier-pilot-rows-v2",
                          "build-annual-coverage-cohort"):
         screen_offenders += _present((
             ("--cohort-manifest-sha256", args.cohort_manifest_sha256),
@@ -1329,6 +1353,13 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
     if args.mode != "classify-software-universe-pilot-v1":
         screen_offenders += _present((
             ("--pilot-selection", args.pilot_selection),
+        ))
+    if args.mode != "select-classifier-pilot-rows-v2":
+        screen_offenders += _present((
+            ("--annual-coverage-cohort-manifest",
+             args.annual_coverage_cohort_manifest),
+            ("--annual-coverage-cohort-manifest-sha256",
+             args.annual_coverage_cohort_manifest_sha256),
         ))
     if args.mode != "build-screen-release":
         screen_offenders += _present((
@@ -1985,6 +2016,14 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                    ("--calibration-selection", "calibration_selection"),
                    ("--calibration-selection-sha256",
                     "calibration_selection_sha256"),
+                   ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
+        ("select-classifier-pilot-rows-v2", (("--annual-coverage-cohort-manifest",
+                    "annual_coverage_cohort_manifest"),
+                   ("--annual-coverage-cohort-manifest-sha256",
+                    "annual_coverage_cohort_manifest_sha256"),
+                   ("--cohort-manifest", "cohort_manifest"),
+                   ("--cohort-manifest-sha256", "cohort_manifest_sha256"),
+                   ("--packet-manifest", "packet_manifest"),
                    ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
         ("classify-software-universe-pilot-v1", (("--cohort-manifest", "cohort_manifest"),
                    ("--packet-manifest", "packet_manifest"),
@@ -4052,6 +4091,51 @@ def _main_select_classifier_pilot_rows(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_select_classifier_pilot_rows_v2(args: argparse.Namespace) -> int:
+    """Build the annual-coverage-backed ADR-139 pilot selection. No model call."""
+    coverage = Path(args.annual_coverage_cohort_manifest)
+    cohort = Path(args.cohort_manifest)
+    packet = Path(args.packet_manifest)
+    for label, path in (("annual coverage cohort manifest", coverage),
+                        ("candidate cohort manifest", cohort),
+                        ("packet manifest", packet)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    output_path = Path(args.output_dir) / args.run_id / PILOT_SELECTION_V2_FILENAME
+    if not args.dry_run:
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            print(f"ERROR: {output_path.parent} already exists; a selection is "
+                  "written once.", file=sys.stderr)
+            return 2
+    try:
+        selection = build_pilot_selection_v2_artifact(
+            repo_root=REPO_ROOT,
+            coverage_manifest_path=coverage,
+            coverage_manifest_sha256=args.annual_coverage_cohort_manifest_sha256,
+            candidate_cohort_manifest_path=cohort,
+            candidate_cohort_manifest_sha256=args.cohort_manifest_sha256,
+            packet_manifest_path=packet,
+            packet_manifest_sha256=_sha256(packet.read_bytes()),
+            output_path=output_path,
+            selection_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc),
+            dry_run=args.dry_run,
+        )
+    except (ScreenInputError, ValueError) as exc:
+        print(f"ERROR: invalid pilot V2 selection input: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "selection_id": selection["selection_id"], "dry_run": args.dry_run,
+        "output_path": None if args.dry_run else str(output_path),
+        "coverage_cohort_id": selection["coverage_cohort_id"],
+        "counts": selection["counts"], "sampling": selection["sampling"],
+    }, indent=2))
+    return 0
+
+
 def _main_classify_software_universe_pilot_v1(args: argparse.Namespace) -> int:
     """CLI boundary for the ADR-137 governed live firm-level pilot run.
 
@@ -4850,6 +4934,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_build_annual_coverage_cohort(args)
     if args.mode == "select-classifier-pilot-rows":
         return _main_select_classifier_pilot_rows(args)
+    if args.mode == "select-classifier-pilot-rows-v2":
+        return _main_select_classifier_pilot_rows_v2(args)
     if args.mode == "classify-software-universe-pilot-v1":
         return _main_classify_software_universe_pilot_v1(args)
     if args.mode == "select-classifier-calibration-rows":

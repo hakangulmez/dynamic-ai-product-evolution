@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **1016**
+Total tracked/scaffold files listed: **1019**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -473,6 +473,7 @@ Total tracked/scaffold files listed: **1016**
 - `schemas/universe_classifier_pilot_manifest.v1.schema.json`
 - `schemas/universe_classifier_pilot_record.v1.schema.json`
 - `schemas/universe_classifier_pilot_selection.v1.schema.json`
+- `schemas/universe_classifier_pilot_selection.v2.schema.json`
 - `schemas/universe_run_manifest.schema.json`
 - `schemas/universe_run_manifest.v2.schema.json`
 - `schemas/universe_screen_adapter_enablement.schema.json`
@@ -759,6 +760,7 @@ Total tracked/scaffold files listed: **1016**
 - `src/dynamic_ai_products/classifier_annual_coverage_cohort.py`
 - `src/dynamic_ai_products/classifier_calibration_selection.py`
 - `src/dynamic_ai_products/classifier_pilot_selection.py`
+- `src/dynamic_ai_products/classifier_pilot_selection_v2.py`
 - `src/dynamic_ai_products/classifier_contract_set.py`
 - `src/dynamic_ai_products/classifier_span_index.py`
 - `src/dynamic_ai_products/lineage_classifier_calibration.py`
@@ -964,6 +966,7 @@ Total tracked/scaffold files listed: **1016**
 - `tests/universe/test_baseline_carrier.py`
 - `tests/universe/test_classifier_pilot_v1.py`
 - `tests/universe/test_classifier_pilot_v1_run.py`
+- `tests/universe/test_classifier_pilot_selection_v2.py`
 - `tests/universe/test_classifier_v2_7_prompt.py`
 - `tests/universe/test_classifier_v2_8_evidence.py`
 - `tests/universe/test_classifier_v2_9_prompt.py`
