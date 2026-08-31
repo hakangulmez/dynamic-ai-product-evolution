@@ -174,7 +174,10 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-141: manifest_version 0.79.0 -> 0.80.0, 218 -> 222
+    # Rebaselined by ADR-143: manifest_version 0.81.0 -> 0.82.0, 226 -> 228
+    # entries. The compact V5 pilot adds only its authorization and manifest
+    # successors; no released evaluation contract changes.
+    # Before it, ADR-142: manifest_version 0.80.0 -> 0.81.0, 222 -> 226
     # entries. The two-axis Item 1 gate adds its axes and record successors plus
     # its isolated V3 authorization and manifest; no released evaluation
     # contract changes.
@@ -562,7 +565,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "8826adaa04f58df9868053f81077e7b6ae2b3d4392c646c0455dc023e44c68f8"
+    "278146d29740df6cfd1c3c96320605590cb0a7009c87f41d91f1b2e056a580ca"
 )
 
 

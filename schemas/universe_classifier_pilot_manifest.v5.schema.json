@@ -1,0 +1,493 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_pilot_manifest.v5.schema.json",
+  "title": "Software universe classifier pilot manifest v0.3.0",
+  "description": "Completed-run manifest for the narrow two-axis Item 1 universe gate. It binds the annual-coverage-selected filings, prompt, provider contract and outputs. It derives no tier, settles no membership, and is non-promotable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_contract",
+    "run_id",
+    "run_kind",
+    "run_timestamp",
+    "promotable",
+    "covers_full_cohort",
+    "derives_no_tier",
+    "settles_no_membership",
+    "authorization_id",
+    "authorization_sha256",
+    "sources",
+    "prompt_template_path",
+    "prompt_template_sha256",
+    "provider",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "screen_adapter_enablement_sha256",
+    "endpoint_allowlist",
+    "envelope_text_extraction_rule",
+    "output_contract",
+    "output_axes_contract",
+    "output_hashes",
+    "record_order",
+    "counts",
+    "request_accounting",
+    "reconciliation",
+    "schema_versions",
+    "limitations"
+  ],
+  "properties": {
+    "manifest_contract": {
+      "const": "universe_classifier_pilot_manifest@0.5.0"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_kind": {
+      "const": "classifier_pilot_v5"
+    },
+    "run_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "promotable": {
+      "const": false
+    },
+    "covers_full_cohort": {
+      "const": false
+    },
+    "derives_no_tier": {
+      "const": true
+    },
+    "settles_no_membership": {
+      "const": true
+    },
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorization_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prompt_template_path": {
+      "const": "prompts/discovery/software_universe_classifier_pilot.v4.md"
+    },
+    "prompt_template_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model_label"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "model_label": {
+          "type": "string"
+        }
+      }
+    },
+    "provider_client_contract_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_client_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_adapter_enablement_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "endpoint_allowlist": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "envelope_text_extraction_rule": {
+      "type": "string",
+      "minLength": 1
+    },
+    "output_contract": {
+      "const": "universe_classifier_pilot_record@0.3.0"
+    },
+    "output_axes_contract": {
+      "const": "universe_classifier_pilot_axes_record@0.3.0"
+    },
+    "record_order": {
+      "const": "pilot_selection_row_order"
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cohort",
+        "coverage",
+        "packet",
+        "selection",
+        "sources_unmodified"
+      ],
+      "properties": {
+        "cohort": {
+          "$ref": "#/$defs/digest_source"
+        },
+        "coverage": {
+          "$ref": "#/$defs/digest_source"
+        },
+        "packet": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "packet_manifest_path",
+            "packet_manifest_sha256",
+            "packets_jsonl_sha256"
+          ],
+          "properties": {
+            "packet_manifest_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "packet_manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "packets_jsonl_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "selection_artifact_path",
+            "selection_artifact_sha256",
+            "selection_id",
+            "selection_kind",
+            "selected_rows",
+            "coverage_cohort_id",
+            "coverage_cohort_manifest_sha256",
+            "coverage_cohort_records_sha256"
+          ],
+          "properties": {
+            "selection_artifact_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "selection_artifact_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "selection_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "selection_kind": {
+              "const": "classifier_pilot_v2"
+            },
+            "selected_rows": {
+              "const": 10
+            },
+            "coverage_cohort_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "coverage_cohort_manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "coverage_cohort_records_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "sources_unmodified": {
+          "const": true
+        }
+      }
+    },
+    "output_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_classifier_pilot_v5_records.jsonl",
+        "universe_classifier_pilot_v5_raw_responses.jsonl",
+        "universe_screen_capture_ledger.jsonl"
+      ],
+      "properties": {
+        "universe_classifier_pilot_v5_records.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "universe_classifier_pilot_v5_raw_responses.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "universe_screen_capture_ledger.jsonl": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_rows",
+        "classified",
+        "review_uncertain",
+        "review_uncertain_by_reason",
+        "by_admission_origin",
+        "by_pilot_stratum",
+        "by_confidence",
+        "by_customer_facing_digital_product",
+        "by_software_centrality",
+        "evidence_items",
+        "rows_with_no_evidence"
+      ],
+      "properties": {
+        "selected_rows": {
+          "const": 10
+        },
+        "classified": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "review_uncertain": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "review_uncertain_by_reason": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "invalid_model_json": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "pilot_axes_contract_violation": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "model_emitted_forbidden_field": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "evidence_reference_unresolvable": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "by_admission_origin": {
+          "type": "object"
+        },
+        "by_pilot_stratum": {
+          "type": "object"
+        },
+        "by_confidence": {
+          "type": "object"
+        },
+        "by_customer_facing_digital_product": {
+          "type": "object"
+        },
+        "by_software_centrality": {
+          "type": "object"
+        },
+        "evidence_items": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30
+        },
+        "rows_with_no_evidence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        }
+      }
+    },
+    "request_accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logical_row_cap",
+        "count_attempt_cap",
+        "provider_attempt_cap",
+        "external_request_cap",
+        "count_attempts_made",
+        "provider_attempts_made",
+        "external_requests_made",
+        "rows_count_retried",
+        "rows_generate_retried",
+        "model_called_rows",
+        "tokens_in_measured",
+        "tokens_out_reported",
+        "rows_usage_verified",
+        "cost_micros_settled",
+        "budget_max_input_tokens",
+        "budget_max_output_tokens",
+        "budget_max_estimated_cost_micros",
+        "budget_max_wall_clock_seconds"
+      ],
+      "properties": {
+        "logical_row_cap": {
+          "const": 10
+        },
+        "count_attempt_cap": {
+          "const": 30
+        },
+        "provider_attempt_cap": {
+          "const": 50
+        },
+        "external_request_cap": {
+          "const": 80
+        },
+        "count_attempts_made": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider_attempts_made": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "external_requests_made": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_count_retried": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows_generate_retried": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_called_rows": {
+          "const": 10
+        },
+        "tokens_in_measured": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_out_reported": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "rows_usage_verified": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost_micros_settled": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "budget_max_input_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "budget_max_output_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "budget_max_estimated_cost_micros": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "budget_max_wall_clock_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "const": true
+      }
+    },
+    "schema_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "universe_classifier_pilot_axes_record",
+        "universe_classifier_pilot_record",
+        "universe_classifier_pilot_manifest",
+        "universe_classifier_pilot_selection",
+        "screen_connector"
+      ],
+      "properties": {
+        "universe_classifier_pilot_axes_record": {
+          "type": "string",
+          "minLength": 1
+        },
+        "universe_classifier_pilot_record": {
+          "type": "string",
+          "minLength": 1
+        },
+        "universe_classifier_pilot_manifest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "universe_classifier_pilot_selection": {
+          "type": "string",
+          "minLength": 1
+        },
+        "screen_connector": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "$defs": {
+    "digest_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cohort_id",
+        "manifest_sha256",
+        "records_jsonl_sha256"
+      ],
+      "properties": {
+        "cohort_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "records_jsonl_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

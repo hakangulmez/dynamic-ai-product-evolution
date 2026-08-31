@@ -9946,3 +9946,12 @@ asks product existence first and centrality only conditional on product YES. For
 NO or UNKNOWN product, centrality is contractually UNKNOWN. This is a successor
 route with its own prompt, axes/record contracts, authorization, manifest and
 output names; V3 artifacts stay immutable.
+
+## ADR-143 — narrow V5 pilot wording and route
+
+V5 preserves the V4 two-axis contracts and ten-filing pilot scope while
+pinning a shorter, product-first Item 1 prompt. A firm is YES only when Item 1
+establishes that an external customer obtains digital functionality itself as a
+separately identifiable product, rather than merely using it to access, sell,
+rent, pay for, or operate a non-digital product or human-delivered service.
+The route remains non-promotable and is not a full-cohort authorization.

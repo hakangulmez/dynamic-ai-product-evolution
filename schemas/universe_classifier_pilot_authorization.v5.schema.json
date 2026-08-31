@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_pilot_authorization.v5.schema.json",
+  "title": "Software universe classifier pilot authorization v0.3.0",
+  "description": "Authorization for exactly ten annual-coverage-qualified filings under the narrow two-axis Item 1 universe gate. It pins the new prompt and output contracts, carries no tier rules or membership tolerance, and is structurally non-promotable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorization_contract",
+    "authorization_id",
+    "authorized_by",
+    "deployment_environment_id",
+    "rollout_state",
+    "effective_at",
+    "expires_at",
+    "run_kind",
+    "promotable",
+    "covers_full_cohort",
+    "output_contract",
+    "output_axes_contract",
+    "prompt_template_path",
+    "prompt_template_sha256",
+    "cohort_id",
+    "cohort_manifest_sha256",
+    "coverage_cohort_id",
+    "coverage_cohort_manifest_sha256",
+    "coverage_cohort_records_sha256",
+    "packet_manifest_sha256",
+    "selection_artifact_path",
+    "selection_artifact_sha256",
+    "selection_kind",
+    "provider_client_contract_reference",
+    "provider_client_contract_sha256",
+    "screen_adapter_enablement_reference",
+    "screen_adapter_enablement_sha256",
+    "vertex_project",
+    "vertex_location",
+    "model_route",
+    "endpoint_allowlist",
+    "logical_row_cap",
+    "count_attempt_cap",
+    "provider_attempt_cap",
+    "budget_max_external_requests",
+    "count_attempts_per_row",
+    "generate_attempts_per_row",
+    "external_requests_per_row",
+    "retry_policy_version",
+    "rate_limit_policy_version",
+    "screen_generate_retry_policy_version",
+    "screen_count_retry_policy_version",
+    "budget_max_input_tokens",
+    "budget_max_output_tokens",
+    "budget_max_estimated_cost_micros",
+    "budget_max_wall_clock_seconds"
+  ],
+  "properties": {
+    "authorization_contract": {
+      "const": "universe_classifier_pilot_authorization@0.5.0"
+    },
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorized_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "deployment_environment_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rollout_state": {
+      "type": "string",
+      "minLength": 1
+    },
+    "effective_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "run_kind": {
+      "const": "classifier_pilot_v5"
+    },
+    "promotable": {
+      "const": false
+    },
+    "covers_full_cohort": {
+      "const": false
+    },
+    "output_contract": {
+      "const": "universe_classifier_pilot_record@0.3.0"
+    },
+    "output_axes_contract": {
+      "const": "universe_classifier_pilot_axes_record@0.3.0"
+    },
+    "prompt_template_path": {
+      "const": "prompts/discovery/software_universe_classifier_pilot.v4.md"
+    },
+    "prompt_template_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "cohort_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cohort_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "coverage_cohort_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "coverage_cohort_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "coverage_cohort_records_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "packet_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "selection_artifact_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selection_artifact_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "selection_kind": {
+      "const": "classifier_pilot_v2"
+    },
+    "provider_client_contract_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_client_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "screen_adapter_enablement_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "screen_adapter_enablement_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "vertex_project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vertex_location": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model_label"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_label": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "endpoint_allowlist": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "logical_row_cap": {
+      "const": 10
+    },
+    "count_attempt_cap": {
+      "const": 30
+    },
+    "provider_attempt_cap": {
+      "const": 50
+    },
+    "budget_max_external_requests": {
+      "const": 80
+    },
+    "count_attempts_per_row": {
+      "const": 3
+    },
+    "generate_attempts_per_row": {
+      "const": 5
+    },
+    "external_requests_per_row": {
+      "const": 8
+    },
+    "retry_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rate_limit_policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "screen_generate_retry_policy_version": {
+      "const": "universe_screen_generate_retry_policy_v1"
+    },
+    "screen_count_retry_policy_version": {
+      "const": "universe_screen_count_retry_policy_v1"
+    },
+    "budget_max_input_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_output_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_estimated_cost_micros": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "budget_max_wall_clock_seconds": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

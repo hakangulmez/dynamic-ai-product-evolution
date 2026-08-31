@@ -12,6 +12,7 @@ from dynamic_ai_products.classifier_pilot_v3 import (
     validate_pilot_v3_axes_output,
 )
 from dynamic_ai_products.lineage_classifier_pilot_v4 import PILOT_V4_ROUTE
+from dynamic_ai_products.lineage_classifier_pilot_v5 import PILOT_V5_ROUTE
 
 ROOT = Path(__file__).resolve().parents[2]
 AXES = Draft202012Validator(json.loads((ROOT / PILOT_V3_AXES_SCHEMA).read_text()))
@@ -76,3 +77,21 @@ def test_v4_route_isolated_and_binds_only_the_product_first_contract():
     assert PILOT_V4_ROUTE.axes_contract == "universe_classifier_pilot_axes_record@0.3.0"
     assert PILOT_V4_ROUTE.record_contract == "universe_classifier_pilot_record@0.3.0"
     assert PILOT_V4_ROUTE.manifest_contract == "universe_classifier_pilot_manifest@0.4.0"
+
+
+def test_successor_prompt_distinguishes_a_product_from_a_digital_channel_or_venue():
+    prompt = (ROOT / "prompts/discovery/software_universe_classifier_pilot.v4.md").read_text()
+    for phrase in (
+        "functionality itself as a separately identifiable product",
+        "access, sell, rent, pay for, or operate",
+        "online ordering or transaction\nchannel",
+        "market, exchange, payment\nrail",
+    ):
+        assert phrase in prompt
+
+
+def test_v5_route_isolated_and_binds_the_compact_product_first_prompt():
+    assert PILOT_V5_ROUTE.run_kind == "classifier_pilot_v5"
+    assert PILOT_V5_ROUTE.prompt_path.endswith("software_universe_classifier_pilot.v4.md")
+    assert PILOT_V5_ROUTE.authorization_contract == "universe_classifier_pilot_authorization@0.5.0"
+    assert PILOT_V5_ROUTE.manifest_contract == "universe_classifier_pilot_manifest@0.5.0"
