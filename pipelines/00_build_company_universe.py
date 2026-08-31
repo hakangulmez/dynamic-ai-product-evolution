@@ -572,6 +572,9 @@ from dynamic_ai_products.lineage_classifier_pilot_v5 import (  # noqa: E402
 from dynamic_ai_products.lineage_classifier_pilot_v6 import (  # noqa: E402
     run_lineage_classifier_pilot_v6,
 )
+from dynamic_ai_products.lineage_classifier_pilot_v7 import (  # noqa: E402
+    run_lineage_classifier_pilot_v7,
+)
 from dynamic_ai_products.lineage_classifier_calibration import (  # noqa: E402
     CALIBRATION_ROUTE,
     CALIBRATION_ROUTE_V2_2,
@@ -701,6 +704,7 @@ def build_parser() -> argparse.ArgumentParser:
                  "classify-software-universe-pilot-v4",
                  "classify-software-universe-pilot-v5",
                  "classify-software-universe-pilot-v6",
+                 "classify-software-universe-pilot-v7",
                  "build-annual-coverage-cohort",
                  "build-classifier-calibration-review",
                  "build-classifier-calibration-review-v2-2",
@@ -1204,6 +1208,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                  "classify-software-universe-pilot-v4",
                  "classify-software-universe-pilot-v5",
                  "classify-software-universe-pilot-v6",
+                 "classify-software-universe-pilot-v7",
                          "select-classifier-pilot-rows-v2"):
         screen_offenders += _present(
             (("--packet-manifest", args.packet_manifest),)
@@ -1266,7 +1271,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-software-universe-pilot-v3",
                          "classify-software-universe-pilot-v4",
                          "classify-software-universe-pilot-v5",
-                         "classify-software-universe-pilot-v6"):
+                         "classify-software-universe-pilot-v6",
+                         "classify-software-universe-pilot-v7"):
         screen_offenders += _present((
             ("--governance-root", args.governance_root),
             ("--screen-authorization", args.screen_authorization),
@@ -1347,6 +1353,7 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                  "classify-software-universe-pilot-v4",
                  "classify-software-universe-pilot-v5",
                  "classify-software-universe-pilot-v6",
+                 "classify-software-universe-pilot-v7",
                          "build-annual-coverage-cohort"):
         screen_offenders += _present((
             ("--cohort-manifest", args.cohort_manifest),
@@ -1398,7 +1405,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-software-universe-pilot-v3",
                          "classify-software-universe-pilot-v4",
                          "classify-software-universe-pilot-v5",
-                         "classify-software-universe-pilot-v6"):
+                         "classify-software-universe-pilot-v6",
+                         "classify-software-universe-pilot-v7"):
         screen_offenders += _present((
             ("--pilot-selection", args.pilot_selection),
         ))
@@ -1407,7 +1415,8 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                          "classify-software-universe-pilot-v3",
                          "classify-software-universe-pilot-v4",
                          "classify-software-universe-pilot-v5",
-                         "classify-software-universe-pilot-v6"):
+                         "classify-software-universe-pilot-v6",
+                         "classify-software-universe-pilot-v7"):
         screen_offenders += _present((
             ("--annual-coverage-cohort-manifest",
              args.annual_coverage_cohort_manifest),
@@ -2127,6 +2136,16 @@ def _reject_cross_mode_flags(args: argparse.Namespace) -> str | None:
                     "screen_authorization_sha256"),
                    ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
         ("classify-software-universe-pilot-v6", (("--cohort-manifest", "cohort_manifest"),
+                   ("--annual-coverage-cohort-manifest",
+                    "annual_coverage_cohort_manifest"),
+                   ("--packet-manifest", "packet_manifest"),
+                   ("--pilot-selection", "pilot_selection"),
+                   ("--governance-root", "governance_root"),
+                   ("--screen-authorization", "screen_authorization"),
+                   ("--screen-authorization-sha256",
+                    "screen_authorization_sha256"),
+                   ("--output-dir", "output_dir"), ("--run-id", "run_id"))),
+        ("classify-software-universe-pilot-v7", (("--cohort-manifest", "cohort_manifest"),
                    ("--annual-coverage-cohort-manifest",
                     "annual_coverage_cohort_manifest"),
                    ("--packet-manifest", "packet_manifest"),
@@ -4452,6 +4471,41 @@ def _main_classify_software_universe_pilot_v6(args: argparse.Namespace) -> int:
     return _report_classifier_run(result, what="pilot V6 run")
 
 
+def _main_classify_software_universe_pilot_v7(args: argparse.Namespace) -> int:
+    """CLI boundary for the managed-service product-gate successor."""
+    cohort = Path(args.cohort_manifest)
+    coverage = Path(args.annual_coverage_cohort_manifest)
+    packet = Path(args.packet_manifest)
+    selection = Path(args.pilot_selection)
+    for label, path in (("cohort manifest", cohort),
+                        ("annual coverage cohort manifest", coverage),
+                        ("packet manifest", packet), ("pilot selection", selection)):
+        if not path.is_file():
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
+            return 2
+    governance_root = Path(args.governance_root)
+    if not governance_root.is_dir():
+        print(f"ERROR: governance root not found: {governance_root}", file=sys.stderr)
+        return 2
+    try:
+        result = run_lineage_classifier_pilot_v7(
+            repo_root=REPO_ROOT, cohort_manifest_path=cohort,
+            coverage_manifest_path=coverage, packet_manifest_path=packet,
+            selection_path=selection, governance_root=governance_root,
+            authorization_reference=args.screen_authorization,
+            authorization_sha256=args.screen_authorization_sha256,
+            output_dir=Path(args.output_dir), run_id=args.run_id,
+            clock=lambda: datetime.now(timezone.utc), dry_run=args.dry_run,
+        )
+    except ScreenInputError as exc:
+        print(f"ERROR: invalid V7 pilot input: {exc}", file=sys.stderr)
+        return 2
+    except FileExistsError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    return _report_classifier_run(result, what="pilot V7 run")
+
+
 def _main_classify_universe_calibration(args: argparse.Namespace, *,
                                         route=None) -> int:
     """CLI boundary for the ADR-127 governed live calibration run."""
@@ -5224,6 +5278,8 @@ def main(argv: list[str] | None = None) -> int:
         return _main_classify_software_universe_pilot_v5(args)
     if args.mode == "classify-software-universe-pilot-v6":
         return _main_classify_software_universe_pilot_v6(args)
+    if args.mode == "classify-software-universe-pilot-v7":
+        return _main_classify_software_universe_pilot_v7(args)
     if args.mode == "select-classifier-calibration-rows":
         return _main_select_classifier_calibration_rows(args)
     if args.mode == "classify-universe-calibration":

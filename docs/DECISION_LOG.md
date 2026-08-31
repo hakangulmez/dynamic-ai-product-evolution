@@ -9999,3 +9999,16 @@ digital channel is insufficient by itself.
 This is a wording experiment, not a new membership or tier decision. V6 is an
 isolated, non-promotable successor route with its own authorization and manifest
 contracts; V5 prompt bytes, contracts, and historical runs remain immutable.
+
+## ADR-146 — managed services are not customer-facing digital products
+
+The V6 pilot correctly narrowed the firm-level CORE label but still classified
+one managed IT-services firm as offering a customer-facing digital product.
+V7 therefore makes one general product-existence distinction explicit: a
+managed service, consulting engagement, implementation, integration,
+outsourcing, or staff-led operation does not become a digital product merely
+because software, cloud infrastructure, data, or AI is used or managed in its
+delivery. The successor preserves the same Item 1 evidence surface, ten
+annual-coverage-qualified filings, two-axis output contract, and address-only
+response shape. It is a non-promotable wording experiment; it does not decide
+software-universe membership or alter V6 artifacts.
