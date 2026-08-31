@@ -10012,3 +10012,13 @@ delivery. The successor preserves the same Item 1 evidence surface, ten
 annual-coverage-qualified filings, two-axis output contract, and address-only
 response shape. It is a non-promotable wording experiment; it does not decide
 software-universe membership or alter V6 artifacts.
+
+## ADR-147 — V7 product gate on the governed batch path
+
+The 2,799-filing batch plan is a prompt-neutral, deterministic partition and
+remains reusable. Its existing V1 execution route, however, const-pins the
+older V4 prompt. V2 therefore reuses the exact same batch plan and Item 1
+packets but has its own authorization and manifest contracts, output names,
+and run root, all const-pinning the V7 managed-service product gate. Batch
+0001 is a 100-filing quality gate, not a full-cohort authorization and not a
+replacement for the V1 result.
