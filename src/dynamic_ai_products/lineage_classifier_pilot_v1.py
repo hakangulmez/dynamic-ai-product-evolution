@@ -179,7 +179,7 @@ class PilotRunRoute:
     selection_contract: str
     selection_kind: str
     selection_source: str
-    load_selection: Callable[[Path, str, Path], dict]
+    load_selection: Callable[[Path, str, Path, dict], dict]
     prompt_path: str
     axes_schema: str
     axes_contract: str
@@ -187,9 +187,16 @@ class PilotRunRoute:
     record_contract: str
     judgement_axes: tuple[str, ...]
     build_record: Callable[..., dict]
+    scope_min_rows: int
+    scope_max_rows: int
+    scope_exact_rows: int | None
+    record_order: str
+    selection_group_field: str | None
+    selection_group_count_name: str | None
+    scope_noun: str
 
 
-def _load_v1_selection(path: Path, digest: str, _root: Path) -> dict:
+def _load_v1_selection(path: Path, digest: str, _root: Path, _authorization: dict) -> dict:
     return require_pilot_selection(path, expected_sha256=digest)
 
 
@@ -219,6 +226,13 @@ PILOT_V1_ROUTE = PilotRunRoute(
         "commercial_materiality",
     ),
     build_record=build_pilot_record,
+    scope_min_rows=PILOT_ROW_CAP,
+    scope_max_rows=PILOT_ROW_CAP,
+    scope_exact_rows=PILOT_ROW_CAP,
+    record_order=PILOT_RECORD_ORDER,
+    selection_group_field="pilot_stratum",
+    selection_group_count_name="by_pilot_stratum",
+    scope_noun="ten named pilot filings",
 )
 
 RECEIPT_CONTRACT = "universe_screen_failure_receipt@0.1.0"
@@ -331,11 +345,11 @@ def _pilot_preflight(
     if authorization["run_kind"] != route.run_kind:
         raise ScreenInputError("The grant names a different run kind.")
     if authorization["promotable"] is not False:
-        raise ScreenInputError("A pilot grant may never be promotable.")
+        raise ScreenInputError(f"A {route.scope_noun} grant may never be promotable.")
     if authorization["covers_full_cohort"] is not False:
         raise ScreenInputError(
-            "A pilot grant may never claim full-cohort coverage; ten named "
-            "filings are not a universe.")
+            f"A {route.scope_noun} grant may never claim full-cohort coverage; "
+            "it is not a universe.")
 
     endpoints = build_operation_endpoints(
         vertex_project=authorization["vertex_project"],
@@ -390,7 +404,8 @@ def _pilot_preflight(
             f"{authorization['selection_artifact_path']!r}, not "
             f"{str(resolved_selection)!r}.")
     selection = route.load_selection(
-        resolved_selection, authorization["selection_artifact_sha256"], root)
+        resolved_selection, authorization["selection_artifact_sha256"], root,
+        authorization)
     if selection["selection_kind"] != authorization["selection_kind"]:
         raise ScreenInputError("The grant names a different selection kind.")
     selection_cohort_sha = (selection["cohort_manifest_sha256"]
@@ -405,13 +420,15 @@ def _pilot_preflight(
             "grant binds.")
     if selection_cohort_id != authorization["cohort_id"]:
         raise ScreenInputError("The selection names a different cohort id.")
-    if selection["packet_manifest_sha256"] != authorization["packet_manifest_sha256"]:
+    if (route.selection_source != "batch_plan"
+            and selection["packet_manifest_sha256"]
+            != authorization["packet_manifest_sha256"]):
         raise ScreenInputError(
             "The selection was built against a different packet cohort than the "
             "one this grant binds.")
 
     coverage_digests = None
-    if route.selection_source == "annual_coverage":
+    if route.selection_source in ("annual_coverage", "batch_plan"):
         if coverage_manifest_path is None:
             raise ScreenInputError(
                 "The annual-coverage pilot route requires its coverage manifest.")
@@ -466,10 +483,14 @@ def _pilot_preflight(
                 f"Selected row {key} no longer matches its recorded packet "
                 "digest.")
         plan.append((row, packet))
-    if len(plan) != PILOT_ROW_CAP:
+    if not route.scope_min_rows <= len(plan) <= route.scope_max_rows:
         raise ScreenInputError(
-            f"The pilot plan holds {len(plan)} row(s); this experiment is "
-            f"exactly {PILOT_ROW_CAP}.")
+            f"The {route.scope_noun} scope holds {len(plan)} row(s); it must "
+            f"hold {route.scope_min_rows} through {route.scope_max_rows}.")
+    if route.scope_exact_rows is not None and len(plan) != route.scope_exact_rows:
+        raise ScreenInputError(
+            f"The {route.scope_noun} scope holds {len(plan)} row(s); it is "
+            f"exactly {route.scope_exact_rows}.")
     if len({(r["cik"], r["accession"]) for r, _ in plan}) != len(plan):
         raise ScreenInputError("The selection names a filing twice.")
 
@@ -543,7 +564,7 @@ def _run_lineage_classifier_pilot(
     run_id: str, clock: Callable[[], datetime], dry_run: bool = False,
     client_factory: Any = None, sleep: Callable[[float], None] | None = None,
 ) -> ScreenRunResult:
-    """Execute one configured pilot route; public wrappers own route identity."""
+    """Execute one configured non-promotable classifier route."""
     root = Path(repo_root)
     if not _RUN_ID_RE.match(run_id):
         raise ScreenInputError("Invalid run id.")
@@ -575,8 +596,8 @@ def _run_lineage_classifier_pilot(
 
 def _pilot_execute(*, root: Path, pre: _PilotPreflight, output_dir, run_id: str,
                    authorization_sha256: str, clock, client_factory, sleep
-                   ) -> ScreenRunResult:
-    """The governed loop: ten rows, two record kinds, one archive line per send."""
+) -> ScreenRunResult:
+    """The governed loop: one record kind per row and one archived response per send."""
     connector = VertexGeminiScreenV6(
         vertex_project=pre.authorization["vertex_project"],
         vertex_location=pre.authorization["vertex_location"],
@@ -623,7 +644,7 @@ def _pilot_execute(*, root: Path, pre: _PilotPreflight, output_dir, run_id: str,
     def fail(reason: str, detail: str, row: dict) -> ScreenRunResult:
         """Write the receipt for a provider stop and return.
 
-        A provider failure is never stored as a row. The pilot's four review
+        A provider failure is never stored as a row. The route's four review
         reasons all describe a model response the pipeline could read and refuse;
         an exhausted budget or a terminal transport error describes neither the
         filing nor the model, and recording it beside a judgement would let an
@@ -650,7 +671,7 @@ def _pilot_execute(*, root: Path, pre: _PilotPreflight, output_dir, run_id: str,
             "selection_id": pre.selection["selection_id"],
             "run_timestamp": clock().isoformat(),
             "retention_note": (
-                "Non-authoritative pilot run: no records JSONL, no capture "
+                "Non-authoritative classifier run: no records JSONL, no capture "
                 "ledger and no manifest exist here. A provider failure is not a "
                 "judgement about any filing and none was recorded. This "
                 "directory is immutable; a further attempt requires a new run "
@@ -762,11 +783,16 @@ def _manifest_selection_source(pre: _PilotPreflight) -> dict:
             "source_selection_sha256": pre.selection["source_selection_sha256"],
         }
     assert pre.coverage_digests is not None
+    batch = ({"batch_plan_id": pre.selection["batch_plan_id"],
+              "batch_id": pre.selection["batch_id"],
+              "batch_ordinal": pre.selection["batch_ordinal"]}
+             if pre.route.selection_source == "batch_plan" else {})
     return {
         **common,
         "coverage_cohort_id": pre.coverage_digests["coverage_cohort_id"],
         "coverage_cohort_manifest_sha256": pre.coverage_digests["manifest_sha256"],
         "coverage_cohort_records_sha256": pre.coverage_digests["records_jsonl_sha256"],
+        **batch,
     }
 
 
@@ -777,6 +803,11 @@ def _selection_limitation(route: PilotRunRoute) -> str:
             "calibration selection. They are a mixed stress set, not an "
             "independent draw, so even their internal proportions carry no "
             "sampling interpretation.")
+    if route.selection_source == "batch_plan":
+        return (
+            "This is one fixed-size batch from the annual-coverage cohort, not "
+            "a sample and not a full-cohort result. Only a later aggregate may "
+            "claim complete coverage after every batch has verified.")
     return (
         "The ten are chosen, not sampled, from the annual-coverage cohort. "
         "They are a mixed stress set, not an independent draw, so even their "
@@ -820,8 +851,9 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
     for record in review:
         code = record["review_reason_code"]
         review_by_reason[code] = review_by_reason.get(code, 0) + 1
-    stratum_by_key = {(r["cik"], r["accession"]): r["pilot_stratum"]
-                      for r in pre.selection["rows"]}
+    group_by_key = ({(r["cik"], r["accession"]): r[pre.route.selection_group_field]
+                     for r in pre.selection["rows"]}
+                    if pre.route.selection_group_field is not None else {})
     origin_by_key = {(r["cik"], r["accession"]): r["admission_origin"]
                      for r in pre.selection["rows"]}
     evidence_items = sum(len(r["axes"]["evidence"]) for r in classified)
@@ -833,8 +865,9 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
         "review_uncertain_by_reason": review_by_reason,
         "by_admission_origin": _tally(
             records, lambda r: origin_by_key[(r["cik"], r["accession"])]),
-        "by_pilot_stratum": _tally(
-            records, lambda r: stratum_by_key[(r["cik"], r["accession"])]),
+        **({pre.route.selection_group_count_name: _tally(
+            records, lambda r: group_by_key[(r["cik"], r["accession"])])}
+           if pre.route.selection_group_count_name is not None else {}),
         "by_confidence": _tally(classified, lambda r: r["axes"]["confidence"]),
         **{f"by_{axis}": _tally(classified, lambda r, a=axis: r["axes"][a])
            for axis in pre.route.judgement_axes},
@@ -871,8 +904,11 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
             and len({(r["cik"], r["accession"]) for r in records}) == len(records)),
         "records follow the selection's own row order": (
             [(r["cik"], r["accession"]) for r in records] == selected_keys),
-        "the run covers exactly the ten named filings": (
-            len(records) == PILOT_ROW_CAP),
+        f"the run covers exactly its {pre.route.scope_noun}": (
+            len(records) == len(selected_keys)
+            and pre.route.scope_min_rows <= len(records) <= pre.route.scope_max_rows
+            and (pre.route.scope_exact_rows is None
+                 or len(records) == pre.route.scope_exact_rows)),
         "the two record kinds partition the run": (
             len(classified) + len(review) == len(records)),
         "the review breakdown sums to the review population": (
@@ -921,13 +957,14 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
              if pre.route.selection_source == "calibration"
              else pre.selection["candidate_cohort_manifest_sha256"])
             == pre.authorization["cohort_manifest_sha256"]
-            and pre.selection["packet_manifest_sha256"]
-            == pre.authorization["packet_manifest_sha256"]
+            and (pre.route.selection_source == "batch_plan" or
+                 pre.selection["packet_manifest_sha256"]
+                 == pre.authorization["packet_manifest_sha256"])
             and pre.cohort_digests["manifest_sha256"]
             == pre.authorization["cohort_manifest_sha256"]
             and pre.packet_digests["packet_manifest_sha256"]
             == pre.authorization["packet_manifest_sha256"]
-            and (pre.route.selection_source != "annual_coverage" or (
+            and (pre.route.selection_source not in ("annual_coverage", "batch_plan") or (
                 pre.coverage_digests is not None
                 and pre.coverage_digests["manifest_sha256"]
                 == pre.authorization["coverage_cohort_manifest_sha256"]
@@ -937,7 +974,7 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
     if not all(reconciliation.values()):
         failed = sorted(k for k, v in reconciliation.items() if not v)
         raise ScreenInputError(
-            f"Pilot reconciliation failed; no manifest is written. Failed "
+            f"Classifier-route reconciliation failed; no manifest is written. Failed "
             f"identities: {failed}.")
 
     manifest = {
@@ -972,7 +1009,7 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
             pre.route.records_filename: _sha256(records_bytes),
             pre.route.raw_responses_filename: _sha256(archive_raw),
             CAPTURE_LEDGER_FILENAME: _sha256(ledger_bytes)},
-        "record_order": PILOT_RECORD_ORDER,
+        "record_order": pre.route.record_order,
         "counts": counts, "request_accounting": request_accounting,
         "reconciliation": reconciliation,
         "schema_versions": {
@@ -987,14 +1024,12 @@ def _pilot_settle(*, root: Path, pre: _PilotPreflight, run_dir: Path, run_id: st
             "screen_connector": SCREEN_CONNECTOR_V6_ID},
         "limitations": [
             (
-                "This run is a pilot over ten named filings. It is structurally "
-                "non-promotable, it settles no firm's membership, and nothing "
-                "downstream may consume it as a decision."
+                "This run is structurally non-promotable, settles no firm's "
+                "membership, and nothing downstream may consume it as a decision."
             ),
             (
-                "Ten rows cannot estimate a rate. Every count in this manifest "
-                "describes these ten rows and may not be extrapolated to the "
-                "candidate cohort or to any other population."
+                f"Every count in this manifest describes only its {pre.route.scope_noun} "
+                "and may not be extrapolated to another population."
             ),
             _selection_limitation(pre.route),
             (

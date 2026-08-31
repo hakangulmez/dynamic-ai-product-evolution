@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_product_gate_batch_authorization.v1.schema.json",
+  "title": "Product-gate batch authorization v0.1.0",
+  "description": "Authorization for exactly one named 1-100 row batch from the hash-bound product-gate batch plan. It is not an authorization for the full cohort.",
+  "type": "object", "additionalProperties": false,
+  "required": ["authorization_contract", "authorization_id", "authorized_by", "deployment_environment_id", "rollout_state", "effective_at", "expires_at", "run_kind", "promotable", "covers_full_cohort", "output_contract", "output_axes_contract", "prompt_template_path", "prompt_template_sha256", "cohort_id", "cohort_manifest_sha256", "coverage_cohort_id", "coverage_cohort_manifest_sha256", "coverage_cohort_records_sha256", "packet_manifest_sha256", "selection_artifact_path", "selection_artifact_sha256", "selection_kind", "batch_id", "provider_client_contract_reference", "provider_client_contract_sha256", "screen_adapter_enablement_reference", "screen_adapter_enablement_sha256", "vertex_project", "vertex_location", "model_route", "endpoint_allowlist", "logical_row_cap", "count_attempt_cap", "provider_attempt_cap", "budget_max_external_requests", "count_attempts_per_row", "generate_attempts_per_row", "external_requests_per_row", "retry_policy_version", "rate_limit_policy_version", "screen_generate_retry_policy_version", "screen_count_retry_policy_version", "budget_max_input_tokens", "budget_max_output_tokens", "budget_max_estimated_cost_micros", "budget_max_wall_clock_seconds"],
+  "properties": {
+    "authorization_contract": {"const": "universe_classifier_product_gate_batch_authorization@0.1.0"},
+    "authorization_id": {"type": "string", "minLength": 1}, "authorized_by": {"type": "string", "minLength": 1}, "deployment_environment_id": {"type": "string", "minLength": 1}, "rollout_state": {"type": "string", "minLength": 1},
+    "effective_at": {"type": "string", "format": "date-time"}, "expires_at": {"type": "string", "format": "date-time"},
+    "run_kind": {"const": "classifier_product_gate_batch_v1"}, "promotable": {"const": false}, "covers_full_cohort": {"const": false},
+    "output_contract": {"const": "universe_classifier_pilot_record@0.3.0"}, "output_axes_contract": {"const": "universe_classifier_pilot_axes_record@0.3.0"},
+    "prompt_template_path": {"const": "prompts/discovery/software_universe_classifier_pilot.v4.md"}, "prompt_template_sha256": {"$ref": "#/$defs/sha"},
+    "cohort_id": {"type": "string", "minLength": 1}, "cohort_manifest_sha256": {"$ref": "#/$defs/sha"},
+    "coverage_cohort_id": {"type": "string", "minLength": 1}, "coverage_cohort_manifest_sha256": {"$ref": "#/$defs/sha"}, "coverage_cohort_records_sha256": {"$ref": "#/$defs/sha"}, "packet_manifest_sha256": {"$ref": "#/$defs/sha"},
+    "selection_artifact_path": {"type": "string", "minLength": 1}, "selection_artifact_sha256": {"$ref": "#/$defs/sha"}, "selection_kind": {"const": "classifier_product_gate_batch_plan_v1"}, "batch_id": {"type": "string", "pattern": "^batch-[0-9]{4}$"},
+    "provider_client_contract_reference": {"type": "string", "minLength": 1}, "provider_client_contract_sha256": {"$ref": "#/$defs/sha"}, "screen_adapter_enablement_reference": {"type": "string", "minLength": 1}, "screen_adapter_enablement_sha256": {"$ref": "#/$defs/sha"},
+    "vertex_project": {"type": "string", "minLength": 1}, "vertex_location": {"type": "string", "minLength": 1},
+    "model_route": {"type": "object", "additionalProperties": false, "required": ["provider", "model_label"], "properties": {"provider": {"type": "string", "minLength": 1}, "model_label": {"type": "string", "minLength": 1}}},
+    "endpoint_allowlist": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string", "format": "uri"}},
+    "logical_row_cap": {"type": "integer", "minimum": 1, "maximum": 100}, "count_attempt_cap": {"type": "integer", "minimum": 3, "maximum": 300}, "provider_attempt_cap": {"type": "integer", "minimum": 5, "maximum": 500}, "budget_max_external_requests": {"type": "integer", "minimum": 8, "maximum": 800},
+    "count_attempts_per_row": {"const": 3}, "generate_attempts_per_row": {"const": 5}, "external_requests_per_row": {"const": 8},
+    "retry_policy_version": {"type": "string", "minLength": 1}, "rate_limit_policy_version": {"type": "string", "minLength": 1}, "screen_generate_retry_policy_version": {"const": "universe_screen_generate_retry_policy_v1"}, "screen_count_retry_policy_version": {"const": "universe_screen_count_retry_policy_v1"},
+    "budget_max_input_tokens": {"type": "integer", "minimum": 1}, "budget_max_output_tokens": {"type": "integer", "minimum": 1}, "budget_max_estimated_cost_micros": {"type": "integer", "minimum": 1}, "budget_max_wall_clock_seconds": {"type": "integer", "minimum": 1}
+  },
+  "$defs": {"sha": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

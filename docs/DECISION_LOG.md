@@ -9955,3 +9955,29 @@ establishes that an external customer obtains digital functionality itself as a
 separately identifiable product, rather than merely using it to access, sell,
 rent, pay for, or operate a non-digital product or human-delivered service.
 The route remains non-promotable and is not a full-cohort authorization.
+
+## ADR-144 — deterministic product-gate batch plan
+
+The annual-coverage cohort contains 2,799 filings. A single serial live run is
+operationally fragile: a provider or network interruption would make the run
+receipt-bearing and non-authoritative, even where an expensive prefix had
+completed. The future full-cohort product gate will therefore use fixed
+100-row batches, each separately governed and independently verifiable.
+
+This increment adds only the model-free planning layer. It partitions every
+included ADR-138 coverage row in its existing deterministic order, without
+resampling or reclassifying it, into contiguous `batch-0001`... batches. The
+plan hash-binds both the coverage manifest and its included records, verifies
+the retained exclusions too, and proves that every included filing appears
+exactly once. It does not call a model, decide software membership, or create
+authority for any batch. A later route must bind one named batch, and an
+aggregate must refuse anything short of the complete, disjoint batch set.
+
+The second increment adds a route for one named batch only. Its authorization
+pins the complete plan by digest, identifies one `batch-####`, and must state
+that batch's exact row count; it cannot use the V5 ten-filing authorization or
+claim full-cohort coverage. The existing Item 1 prompt, two-axis output and
+pipeline-derived evidence representation are reused unchanged. Each completed
+batch manifest remains non-promotable and settles no membership decision. An
+aggregate and its acceptance gate remain separate work; no full-cohort model
+call is authorized by this entry.

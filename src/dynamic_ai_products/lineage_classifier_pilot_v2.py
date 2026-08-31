@@ -38,7 +38,7 @@ __all__ = [
 ]
 
 
-def _load_v2_selection(path: Path, digest: str, root: Path) -> dict:
+def _load_v2_selection(path: Path, digest: str, root: Path, _authorization: dict) -> dict:
     return require_pilot_selection_v2(
         path, expected_sha256=digest, repo_root=root)
 
@@ -64,6 +64,11 @@ PILOT_V2_ROUTE = PilotRunRoute(
     record_contract=PILOT_RECORD_CONTRACT,
     judgement_axes=PILOT_AXES,
     build_record=build_pilot_record,
+    scope_min_rows=10, scope_max_rows=10, scope_exact_rows=10,
+    record_order="pilot_selection_row_order",
+    selection_group_field="pilot_stratum",
+    selection_group_count_name="by_pilot_stratum",
+    scope_noun="ten named pilot filings",
 )
 
 

@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **1043**
+Total tracked/scaffold files listed: **1049**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -489,6 +489,9 @@ Total tracked/scaffold files listed: **1043**
 - `schemas/universe_classifier_pilot_record.v3.schema.json`
 - `schemas/universe_classifier_pilot_selection.v1.schema.json`
 - `schemas/universe_classifier_pilot_selection.v2.schema.json`
+- `schemas/universe_classifier_product_gate_batch_plan.v1.schema.json`
+- `schemas/universe_classifier_product_gate_batch_authorization.v1.schema.json`
+- `schemas/universe_classifier_product_gate_batch_manifest.v1.schema.json`
 - `schemas/universe_run_manifest.schema.json`
 - `schemas/universe_run_manifest.v2.schema.json`
 - `schemas/universe_screen_adapter_enablement.schema.json`
@@ -778,6 +781,7 @@ Total tracked/scaffold files listed: **1043**
 - `src/dynamic_ai_products/classifier_calibration_selection.py`
 - `src/dynamic_ai_products/classifier_pilot_selection.py`
 - `src/dynamic_ai_products/classifier_pilot_selection_v2.py`
+- `src/dynamic_ai_products/classifier_product_gate_batch_plan.py`
 - `src/dynamic_ai_products/classifier_contract_set.py`
 - `src/dynamic_ai_products/classifier_span_index.py`
 - `src/dynamic_ai_products/lineage_classifier_calibration.py`
@@ -786,6 +790,7 @@ Total tracked/scaffold files listed: **1043**
 - `src/dynamic_ai_products/lineage_classifier_pilot_v3.py`
 - `src/dynamic_ai_products/lineage_classifier_pilot_v4.py`
 - `src/dynamic_ai_products/lineage_classifier_pilot_v5.py`
+- `src/dynamic_ai_products/lineage_classifier_product_gate_batch_v1.py`
 - `src/dynamic_ai_products/lineage_screen_live_v3.py`
 - `src/dynamic_ai_products/provenance.py`
 - `src/dynamic_ai_products/providers/__init__.py`
@@ -991,6 +996,7 @@ Total tracked/scaffold files listed: **1043**
 - `tests/universe/test_classifier_pilot_v3.py`
 - `tests/universe/test_classifier_pilot_v4_prompt.py`
 - `tests/universe/test_classifier_pilot_selection_v2.py`
+- `tests/universe/test_classifier_product_gate_batch_plan.py`
 - `tests/universe/test_classifier_v2_7_prompt.py`
 - `tests/universe/test_classifier_v2_8_evidence.py`
 - `tests/universe/test_classifier_v2_9_prompt.py`
