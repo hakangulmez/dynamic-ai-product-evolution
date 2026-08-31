@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.87.0",
+  "manifest_version": "0.88.0",
   "schemas": {
     "acquisition_queue_aggregate_manifest": "0.1.0",
     "acquisition_queue_aggregate_manifest_v2": "0.2.0",
@@ -177,6 +177,9 @@
     "universe_classifier_product_gate_batch_manifest_v1": "0.1.0",
     "universe_classifier_product_gate_batch_authorization_v2": "0.2.0",
     "universe_classifier_product_gate_batch_manifest_v2": "0.2.0",
+    "universe_classifier_product_gate_probe_authorization_v1": "0.1.0",
+    "universe_classifier_product_gate_probe_manifest_v1": "0.1.0",
+    "universe_classifier_product_gate_probe_selection_v1": "0.1.0",
     "universe_classifier_record": "0.1.0",
     "universe_classifier_record_v2": "0.2.0",
     "universe_classifier_record_v3": "0.3.0",

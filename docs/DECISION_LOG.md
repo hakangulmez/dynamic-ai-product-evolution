@@ -10022,3 +10022,16 @@ packets but has its own authorization and manifest contracts, output names,
 and run root, all const-pinning the V7 managed-service product gate. Batch
 0001 is a 100-filing quality gate, not a full-cohort authorization and not a
 replacement for the V1 result.
+
+## ADR-148 — five-filing software-product wording probe
+
+The completed V7 batch's CORE rows exposed a narrow question: whether the word
+"digital" in the product-existence test admits digital delivery channels and
+financial-service platforms that are not separately identifiable software
+products. The answer must be measured before adding any sector-specific
+exception. This successor therefore changes only the product-existence wording
+to "software product or software platform" and its matching functionality
+phrase. The five exact filings are fixed in a model-free, annual-coverage-bound
+selection; their previous outputs are audit context only and never reach a
+rendered prompt. The route has its own authorization, manifest and output names,
+is structurally non-promotable, and cannot authorize a batch or the full cohort.
