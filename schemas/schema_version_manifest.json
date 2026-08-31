@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.84.0",
+  "manifest_version": "0.85.0",
   "schemas": {
     "acquisition_queue_aggregate_manifest": "0.1.0",
     "acquisition_queue_aggregate_manifest_v2": "0.2.0",
@@ -231,6 +231,8 @@
     "universe_classifier_pilot_manifest_v4": "0.4.0",
     "universe_classifier_pilot_record_v3": "0.3.0",
     "universe_classifier_pilot_authorization_v5": "0.5.0",
-    "universe_classifier_pilot_manifest_v5": "0.5.0"
+    "universe_classifier_pilot_manifest_v5": "0.5.0",
+    "universe_classifier_pilot_authorization_v6": "0.6.0",
+    "universe_classifier_pilot_manifest_v6": "0.6.0"
   }
 }

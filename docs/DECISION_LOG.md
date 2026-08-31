@@ -9981,3 +9981,21 @@ pipeline-derived evidence representation are reused unchanged. Each completed
 batch manifest remains non-promotable and settles no membership decision. An
 aggregate and its acceptance gate remain separate work; no full-cohort model
 call is authorized by this entry.
+
+## ADR-145 — a firm-level CORE label is not a software-segment label
+
+The first governed product-gate batch showed that the narrow V5 product rule
+still left a distinct semantic risk in the `CORE` label: a firm can own a real
+software business, deploy software in its operations, or serve customers through
+a digital channel without the consolidated firm's principal commercial offering
+being software. V6 changes only that decision instruction. It retains the same
+Item 1-only evidence surface, the same ten annual-coverage-qualified pilot
+filings, the same two-axis output contract, and the same address-only response
+shape. `CORE` now requires Item 1 to establish, at consolidated-firm level, that
+customers principally acquire a separately identifiable digital or software
+product. A software segment, subsidiary, acquisition, technical capability, or
+digital channel is insufficient by itself.
+
+This is a wording experiment, not a new membership or tier decision. V6 is an
+isolated, non-promotable successor route with its own authorization and manifest
+contracts; V5 prompt bytes, contracts, and historical runs remain immutable.
