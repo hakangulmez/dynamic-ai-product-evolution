@@ -10049,3 +10049,16 @@ that the software platform itself is separately sold, licensed, or subscribed.
 The same hash-bound five filings are reused, but the successor has its own
 authorization, manifest, output names, and non-promotable route. ADR-148
 artifacts remain immutable.
+
+## ADR-150 — CORE means customers acquire software itself
+
+ADR-149 used a financial-category sentence to test whether the V7 product gate
+could distinguish a financial service delivered digitally from software sold to
+customers. That addition corrected one observed case but risked turning the
+prompt into a growing sector list. V9 removes the category sentence entirely
+and sharpens the general CORE definition instead: at the consolidated-firm
+level, customers must principally acquire the software product or platform
+itself. Software that merely delivers, enables, accompanies, or improves the
+underlying customer service is insufficient. The same five-filing selection is
+reusable, while V9 has its own non-promotable successor route, authorization,
+manifest, and output names. V8 prompt and artifacts remain immutable.
