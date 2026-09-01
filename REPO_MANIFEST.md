@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **1096**
+Total tracked/scaffold files listed: **1100**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -519,6 +519,8 @@ Total tracked/scaffold files listed: **1096**
 - `schemas/universe_classifier_product_gate_semantic_probe_manifest.v1.schema.json`
 - `schemas/universe_classifier_product_gate_semantic_probe_manifest.v2.schema.json`
 - `schemas/universe_classifier_product_gate_semantic_probe_selection.v1.schema.json`
+- `schemas/universe_classifier_product_gate_v9_aggregate_manifest.v1.schema.json`
+- `schemas/universe_classifier_product_gate_v9_aggregate_record.v1.schema.json`
 - `schemas/universe_run_manifest.schema.json`
 - `schemas/universe_run_manifest.v2.schema.json`
 - `schemas/universe_screen_adapter_enablement.schema.json`
@@ -811,6 +813,7 @@ Total tracked/scaffold files listed: **1096**
 - `src/dynamic_ai_products/classifier_product_gate_batch_plan.py`
 - `src/dynamic_ai_products/classifier_product_gate_probe_selection.py`
 - `src/dynamic_ai_products/classifier_product_gate_semantic_probe_selection.py`
+- `src/dynamic_ai_products/classifier_product_gate_v9_aggregate.py`
 - `src/dynamic_ai_products/classifier_contract_set.py`
 - `src/dynamic_ai_products/classifier_span_index.py`
 - `src/dynamic_ai_products/lineage_classifier_calibration.py`
@@ -1044,6 +1047,7 @@ Total tracked/scaffold files listed: **1096**
 - `tests/universe/test_classifier_product_gate_probe_v3.py`
 - `tests/universe/test_classifier_product_gate_semantic_probe_v1.py`
 - `tests/universe/test_classifier_product_gate_semantic_probe_v2.py`
+- `tests/universe/test_classifier_product_gate_v9_aggregate.py`
 - `tests/universe/test_classifier_v2_7_prompt.py`
 - `tests/universe/test_classifier_v2_8_evidence.py`
 - `tests/universe/test_classifier_v2_9_prompt.py`

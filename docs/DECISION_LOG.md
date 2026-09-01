@@ -10102,3 +10102,20 @@ semantic change is the only model-facing difference. Its V2 route owns a new
 authorization contract, manifest contract, output filenames, and run root;
 V10 sources and outputs stay immutable. It remains non-promotable, derives no
 tier, and settles no software-universe membership.
+
+## ADR-154 — V9 full-coverage aggregate remains fail-closed
+
+V9 is the production product-gate route. Its 2,799 annual-coverage-qualified
+filings are fixed in one 28-batch plan, but one completed 100-filing batch is
+not a software universe. The aggregate therefore accepts no partial prefix:
+it consumes each and only each planned V9 batch once, in plan order, with the
+V9 prompt hash, batch plan identity, record order, batch manifest and records
+hashes all verified before it writes anything.
+
+The resulting non-promotable artifact separates three outputs instead of
+collapsing uncertainty: (1) all classified `YES` rows as the model-derived
+software-candidate universe, (2) the strict `CORE` subset as the main analysis
+universe, and (3) every `review_uncertain` row. `CORE` is structurally checked
+as a subset of candidates; unresolved filings are never silently treated as
+`NO`. None is a human-reviewed thesis membership decision. The aggregate can
+be materialized only after all 28 individually authorized V9 batch runs exist.

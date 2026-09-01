@@ -174,6 +174,10 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
+    # Rebaselined by ADR-154: manifest_version 0.93.0 -> 0.94.0, 251 -> 253
+    # entries. The V9 aggregate adds a manifest and carried-record contract;
+    # it accepts a complete set of already governed batches and is not a
+    # released evaluation contract or an authorization for model calls.
     # Rebaselined by ADR-145: manifest_version 0.84.0 -> 0.85.0, 231 -> 233
     # entries. The stricter consolidated-firm CORE pilot successor adds only
     # its authorization and manifest; no released evaluation contract moves.
@@ -571,7 +575,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "abc2dc247b4fa2e7dbbb2e68238b17cd187773294a8829747ce9375ebe08cc71"
+    "2caa7473ab7d31d4534be101ed2843176452cbd937217791e06ffebbca2e6635"
 )
 
 

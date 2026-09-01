@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_product_gate_v9_aggregate_record.v1.schema.json",
+  "title": "V9 product-gate aggregate record v0.1.0",
+  "description": "One hash-bound V9 batch decision carried into the candidate, CORE, or unresolved aggregate output. It is not a human-reviewed membership decision.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["aggregate_role", "cik", "accession", "source_batch_id", "source_run_id", "source_record_sha256", "record_kind", "axes", "review_reason_code"],
+  "properties": {
+    "aggregate_role": {"enum": ["software_candidate", "core_software", "unresolved"]},
+    "cik": {"type": "string", "pattern": "^[0-9]{10}$"},
+    "accession": {"type": "string", "minLength": 1},
+    "source_batch_id": {"type": "string", "pattern": "^batch-[0-9]{4}$"},
+    "source_run_id": {"type": "string", "minLength": 1},
+    "source_record_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "record_kind": {"enum": ["classified", "review_uncertain"]},
+    "axes": {"type": ["object", "null"]},
+    "review_reason_code": {"type": ["string", "null"]}
+  },
+  "allOf": [
+    {"if": {"properties": {"aggregate_role": {"enum": ["software_candidate", "core_software"]}}, "required": ["aggregate_role"]}, "then": {"properties": {"record_kind": {"const": "classified"}, "axes": {"type": "object"}, "review_reason_code": {"const": null}}}},
+    {"if": {"properties": {"aggregate_role": {"const": "unresolved"}}, "required": ["aggregate_role"]}, "then": {"properties": {"record_kind": {"const": "review_uncertain"}, "axes": {"const": null}, "review_reason_code": {"type": "string", "minLength": 1}}}}
+  ]
+}
