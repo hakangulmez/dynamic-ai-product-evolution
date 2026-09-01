@@ -10035,3 +10035,17 @@ phrase. The five exact filings are fixed in a model-free, annual-coverage-bound
 selection; their previous outputs are audit context only and never reach a
 rendered prompt. The route has its own authorization, manifest and output names,
 is structurally non-promotable, and cannot authorize a batch or the full cohort.
+
+## ADR-149 — financial delivery is not software-product evidence by itself
+
+The completed ADR-148 five-filing probe retained `YES`/`CORE` for both a card
+network and a digital bank. The phrase “separately identifiable software
+product” alone therefore did not resolve the distinction between software a
+customer obtains and a financial product delivered through a digital channel.
+V8 adds one general rule: a financial product, payment service, account, loan,
+card, brokerage, insurance product, or payment network is not a software
+product merely because customers access it digitally; Item 1 must establish
+that the software platform itself is separately sold, licensed, or subscribed.
+The same hash-bound five filings are reused, but the successor has its own
+authorization, manifest, output names, and non-promotable route. ADR-148
+artifacts remain immutable.
