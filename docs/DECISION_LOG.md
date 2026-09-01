@@ -10073,3 +10073,16 @@ CORE rule. It has its own authorization, manifest, output names and run root.
 This batch is a non-promotable quality measurement only: it derives no tier,
 settles no membership, and authorizes neither the remaining batches nor the
 full coverage cohort.
+
+## ADR-152 — general purchase-object semantic probe
+
+The first V9 100-row batch did not reveal a clear missed CORE software firm,
+but its semantic audit identified 23 `YES` decisions whose Item 1 evidence may
+describe a physical good, financial product, media/content, or human-delivered
+service rather than software that the customer purchases. V10 adds one general
+purchase-object test: `YES` requires that the customer contracts to obtain the
+software product or platform itself; descriptive terms such as digital, cloud,
+platform, technology, online, and solution do not establish this alone. This is
+not a sector exception list. The 23 exact filings are selected in a separate,
+hash-bound artifact; their old labels remain audit context and never reach the
+prompt. The route is non-promotable, derives no tier, and decides no membership.

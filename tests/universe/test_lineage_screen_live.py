@@ -1927,7 +1927,7 @@ def test_registry_registers_the_four_live_screen_schemas():
     # live manifest successor (108 -> 109); ADR-115 adds the three
     # diagnostic-repair contracts (109 -> 112). ADR-116 adds the V5
     # authoritative successor's record, authorization and manifest (112 -> 115).
-    assert registry["manifest_version"] == "0.91.0"
+    assert registry["manifest_version"] == "0.92.0"
     assert len(registry["schemas"]) == 246
     assert registry["schemas"]["universe_screen_manifest_v3"] == "0.3.0"
     assert registry["schemas"]["universe_screen_manifest_v4"] == "0.4.0"

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_product_gate_semantic_probe_selection.v1.schema.json",
+  "title": "Product-gate 23-filing semantic probe selection v0.1.0",
+  "description": "Model-free, fixed 23-filing semantic-audit selection from the annual-coverage cohort. It names only Item 1 packets to be re-read; prior classifications are audit context and never reach the model prompt.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["selection_contract", "selection_id", "selection_kind", "candidate_cohort_id", "candidate_cohort_manifest_sha256", "coverage_cohort_id", "coverage_cohort_manifest_sha256", "coverage_cohort_records_sha256", "packet_manifest_sha256", "rows", "counts", "no_model_call", "limitations", "run_timestamp"],
+  "properties": {
+    "selection_contract": {"const": "universe_classifier_product_gate_semantic_probe_selection@0.1.0"},
+    "selection_id": {"type": "string", "minLength": 1},
+    "selection_kind": {"const": "classifier_product_gate_semantic_probe_v1"},
+    "candidate_cohort_id": {"type": "string", "minLength": 1},
+    "candidate_cohort_manifest_sha256": {"$ref": "#/$defs/sha"},
+    "coverage_cohort_id": {"type": "string", "minLength": 1},
+    "coverage_cohort_manifest_sha256": {"$ref": "#/$defs/sha"},
+    "coverage_cohort_records_sha256": {"$ref": "#/$defs/sha"},
+    "packet_manifest_sha256": {"$ref": "#/$defs/sha"},
+    "rows": {"type": "array", "minItems": 23, "maxItems": 23, "items": {"$ref": "#/$defs/row"}},
+    "counts": {"type": "object", "additionalProperties": false, "required": ["selected_rows"], "properties": {"selected_rows": {"const": 23}}},
+    "no_model_call": {"const": true},
+    "limitations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "run_timestamp": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "row": {"type": "object", "additionalProperties": false, "required": ["cik", "accession", "company_id", "source_id", "packet_sha256", "admission_origin", "screen_status", "admission_provenance", "coverage_class", "observed_annual_filing_years"], "properties": {
+      "cik": {"type": "string", "pattern": "^[0-9]{10}$"}, "accession": {"type": "string", "minLength": 1}, "company_id": {"type": "string", "minLength": 1}, "source_id": {"type": "string", "minLength": 1}, "packet_sha256": {"$ref": "#/$defs/sha"},
+      "admission_origin": {"enum": ["model_screen", "human_review"]}, "screen_status": {"enum": ["LIKELY_ELIGIBLE", "BOUNDARY_OR_UNCERTAIN"]}, "admission_provenance": {"type": "object"},
+      "coverage_class": {"enum": ["complete_2021_2025", "2021_missing_2022_2025_present"]}, "observed_annual_filing_years": {"type": "array", "minItems": 4, "items": {"type": "integer"}}
+    }}
+  }
+}
