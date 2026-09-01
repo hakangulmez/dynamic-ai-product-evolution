@@ -10062,3 +10062,14 @@ itself. Software that merely delivers, enables, accompanies, or improves the
 underlying customer service is insufficient. The same five-filing selection is
 reusable, while V9 has its own non-promotable successor route, authorization,
 manifest, and output names. V8 prompt and artifacts remain immutable.
+
+## ADR-151 — V9 100-row product-gate batch successor
+
+The existing annual-coverage batch plan is prompt-neutral and partitions the
+2,799 included filings into immutable, contiguous 100-row batches. Its V2
+execution route, however, const-pins the older V6 prompt. V3 therefore reuses
+the exact same plan and `batch-0001` population while pinning the V9 general
+CORE rule. It has its own authorization, manifest, output names and run root.
+This batch is a non-promotable quality measurement only: it derives no tier,
+settles no membership, and authorizes neither the remaining batches nor the
+full coverage cohort.

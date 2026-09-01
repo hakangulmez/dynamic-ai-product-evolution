@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **1080**
+Total tracked/scaffold files listed: **1084**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -501,8 +501,10 @@ Total tracked/scaffold files listed: **1080**
 - `schemas/universe_classifier_product_gate_batch_plan.v1.schema.json`
 - `schemas/universe_classifier_product_gate_batch_authorization.v1.schema.json`
 - `schemas/universe_classifier_product_gate_batch_authorization.v2.schema.json`
+- `schemas/universe_classifier_product_gate_batch_authorization.v3.schema.json`
 - `schemas/universe_classifier_product_gate_batch_manifest.v1.schema.json`
 - `schemas/universe_classifier_product_gate_batch_manifest.v2.schema.json`
+- `schemas/universe_classifier_product_gate_batch_manifest.v3.schema.json`
 - `schemas/universe_classifier_product_gate_probe_authorization.v1.schema.json`
 - `schemas/universe_classifier_product_gate_probe_authorization.v2.schema.json`
 - `schemas/universe_classifier_product_gate_probe_authorization.v3.schema.json`
@@ -813,6 +815,7 @@ Total tracked/scaffold files listed: **1080**
 - `src/dynamic_ai_products/lineage_classifier_pilot_v7.py`
 - `src/dynamic_ai_products/lineage_classifier_product_gate_batch_v1.py`
 - `src/dynamic_ai_products/lineage_classifier_product_gate_batch_v2.py`
+- `src/dynamic_ai_products/lineage_classifier_product_gate_batch_v3.py`
 - `src/dynamic_ai_products/lineage_classifier_product_gate_probe_v1.py`
 - `src/dynamic_ai_products/lineage_classifier_product_gate_probe_v2.py`
 - `src/dynamic_ai_products/lineage_classifier_product_gate_probe_v3.py`
@@ -1025,6 +1028,7 @@ Total tracked/scaffold files listed: **1080**
 - `tests/universe/test_classifier_pilot_selection_v2.py`
 - `tests/universe/test_classifier_product_gate_batch_plan.py`
 - `tests/universe/test_classifier_product_gate_batch_v2.py`
+- `tests/universe/test_classifier_product_gate_batch_v3.py`
 - `tests/universe/test_classifier_product_gate_probe_v1.py`
 - `tests/universe/test_classifier_product_gate_probe_v2.py`
 - `tests/universe/test_classifier_product_gate_probe_v3.py`
