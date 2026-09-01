@@ -10086,3 +10086,19 @@ platform, technology, online, and solution do not establish this alone. This is
 not a sector exception list. The 23 exact filings are selected in a separate,
 hash-bound artifact; their old labels remain audit context and never reach the
 prompt. The route is non-promotable, derives no tier, and decides no membership.
+
+## ADR-153 — two-test semantic product-gate probe
+
+ADR-152's purchase-object test reduced broad digital-channel decisions but did
+not itself require Item 1 to identify the software as a commercially offered
+product. V11 therefore requires both conditions for `YES`: the customer must
+contract to obtain the software product or platform itself, and Item 1 must
+directly establish that the software is sold, licensed, subscribed to, or
+deployed for that customer as the identified commercial product. This is a
+general evidence threshold, not a sector list or a firm-specific exception.
+
+The same fixed 23-filing, annual-coverage-bound selection is reused so the
+semantic change is the only model-facing difference. Its V2 route owns a new
+authorization contract, manifest contract, output filenames, and run root;
+V10 sources and outputs stay immutable. It remains non-promotable, derives no
+tier, and settles no software-universe membership.
