@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.94.0",
+  "manifest_version": "0.95.0",
   "schemas": {
     "acquisition_queue_aggregate_manifest": "0.1.0",
     "acquisition_queue_aggregate_manifest_v2": "0.2.0",
@@ -193,6 +193,9 @@
     "universe_classifier_product_gate_semantic_probe_selection_v1": "0.1.0",
     "universe_classifier_product_gate_v9_aggregate_manifest_v1": "0.1.0",
     "universe_classifier_product_gate_v9_aggregate_record_v1": "0.1.0",
+    "universe_classifier_product_gate_v9_gold_review_audit_map_v1": "0.1.0",
+    "universe_classifier_product_gate_v9_gold_review_case_v1": "0.1.0",
+    "universe_classifier_product_gate_v9_gold_review_manifest_v1": "0.1.0",
     "universe_classifier_record": "0.1.0",
     "universe_classifier_record_v2": "0.2.0",
     "universe_classifier_record_v3": "0.3.0",

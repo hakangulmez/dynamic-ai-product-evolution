@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **1100**
+Total tracked/scaffold files listed: **1111**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -307,6 +307,7 @@ Total tracked/scaffold files listed: **1100**
 - `evals/templates/eval_case.template.json`
 - `notebooks/00_MASTER_PIPELINE.ipynb`
 - `notebooks/01_STAGE00_UNIVERSE_AND_SCREEN_REPRODUCIBILITY.ipynb`
+- `notebooks/02_STAGE01_FINAL_STRICT_SOFTWARE_UNIVERSE.ipynb`
 - `notebooks/README.md`
 - `pipelines/00_build_company_universe.py`
 - `pipelines/01_discover_sec_sources.py`
@@ -328,6 +329,7 @@ Total tracked/scaffold files listed: **1100**
 - `prompts/adjudication/disagreement_adjudication.md`
 - `prompts/adjudication/universe_boundary_adjudication.md`
 - `prompts/discovery/official_source_discovery.md`
+- `prompts/discovery/software_universe_centrality_refinement.v1.md`
 - `prompts/discovery/software_universe_classifier_pilot.v1.md`
 - `prompts/discovery/software_universe_classifier_pilot.v2.md`
 - `prompts/discovery/software_universe_classifier_pilot.v3.md`
@@ -339,6 +341,7 @@ Total tracked/scaffold files listed: **1100**
 - `prompts/discovery/software_universe_classifier_pilot.v9.md`
 - `prompts/discovery/software_universe_classifier_pilot.v10.md`
 - `prompts/discovery/software_universe_classifier_pilot.v11.md`
+- `prompts/discovery/software_universe_strict_core_refinement.v1.md`
 - `prompts/discovery/universe_full_classification.md`
 - `prompts/discovery/universe_full_classification.v2_1.md`
 - `prompts/discovery/universe_full_classification.v2_2.md`
@@ -521,6 +524,9 @@ Total tracked/scaffold files listed: **1100**
 - `schemas/universe_classifier_product_gate_semantic_probe_selection.v1.schema.json`
 - `schemas/universe_classifier_product_gate_v9_aggregate_manifest.v1.schema.json`
 - `schemas/universe_classifier_product_gate_v9_aggregate_record.v1.schema.json`
+- `schemas/universe_classifier_product_gate_v9_gold_review_audit_map.v1.schema.json`
+- `schemas/universe_classifier_product_gate_v9_gold_review_case.v1.schema.json`
+- `schemas/universe_classifier_product_gate_v9_gold_review_manifest.v1.schema.json`
 - `schemas/universe_run_manifest.schema.json`
 - `schemas/universe_run_manifest.v2.schema.json`
 - `schemas/universe_screen_adapter_enablement.schema.json`
@@ -637,6 +643,7 @@ Total tracked/scaffold files listed: **1100**
 - `schemas/web_collection_request_plan.schema.json`
 - `schemas/web_discovery_manifest.schema.json`
 - `schemas/web_snapshot_manifest.schema.json`
+- `scripts/import_final_universe_prototypes.py`
 - `scripts/run_research_console.sh`
 - `scripts/setup_local.sh`
 - `skills-lock.json`
@@ -808,12 +815,14 @@ Total tracked/scaffold files listed: **1100**
 - `src/dynamic_ai_products/classifier_calibration_review.py`
 - `src/dynamic_ai_products/classifier_annual_coverage_cohort.py`
 - `src/dynamic_ai_products/classifier_calibration_selection.py`
+- `src/dynamic_ai_products/classifier_final_universe_prototype_import.py`
 - `src/dynamic_ai_products/classifier_pilot_selection.py`
 - `src/dynamic_ai_products/classifier_pilot_selection_v2.py`
 - `src/dynamic_ai_products/classifier_product_gate_batch_plan.py`
 - `src/dynamic_ai_products/classifier_product_gate_probe_selection.py`
 - `src/dynamic_ai_products/classifier_product_gate_semantic_probe_selection.py`
 - `src/dynamic_ai_products/classifier_product_gate_v9_aggregate.py`
+- `src/dynamic_ai_products/classifier_product_gate_v9_gold_review.py`
 - `src/dynamic_ai_products/classifier_contract_set.py`
 - `src/dynamic_ai_products/classifier_span_index.py`
 - `src/dynamic_ai_products/lineage_classifier_calibration.py`
@@ -1031,6 +1040,7 @@ Total tracked/scaffold files listed: **1100**
 - `tests/universe/test_acquisition_queue.py`
 - `tests/universe/test_annual_coverage_cohort.py`
 - `tests/universe/test_baseline_carrier.py`
+- `tests/universe/test_classifier_final_universe_prototype_import.py`
 - `tests/universe/test_classifier_pilot_v1.py`
 - `tests/universe/test_classifier_pilot_v1_run.py`
 - `tests/universe/test_classifier_pilot_v2_run.py`
@@ -1048,6 +1058,7 @@ Total tracked/scaffold files listed: **1100**
 - `tests/universe/test_classifier_product_gate_semantic_probe_v1.py`
 - `tests/universe/test_classifier_product_gate_semantic_probe_v2.py`
 - `tests/universe/test_classifier_product_gate_v9_aggregate.py`
+- `tests/universe/test_classifier_product_gate_v9_gold_review.py`
 - `tests/universe/test_classifier_v2_7_prompt.py`
 - `tests/universe/test_classifier_v2_8_evidence.py`
 - `tests/universe/test_classifier_v2_9_prompt.py`

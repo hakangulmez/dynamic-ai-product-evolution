@@ -21,6 +21,13 @@ v5 packet corpus and canary selection, and summarizes receipt-bearing canaries.
 It never invokes a model, SEC endpoint, or pipeline run; a printed command is a
 template, not an execution cell.
 
+[`02_STAGE01_FINAL_STRICT_SOFTWARE_UNIVERSE.ipynb`](02_STAGE01_FINAL_STRICT_SOFTWARE_UNIVERSE.ipynb)
+is the thesis-facing, read-only reconstruction of the accepted strict-software
+universe. It verifies the Item 1 packet, high-recall, annual-coverage and V9
+artifacts; verifies the imported historical refinement outputs; and visibly
+reconstructs the 272-firm final membership set. It makes no model, SEC, or
+network call and writes no artifact.
+
 ## Safe default behavior
 
 The notebook opens in `status` mode. In this mode it:

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_product_gate_v9_gold_review_manifest.v1.schema.json",
+  "title": "V9 product-gate gold review case-set manifest v0.1.0",
+  "description": "Hash-bound, model-blind review case set for constructing strict-CORE gold labels from the complete V9 aggregate. It is a selection for human adjudication, not itself a gold set or a membership decision.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case_set_contract", "case_set_id", "run_timestamp", "aggregate_manifest_path", "aggregate_manifest_sha256", "packet_manifest_sha256", "output_hashes", "counts", "reconciliation", "human_label_vocabulary", "no_model_call", "promotable", "limitations"],
+  "properties": {
+    "case_set_contract": {"const": "universe_classifier_product_gate_v9_gold_review_manifest@0.1.0"},
+    "case_set_id": {"type": "string", "minLength": 1},
+    "run_timestamp": {"type": "string", "format": "date-time"},
+    "aggregate_manifest_path": {"type": "string", "minLength": 1},
+    "aggregate_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "packet_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "output_hashes": {
+      "type": "object", "additionalProperties": false,
+      "required": ["universe_classifier_product_gate_v9_gold_review_cases.jsonl", "universe_classifier_product_gate_v9_gold_review_audit_map.jsonl"],
+      "properties": {
+        "universe_classifier_product_gate_v9_gold_review_cases.jsonl": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "universe_classifier_product_gate_v9_gold_review_audit_map.jsonl": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "counts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["review_cases", "precision_model_core", "recall_model_coessential", "source_insufficient_unknown"],
+      "properties": {
+        "review_cases": {"type": "integer", "minimum": 1},
+        "precision_model_core": {"type": "integer", "minimum": 0},
+        "recall_model_coessential": {"type": "integer", "minimum": 0},
+        "source_insufficient_unknown": {"type": "integer", "minimum": 0}
+      }
+    },
+    "reconciliation": {"type": "object", "minProperties": 1, "additionalProperties": {"const": true}},
+    "human_label_vocabulary": {"const": ["STRICT_CORE", "NOT_STRICT_CORE", "INSUFFICIENT_ITEM1"]},
+    "no_model_call": {"const": true},
+    "promotable": {"const": false},
+    "limitations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+  }
+}

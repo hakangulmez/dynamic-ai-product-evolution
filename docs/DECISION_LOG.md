@@ -10119,3 +10119,34 @@ universe, and (3) every `review_uncertain` row. `CORE` is structurally checked
 as a subset of candidates; unresolved filings are never silently treated as
 `NO`. None is a human-reviewed thesis membership decision. The aggregate can
 be materialized only after all 28 individually authorized V9 batch runs exist.
+
+## ADR-155 — strict-CORE gold labels begin with a blinded Item 1 review set
+
+The completed V9 aggregate is a model-derived candidate and CORE output, not a
+gold set. Before using its CORE rows as a research universe, precision and
+recall must be measured against human judgement without treating the model's
+own label as truth.
+
+The first review wave therefore materializes a hash-bound, Item-1-only case set
+with no human decisions. It contains every V9 `CORE` row for precision review,
+every V9 `CO_ESSENTIAL` candidate for the first false-negative recall review,
+and the four `UNKNOWN` rows whose packet text is only the Item 1 heading (or
+heading plus omission). The latter are not judged `CORE` or `NOT_STRICT_CORE`:
+they are source-insufficient cases. Each case carries only packet-derived Item
+1 passages; a separate audit map records the model label and selection track,
+and the case-file order is a deterministic hash order rather than a selection
+track order, so a reviewer can be given the cases without being shown the model
+decision.
+
+The authoritative case set for this aggregate is
+`universe-classifier-product-gate-v9-gold-review-cases-20260901-r2`. An earlier
+same-date immutable draft is retained for audit but must not be given to a
+reviewer: its case rows had no model fields, yet preserved selection-track line
+order. The `r2` successor keeps the identical case population and audit map but
+uses the deterministic hash order required above.
+
+The only future human label vocabulary is `STRICT_CORE`, `NOT_STRICT_CORE`, and
+`INSUFFICIENT_ITEM1`. This selection assigns none of them, decides no firm
+membership, makes no model call, and is non-promotable. `ENABLING` and
+`PERIPHERAL` candidates are deliberately deferred to a second recall wave;
+they must not be silently treated as verified negatives.

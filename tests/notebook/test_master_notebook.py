@@ -30,3 +30,20 @@ def test_notebook_defaults_to_safe_status_mode() -> None:
     sources = "\n".join(cell.source for cell in notebook.cells if cell.cell_type == "code")
     assert 'EXECUTION_MODE = NOTEBOOK_CONFIG.get("execution_mode", "status")' in sources
     assert "ALLOW_STUB_EXECUTION" in sources
+
+
+def test_final_strict_software_universe_notebook_is_valid_and_read_only() -> None:
+    root = Path(__file__).resolve().parents[2]
+    notebook = nbformat.read(
+        root / "notebooks" / "02_STAGE01_FINAL_STRICT_SOFTWARE_UNIVERSE.ipynb",
+        as_version=4,
+    )
+    sources = "\n".join(cell.source for cell in notebook.cells)
+    assert "Final Strict-Software Universe" in sources
+    assert "279 − 9 + 2 = 272" in sources
+    assert "no model, SEC, or network call" in sources
+    assert "software_universe_classifier_pilot.v9.md" in sources
+    assert "strict_core_refinement_outputs.jsonl" in sources
+    assert "software_centrality_refinement_outputs.jsonl" in sources
+    assert "write_text" not in sources
+    assert "write_bytes" not in sources

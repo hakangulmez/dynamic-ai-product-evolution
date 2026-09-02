@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dynamic-ai-products/schemas/universe_classifier_product_gate_v9_gold_review_audit_map.v1.schema.json",
+  "title": "V9 product-gate gold review audit map v0.1.0",
+  "description": "Non-reviewer audit map proving why each blinded V9 Item 1 case entered the gold-review queue. It is not a human label and must not be used to score the model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["audit_contract", "case_id", "selection_track", "source_record_sha256", "model_product_label", "model_centrality", "model_confidence", "software_signal_score"],
+  "properties": {
+    "audit_contract": {"const": "universe_classifier_product_gate_v9_gold_review_audit_map@0.1.0"},
+    "case_id": {"type": "string", "pattern": "^v9-gold-[0-9]{10}-[A-Za-z0-9-]+$"},
+    "selection_track": {"enum": ["precision_model_core", "recall_model_coessential", "source_insufficient_unknown"]},
+    "source_record_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "model_product_label": {"enum": ["YES", "UNKNOWN"]},
+    "model_centrality": {"enum": ["CORE", "CO_ESSENTIAL", "UNKNOWN"]},
+    "model_confidence": {"enum": ["high", "medium", "low"]},
+    "software_signal_score": {"type": "integer", "minimum": 0}
+  }
+}
