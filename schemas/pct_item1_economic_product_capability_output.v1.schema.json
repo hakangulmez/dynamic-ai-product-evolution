@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pct_item1_economic_product_capability_output.v1.schema.json",
+  "title": "PCT Item 1 economic product and capability model output v1",
+  "description": "Development-only model-facing output that consolidates saved product candidates into economic products and customer-available capabilities.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["economic_products", "not_selected_product_ids"],
+  "properties": {
+    "economic_products": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/economic_product"}
+    },
+    "not_selected_product_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^P[1-9][0-9]*$"}
+    }
+  },
+  "$defs": {
+    "passage_refs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^P[0-9]{3}$"}
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text", "passage_refs"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^C[1-9][0-9]*$"},
+        "text": {"type": "string", "minLength": 1},
+        "passage_refs": {"$ref": "#/$defs/passage_refs"}
+      }
+    },
+    "economic_product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "source_product_ids", "passage_refs", "capabilities"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^EP[1-9][0-9]*$"},
+        "name": {"type": "string", "minLength": 1},
+        "source_product_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^P[1-9][0-9]*$"}
+        },
+        "passage_refs": {"$ref": "#/$defs/passage_refs"},
+        "capabilities": {"type": "array", "items": {"$ref": "#/$defs/capability"}}
+      }
+    }
+  }
+}

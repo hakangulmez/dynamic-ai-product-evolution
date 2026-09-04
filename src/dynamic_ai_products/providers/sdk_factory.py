@@ -19,7 +19,22 @@ from typing import Any, Iterator
 from .errors import ProviderError
 from .response_capture import CapturingHttpxClient
 
-__all__ = ["build_vertex_client"]
+__all__ = ["build_smoke_vertex_client", "build_vertex_client"]
+
+
+def build_smoke_vertex_client(*, vertex_project: str, vertex_location: str) -> Any:
+    """Build a development-smoke client through the sole vendor-SDK seam.
+
+    Development smokes archive literal model responses but do not use the
+    governed capture transport. Keeping this narrow constructor here preserves
+    the repository invariant that no other module under ``src/`` imports the
+    vendor SDK directly.
+    """
+    from google import genai
+
+    return genai.Client(
+        vertexai=True, project=vertex_project, location=vertex_location
+    )
 
 
 @contextmanager

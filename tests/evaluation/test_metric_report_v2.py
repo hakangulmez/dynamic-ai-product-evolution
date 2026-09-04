@@ -754,7 +754,7 @@ def test_manifest_count():
     # changed, so the schema registry and its pinned-hash tests are
     # untouched this round. Development draft only -- authorizes no model
     # call, no gold label, no Dev24 evaluation or holdout use.
-    assert declared == len(paths) == 1111
+    assert declared == len(paths) == 1181
     assert paths.count("tests/evaluation/test_metric_report_v2.py") == 1
 
 

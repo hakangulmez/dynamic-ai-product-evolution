@@ -2,7 +2,7 @@
 
 ## Files
 
-Total tracked/scaffold files listed: **1111**
+Total tracked/scaffold files listed: **1181**
 
 - `.claude/settings.example.json`
 - `.claude/skills/diagnosing-bugs/SKILL.md`
@@ -95,6 +95,7 @@ Total tracked/scaffold files listed: **1111**
 - `docs/THESIS_METHODOLOGY_AND_DATA.md`
 - `docs/agents/domain.md`
 - `docs/agents/issue-tracker.md`
+- `docs/architecture/ITEM1_PCT_DEVELOPMENT_EXPERIMENT_ARCHIVE.md`
 - `docs/architecture/COMPANY_UNIVERSE_PIPELINE.md`
 - `docs/architecture/CORPUS_ARCHITECTURE.md`
 - `docs/architecture/DATA_FLOW.md`
@@ -114,6 +115,7 @@ Total tracked/scaffold files listed: **1111**
 - `docs/methodology/EVIDENCE_AND_CONFIDENCE.md`
 - `docs/methodology/EXTRACTION_METHODOLOGY.md`
 - `docs/methodology/FRONTIER_BASELINE_POLICY.md`
+- `docs/methodology/ITEM1_PCT_DEVELOPMENT_SMOKE_PIPELINE.md`
 - `docs/methodology/LONGITUDINAL_TASK_MATCHING.md`
 - `docs/methodology/MEASUREMENT_DESIGN.md`
 - `docs/methodology/PRODUCT_CAPABILITY_TASK_ONTOLOGY.md`
@@ -123,6 +125,7 @@ Total tracked/scaffold files listed: **1111**
 - `docs/methodology/VALIDATION_STRATEGY.md`
 - `docs/operations/CLAUDE_CODE_LOCAL_SAFETY.md`
 - `docs/operations/G3_LIVE_SMOKE_RUNBOOK.md`
+- `docs/item1_primary_customer_market_review_20260902.md`
 - `docs/planning/01_CURRENT_STATUS_AND_EXECUTION_ROADMAP.md`
 - `docs/planning/02_LONGITUDINAL_PANEL_AND_MATCHING_PLAN.md`
 - `docs/planning/03_MEASUREMENT_OUTCOMES_AND_ECONOMETRICS_PLAN.md`
@@ -363,6 +366,28 @@ Total tracked/scaffold files listed: **1111**
 - `prompts/extraction/capability_discovery_schema_v3.md`
 - `prompts/extraction/capability_extraction.md`
 - `prompts/extraction/pct_candidate_extraction_dev30_v1.md`
+- `prompts/extraction/pct_item1_capability_extraction_v1.md`
+- `prompts/extraction/pct_item1_combined_snapshot_v1.md`
+- `prompts/extraction/pct_item1_combined_snapshot_v2.md`
+- `prompts/extraction/pct_item1_combined_snapshot_v3.md`
+- `prompts/extraction/pct_item1_combined_snapshot_v4.md`
+- `prompts/extraction/pct_item1_combined_snapshot_v5.md`
+- `prompts/extraction/pct_item1_economic_pct_v1.md`
+- `prompts/extraction/pct_item1_economic_pct_v2.md`
+- `prompts/extraction/pct_item1_economic_pct_v3.md`
+- `prompts/extraction/pct_item1_economic_product_capability_v1.md`
+- `prompts/extraction/pct_item1_economic_product_capability_v2.md`
+- `prompts/extraction/pct_item1_economic_product_capability_v3.md`
+- `prompts/extraction/pct_item1_economic_product_consolidation_v1.md`
+- `prompts/extraction/pct_item1_product_structure_v1.md`
+- `prompts/extraction/pct_item1_task_consolidation_v1.md`
+- `prompts/extraction/pct_item1_tasks_flat_v1.md`
+- `prompts/extraction/pct_item1_tasks_flat_v2.md`
+- `prompts/extraction/pct_item1_tasks_flat_v3.md`
+- `prompts/extraction/pct_item1_tasks_flat_v4.md`
+- `prompts/extraction/pct_item1_tasks_flat_v5.md`
+- `prompts/extraction/pct_item1_tasks_hierarchy_v1.md`
+- `prompts/extraction/pct_item1_tasks_hierarchy_v2.md`
 - `prompts/extraction/product_consolidation_precision.md`
 - `prompts/extraction/product_consolidation_schema_v1.md`
 - `prompts/extraction/product_discovery_recall.md`
@@ -448,6 +473,22 @@ Total tracked/scaffold files listed: **1111**
 - `schemas/pct_dev30_v0_model_output_v2.schema.json`
 - `schemas/pct_dev30_v0_persisted_candidates.schema.json`
 - `schemas/pct_dev30_v0_persisted_candidates_v2.schema.json`
+- `schemas/pct_item1_capability_extraction_output.v1.schema.json`
+- `schemas/pct_item1_combined_snapshot_output.v1.schema.json`
+- `schemas/pct_item1_combined_snapshot_output.v2.schema.json`
+- `schemas/pct_item1_combined_snapshot_output.v3.schema.json`
+- `schemas/pct_item1_combined_snapshot_output.v4.schema.json`
+- `schemas/pct_item1_economic_pct_output.v1.schema.json`
+- `schemas/pct_item1_economic_pct_output.v2.schema.json`
+- `schemas/pct_item1_economic_pct_output.v3.schema.json`
+- `schemas/pct_item1_economic_product_capability_output.v1.schema.json`
+- `schemas/pct_item1_economic_product_consolidation_output.v1.schema.json`
+- `schemas/pct_item1_product_structure_output.v1.schema.json`
+- `schemas/pct_item1_task_consolidation_output.v1.schema.json`
+- `schemas/pct_item1_tasks_flat_output.v1.schema.json`
+- `schemas/pct_item1_tasks_flat_output.v2.schema.json`
+- `schemas/pct_item1_tasks_hierarchy_output.v1.schema.json`
+- `schemas/pct_item1_tasks_hierarchy_output.v2.schema.json`
 - `schemas/primary_document_acquisition_manifest.schema.json`
 - `schemas/primary_document_acquisition_manifest.v2.schema.json`
 - `schemas/primary_document_acquisition_manifest.v3.schema.json`
@@ -818,6 +859,24 @@ Total tracked/scaffold files listed: **1111**
 - `src/dynamic_ai_products/classifier_final_universe_prototype_import.py`
 - `src/dynamic_ai_products/classifier_pilot_selection.py`
 - `src/dynamic_ai_products/classifier_pilot_selection_v2.py`
+- `src/dynamic_ai_products/pct_combined_snapshot.py`
+- `src/dynamic_ai_products/pct_combined_snapshot_smoke.py`
+- `src/dynamic_ai_products/pct_capability_extraction.py`
+- `src/dynamic_ai_products/pct_economic_pct.py`
+- `src/dynamic_ai_products/pct_economic_pct_smoke.py`
+- `src/dynamic_ai_products/pct_economic_pct_v2.py`
+- `src/dynamic_ai_products/pct_economic_pct_v2_smoke.py`
+- `src/dynamic_ai_products/pct_economic_pct_v3.py`
+- `src/dynamic_ai_products/pct_economic_pct_v3_smoke.py`
+- `src/dynamic_ai_products/pct_economic_product_capability.py`
+- `src/dynamic_ai_products/pct_economic_product_capability_smoke.py`
+- `src/dynamic_ai_products/pct_economic_product_consolidation.py`
+- `src/dynamic_ai_products/pct_product_structure.py`
+- `src/dynamic_ai_products/pct_product_structure_smoke.py`
+- `src/dynamic_ai_products/pct_two_stage_smoke.py`
+- `src/dynamic_ai_products/pct_task_smoke.py`
+- `src/dynamic_ai_products/pct_task_consolidation_smoke.py`
+- `src/dynamic_ai_products/pct_three_stage_smoke.py`
 - `src/dynamic_ai_products/classifier_product_gate_batch_plan.py`
 - `src/dynamic_ai_products/classifier_product_gate_probe_selection.py`
 - `src/dynamic_ai_products/classifier_product_gate_semantic_probe_selection.py`
@@ -928,6 +987,17 @@ Total tracked/scaffold files listed: **1111**
 - `tests/dev30/test_item1_locator.py`
 - `tests/dev30/test_item1_locator_ledger.py`
 - `tests/dev30/test_pct_candidate_extraction_dev30_v1_prompt.py`
+- `tests/dev30/test_pct_combined_snapshot.py`
+- `tests/dev30/test_pct_economic_pct.py`
+- `tests/dev30/test_pct_economic_pct_v2.py`
+- `tests/dev30/test_pct_economic_pct_v3.py`
+- `tests/dev30/test_pct_economic_product_capability.py`
+- `tests/dev30/test_pct_item1_combined_snapshot_v1_prompt.py`
+- `tests/dev30/test_pct_product_structure.py`
+- `tests/dev30/test_pct_task_smoke.py`
+- `tests/dev30/test_pct_task_consolidation_smoke.py`
+- `tests/dev30/test_pct_three_stage_smoke.py`
+- `tests/dev30/test_pct_two_stage_smoke.py`
 - `tests/evaluation/test_assertions.py`
 - `tests/evaluation/test_axis_inputs.py`
 - `tests/evaluation/test_case_sets.py`

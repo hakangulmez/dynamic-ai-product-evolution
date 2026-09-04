@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pct_item1_economic_pct_output.v1.schema.json",
+  "title": "PCT Item 1 economic product model output v1",
+  "description": "Development-only model-facing output that consolidates a saved high-recall product candidate map into economically meaningful PCT products. Candidate identity and evidence addresses are validated by the pipeline.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["economic_products", "not_selected_product_ids"],
+  "properties": {
+    "economic_products": {"type": "array", "items": {"$ref": "#/$defs/economic_product"}},
+    "not_selected_product_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^P[1-9][0-9]*$"}}
+  },
+  "$defs": {
+    "passage_refs": {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": {"type": "string", "pattern": "^P[0-9]{3}$"}},
+    "capability": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "text", "passage_refs"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^C[1-9][0-9]*$"},
+        "text": {"type": "string", "minLength": 1},
+        "passage_refs": {"$ref": "#/$defs/passage_refs"}
+      }
+    },
+    "task_family": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "capability_ids", "text", "customer_outcome", "passage_refs"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^TF[1-9][0-9]*$"},
+        "capability_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^C[1-9][0-9]*$"}},
+        "text": {"type": "string", "minLength": 1},
+        "customer_outcome": {"type": "string", "minLength": 1},
+        "passage_refs": {"$ref": "#/$defs/passage_refs"}
+      }
+    },
+    "economic_product": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "source_product_ids", "passage_refs", "capabilities", "task_families"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^EP[1-9][0-9]*$"},
+        "name": {"type": "string", "minLength": 1},
+        "source_product_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^P[1-9][0-9]*$"}},
+        "passage_refs": {"$ref": "#/$defs/passage_refs"},
+        "capabilities": {"type": "array", "items": {"$ref": "#/$defs/capability"}},
+        "task_families": {"type": "array", "items": {"$ref": "#/$defs/task_family"}}
+      }
+    }
+  }
+}

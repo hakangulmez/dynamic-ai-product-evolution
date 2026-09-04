@@ -174,7 +174,27 @@ def test_schema_loads_are_isolated_from_caller_mutation() -> None:
 
 
 SCHEMA_VERSION_MANIFEST_SHA256 = (
-    # Rebaselined by ADR-155: manifest_version 0.94.0 -> 0.95.0, 253 -> 256
+    # Rebaselined by the Item 1 PCT smoke checkpoint: manifest_version 0.105.0
+    # -> 0.106.0, 269 -> 272 entries. It registers the retained capability,
+    # product-consolidation, and task-consolidation development contracts.
+    # The active V8 chain remains product structure, economic
+    # product/capability V3, and selected-evidence tasks V5.
+    # Before it: manifest_version 0.103.0 -> 0.104.0, 267 -> 268 entries for
+    # economic-PCT v3. It links tasks directly to product-local capabilities
+    # and retains the immutable V1/V2 artifacts. Before it:
+    # manifest_version 0.102.0 -> 0.103.0, 266 -> 267 entries for the direct
+    # economic-PCT v2 successor. It adds tasks nested under V1's economic
+    # product/capability structure; it does not replace the immutable V1
+    # artifact or make the prior A/B task experiment active. Before it:
+    # manifest_version 0.101.0 -> 0.102.0, 264 -> 266
+    # entries. V2 makes candidate capability references product-qualified while
+    # preserving the immutable V1 A/B contracts and run. Neither V2 task smoke
+    # is a released evaluation contract or a full-universe authorization.
+    # Before it, the same ADR moved 0.100.0 -> 0.101.0 for the original A/B
+    # contracts. Before it, the same ADR moved 0.99.0
+    # -> 0.100.0 for the economic-PCT smoke contract. Before it, the same ADR moved 0.97.0
+    # -> 0.98.0 for the explicit-family task-family contract.
+    # Before it ADR-155: manifest_version 0.94.0 -> 0.95.0, 253 -> 256
     # entries. The V9 gold-review case, audit-map, and manifest contracts
     # select Item 1 material for human adjudication but assign no gold label.
     # Before it ADR-154: manifest_version 0.93.0 -> 0.94.0, 251 -> 253
@@ -578,7 +598,7 @@ SCHEMA_VERSION_MANIFEST_SHA256 = (
     # (0.14.0 -> 0.15.0, 42 -> 45) the two E-M successor contracts and the
     # execution outcome. In every case the released @0.1.0 schemas are
     # byte-identical; only the registry grew.
-    "969b0dc677c4479bed2147a74e9497e5645eea4b73871bf5770a5e87123b39fb"
+    "83dfe400b8609bb523f7eadfa0b70da53d48b014a45fb7f6849405bb64119e21"
 )
 
 

@@ -904,8 +904,8 @@ def test_registry_registers_the_three_continuation_schemas():
     registry = json.loads(
         (ROOT / "schemas" / "schema_version_manifest.json")
         .read_text(encoding="utf-8"))
-    assert registry["manifest_version"] == "0.95.0"
-    assert len(registry["schemas"]) == 256
+    assert registry["manifest_version"] == "0.106.0"
+    assert len(registry["schemas"]) == 272
     assert registry["schemas"]["universe_screen_record_v3"] == "0.3.0"
     assert registry["schemas"]["universe_screen_continuation_authorization"] == "0.1.0"
     assert registry["schemas"]["universe_screen_continuation_manifest"] == "0.8.0"

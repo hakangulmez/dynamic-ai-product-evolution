@@ -10150,3 +10150,96 @@ The only future human label vocabulary is `STRICT_CORE`, `NOT_STRICT_CORE`, and
 membership, makes no model call, and is non-promotable. `ENABLING` and
 `PERIPHERAL` candidates are deliberately deferred to a second recall wave;
 they must not be silently treated as verified negatives.
+
+## ADR-156 — compact combined PCT snapshot draft
+
+The historical HubSpot exploration made separate product, capability, and task
+calls. That arrangement allowed an overly broad product candidate to become the
+parent context for later capability and task extraction.
+`pct_item1_combined_snapshot_v1` is therefore a development-only successor
+draft for one connected Item 1 snapshot in a single call: customer-facing
+products, their concrete capabilities, and economically meaningful customer
+tasks.
+
+The draft deliberately keeps the model's job narrow. It requests local
+product/capability/task identifiers and one to three passage references per
+entry, but not model-written quotations, offsets, hashes, scores, tiers,
+financial claims, AI-transition judgements, or replicability and defensibility
+assessments. Pipeline code must resolve and verify the reference text. A product
+family is optional context on a product only when Item 1 expressly names it; it
+is never a standalone candidate type.
+
+The bounded smoke substrate now consists of five model-facing contracts and
+one write-once five-firm runner. V1 preserves the original
+product-capability-task shape; V2 changes only the output granularity to
+product, capability, and durable task family, with optional `product_family`
+context attached to a product rather than emitted as a record. V3 instead
+makes the hierarchy explicit: product family, product, capability, task. A
+family is a named commercial grouping, never a product itself, and a product
+may name one family or `null`. V4 uses that explicit family hierarchy with
+individual customer tasks; V5 keeps the hierarchy but restores durable task
+families. A separate product-structure smoke maps only product families and
+products, deliberately omitting capability and task fields so that its output
+can test the commercial hierarchy before later layers are attempted. The
+runner archives raw responses, validated
+records, a review page, and an input/output manifest; invalid readable JSON is
+retained as review-needed rather than repaired. It is a development smoke
+route, not a qualification, production route, scoring step, or authorization
+for the full universe. This work is not a successor to, and does not authorize
+execution under, `pct_candidate_extraction_dev30_v1`.
+
+The product-structure output is deliberately high-recall working material, not
+a product finding. A second development-only economic-PCT smoke consumes its
+saved product IDs and the same complete Item 1 packet. It must account for each
+discovery product ID exactly once: either as the source of one consolidated
+economic product or as not selected. It emits capabilities and durable task
+families only for the selected economic products. It may not invent or silently
+drop a discovery product ID; all model-selected passage addresses remain
+validated against the rendered packet. A row whose first-stage discovery output
+is not structurally valid remains reviewable in that first artifact and is not
+re-run or guessed in the second-stage smoke.
+
+The next bounded A/B smoke holds those saved economic-product and capability
+maps fixed, and excludes the preceding task-family outputs from both model
+inputs. One prompt extracts only distinct customer tasks; the other extracts
+the same tasks plus a narrow task-family grouping. Both require one or more
+tasks for every input economic product and validate product-local capability
+links and Item 1 passage references. The comparison is only about output
+granularity; it settles no workflow taxonomy, transformation-depth score, or
+production PCT decision.
+
+The first A/B execution exposed an input-identity defect rather than a model
+semantic result: the preceding economic-PCT contract makes capability IDs local
+to each economic product, so `C1` can recur. The V2 A/B contracts preserve the
+immutable V1 prompts, schemas, and run; they require product-qualified
+capability references such as `EP1:C1` instead. This makes every task's
+capability link unambiguous without changing the candidate product map or the
+task-granularity question being tested.
+
+At that point in the exploration, the active successor was economic PCT V2: not a third task-only call,
+but the V1 product-selection and capability call extended with product-local
+task-family-to-task links. It preserves V1's candidate accounting and all
+preceding product/capability boundaries, while requiring every selected product
+to contain at least one narrow family and one distinct customer task. Task
+families are explicitly grouping labels, not replacements for tasks or a
+workflow taxonomy. The A/B artifacts remain retained development evidence and
+do not define the successor.
+
+Economic PCT V3 is a separate development successor, not a rewrite of the
+saved V1 or V2 artifacts. It retains their Item 1 and discovery-candidate
+inputs but presents Item 1 first, removes the task-family layer, and directly
+links each customer task to one or more product-local capabilities. Its smoke
+result remains development evidence only and settles no production PCT design.
+
+The next bounded smoke isolates the preceding product-consolidation question:
+economic product and capability extraction receives the same saved discovery
+map and complete Item 1 packet but emits no task layer. This keeps product
+selection evidence separate from later customer-task extraction and settles no
+production PCT design.
+
+The current development checkpoint is the three-stage V8 chain documented in
+`docs/methodology/ITEM1_PCT_DEVELOPMENT_SMOKE_PIPELINE.md`: product-structure
+discovery, economic products and capabilities, then product-local customer
+tasks. The preceding V1--V3 and consolidation work remains retained
+development history, not an alternative active route. V8 is still a bounded
+five-firm smoke checkpoint, not a full-universe authorization.

@@ -603,7 +603,7 @@ def test_predecessors_are_byte_identical():
 def test_the_registry_registers_the_release_contracts():
     registry = json.loads(
         (ROOT / "schemas/schema_version_manifest.json").read_text(encoding="utf-8"))
-    assert registry["manifest_version"] == "0.95.0"
-    assert len(registry["schemas"]) == 256
+    assert registry["manifest_version"] == "0.106.0"
+    assert len(registry["schemas"]) == 272
     assert registry["schemas"]["universe_screen_release_record"] == "0.1.0"
     assert registry["schemas"]["universe_screen_release_manifest"] == "0.1.0"
